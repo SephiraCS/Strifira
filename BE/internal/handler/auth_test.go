@@ -7,12 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/jwt"
@@ -38,7 +36,7 @@ func TestAuthHandler_Register_ValidationError(t *testing.T) {
 	userRepo := &testUserRepo{}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), nil)
+	h := NewAuthHandler(authSvc, false, nil)
 
 	err := h.Register(c)
 
@@ -59,7 +57,7 @@ func TestAuthHandler_Register_Success(t *testing.T) {
 	userRepo := &testUserRepo{}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), nil)
+	h := NewAuthHandler(authSvc, false, nil)
 
 	err := h.Register(c)
 
@@ -94,7 +92,7 @@ func TestAuthHandler_Register_DuplicateEmail(t *testing.T) {
 	userRepo := &testUserRepo{emailExists: true}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), nil)
+	h := NewAuthHandler(authSvc, false, nil)
 
 	err := h.Register(c)
 
@@ -115,7 +113,7 @@ func TestAuthHandler_Login_Success(t *testing.T) {
 	userRepo := &testUserRepo{userWithPassword: "Password123!!"}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), nil)
+	h := NewAuthHandler(authSvc, false, nil)
 
 	err := h.Login(c)
 
@@ -144,7 +142,7 @@ func TestAuthHandler_Login_WrongPassword(t *testing.T) {
 	userRepo := &testUserRepo{userWithPassword: "Password123!!"}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), nil)
+	h := NewAuthHandler(authSvc, false, nil)
 
 	err := h.Login(c)
 
@@ -168,7 +166,7 @@ func TestAuthHandler_Me_Success(t *testing.T) {
 	userRepo := &testUserRepo{specificUserID: userID}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), func(id uuid.UUID) bool { return id == userID })
+	h := NewAuthHandler(authSvc, false, func(id uuid.UUID) bool { return id == userID })
 
 	err := h.Me(c)
 
@@ -188,7 +186,7 @@ func TestAuthHandler_Logout(t *testing.T) {
 	userRepo := &testUserRepo{}
 	refreshRepo := &testRefreshTokenRepo{}
 	authSvc := service.NewAuthService(userRepo, refreshRepo, "test-secret")
-	h := NewAuthHandler(authSvc, false, middleware.NewLoginThrottle(5, 15*time.Minute), nil)
+	h := NewAuthHandler(authSvc, false, nil)
 
 	err := h.Logout(c)
 

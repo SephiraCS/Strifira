@@ -119,8 +119,7 @@ func main() {
 
 	// Handlers
 	healthH := handler.NewHealthHandler(db)
-	loginThrottle := mw.NewLoginThrottle(5, 15*time.Minute)
-	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", loginThrottle, cfg.IsSysAdmin)
+	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin)
 	workspaceH := handler.NewWorkspaceHandler(workspaceSvc)
 	teamH := handler.NewTeamHandler(teamSvc)
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
@@ -203,18 +202,21 @@ func main() {
 	e.GET("/health", healthH.Health)
 	e.GET("/ready", healthH.Ready)
 
-	// Auth (public) — rate limited: 5 requests/sec, burst of 10
-	auth := e.Group("/api/auth", mw.RateLimit(5, 10))
+	// Auth (public). No rate limiting or login lockout: several users share
+	// one egress IP (office NAT) and jointly exhausted the per-IP auth
+	// bucket, locking the app out for whole networks while other networks
+	// worked. Operator directive 2026-09-13: remove all access rate limits.
+	auth := e.Group("/api/auth")
 	auth.POST("/register", authH.Register)
 	auth.POST("/login", authH.Login)
 	auth.POST("/refresh", authH.Refresh)
 	auth.POST("/logout", authH.Logout)
 
-	// Public share routes (no auth, rate limited)
-	pub := e.Group("/api/public", mw.RateLimit(2, 5))
+	// Public share routes (no auth, no rate limiting — see /api/auth note)
+	pub := e.Group("/api/public")
 	pub.GET("/share/:token", sharedLinkH.GetPublicMeta)
 	pub.GET("/share/:token/issues", sharedLinkH.ListPublicIssues)
-	e.GET("/api/public/assets/:token", uploadH.PublicAsset, mw.RateLimit(10, 20))
+	e.GET("/api/public/assets/:token", uploadH.PublicAsset)
 
 	// Authenticated routes
 	api := e.Group("/api", mw.Auth(cfg.JWTSecret))

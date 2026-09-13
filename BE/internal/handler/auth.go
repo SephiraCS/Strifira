@@ -21,15 +21,14 @@ import (
 type AuthHandler struct {
 	authService   *service.AuthService
 	secureCookie  bool
-	loginThrottle *middleware.LoginThrottle
 	isSysAdmin    func(uuid.UUID) bool
 }
 
-func NewAuthHandler(authService *service.AuthService, secureCookie bool, loginThrottle *middleware.LoginThrottle, isSysAdmin func(uuid.UUID) bool) *AuthHandler {
+func NewAuthHandler(authService *service.AuthService, secureCookie bool, isSysAdmin func(uuid.UUID) bool) *AuthHandler {
 	if isSysAdmin == nil {
 		isSysAdmin = func(uuid.UUID) bool { return false }
 	}
-	return &AuthHandler{authService: authService, secureCookie: secureCookie, loginThrottle: loginThrottle, isSysAdmin: isSysAdmin}
+	return &AuthHandler{authService: authService, secureCookie: secureCookie, isSysAdmin: isSysAdmin}
 }
 
 func (h *AuthHandler) Register(c echo.Context) error {
@@ -76,22 +75,15 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return response.ValidationError(c, details)
 	}
 
-	if h.loginThrottle.IsLocked(req.Email) {
-		log.WithFields(log.Fields{"event": "auth.login_locked", "email": req.Email, "ip": c.RealIP()}).Warn("login attempt while locked")
-		return response.Error(c, http.StatusTooManyRequests, "ACCOUNT_LOCKED", "Too many failed attempts, please try again later")
-	}
-
 	user, accessToken, refreshToken, err := h.authService.Login(c.Request().Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
-			h.loginThrottle.RecordFailure(req.Email)
 			log.WithFields(log.Fields{"event": "auth.login_failed", "email": req.Email, "ip": c.RealIP()}).Warn("login failed")
 			return response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
 		}
 		return response.InternalError(c)
 	}
 
-	h.loginThrottle.RecordSuccess(req.Email)
 	log.WithFields(log.Fields{"event": "auth.login", "user_id": user.ID, "email": user.Email, "ip": c.RealIP()}).Info("user logged in")
 	h.setAuthCookies(c, accessToken, refreshToken)
 
