@@ -1,0 +1,115 @@
+# TEMPORARY diagnostic workflow used while migrating CI to this runner.
+# It records the job environment and pushes the findings to the ci/probe
+# branch, where they can be read without web access to this repository.
+# Remove once the migrated workflows are verified.
+name: CI Probe (temporary)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    name: Probe runner environment
+    runs-on: terrascale-builder
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ku
+          POSTGRES_PASSWORD: ku
+          POSTGRES_DB: ku_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ku"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Collect environment facts
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          report() {
+            echo "=== $1 ==="
+            shift
+            "$@" 2>&1 || echo "(failed: $*)"
+            echo
+          }
+
+          {
+            echo "probe at $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${{ forgejo.sha }}"
+
+            report "uname" uname -a
+            report "node" node --version
+            report "npm" npm --version
+            report "go" go version
+            report "git" git --version
+            report "jq" jq --version
+            report "fj" fj --version
+            report "trivy" trivy --version
+            report "podman" podman --version
+            report "podman-info" podman info
+            report "docker-cli" docker --version
+            report "docker-info" docker info
+            report "buildah" buildah --version
+            report "skopeo" skopeo --version
+            report "playwright-browsers" ls -la /usr/local/share/ms-playwright
+            report "vite-plus" ls -la /usr/local/vite-plus/bin
+
+            echo "=== postgres service connectivity ==="
+            if command -v pg_isready >/dev/null 2>&1; then
+              pg_isready -h localhost -p 5432 -U ku || echo "(pg_isready failed)"
+            else
+              (exec 3<>/dev/tcp/localhost/5432 && echo "tcp connect to localhost:5432 OK") || echo "(tcp connect failed)"
+            fi
+            echo
+
+            echo "=== REGISTRY_AUTH_FILE ==="
+            echo "REGISTRY_AUTH_FILE=${REGISTRY_AUTH_FILE:-<unset>}"
+            echo
+
+            echo "=== podman build smoke test ==="
+            if printf 'FROM alpine:3.23\nRUN echo probe-ok\n' | podman build --pull --tag ku-probe:smoke -; then
+              echo "podman build: OK"
+              podman rmi ku-probe:smoke || true
+            else
+              echo "podman build: FAILED"
+            fi
+            echo
+
+            echo "=== forgejo token identity ==="
+            curl --fail --silent --show-error \
+              --header "Authorization: token ${FORGEJO_TOKEN}" \
+              https://git.terrascale.tech/api/v1/user | jq -r '"token user: \(.login)"' || echo "(api call failed)"
+          } > probe-report.txt 2>&1 || true
+
+          cat probe-report.txt
+
+      - name: Publish probe report
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git checkout -B ci/probe
+          cp probe-report.txt "probe-$(date -u +%Y%m%dT%H%M%SZ).txt"
+          git add probe-report.txt probe-*.txt
+          git commit -m "ci probe: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push --force "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/probe
