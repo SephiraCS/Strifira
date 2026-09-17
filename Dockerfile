@@ -32,16 +32,17 @@ RUN mkdir -p /app/uploads
 
 COPY <<'EOF' /etc/caddy/Caddyfile
 :3000 {
-	root * /srv
-	file_server
-	try_files {path} /index.html
-
 	header {
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
 		Referrer-Policy strict-origin-when-cross-origin
 	}
 
+	# Proxied paths must come before the SPA fallback: with the previous
+	# top-level try_files, Caddy's directive order ran the rewrite before
+	# these handle blocks, so /api/* and /health were rewritten to
+	# /index.html and every API call got the SPA instead of the backend.
+	# Same structure as selfhosting/Caddyfile.
 	handle /api/* {
 		reverse_proxy localhost:8080
 	}
@@ -56,6 +57,12 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 
 	handle /ready {
 		reverse_proxy localhost:8080
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
 	}
 }
 EOF
