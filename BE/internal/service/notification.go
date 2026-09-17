@@ -18,6 +18,12 @@ func NewNotificationService(notifRepo repository.NotificationRepo) *Notification
 	return &NotificationService{notifRepo: notifRepo}
 }
 
+// GetByID exposes the repository lookup so callers can verify ownership
+// before acting on a notification (the MCP tools use it).
+func (s *NotificationService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Notification, error) {
+	return s.notifRepo.GetByID(ctx, id)
+}
+
 func (s *NotificationService) Create(ctx context.Context, userID, workspaceID uuid.UUID, issueID *uuid.UUID, notifType, title string) error {
 	n := &domain.Notification{
 		ID:          uuid.New(),

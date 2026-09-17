@@ -160,6 +160,7 @@ func main() {
 	apiKeyRepo := repository.NewAPIKeyRepository(db)
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, userRepo)
 	apiKeyH := handler.NewAPIKeyHandler(apiKeySvc)
+	analyticsRepoMCP := repository.NewAnalyticsRepository(db)
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:      mcpServerVersion(),
 		Users:        userRepo,
@@ -168,9 +169,18 @@ func main() {
 		TeamStatuses: teamStatusRepo,
 		Projects:     projectRepo,
 		Labels:       labelRepo,
+		Cycles:       cycleRepo,
+		Templates:    templateRepo,
+		Analytics:    analyticsRepoMCP,
 		IssueSvc:     issueSvc,
 		CommentSvc:   commentSvc,
 		RelationSvc:  relationSvc,
+		WorkspaceSvc: workspaceSvc,
+		TeamSvc:      teamSvc,
+		StatusSvc:    teamStatusSvc,
+		ProjectSvc:   projectSvc,
+		LabelSvc:     labelSvc,
+		NotifSvc:     notifSvc,
 	})
 
 	// GitHub integration

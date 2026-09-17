@@ -18,6 +18,7 @@ func registerTools(s *mcp.Server, deps Deps) {
 	registerIdentityTools(s, deps)
 	registerCatalogTools(s, deps)
 	registerIssueTools(s, deps)
+	registerManageTools(s, deps)
 }
 
 func registerIdentityTools(s *mcp.Server, deps Deps) {
@@ -243,8 +244,9 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		Name:  "list_issues",
 		Title: "List issues",
 		Description: "Search and list issues in a workspace. Filters are optional and combine with AND. " +
-			"`team`/`project` accept ids; `status` accepts a state id or a legacy status name (backlog, todo, in_progress, in_review, done, cancelled); " +
-			"`assignee` accepts a user id. Results are newest first unless sorted otherwise.",
+			"Entity filters are friendly: `team` accepts key or id, `project` name or id, `label` name or id, " +
+			"`status` a state id, state name, or legacy status name (backlog, todo, in_progress, in_review, done, cancelled), " +
+			"`assignee`/`creator` an email or user id. Results are newest first unless sorted otherwise.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in listIssuesIn) (*mcp.CallToolResult, any, error) {
 		id, err := authenticate(ctx)
 		if err != nil {
@@ -256,16 +258,91 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		}
 
 		params := dto.IssueFilterParams{
-			Status:     in.Status,
+			StatusType: in.StatusType,
 			Priority:   in.Priority,
-			AssigneeID: in.Assignee,
-			TeamID:     in.Team,
-			ProjectID:  in.Project,
-			LabelID:    in.Label,
 			Search:     in.Search,
+			DueBefore:  in.DueBefore,
+			DueAfter:   in.DueAfter,
 			Sort:       in.Sort,
 			Order:      in.Order,
 		}
+		if in.Team != "" {
+			idArg, keyArg := in.Team, ""
+			if !looksLikeUUID(in.Team) {
+				idArg, keyArg = "", in.Team
+			}
+			team, err := deps.findTeam(ctx, w.workspace.ID, idArg, keyArg)
+			if err != nil {
+				return nil, nil, err
+			}
+			params.TeamID = team.ID.String()
+		}
+		if in.Project != "" {
+			project, err := deps.resolveProjectRef(ctx, w.workspace.ID, in.Project)
+			if err != nil {
+				return nil, nil, err
+			}
+			params.ProjectID = project.ID.String()
+		}
+		if in.Label != "" {
+			if looksLikeUUID(in.Label) {
+				params.LabelID = in.Label
+			} else if label, err := deps.resolveLabelRef(ctx, w.workspace.ID, in.Label); err == nil {
+				params.LabelID = label.ID.String()
+			} else {
+				return nil, nil, err
+			}
+		}
+		for what, ref := range map[string]string{"assignee": in.Assignee, "creator": in.Creator} {
+			if ref == "" {
+				continue
+			}
+			if looksLikeUUID(ref) {
+				if what == "assignee" {
+					params.AssigneeID = ref
+				} else {
+					params.CreatorID = ref
+				}
+				continue
+			}
+			member, err := deps.resolveMemberRef(ctx, w.workspace.ID, ref)
+			if err != nil {
+				return nil, nil, err
+			}
+			if what == "assignee" {
+				params.AssigneeID = member.UserID.String()
+			} else {
+				params.CreatorID = member.UserID.String()
+			}
+		}
+		if in.Status != "" && !looksLikeUUID(in.Status) {
+			// Friendly state names resolve to their state id; legacy slugs
+			// pass through for the repo's status column.
+			teamID := uuid.Nil
+			if params.TeamID != "" {
+				teamID, _ = uuid.Parse(params.TeamID)
+			}
+			if teamID == uuid.Nil {
+				teams, err := deps.Teams.ListByWorkspace(ctx, w.workspace.ID)
+				if err != nil || len(teams) == 0 {
+					return nil, nil, fmt.Errorf("failed to resolve status %q", in.Status)
+				}
+				teamID = teams[0].ID
+			}
+			if state, err := deps.resolveStateRef(ctx, teamID, in.Status); err == nil {
+				params.Status = state.ID.String()
+			}
+		} else if in.Status != "" {
+			params.Status = in.Status
+		}
+		if in.Parent != "" {
+			parent, err := deps.resolveIssueRef(ctx, w.workspace.ID, in.Parent)
+			if err != nil {
+				return nil, nil, err
+			}
+			params.ParentID = parent.ID.String()
+		}
+		params.CycleID = in.Cycle
 		params.Page = in.Page
 		params.PerPage = in.PerPage
 		params.Defaults()
@@ -416,14 +493,57 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		if in.StatusID != "" {
 			dtoReq.StatusID = &in.StatusID
 		}
+		if in.State != "" {
+			if looksLikeUUID(in.State) {
+				dtoReq.StatusID = &in.State
+			} else if state, err := deps.resolveStateRef(ctx, team.ID, in.State); err != nil {
+				return nil, nil, err
+			} else {
+				sid := state.ID.String()
+				dtoReq.StatusID = &sid
+			}
+		}
 		if in.Priority != nil {
 			dtoReq.Priority = in.Priority
+		}
+		if in.Parent != "" {
+			parent, err := deps.resolveIssueRef(ctx, w.workspace.ID, in.Parent)
+			if err != nil {
+				return nil, nil, err
+			}
+			pid := parent.ID.String()
+			dtoReq.ParentID = &pid
 		}
 		if in.ParentID != "" {
 			dtoReq.ParentID = &in.ParentID
 		}
 		if in.DueDate != "" {
 			dtoReq.DueDate = &in.DueDate
+		}
+		if in.Project != "" {
+			project, err := deps.resolveProjectRef(ctx, w.workspace.ID, in.Project)
+			if err != nil {
+				return nil, nil, err
+			}
+			dtoReq.ProjectID = ptrString(project.ID.String())
+		}
+		if len(in.Labels) > 0 {
+			for _, ref := range in.Labels {
+				label, err := deps.resolveLabelRef(ctx, w.workspace.ID, ref)
+				if err != nil {
+					return nil, nil, err
+				}
+				dtoReq.LabelIDs = append(dtoReq.LabelIDs, label.ID.String())
+			}
+		}
+		if len(in.Assignees) > 0 {
+			for _, ref := range in.Assignees {
+				member, err := deps.resolveMemberRef(ctx, w.workspace.ID, ref)
+				if err != nil {
+					return nil, nil, err
+				}
+				dtoReq.AssigneeIDs = append(dtoReq.AssigneeIDs, member.UserID.String())
+			}
 		}
 
 		issue, err := deps.IssueSvc.Create(ctx, w.workspace.ID, id.userID, dtoReq)
@@ -441,7 +561,9 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		Name:  "update_issue",
 		Title: "Update issue",
 		Description: "Update an issue by identifier. Only provided fields change. " +
-			"`status_id` moves the issue between workflow states; `status` accepts legacy names. Requires an API key with write scope.",
+			"`state` moves the issue between workflow states by name or id (`status_id`/`status` also work). " +
+			"Entity fields are friendly: `project` by name or id, `labels` by name or id, `assignees` by email or id, " +
+			"`parent` by identifier or id. `subscribed` toggles your subscription. Requires an API key with write scope.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in updateIssueIn) (*mcp.CallToolResult, any, error) {
 		id, err := authenticate(ctx)
 		if err != nil {
@@ -475,14 +597,73 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		if in.StatusID != nil {
 			dtoReq.StatusID = in.StatusID
 		}
+		if in.State != nil {
+			target, err := deps.IssueSvc.GetByIdentifier(ctx, w.workspace.ID, in.Identifier)
+			if err != nil || target == nil {
+				return nil, nil, fmt.Errorf("issue %s not found in workspace %s", in.Identifier, in.Workspace)
+			}
+			if looksLikeUUID(*in.State) {
+				dtoReq.StatusID = in.State
+			} else if state, err := deps.resolveStateRef(ctx, target.TeamID, *in.State); err != nil {
+				return nil, nil, err
+			} else {
+				sid := state.ID.String()
+				dtoReq.StatusID = &sid
+			}
+		}
 		if in.Priority != nil {
 			dtoReq.Priority = in.Priority
 		}
 		if in.ParentID != nil {
 			dtoReq.ParentID = in.ParentID
 		}
+		if in.Parent != nil {
+			parent, err := deps.resolveIssueRef(ctx, w.workspace.ID, *in.Parent)
+			if err != nil {
+				return nil, nil, err
+			}
+			dtoReq.ParentID = ptrString(parent.ID.String())
+		}
 		if in.DueDate != nil {
 			dtoReq.DueDate = in.DueDate
+		}
+		if in.Project != nil {
+			project, err := deps.resolveProjectRef(ctx, w.workspace.ID, *in.Project)
+			if err != nil {
+				return nil, nil, err
+			}
+			dtoReq.ProjectID = ptrString(project.ID.String())
+		}
+		if len(in.Labels) > 0 {
+			dtoReq.LabelIDs = []string{}
+			for _, ref := range in.Labels {
+				label, err := deps.resolveLabelRef(ctx, w.workspace.ID, ref)
+				if err != nil {
+					return nil, nil, err
+				}
+				dtoReq.LabelIDs = append(dtoReq.LabelIDs, label.ID.String())
+			}
+		}
+		if len(in.Assignees) > 0 {
+			dtoReq.AssigneeIDs = []string{}
+			for _, ref := range in.Assignees {
+				member, err := deps.resolveMemberRef(ctx, w.workspace.ID, ref)
+				if err != nil {
+					return nil, nil, err
+				}
+				dtoReq.AssigneeIDs = append(dtoReq.AssigneeIDs, member.UserID.String())
+			}
+		}
+		if in.Subscribed != nil {
+			if *in.Subscribed {
+				if err := deps.IssueSvc.Subscribe(ctx, w.workspace.ID, id.userID, in.Identifier); err != nil {
+					return nil, nil, fmt.Errorf("failed to subscribe: %w", err)
+				}
+			} else {
+				if err := deps.IssueSvc.Unsubscribe(ctx, w.workspace.ID, id.userID, in.Identifier); err != nil {
+					return nil, nil, fmt.Errorf("failed to unsubscribe: %w", err)
+				}
+			}
 		}
 
 		issue, err := deps.IssueSvc.Update(ctx, w.workspace.ID, id.userID, in.Identifier, dtoReq)
@@ -606,18 +787,24 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 // --- input shapes ---
 
 type listIssuesIn struct {
-	Workspace string `json:"workspace"`
-	Team      string `json:"team,omitempty"`
-	Project   string `json:"project,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Priority  string `json:"priority,omitempty"`
-	Assignee  string `json:"assignee,omitempty"`
-	Label     string `json:"label,omitempty"`
-	Search    string `json:"search,omitempty"`
-	Sort      string `json:"sort,omitempty" jsonschema:"one of: created_at, updated_at, priority, sort_order, status, due_date"`
-	Order     string `json:"order,omitempty" jsonschema:"asc or desc"`
-	Page      int    `json:"page,omitempty"`
-	PerPage   int    `json:"per_page,omitempty"`
+	Workspace  string `json:"workspace"`
+	Team       string `json:"team,omitempty"`
+	Project    string `json:"project,omitempty"`
+	Status     string `json:"status,omitempty" jsonschema:"state id, state name, or legacy status name"`
+	StatusType string `json:"status_type,omitempty" jsonschema:"backlog, unstarted, started, completed, or cancelled"`
+	Priority   string `json:"priority,omitempty"`
+	Assignee   string `json:"assignee,omitempty" jsonschema:"user id or email"`
+	Creator    string `json:"creator,omitempty" jsonschema:"user id or email"`
+	Cycle      string `json:"cycle,omitempty"`
+	Label      string `json:"label,omitempty" jsonschema:"label id or name"`
+	Search     string `json:"search,omitempty"`
+	DueBefore  string `json:"due_before,omitempty"`
+	DueAfter   string `json:"due_after,omitempty"`
+	Parent     string `json:"parent,omitempty" jsonschema:"parent issue identifier or id"`
+	Sort       string `json:"sort,omitempty" jsonschema:"one of: created_at, updated_at, priority, sort_order, status, due_date"`
+	Order      string `json:"order,omitempty" jsonschema:"asc or desc"`
+	Page       int    `json:"page,omitempty"`
+	PerPage    int    `json:"per_page,omitempty"`
 }
 
 type createIssueIn struct {
@@ -626,13 +813,18 @@ type createIssueIn struct {
 	TeamID      string   `json:"team_id,omitempty"`
 	TeamKey     string   `json:"team_key,omitempty"`
 	Description string   `json:"description,omitempty"`
-	Status      string   `json:"status,omitempty"`
+	Status      string   `json:"status,omitempty" jsonschema:"legacy status name"`
 	StatusID    string   `json:"status_id,omitempty"`
+	State       string   `json:"state,omitempty" jsonschema:"workflow state name or id"`
 	Priority    *int     `json:"priority,omitempty"`
 	ProjectID   *string  `json:"project_id,omitempty"`
+	Project     string   `json:"project,omitempty" jsonschema:"project name or id"`
 	AssigneeIDs []string `json:"assignee_ids,omitempty"`
+	Assignees   []string `json:"assignees,omitempty" jsonschema:"member emails, names, or ids"`
 	LabelIDs    []string `json:"label_ids,omitempty"`
-	ParentID    string   `json:"parent_id,omitempty"`
+	Labels      []string `json:"labels,omitempty" jsonschema:"label names or ids"`
+	ParentID    string   `json:"parent_id,omitempty" jsonschema:"parent issue id"`
+	Parent      string   `json:"parent,omitempty" jsonschema:"parent issue identifier or id"`
 	DueDate     string   `json:"due_date,omitempty"`
 }
 
@@ -643,12 +835,18 @@ type updateIssueIn struct {
 	Description *string  `json:"description,omitempty"`
 	Status      *string  `json:"status,omitempty"`
 	StatusID    *string  `json:"status_id,omitempty"`
+	State       *string  `json:"state,omitempty" jsonschema:"workflow state name or id"`
 	Priority    *int     `json:"priority,omitempty"`
 	ProjectID   *string  `json:"project_id,omitempty"`
+	Project     *string  `json:"project,omitempty" jsonschema:"project name or id"`
 	AssigneeIDs []string `json:"assignee_ids,omitempty"`
+	Assignees   []string `json:"assignees,omitempty" jsonschema:"member emails, names, or ids"`
 	LabelIDs    []string `json:"label_ids,omitempty"`
+	Labels      []string `json:"labels,omitempty" jsonschema:"label names or ids"`
 	ParentID    *string  `json:"parent_id,omitempty"`
+	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier or id"`
 	DueDate     *string  `json:"due_date,omitempty"`
+	Subscribed  *bool    `json:"subscribed,omitempty"`
 }
 
 // --- shared helpers ---
@@ -695,8 +893,8 @@ func (d Deps) commentTree(ctx context.Context, comments []domain.Comment) []comm
 	return out
 }
 
-// findTeam resolves a team by id or by key (case-insensitive), both scoped
-// to the workspace.
+// findTeam resolves a team by id, key, or name (case-insensitive), all
+// scoped to the workspace.
 func (d Deps) findTeam(ctx context.Context, workspaceID uuid.UUID, teamID, teamKey string) (*domain.Team, error) {
 	if teamID != "" {
 		id, err := uuid.Parse(teamID)
@@ -712,16 +910,16 @@ func (d Deps) findTeam(ctx context.Context, workspaceID uuid.UUID, teamID, teamK
 	if teamKey != "" {
 		teams, err := d.Teams.ListByWorkspace(ctx, workspaceID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve team key %q", teamKey)
+			return nil, fmt.Errorf("failed to resolve team %q", teamKey)
 		}
 		for i := range teams {
-			if strings.EqualFold(teams[i].Key, teamKey) {
+			if strings.EqualFold(teams[i].Key, teamKey) || strings.EqualFold(teams[i].Name, teamKey) {
 				return &teams[i], nil
 			}
 		}
-		return nil, fmt.Errorf("no team with key %q in this workspace", teamKey)
+		return nil, fmt.Errorf("no team with key or name %q in this workspace", teamKey)
 	}
-	return nil, fmt.Errorf("either team_id or team_key is required")
+	return nil, fmt.Errorf("a team (team_key, team_id, or team name) is required")
 }
 
 func (d Deps) teamKeysFor(ctx context.Context, workspaceID uuid.UUID) map[uuid.UUID]string {

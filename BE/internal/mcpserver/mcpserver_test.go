@@ -316,10 +316,26 @@ func TestMCPToolRegistrationAndHandshake(t *testing.T) {
 	require.NoError(t, err)
 
 	want := []string{
+		// identity + catalog
 		"get_me", "list_workspaces", "get_workspace", "list_members",
 		"list_teams", "list_team_states", "list_projects", "list_labels",
+		// issues + comments
 		"list_issues", "get_issue", "create_issue", "update_issue",
 		"delete_issue", "list_comments", "create_comment",
+		// workspace + members
+		"create_workspace", "update_workspace", "invite_member",
+		"update_member_role", "remove_member",
+		// teams, workflow states, projects, labels
+		"create_team", "update_team", "delete_team",
+		"create_team_state", "update_team_state", "delete_team_state",
+		"create_project", "update_project", "delete_project",
+		"create_label", "update_label", "delete_label",
+		// issue extras
+		"duplicate_issue", "list_issue_history", "list_relations",
+		"create_relation", "delete_relation", "resolve_comment", "reopen_comment",
+		// cycles, templates, notifications, analytics
+		"list_cycles", "list_issue_templates", "list_notifications",
+		"mark_notifications_read", "workspace_analytics",
 	}
 	got := map[string]bool{}
 	for _, tool := range res.Tools {
