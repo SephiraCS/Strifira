@@ -7,7 +7,7 @@ PIDFILE=".dev.pids"
 # Ensure Docker CLI is in PATH (macOS Docker Desktop)
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 
-echo "=== Kuayle - Stopping ==="
+echo "=== Ku - Stopping ==="
 
 # Kill dev processes
 if [ -f "$PIDFILE" ]; then
@@ -21,7 +21,7 @@ fi
 
 # Kill any leftover air/vite processes
 pkill -f "air" 2>/dev/null && echo "Stopped air" || true
-pkill -f "vite.*kuayle" 2>/dev/null && echo "Stopped vite" || true
+pkill -f "vite.*ku" 2>/dev/null && echo "Stopped vite" || true
 
 # Stop Docker services
 docker compose stop 2>/dev/null && echo "Stopped Postgres and Redis" || true

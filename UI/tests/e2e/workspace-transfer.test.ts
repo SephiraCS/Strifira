@@ -48,7 +48,7 @@ test('previews, confirms, and imports a workspace archive', async ({ page }) => 
 			return route.fulfill({
 				json: {
 					manifest: {
-						format: 'kuayle.workspace',
+						format: 'ku.workspace',
 						version: 1,
 						exported_at: '2026-01-01T00:00:00Z',
 						source_workspace_id: workspace().id,
@@ -83,7 +83,7 @@ test('previews, confirms, and imports a workspace archive', async ({ page }) => 
 
 	await page.goto('/workspace-setup');
 	await expect(page.getByRole('heading', { name: 'Set up your workspace' })).toBeVisible();
-	await page.locator('input[type=file]').setInputFiles({ name: 'workspace.kuayle.zip', mimeType: 'application/zip', buffer: Buffer.from('fake archive') });
+	await page.locator('input[type=file]').setInputFiles({ name: 'workspace.ku.zip', mimeType: 'application/zip', buffer: Buffer.from('fake archive') });
 	await expect(page.getByRole('heading', { name: 'Import workspace' }).last()).toBeVisible();
 	await expect(page.getByText('12')).toBeVisible();
 	await expect(page.getByText('Reconnect GitHub.')).toBeVisible();
@@ -113,7 +113,7 @@ test('blocks missing users and reports a slug conflict', async ({ page }) => {
 			return route.fulfill({
 				json: {
 					manifest: {
-						format: 'kuayle.workspace',
+						format: 'ku.workspace',
 						version: 1,
 						exported_at: '2026-01-01T00:00:00Z',
 						source_workspace_id: workspace().id,
@@ -141,7 +141,7 @@ test('blocks missing users and reports a slug conflict', async ({ page }) => {
 
 	await page.goto('/workspace-setup');
 	const fileInput = page.locator('input[type=file]');
-	const archive = { name: 'workspace.kuayle.zip', mimeType: 'application/zip', buffer: Buffer.from('fake archive') };
+	const archive = { name: 'workspace.ku.zip', mimeType: 'application/zip', buffer: Buffer.from('fake archive') };
 	await fileInput.setInputFiles(archive);
 	await expect(page.getByText('missing@example.test')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Import workspace' }).last()).toBeDisabled();
@@ -164,7 +164,7 @@ test('shows export to workspace admins and downloads the archive', async ({ page
 		if (path === '/api/workspaces/test/export') {
 			return route.fulfill({
 				body: Buffer.from('PK fake zip'),
-				headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="test.kuayle.zip"' }
+				headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="test.ku.zip"' }
 			});
 		}
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
@@ -178,5 +178,5 @@ test('shows export to workspace admins and downloads the archive', async ({ page
 	await expect(page.getByRole('heading', { name: 'Workspace transfer' })).toBeVisible();
 	const download = page.waitForEvent('download');
 	await page.getByRole('button', { name: 'Download export' }).click();
-	expect((await download).suggestedFilename()).toBe('test.kuayle.zip');
+	expect((await download).suggestedFilename()).toBe('test.ku.zip');
 });

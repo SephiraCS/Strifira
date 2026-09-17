@@ -35,8 +35,8 @@ const ROUTES = [
 	'/roadmap',
 	'/privacy',
 	'/compare',
-	'/compare/kuayle-vs-linear',
-	'/compare/kuayle-vs-plane',
+	'/compare/ku-vs-linear',
+	'/compare/ku-vs-plane',
 	'/alternatives',
 	'/alternatives/open-source-issue-trackers',
 	'/alternatives/self-hosted-issue-trackers'
@@ -97,8 +97,8 @@ const DEV_MACHINE_STATUS_ROUTES = [
 	'/self-hosting/dev-machines',
 	'/about',
 	'/roadmap',
-	'/compare/kuayle-vs-linear',
-	'/compare/kuayle-vs-plane'
+	'/compare/ku-vs-linear',
+	'/compare/ku-vs-plane'
 ];
 
 for (const route of Object.keys(contentModifiedDates)) {
@@ -230,7 +230,7 @@ if (homepageHtml) {
 	if (!/manual IDE and terminal commits are not automatically attached to issues/i.test(text)) {
 		fail('/: manual commit tracking must not be presented as automatic issue activity');
 	}
-	if (!/0123456789abcdef0123\s*\.kuayle-machines\.example\.net/i.test(text)) {
+	if (!/0123456789abcdef0123\s*\.ku-machines\.example\.net/i.test(text)) {
 		fail('/: machine-routing example must use the generated 20-character hexadecimal form');
 	}
 }

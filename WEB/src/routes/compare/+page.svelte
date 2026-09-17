@@ -23,10 +23,10 @@
 	<article class="mt-8">
 		<div use:reveal>
 			<p class="text-sm font-semibold tracking-widest text-brand-300 uppercase">Product comparisons</p>
-			<h1 class="mt-3 text-4xl font-bold tracking-tight">Compare Kuayle</h1>
+			<h1 class="mt-3 text-4xl font-bold tracking-tight">Compare Ku</h1>
 			<p class="mt-4 max-w-3xl text-lg leading-relaxed text-muted-foreground">
 				Compare hosting model, license, workflow coverage, product maturity and operating cost.
-				Each comparison cites first-party sources and states where Kuayle is not equivalent.
+				Each comparison cites first-party sources and states where Ku is not equivalent.
 			</p>
 		</div>
 

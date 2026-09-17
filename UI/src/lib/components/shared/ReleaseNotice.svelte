@@ -20,8 +20,8 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
-	const DISMISSED_KEY = 'kuayle_release_notice_dismissed';
-	const PRERELEASE_KEY = 'kuayle_release_notice_include_prerelease';
+	const DISMISSED_KEY = 'ku_release_notice_dismissed';
+	const PRERELEASE_KEY = 'ku_release_notice_include_prerelease';
 
 	let allReleases = $state<GitHubRelease[]>([]);
 	let latestRelease = $state<GitHubRelease | null>(null);
@@ -176,7 +176,7 @@
 			<div class="space-y-6 p-6 pb-4">
 				<div class="flex items-center gap-2 text-sm font-semibold">
 					<img src="/favicon.svg" alt="" class="size-8 rounded-md" />
-					<span>Kuayle</span>
+					<span>Ku</span>
 				</div>
 
 				<div class="space-y-2">

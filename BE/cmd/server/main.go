@@ -14,16 +14,16 @@ import (
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/kuayle/kuayle-backend/internal/agent"
-	"github.com/kuayle/kuayle-backend/internal/config"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/handler"
-	mw "github.com/kuayle/kuayle-backend/internal/middleware"
-	"github.com/kuayle/kuayle-backend/internal/realtime"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	"github.com/kuayle/kuayle-backend/internal/service"
-	"github.com/kuayle/kuayle-backend/pkg/crypto"
-	"github.com/kuayle/kuayle-backend/pkg/storage"
+	"github.com/ku/ku-backend/internal/agent"
+	"github.com/ku/ku-backend/internal/config"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/handler"
+	mw "github.com/ku/ku-backend/internal/middleware"
+	"github.com/ku/ku-backend/internal/realtime"
+	"github.com/ku/ku-backend/internal/repository"
+	"github.com/ku/ku-backend/internal/service"
+	"github.com/ku/ku-backend/pkg/crypto"
+	"github.com/ku/ku-backend/pkg/storage"
 )
 
 func main() {

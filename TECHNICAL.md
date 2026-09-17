@@ -1,4 +1,4 @@
-# Kuayle Dev Machines Technical Specification
+# Ku Dev Machines Technical Specification
 
 Production architecture and implementation contract for isolated, multi-container development environments and agentic coding runs.
 
@@ -13,7 +13,7 @@ Dev Machines target trusted self-hosted workspaces. Docker hardening reduces ris
 - A Dev Machine is a logical workspace composed of cooperating containers. It is never a monolithic IDE/browser/agent container.
 - Generic machine creation does not require repository, branch, issue, project, or manual TTL input. Friendly random names are case-insensitively unique per creator within a workspace and can be checked through the availability API.
 - Repository and environment defaults resolve from issue, then project, then team, then workspace. One machine has affinity to one repository and can host multiple issue worktrees from that repository; use a separate machine for another repository/environment or concurrent conflicting workload.
-- The Kuayle API does not receive the Docker socket.
+- The Ku API does not receive the Docker socket.
 - Agent, developer, browser, collector, egress, and gateway containers do not receive the Docker socket.
 - The Machine Manager is the only Dev Machines runtime component with Docker socket access and is treated as host-privileged. The separately optional system updater also mounts the socket when enabled.
 - Machine services never publish host ports. Caddy and the Machine Gateway are the only public ingress path.
@@ -22,7 +22,7 @@ Dev Machines target trusted self-hosted workspaces. Docker hardening reduces ris
 - Human browser sessions, machine tokens, and GitHub credentials are distinct credentials with different scopes and lifetimes.
 - Top-level browser launches and native terminal WebSockets use distinct one-time ticket flows.
 - PostgreSQL is the durable source of truth. Runtime operations are leased, retried, idempotent, and reconcilable after process restarts.
-- Agent providers produce a common Kuayle result model regardless of CLI implementation.
+- Agent providers produce a common Ku result model regardless of CLI implementation.
 
 ## Architecture
 
@@ -31,10 +31,10 @@ Dev Machines target trusted self-hosted workspaces. Docker hardening reduces ris
                                       |
                                       v
                               Caddy wildcard TLS
-                         app.example.com / *.kuayle-machines.example.net
+                         app.example.com / *.ku-machines.example.net
                             |                         |
                             v                         v
-                     Kuayle API + UI          Machine Gateway
+                     Ku API + UI          Machine Gateway
                             |                  no Docker socket
                             |                         |
                             +------ PostgreSQL -------+
@@ -63,7 +63,7 @@ Dev Machines target trusted self-hosted workspaces. Docker hardening reduces ris
 
 | Component | Trust boundary | Responsibility |
 |---|---|---|
-| Kuayle API | Application control plane | RBAC, machine and run APIs, policy admission, secret encryption, one-time launch tickets |
+| Ku API | Application control plane | RBAC, machine and run APIs, policy admission, secret encryption, one-time launch tickets |
 | PostgreSQL | Durable control plane | Desired/observed state, operation leases, events, logs, tokens, sessions, results, Git refs |
 | Machine Manager | Host privileged | Docker networks, volumes, containers, resource limits, secrets handoff, lifecycle, hard runtime, idle pause, cleanup |
 | Machine Gateway | Unprivileged ingress | Host parsing, browser ticket exchange, native terminal ticket exchange, session authorization, header stripping, HTTP/WebSocket proxying, access audit |
@@ -94,9 +94,9 @@ Agent containers are created on demand. Multiple runs are represented separately
 
 ## Network Isolation
 
-The manager creates `kuayle-machine-{routing-key}` with Docker's `Internal` option. Only that machine's services and the trusted Machine Gateway join it.
+The manager creates `ku-machine-{routing-key}` with Docker's `Internal` option. Only that machine's services and the trusted Machine Gateway join it.
 
-No machine workload joins the PostgreSQL, Redis, API, or Compose control network. The egress container is the only machine service also attached to the shared external `kuayle-machine-egress` network.
+No machine workload joins the PostgreSQL, Redis, API, or Compose control network. The egress container is the only machine service also attached to the shared external `ku-machine-egress` network.
 
 Chrome's debugging endpoint binds only to browser-container loopback. Browser-enabled machines receive a dedicated encrypted credential scoped to the browser and collector services; an authenticated relay exposes only the read-only target-list endpoint needed for navigation telemetry and does not proxy CDP control or WebSocket endpoints.
 
@@ -109,7 +109,7 @@ Workloads receive `HTTP_PROXY` and `HTTPS_PROXY` pointing to their machine's egr
 - resolves and dials the validated public address to reduce DNS-rebinding exposure.
 
 An empty domain allowlist permits public Internet destinations while still blocking private address ranges. Operators can fail closed by configuring an explicit allowlist.
-An explicit allowlist must include the Kuayle ingestion host plus every Git and provider API hostname required by configured agents.
+An explicit allowlist must include the Ku ingestion host plus every Git and provider API hostname required by configured agents.
 
 ## Dynamic Routing
 
@@ -141,27 +141,27 @@ The gateway uses Go's reverse proxy with WebSocket upgrades, streaming flushes, 
 
 ## Authenticated Machine Access
 
-Main Kuayle cookies remain host-only. They are never broadened to the machine domain.
+Main Ku cookies remain host-only. They are never broadened to the machine domain.
 
 ### Browser-cookie launch path
 
 This path is used for top-level code-server and browser launches.
 
-1. An authenticated user calls the service launch endpoint from the Kuayle UI.
+1. An authenticated user calls the service launch endpoint from the Ku UI.
 2. The API checks workspace membership, Dev Machine permission, machine state, and service eligibility.
 3. The API creates a random one-time ticket. Only its SHA-256 hash is stored.
 4. The ticket is bound to user, workspace, machine, service, exact host, and a short expiry (default 60 seconds, configurable via `DEV_MACHINE_ACCESS_TICKET_TTL_SECONDS`).
 5. The browser follows the returned HTTPS URL.
 6. The gateway atomically consumes the ticket and redirects to remove it from the URL.
-7. The gateway creates a revocable machine session and sets a host-only `__Host-kuayle-machine` cookie with `Secure`, `HttpOnly`, `Path=/`, and `SameSite=Lax`. Lax permits the initial cross-site top-level launch while the separate registrable domain provides the site boundary.
+7. The gateway creates a revocable machine session and sets a host-only `__Host-ku-machine` cookie with `Secure`, `HttpOnly`, `Path=/`, and `SameSite=Lax`. Lax permits the initial cross-site top-level launch while the separate registrable domain provides the site boundary.
 8. Every proxied request rechecks session expiry, workspace membership, permitted role, machine state, service identity, and exact host.
 9. Stop or teardown revokes all tickets and sessions.
 
-Browser-cookie routes strip `Cookie`, `Authorization`, `Proxy-Authorization`, and all incoming `X-Kuayle-*` headers before forwarding. Upstream host-only application cookies are permitted, but parent-domain cookies and the reserved machine-session cookie are dropped. State-changing requests and browser-cookie service WebSocket upgrades require an exact scheme-and-host machine `Origin`; sibling machines cannot submit authenticated requests to each other.
+Browser-cookie routes strip `Cookie`, `Authorization`, `Proxy-Authorization`, and all incoming `X-Ku-*` headers before forwarding. Upstream host-only application cookies are permitted, but parent-domain cookies and the reserved machine-session cookie are dropped. State-changing requests and browser-cookie service WebSocket upgrades require an exact scheme-and-host machine `Origin`; sibling machines cannot submit authenticated requests to each other.
 
 ### Native terminal ticket path
 
-The Kuayle UI renders `@xterm/xterm` and speaks ttyd's native WebSocket protocol (`ttyd.v1`). It does not expose ttyd's web page and does not use the machine session cookie for terminal attachment.
+The Ku UI renders `@xterm/xterm` and speaks ttyd's native WebSocket protocol (`ttyd.v1`). It does not expose ttyd's web page and does not use the machine session cookie for terminal attachment.
 
 1. An authenticated user creates a terminal session with `POST /dev-machines/:machineId/terminal-sessions`, optionally bound to a checkout.
 2. The API validates machine state, checkout readiness, and configured `FRONTEND_URL`, then creates a runtime tmux session name and working directory.
@@ -218,7 +218,7 @@ Provider adapters can construct both invocation modes, but the current product d
   "summary": "Implemented authenticated machine routing",
   "changed_files": ["BE/internal/machine/gateway.go"],
   "commits": ["abc123"],
-  "branch": "kuayle/kua-50",
+  "branch": "ku/kua-50",
   "pull_request_url": "https://github.com/example/repo/pull/42",
   "tests_run": ["go test ./..."],
   "test_status": "passed",
@@ -233,7 +233,7 @@ Completed autonomous provider stdout/stderr is collected and redacted before per
 
 ### Human and Agent
 
-The user opens authenticated IDE and browser links from Kuayle and attaches native terminal tabs rendered by the main UI. Terminal tabs speak `ttyd.v1` over the dedicated terminal host and attach to tmux sessions inside the developer container. The built-in Claude Code, OpenCode, and Codex CLIs can be used directly from that terminal. Agent runs started from the machine dashboard use separate containers and run autonomously to completion under a timeout.
+The user opens authenticated IDE and browser links from Ku and attaches native terminal tabs rendered by the main UI. Terminal tabs speak `ttyd.v1` over the dedicated terminal host and attach to tmux sessions inside the developer container. The built-in Claude Code, OpenCode, and Codex CLIs can be used directly from that terminal. Agent runs started from the machine dashboard use separate containers and run autonomously to completion under a timeout.
 
 ### Agent Only
 
@@ -248,7 +248,7 @@ An autonomous run receives:
 - explicitly allowed secret names;
 - push and pull-request policy.
 
-Kuayle adds an execution contract instructing the provider to work only inside the selected workspace path, avoid credential output, run the requested tests, commit results, and use the configured working branch.
+Ku adds an execution contract instructing the provider to work only inside the selected workspace path, avoid credential output, run the requested tests, commit results, and use the configured working branch.
 
 ## Lifecycle
 
@@ -332,12 +332,12 @@ Secret flow:
 1. The API validates the target service and provider, encrypts the value, and stores only ciphertext.
 2. The manager decrypts only active secrets matching the service or agent run.
 3. Agent runs receive only names explicitly selected in `allowed_secrets`; required provider names must also resolve to active, unexpired, non-revoked stored secrets before a run is queued.
-4. The manager creates a tmpfs at `/run/kuayle-secrets` and copies files after container start, so secret values do not appear in Docker container configuration.
+4. The manager creates a tmpfs at `/run/ku-secrets` and copies files after container start, so secret values do not appear in Docker container configuration.
 5. A small entrypoint loads values only into the target child process and removes the files.
 6. Browser and egress containers receive no workspace secrets.
 7. Manager-captured provider logs are redacted with the exact injected values. IDE command telemetry redacts common key/token/secret/password patterns.
 
-Reserved `KUAYLE_*` variables and `GITHUB_TOKEN` cannot be supplied by users.
+Reserved `KU_*` variables and `GITHUB_TOKEN` cannot be supplied by users.
 
 ## Scoped Settings, Worktrees, and Environments
 
@@ -345,9 +345,9 @@ Development defaults are stored in `dev_machine_scope_settings`. A setting may p
 
 Machine creation accepts optional issue/project/repository information but does not require it. If no repository resolves, legacy repository fields remain empty and the machine starts as a generic developer workspace. When an issue is opened, `POST /dev-machines/:machineId/checkouts` resolves the issue's development settings, enforces the machine's repository affinity, and creates an idempotent issue worktree under `/workspace/tasks/{issue-key}`. A machine can hold multiple ready checkouts from the same repository; checkouts from another repository or environment require a separate machine.
 
-Development Environments are immutable local OCI images created from owner/admin-created Environment Builder machines. Environment Builders run the developer container with a writable root filesystem so tooling can be installed intentionally. Snapshot requests are accepted only while the builder is `paused` or `stopped`; the environment moves `pending -> building -> ready` or `failed`. The snapshot commits the developer container layer with Kuayle environment/workspace labels, may leave a human-readable local tag (`kuayle/dev-environment-{id}:snapshot`), and records the immutable local image ID (`sha256:...`) as both `image_ref` and `image_digest` once ready. Machine creation uses only that immutable local ID, verifies the image labels match the expected workspace/environment, and never registry-pulls a missing local snapshot ID. The repository workspace named volume, `/run/kuayle-secrets`, `/tmp`, and other tmpfs scratch mounts are not part of the image. Selected shell and code-server customization is copied into an image template before commit; files in that template whose names contain `history`, `token`, or `credential` are removed. The complete writable developer layer is still committed, so operators must scrub any other sensitive data before snapshotting.
+Development Environments are immutable local OCI images created from owner/admin-created Environment Builder machines. Environment Builders run the developer container with a writable root filesystem so tooling can be installed intentionally. Snapshot requests are accepted only while the builder is `paused` or `stopped`; the environment moves `pending -> building -> ready` or `failed`. The snapshot commits the developer container layer with Ku environment/workspace labels, may leave a human-readable local tag (`ku/dev-environment-{id}:snapshot`), and records the immutable local image ID (`sha256:...`) as both `image_ref` and `image_digest` once ready. Machine creation uses only that immutable local ID, verifies the image labels match the expected workspace/environment, and never registry-pulls a missing local snapshot ID. The repository workspace named volume, `/run/ku-secrets`, `/tmp`, and other tmpfs scratch mounts are not part of the image. Selected shell and code-server customization is copied into an image template before commit; files in that template whose names contain `history`, `token`, or `credential` are removed. The complete writable developer layer is still committed, so operators must scrub any other sensitive data before snapshotting.
 
-Environment deletion is two-phase. The API marks an environment `delete_requested`; the manager removes only the immutable local image ID after verifying the Kuayle environment/workspace labels and only then deletes the database record. Operators migrating hosts must move any required local OCI images separately from PostgreSQL and Docker volumes.
+Environment deletion is two-phase. The API marks an environment `delete_requested`; the manager removes only the immutable local image ID after verifying the Ku environment/workspace labels and only then deletes the database record. Operators migrating hosts must move any required local OCI images separately from PostgreSQL and Docker volumes.
 
 ## GitHub Integration
 
@@ -363,7 +363,7 @@ Required GitHub App repository permissions:
 
 The manager requests a token restricted to the selected linked repository and required permissions for the machine checkout or agent run. The token is short-lived, never stored in plaintext, and injected only into the developer or agent containers that need Git.
 
-The IDE uses an ephemeral askpass helper for clone. Agent containers install an ephemeral Git credential helper. Kuayle resolves the workspace or global GitHub App client again and mints a fresh token before creating a pull request after a successful run.
+The IDE uses an ephemeral askpass helper for clone. Agent containers install an ephemeral Git credential helper. Ku resolves the workspace or global GitHub App client again and mints a fresh token before creating a pull request after a successful run.
 
 Branches, commits, and pull requests are persisted in `dev_machine_git_refs` with workspace, machine, run, issue, repository, and URL linkage. Existing GitHub webhooks continue to populate the issue development timeline.
 
@@ -388,7 +388,7 @@ Activity is operational telemetry, not tamper-proof security auditing. Trusted w
 
 Structured events use a monotonic `BIGSERIAL` cursor. Completed autonomous agent stdout/stderr uses cursor-addressable `dev_machine_log_chunks`. The schema reserves a PTY stream, but native terminal and interactive-agent PTY output is not currently persisted. Issue worktrees do not install the root-checkout Git hooks. API reads are workspace-scoped. High-volume log retention should be configured and periodically pruned by operators.
 
-The UI exposes machine status, services, resource samples, cursor-paginated events and logs, checkouts, terminal sessions, agent runs, normalized results, commits, branches, PRs, and lifecycle/delete controls. Native terminal attachment is implemented in the Kuayle UI with `@xterm/xterm`; ttyd's own web page is not exposed.
+The UI exposes machine status, services, resource samples, cursor-paginated events and logs, checkouts, terminal sessions, agent runs, normalized results, commits, branches, PRs, and lifecycle/delete controls. Native terminal attachment is implemented in the Ku UI with `@xterm/xterm`; ttyd's own web page is not exposed.
 
 ## Database Schema
 
@@ -525,8 +525,8 @@ Prerequisites:
 
 - Linux Docker Engine and Compose v2;
 - Docker's data root on XFS mounted with project quotas (`pquota` or `prjquota`); rootless or user-namespace Docker is not supported because the local volume driver cannot apply project quotas there;
-- `FRONTEND_URL` set to the exact public Kuayle origin, including scheme and any non-default port, for native terminal WebSocket `Origin` validation;
-- a separate registrable domain for machine workloads (e.g. `kuayle-machines.example.net`), NOT a sibling subdomain of the main application domain;
+- `FRONTEND_URL` set to the exact public Ku origin, including scheme and any non-default port, for native terminal WebSocket `Origin` validation;
+- a separate registrable domain for machine workloads (e.g. `ku-machines.example.net`), NOT a sibling subdomain of the main application domain;
 - wildcard DNS for `*.${DEV_MACHINE_DOMAIN}`;
 - production wildcard TLS via a custom Caddy build with a DNS-01 module or an operator-provided wildcard certificate (stock Caddy cannot issue wildcard certs via HTTP-01);
 - sufficient host CPU, memory, and disk for configured concurrency;
@@ -550,7 +550,7 @@ Required configuration when enabled:
 |---|---|
 | `FRONTEND_URL` | Exact public frontend origin; the gateway requires native terminal WebSocket `Origin` to match this value exactly |
 | `DEV_MACHINES_ENABLED=true` | Enables API configuration validation and routes |
-| `DEV_MACHINE_DOMAIN` | Separate registrable machine base domain, e.g. `kuayle-machines.example.net` (`machines.localhost` only for local development) |
+| `DEV_MACHINE_DOMAIN` | Separate registrable machine base domain, e.g. `ku-machines.example.net` (`machines.localhost` only for local development) |
 | `DEV_MACHINE_ENCRYPTION_KEY` | Independent secret-encryption passphrase, at least 32 characters |
 | `DEV_MACHINE_INGEST_URL` | Public HTTPS collector ingestion base URL |
 | `DEV_MACHINE_GATEWAY_CONTAINER` | Stable gateway container name attached to private networks |
@@ -585,7 +585,7 @@ The self-hosting `dev-machine-images` profile builds the developer, browser, col
 - Pinned Chrome Stable packages for amd64 and arm64 run through KasmVNC in a separately hardened non-root container. The browser's internal sandbox is disabled because Docker namespace restrictions conflict with its setup. The browser must not receive provider or GitHub secrets.
 - Domain egress controls cannot prevent exfiltration to an explicitly allowed destination.
 - Command and filesystem collection is best-effort and can be bypassed by trusted workspace code.
-- Provider adapters can construct interactive invocations, but current product dialogs queue autonomous agent runs and no interactive-agent attach endpoint is exposed. Direct interactive use of the built-in CLIs is available through Kuayle's native xterm terminal; ttyd's web page is not exposed.
+- Provider adapters can construct interactive invocations, but current product dialogs queue autonomous agent runs and no interactive-agent attach endpoint is exposed. Direct interactive use of the built-in CLIs is available through Ku's native xterm terminal; ttyd's web page is not exposed.
 - Workspace hard quotas require Docker local-volume project-quota support; the manager intentionally fails startup rather than run machines with an unbounded workspace.
 - A dedicated machine subdomain improves cookie isolation, but a separate registrable domain is required for production deployments to prevent cookie scope ambiguity between the main application and machine workloads. Localhost development is exempt because both domains resolve to 127.0.0.1.
 

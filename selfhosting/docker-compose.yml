@@ -28,16 +28,16 @@ services:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-kuayle}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kuayle}
-      POSTGRES_DB: ${POSTGRES_DB:-kuayle}
+      POSTGRES_USER: ${POSTGRES_USER:-ku}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ku}
+      POSTGRES_DB: ${POSTGRES_DB:-ku}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
       - default
       - machine-control
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kuayle} -d ${POSTGRES_DB:-kuayle}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ku} -d ${POSTGRES_DB:-ku}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,7 +63,7 @@ services:
     volumes:
       - uploads:/app/uploads
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-kuayle}:${POSTGRES_PASSWORD:-kuayle}@postgres:5432/${POSTGRES_DB:-kuayle}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-ku}:${POSTGRES_PASSWORD:-ku}@postgres:5432/${POSTGRES_DB:-ku}?sslmode=disable
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ENVIRONMENT: ${ENVIRONMENT:-production}
@@ -87,13 +87,13 @@ services:
       DEV_MACHINE_INGEST_URL: ${DEV_MACHINE_INGEST_URL:-}
       DEV_MACHINE_SESSION_TTL_MINUTES: ${DEV_MACHINE_SESSION_TTL_MINUTES:-480}
       DEV_MACHINE_ACCESS_TICKET_TTL_SECONDS: ${DEV_MACHINE_ACCESS_TICKET_TTL_SECONDS:-60}
-      DEV_MACHINE_IDE_IMAGE: ${DEV_MACHINE_IDE_IMAGE:-kuayle/dev-machine-ide:0.1.0}
-      DEV_MACHINE_BROWSER_IMAGE: ${DEV_MACHINE_BROWSER_IMAGE:-kuayle/dev-machine-browser:0.1.0}
-      DEV_MACHINE_COLLECTOR_IMAGE: ${DEV_MACHINE_COLLECTOR_IMAGE:-kuayle/dev-machine-collector:0.1.0}
-      DEV_MACHINE_EGRESS_IMAGE: ${DEV_MACHINE_EGRESS_IMAGE:-kuayle/dev-machine-egress:0.1.0}
-      DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-kuayle/dev-machine-agent-claude:0.1.0}
-      DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-kuayle/dev-machine-agent-opencode:0.1.0}
-      DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-kuayle/dev-machine-agent-codex:0.1.0}
+      DEV_MACHINE_IDE_IMAGE: ${DEV_MACHINE_IDE_IMAGE:-ku/dev-machine-ide:0.1.0}
+      DEV_MACHINE_BROWSER_IMAGE: ${DEV_MACHINE_BROWSER_IMAGE:-ku/dev-machine-browser:0.1.0}
+      DEV_MACHINE_COLLECTOR_IMAGE: ${DEV_MACHINE_COLLECTOR_IMAGE:-ku/dev-machine-collector:0.1.0}
+      DEV_MACHINE_EGRESS_IMAGE: ${DEV_MACHINE_EGRESS_IMAGE:-ku/dev-machine-egress:0.1.0}
+      DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:0.1.0}
+      DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:0.1.0}
+      DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:0.1.0}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -126,20 +126,20 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ./gateway-role.sql:/etc/kuayle/gateway-role.sql:ro
-      - ./Caddyfile:/etc/kuayle/Caddyfile:ro
+      - ./gateway-role.sql:/etc/ku/gateway-role.sql:ro
+      - ./Caddyfile:/etc/ku/Caddyfile:ro
     networks:
       - machine-control
     environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD:-kuayle}
-      POSTGRES_USER: ${POSTGRES_USER:-kuayle}
-      POSTGRES_DB: ${POSTGRES_DB:-kuayle}
-      GATEWAY_DB_USER: ${DEV_MACHINE_GATEWAY_DB_USER:-kuayle_gateway}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-ku}
+      POSTGRES_USER: ${POSTGRES_USER:-ku}
+      POSTGRES_DB: ${POSTGRES_DB:-ku}
+      GATEWAY_DB_USER: ${DEV_MACHINE_GATEWAY_DB_USER:-ku_gateway}
       GATEWAY_DB_PASSWORD: ${DEV_MACHINE_GATEWAY_DB_PASSWORD:-}
       DEV_MACHINES_ENABLED: ${DEV_MACHINES_ENABLED:-false}
       DEV_MACHINE_DOMAIN: ${DEV_MACHINE_DOMAIN:-machines.localhost}
       ENVIRONMENT: ${ENVIRONMENT:-production}
-      CADDYFILE_PATH: /etc/kuayle/Caddyfile
+      CADDYFILE_PATH: /etc/ku/Caddyfile
     command:
       - sh
       - -ec
@@ -155,11 +155,11 @@ services:
         fi
         test -n "$$GATEWAY_DB_PASSWORD" || { echo "DEV_MACHINE_GATEWAY_DB_PASSWORD is required" >&2; exit 1; }
         exec psql --host postgres --username "$$POSTGRES_USER" --dbname "$$POSTGRES_DB" \
-          --file=/etc/kuayle/gateway-role.sql
+          --file=/etc/ku/gateway-role.sql
 
   machine-gateway:
     profiles: ["dev-machines"]
-    container_name: ${DEV_MACHINE_GATEWAY_CONTAINER:-kuayle-machine-gateway}
+    container_name: ${DEV_MACHINE_GATEWAY_CONTAINER:-ku-machine-gateway}
     build:
       context: ../BE
       dockerfile: Dockerfile.machine-gateway
@@ -179,7 +179,7 @@ services:
     networks:
       - machine-control
     environment:
-      DEV_MACHINE_GATEWAY_DATABASE_URL: ${DEV_MACHINE_GATEWAY_DATABASE_URL:-postgres://${DEV_MACHINE_GATEWAY_DB_USER:-kuayle_gateway}:${DEV_MACHINE_GATEWAY_DB_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-kuayle}?sslmode=disable}
+      DEV_MACHINE_GATEWAY_DATABASE_URL: ${DEV_MACHINE_GATEWAY_DATABASE_URL:-postgres://${DEV_MACHINE_GATEWAY_DB_USER:-ku_gateway}:${DEV_MACHINE_GATEWAY_DB_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-ku}?sslmode=disable}
       ENVIRONMENT: ${ENVIRONMENT:-production}
       FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
       SYSADMINS: ${SYSADMINS:-}
@@ -221,7 +221,7 @@ services:
       - default
       - machine-control
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-kuayle}:${POSTGRES_PASSWORD:-kuayle}@postgres:5432/${POSTGRES_DB:-kuayle}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-ku}:${POSTGRES_PASSWORD:-ku}@postgres:5432/${POSTGRES_DB:-ku}?sslmode=disable
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       ENVIRONMENT: ${ENVIRONMENT:-production}
@@ -230,7 +230,7 @@ services:
       DEV_MACHINE_DOMAIN: ${DEV_MACHINE_DOMAIN:-machines.localhost}
       DEV_MACHINE_ENCRYPTION_KEY: ${DEV_MACHINE_ENCRYPTION_KEY:-}
       DEV_MACHINE_INGEST_URL: ${DEV_MACHINE_INGEST_URL:-}
-      DEV_MACHINE_GATEWAY_CONTAINER: ${DEV_MACHINE_GATEWAY_CONTAINER:-kuayle-machine-gateway}
+      DEV_MACHINE_GATEWAY_CONTAINER: ${DEV_MACHINE_GATEWAY_CONTAINER:-ku-machine-gateway}
       DEV_MACHINE_PULL_IMAGES: ${DEV_MACHINE_PULL_IMAGES:-false}
       DEV_MACHINE_EGRESS_ALLOWLIST: ${DEV_MACHINE_EGRESS_ALLOWLIST:-}
       DEV_MACHINE_EGRESS_DENYLIST: ${DEV_MACHINE_EGRESS_DENYLIST:-}
@@ -239,13 +239,13 @@ services:
       DEV_MACHINE_SECCOMP_PROFILE: ${DEV_MACHINE_SECCOMP_PROFILE:-}
       DEV_MACHINE_APPARMOR_PROFILE: ${DEV_MACHINE_APPARMOR_PROFILE:-}
       DEV_MACHINE_DOCKER_HOST: ${DEV_MACHINE_DOCKER_HOST:-unix:///var/run/docker.sock}
-      DEV_MACHINE_IDE_IMAGE: ${DEV_MACHINE_IDE_IMAGE:-kuayle/dev-machine-ide:0.1.0}
-      DEV_MACHINE_BROWSER_IMAGE: ${DEV_MACHINE_BROWSER_IMAGE:-kuayle/dev-machine-browser:0.1.0}
-      DEV_MACHINE_COLLECTOR_IMAGE: ${DEV_MACHINE_COLLECTOR_IMAGE:-kuayle/dev-machine-collector:0.1.0}
-      DEV_MACHINE_EGRESS_IMAGE: ${DEV_MACHINE_EGRESS_IMAGE:-kuayle/dev-machine-egress:0.1.0}
-      DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-kuayle/dev-machine-agent-claude:0.1.0}
-      DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-kuayle/dev-machine-agent-opencode:0.1.0}
-      DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-kuayle/dev-machine-agent-codex:0.1.0}
+      DEV_MACHINE_IDE_IMAGE: ${DEV_MACHINE_IDE_IMAGE:-ku/dev-machine-ide:0.1.0}
+      DEV_MACHINE_BROWSER_IMAGE: ${DEV_MACHINE_BROWSER_IMAGE:-ku/dev-machine-browser:0.1.0}
+      DEV_MACHINE_COLLECTOR_IMAGE: ${DEV_MACHINE_COLLECTOR_IMAGE:-ku/dev-machine-collector:0.1.0}
+      DEV_MACHINE_EGRESS_IMAGE: ${DEV_MACHINE_EGRESS_IMAGE:-ku/dev-machine-egress:0.1.0}
+      DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:0.1.0}
+      DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:0.1.0}
+      DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:0.1.0}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-0}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
       GITHUB_APP_WEBHOOK_SECRET: ${GITHUB_APP_WEBHOOK_SECRET:-}
@@ -258,7 +258,7 @@ services:
 
   dev-machine-ide:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_IDE_IMAGE:-kuayle/dev-machine-ide:0.1.0}
+    image: ${DEV_MACHINE_IDE_IMAGE:-ku/dev-machine-ide:0.1.0}
     build:
       context: ../devmachine
       dockerfile: ide/Dockerfile
@@ -266,7 +266,7 @@ services:
 
   dev-machine-browser:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_BROWSER_IMAGE:-kuayle/dev-machine-browser:0.1.0}
+    image: ${DEV_MACHINE_BROWSER_IMAGE:-ku/dev-machine-browser:0.1.0}
     build:
       context: ../devmachine
       dockerfile: browser/Dockerfile
@@ -274,7 +274,7 @@ services:
 
   dev-machine-collector:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_COLLECTOR_IMAGE:-kuayle/dev-machine-collector:0.1.0}
+    image: ${DEV_MACHINE_COLLECTOR_IMAGE:-ku/dev-machine-collector:0.1.0}
     build:
       context: ../devmachine
       dockerfile: collector/Dockerfile
@@ -282,7 +282,7 @@ services:
 
   dev-machine-egress:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_EGRESS_IMAGE:-kuayle/dev-machine-egress:0.1.0}
+    image: ${DEV_MACHINE_EGRESS_IMAGE:-ku/dev-machine-egress:0.1.0}
     build:
       context: ../devmachine
       dockerfile: egress/Dockerfile
@@ -290,7 +290,7 @@ services:
 
   dev-machine-agent-claude:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_CLAUDE_IMAGE:-kuayle/dev-machine-agent-claude:0.1.0}
+    image: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:0.1.0}
     build:
       context: ../devmachine
       dockerfile: agent/Dockerfile
@@ -300,7 +300,7 @@ services:
 
   dev-machine-agent-opencode:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_OPENCODE_IMAGE:-kuayle/dev-machine-agent-opencode:0.1.0}
+    image: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:0.1.0}
     build:
       context: ../devmachine
       dockerfile: agent/Dockerfile
@@ -310,7 +310,7 @@ services:
 
   dev-machine-agent-codex:
     profiles: ["dev-machine-images"]
-    image: ${DEV_MACHINE_CODEX_IMAGE:-kuayle/dev-machine-agent-codex:0.1.0}
+    image: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:0.1.0}
     build:
       context: ../devmachine
       dockerfile: agent/Dockerfile

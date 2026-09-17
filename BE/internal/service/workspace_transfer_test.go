@@ -15,10 +15,10 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	"github.com/kuayle/kuayle-backend/pkg/storage"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
+	"github.com/ku/ku-backend/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -495,7 +495,7 @@ func mutateWorkspaceArchive(t *testing.T, sourcePath string, mutate func(*dto.Wo
 	require.NoError(t, err)
 	defer parsed.zip.Close()
 	mutate(&parsed.manifest, &parsed.data)
-	path := filepath.Join(t.TempDir(), "mutated.kuayle.zip")
+	path := filepath.Join(t.TempDir(), "mutated.ku.zip")
 	file, err := os.Create(path)
 	require.NoError(t, err)
 	writer := zip.NewWriter(file)

@@ -65,15 +65,15 @@ jobs:
       - uses: actions/checkout@v7.0.0
 
       - name: Build backend image
-        run: docker build -t kuayle-backend:scan ./BE
+        run: docker build -t ku-backend:scan ./BE
 
       - name: Build frontend image
-        run: docker build -t kuayle-frontend:scan ./UI
+        run: docker build -t ku-frontend:scan ./UI
 
       - name: Scan backend image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: kuayle-backend:scan
+          image-ref: ku-backend:scan
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
@@ -81,7 +81,7 @@ jobs:
       - name: Scan frontend image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: kuayle-frontend:scan
+          image-ref: ku-frontend:scan
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
@@ -153,14 +153,14 @@ jobs:
           build-args: ${{ matrix.build_args }}
           pull: true
           load: true
-          tags: kuayle-dev-machine-${{ matrix.id }}:scan
+          tags: ku-dev-machine-${{ matrix.id }}:scan
           cache-from: type=gha,scope=dev-machine-scan-${{ matrix.id }}
           cache-to: type=gha,mode=min,scope=dev-machine-scan-${{ matrix.id }}
 
       - name: Scan image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: kuayle-dev-machine-${{ matrix.id }}:scan
+          image-ref: ku-dev-machine-${{ matrix.id }}:scan
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH

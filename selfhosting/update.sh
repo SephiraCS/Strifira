@@ -38,7 +38,7 @@ handle_terminate() {
 	exit 143
 }
 
-echo "=== Kuayle - Self-host Update ==="
+echo "=== Ku - Self-host Update ==="
 
 # 1. Pull latest code
 echo "Pulling latest changes..."

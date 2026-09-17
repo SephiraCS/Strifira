@@ -18,13 +18,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: kuayle
-          POSTGRES_PASSWORD: kuayle
-          POSTGRES_DB: kuayle_test
+          POSTGRES_USER: ku
+          POSTGRES_PASSWORD: ku
+          POSTGRES_DB: ku_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U kuayle"
+          --health-cmd "pg_isready -U ku"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -49,12 +49,12 @@ jobs:
 
       - name: Apply database migrations
         env:
-          DATABASE_URL: postgres://kuayle:kuayle@localhost:5432/kuayle_test?sslmode=disable
+          DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
         run: go run ./cmd/server migrate up
 
       - name: Run tests with coverage
         env:
-          DATABASE_URL: postgres://kuayle:kuayle@localhost:5432/kuayle_test?sslmode=disable
+          DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret-that-is-at-least-32-characters-long
         run: go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
@@ -112,15 +112,15 @@ jobs:
       - name: Build integration runtime images
         working-directory: .
         run: |
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-ide --tag kuayle/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-browser --tag kuayle/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-collector --tag kuayle/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-egress --tag kuayle/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-agent-claude --build-arg PROVIDER=claude-code --tag kuayle/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
+          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-ide --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
+          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-browser --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
+          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-collector --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
+          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-egress --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
+          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-agent-claude --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
 
       - name: Run Docker lifecycle integration test
         env:
-          KUAYLE_DOCKER_INTEGRATION: '1'
+          KU_DOCKER_INTEGRATION: '1'
         run: go test ./internal/machine -run '^TestDockerRuntimeLifecycle$' -race -count=1 -v -timeout=5m
 
   frontend-check:

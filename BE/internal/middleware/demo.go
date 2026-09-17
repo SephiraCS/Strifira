@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/pkg/response"
+	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 

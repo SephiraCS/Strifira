@@ -4,8 +4,8 @@
 	import { breadcrumbsFrom } from '$lib/data/routes';
 
 	const meta = {
-		title: 'Kuayle Security and Self-Hosting Responsibilities',
-		description: 'Technical security details for Kuayle self-hosting: authentication, network exposure, credential storage, updates, and vulnerability reporting.',
+		title: 'Ku Security and Self-Hosting Responsibilities',
+		description: 'Technical security details for Ku self-hosting: authentication, network exposure, credential storage, updates, and vulnerability reporting.',
 		canonical: url('/security'),
 		modifiedAt: contentModifiedAt('/security')
 	};
@@ -15,9 +15,9 @@
 	const sections = [
 		{
 			heading: 'Shared responsibility',
-			body: 'Kuayle supplies application code and a reference Docker Compose deployment. Instance operators control the host, DNS, network rules, secrets, backups, monitoring and update schedule. Review the source and configuration against your security requirements before production use.',
+			body: 'Ku supplies application code and a reference Docker Compose deployment. Instance operators control the host, DNS, network rules, secrets, backups, monitoring and update schedule. Review the source and configuration against your security requirements before production use.',
 			list: [
-				'Kuayle: application code, migrations and reference configuration',
+				'Ku: application code, migrations and reference configuration',
 				'Operator: host hardening, firewall, DNS, secrets and access logs',
 				'Operator: database, upload and certificate backups',
 				'Operator: testing and applying updates'
@@ -25,7 +25,7 @@
 		},
 		{
 			heading: 'Authentication',
-			body: 'Kuayle hashes passwords with bcrypt. Authentication uses signed access and refresh tokens; refresh-token hashes and expiry times are stored in PostgreSQL. Set a unique JWT_SECRET of at least 32 characters before starting the backend.',
+			body: 'Ku hashes passwords with bcrypt. Authentication uses signed access and refresh tokens; refresh-token hashes and expiry times are stored in PostgreSQL. Set a unique JWT_SECRET of at least 32 characters before starting the backend.',
 			list: [
 				'Access and refresh tokens signed with JWT_SECRET',
 				'Passwords hashed with bcrypt before storage',
@@ -55,7 +55,7 @@
 		},
 		{
 			heading: 'Reporting vulnerabilities',
-			body: 'If you discover a security vulnerability in Kuayle, please report it responsibly. Do not open a public issue. Send the affected version, reproduction steps, impact, and any suggested mitigation to support@bakney.com.',
+			body: 'If you discover a security vulnerability in Ku, please report it responsibly. Do not open a public issue. Send the affected version, reproduction steps, impact, and any suggested mitigation to support@bakney.com.',
 			list: [
 				'Report to: support@bakney.com',
 				'Do not disclose publicly until a fix is available',

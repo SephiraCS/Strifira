@@ -30,17 +30,17 @@ RUN apk add --no-cache bash ca-certificates curl git make openssh-client \
     && npm --version
 
 COPY --from=go-stage /usr/local/go /usr/local/go
-ENV GOPATH=/home/kuayle/go \
-    GOCACHE=/home/kuayle/.cache/go-build \
-    GOMODCACHE=/home/kuayle/go/pkg/mod \
+ENV GOPATH=/home/ku/go \
+    GOCACHE=/home/ku/.cache/go-build \
+    GOMODCACHE=/home/ku/go/pkg/mod \
     PATH="/usr/local/go/bin:${PATH}"
 
-COPY common/kuayle-agent-runner /usr/local/bin/kuayle-agent-runner
-RUN chmod 0755 /usr/local/bin/kuayle-agent-runner \
-    && mkdir -p /home/kuayle /home/kuayle/go /home/kuayle/.cache/go-build \
-    && chown -R 1000:1000 /home/kuayle
+COPY common/ku-agent-runner /usr/local/bin/ku-agent-runner
+RUN chmod 0755 /usr/local/bin/ku-agent-runner \
+    && mkdir -p /home/ku /home/ku/go /home/ku/.cache/go-build \
+    && chown -R 1000:1000 /home/ku
 
 USER 1000:1000
-ENV HOME=/home/kuayle
+ENV HOME=/home/ku
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/kuayle-agent-runner"]
+ENTRYPOINT ["/usr/local/bin/ku-agent-runner"]

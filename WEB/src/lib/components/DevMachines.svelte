@@ -27,7 +27,7 @@
 		{ text: 'agent container started · opencode', type: 'ok' },
 		{ text: 'editing BE/internal/handler/issue.go', type: 'run' },
 		{ text: 'go test ./... — passed', type: 'run' },
-		{ text: 'pushed kuayle/eng-123 → PR #42 opened', type: 'ok' }
+		{ text: 'pushed ku/eng-123 → PR #42 opened', type: 'ok' }
 	];
 </script>
 
@@ -139,7 +139,7 @@
 					<!-- Routing footer -->
 					<div class="border-t border-white/5 px-5 py-3">
 						<p class="truncate font-mono text-[10px] text-muted-foreground">
-							<span class="text-brand-300/80">0123456789abcdef0123</span>.kuayle-machines.example.net — routed via
+							<span class="text-brand-300/80">0123456789abcdef0123</span>.ku-machines.example.net — routed via
 							Machine Gateway
 						</p>
 					</div>

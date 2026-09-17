@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/kuayle/kuayle-backend/pkg/response"
+	"github.com/ku/ku-backend/pkg/response"
 	log "github.com/sirupsen/logrus"
 	"github.com/labstack/echo/v4"
 )

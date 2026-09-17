@@ -10,14 +10,14 @@ import contentModifiedDates from '$lib/data/content-modified.json';
 export const ORIGIN = 'https://kuayle.com';
 
 export const SITE = {
-	name: 'Kuayle',
-	shortName: 'Kuayle',
+	name: 'Ku',
+	shortName: 'Ku',
 	description:
-		'Kuayle is the keyboard-driven, self-hosted issue tracker with no paid tier. One public Apache 2.0 repository, with nothing behind a license key.',
+		'Ku is the keyboard-driven, self-hosted issue tracker with no paid tier. One public Apache 2.0 repository, with nothing behind a license key.',
 	tagline: 'The issue tracker with no paid tier',
 	origin: ORIGIN,
 	defaultImage: `${ORIGIN}/social-card.png`,
-	defaultImageAlt: 'Kuayle issue tracker board interface',
+	defaultImageAlt: 'Ku issue tracker board interface',
 	ogImageWidth: 1200,
 	ogImageHeight: 630,
 	locale: 'en_US',

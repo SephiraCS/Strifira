@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/domain"
 )
 
 var ErrLocalEnvironmentMissing = errors.New("local development environment image is missing")
@@ -69,16 +69,16 @@ func validateEnvironmentImageLabels(labels map[string]string, workspaceID, envir
 	if labels == nil {
 		return fmt.Errorf("missing image labels")
 	}
-	if labels["com.kuayle.managed"] != "true" {
-		return fmt.Errorf("missing Kuayle management label")
+	if labels["com.ku.managed"] != "true" {
+		return fmt.Errorf("missing Ku management label")
 	}
-	if labels["com.kuayle.kind"] != "dev-machine-environment" {
-		return fmt.Errorf("not a Kuayle development environment image")
+	if labels["com.ku.kind"] != "dev-machine-environment" {
+		return fmt.Errorf("not a Ku development environment image")
 	}
-	if labels["com.kuayle.environment-id"] != environmentID.String() {
+	if labels["com.ku.environment-id"] != environmentID.String() {
 		return fmt.Errorf("environment label mismatch")
 	}
-	if labels["com.kuayle.workspace-id"] != workspaceID.String() {
+	if labels["com.ku.workspace-id"] != workspaceID.String() {
 		return fmt.Errorf("workspace label mismatch")
 	}
 	return nil

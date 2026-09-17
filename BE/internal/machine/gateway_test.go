@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -226,12 +226,12 @@ func TestGatewayCapsConcurrentRouteQueries(t *testing.T) {
 	requests.Wait()
 }
 
-func TestGatewayStripsKuayleCredentialsBeforeProxy(t *testing.T) {
+func TestGatewayStripsKuCredentialsBeforeProxy(t *testing.T) {
 	var authorization, cookie, internalHeader string
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		authorization = request.Header.Get("Authorization")
 		cookie = request.Header.Get("Cookie")
-		internalHeader = request.Header.Get("X-Kuayle-Internal")
+		internalHeader = request.Header.Get("X-Ku-Internal")
 		writer.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
@@ -254,7 +254,7 @@ func TestGatewayStripsKuayleCredentialsBeforeProxy(t *testing.T) {
 	request.Host = machineHost
 	request.AddCookie(&http.Cookie{Name: machineSessionCookie, Value: strings.Repeat("a", 64)})
 	request.Header.Set("Authorization", "Bearer user-token")
-	request.Header.Set("X-Kuayle-Internal", "secret")
+	request.Header.Set("X-Ku-Internal", "secret")
 	recorder := httptest.NewRecorder()
 	gateway.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusNoContent, recorder.Code)

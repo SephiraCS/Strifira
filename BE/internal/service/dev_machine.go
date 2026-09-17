@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/agent"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	cryptoutil "github.com/kuayle/kuayle-backend/pkg/crypto"
+	"github.com/ku/ku-backend/internal/agent"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
+	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
 )
 
 var (
@@ -232,7 +232,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 			}
 		}
 	}
-	volumeName := "kuayle-workspace-" + routingKey
+	volumeName := "ku-workspace-" + routingKey
 	volumes := []domain.DevMachineVolume{{
 		ID: uuid.New(), MachineID: machineID, VolumeType: "workspace", RuntimeName: volumeName,
 		MountPath: "/workspace", SizeLimitBytes: int64(diskGB) * 1024 * 1024 * 1024,
@@ -250,7 +250,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		return nil, nil, err
 	}
 	envVars = append(envVars, domain.DevMachineEnvVar{
-		ID: uuid.New(), MachineID: machineID, TargetService: "collector", Name: "KUAYLE_MACHINE_TOKEN",
+		ID: uuid.New(), MachineID: machineID, TargetService: "collector", Name: "KU_MACHINE_TOKEN",
 		EncryptedValue: encryptedCollectorToken, EncryptionKeyVersion: 1, IsSecret: true, ExpiresAt: &machine.ExpiresAt,
 	})
 	if req.Services.Browser {
@@ -264,7 +264,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		}
 		for _, targetService := range []string{"browser", "collector"} {
 			envVars = append(envVars, domain.DevMachineEnvVar{
-				ID: uuid.New(), MachineID: machineID, TargetService: targetService, Name: "KUAYLE_BROWSER_CDP_TOKEN",
+				ID: uuid.New(), MachineID: machineID, TargetService: targetService, Name: "KU_BROWSER_CDP_TOKEN",
 				EncryptedValue: encryptedBrowserCDPToken, EncryptionKeyVersion: 1, IsSecret: true, ExpiresAt: &machine.ExpiresAt,
 			})
 		}
@@ -389,9 +389,9 @@ func splitRepositoryFullName(fullName string) (string, string) {
 
 func defaultWorkingBranch(machineName string, issue *domain.Issue) string {
 	if issue != nil && issue.Identifier != "" {
-		return "kuayle/" + strings.ToLower(issue.Identifier)
+		return "ku/" + strings.ToLower(issue.Identifier)
 	}
-	return "kuayle/" + machineName
+	return "ku/" + machineName
 }
 
 func (s *DevMachineService) buildProviders(machineID uuid.UUID, policy *domain.DevMachineWorkspacePolicy, requested []dto.DevMachineAgentInput) ([]domain.DevMachineAgentProvider, error) {
@@ -438,7 +438,7 @@ func (s *DevMachineService) buildProviders(machineID uuid.UUID, policy *domain.D
 }
 
 func (s *DevMachineService) buildServices(machine *domain.DevMachine) []domain.DevMachineService {
-	base := "kuayle-" + machine.RoutingKey + "-"
+	base := "ku-" + machine.RoutingKey + "-"
 	services := []domain.DevMachineService{
 		newService(machine.WorkspaceID, machine.ID, "collector", "collector", base+"collector", s.images.Collector, machine.RoutingKey+"-collector", 8091),
 		newService(machine.WorkspaceID, machine.ID, "egress", "egress", base+"egress", s.images.Egress, machine.RoutingKey+"-egress", 3128),
@@ -466,7 +466,7 @@ func newService(workspaceID, machineID uuid.UUID, serviceType, key, name, image,
 func (s *DevMachineService) buildEnvVars(machineID uuid.UUID, inputs []dto.DevMachineEnvVarInput) ([]domain.DevMachineEnvVar, error) {
 	envVars := make([]domain.DevMachineEnvVar, 0, len(inputs))
 	for _, input := range inputs {
-		if input.Name == "GITHUB_TOKEN" || strings.HasPrefix(input.Name, "KUAYLE_") {
+		if input.Name == "GITHUB_TOKEN" || strings.HasPrefix(input.Name, "KU_") {
 			return nil, fmt.Errorf("%w: environment variable %s is reserved", ErrInvalidMachineInput, input.Name)
 		}
 		if !validEnvName(input.Name) {
@@ -898,7 +898,7 @@ func (s *DevMachineService) CheckoutIssue(ctx context.Context, workspaceID, mach
 	checkout := &domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID,
 		GitHubRepoID: linkedRepository.ID, RepositoryFullName: linkedRepository.FullName, BaseBranch: baseBranch,
-		WorkingBranch: "kuayle/" + identifier, WorkspacePath: "/workspace/tasks/" + identifier, Status: "queued",
+		WorkingBranch: "ku/" + identifier, WorkspacePath: "/workspace/tasks/" + identifier, Status: "queued",
 	}
 	operation := &domain.DevMachineOperation{
 		ID: uuid.New(), MachineID: machineID, CheckoutID: &checkout.ID, WorkspaceID: workspaceID,
@@ -970,7 +970,7 @@ func (s *DevMachineService) SnapshotEnvironment(ctx context.Context, workspaceID
 	environmentID := uuid.New()
 	environment := &domain.DevMachineEnvironment{
 		ID: environmentID, WorkspaceID: workspaceID, Name: strings.TrimSpace(request.Name),
-		ImageRef: "kuayle/dev-environment-" + environmentID.String() + ":snapshot", Status: "pending",
+		ImageRef: "ku/dev-environment-" + environmentID.String() + ":snapshot", Status: "pending",
 		SourceMachineID: &machineID, CreatedByUserID: &userID,
 	}
 	if environment.Name == "" || strings.ContainsAny(environment.Name, "\x00\r\n") {
@@ -1249,8 +1249,8 @@ func (s *DevMachineService) CreateAgentRun(ctx context.Context, workspaceID, mac
 		if !validEnvName(name) {
 			return nil, fmt.Errorf("%w: invalid secret name %q", ErrInvalidMachineInput, name)
 		}
-		if name == "GITHUB_TOKEN" || strings.HasPrefix(name, "KUAYLE_") {
-			return nil, fmt.Errorf("%w: secret %s is managed by Kuayle and cannot be selected", ErrInvalidMachineInput, name)
+		if name == "GITHUB_TOKEN" || strings.HasPrefix(name, "KU_") {
+			return nil, fmt.Errorf("%w: secret %s is managed by Ku and cannot be selected", ErrInvalidMachineInput, name)
 		}
 		allowedSecretSet[name] = true
 	}
@@ -1980,7 +1980,7 @@ func randomHex(bytes int) (string, error) {
 func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineCheckout, request dto.CreateAgentRunRequest) string {
 	var builder strings.Builder
 	builder.WriteString(request.Prompt)
-	builder.WriteString("\n\nKuayle execution contract:\n")
+	builder.WriteString("\n\nKu execution contract:\n")
 	workspacePath := "/workspace"
 	repository, baseBranch, workingBranch := machine.RepoOwner+"/"+machine.RepoName, machine.BaseBranch, machine.WorkingBranch
 	if checkout != nil {

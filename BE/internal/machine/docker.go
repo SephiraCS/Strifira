@@ -15,7 +15,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -24,24 +24,24 @@ import (
 	"github.com/moby/moby/client"
 )
 
-const egressNetworkName = "kuayle-machine-egress"
+const egressNetworkName = "ku-machine-egress"
 
-const workspaceQuotaLabel = "com.kuayle.workspace-quota-bytes"
+const workspaceQuotaLabel = "com.ku.workspace-quota-bytes"
 
 const maxCapturedLogBytes = 4 * 1024 * 1024
 
 const customAgentBootstrap = `set -eu
 attempt=0
-while [ ! -f /run/kuayle-secrets/.ready ]; do
+while [ ! -f /run/ku-secrets/.ready ]; do
   attempt=$((attempt + 1))
   [ "$attempt" -lt 300 ] || exit 1
   sleep 0.1
 done
 old_ifs=$IFS
 IFS=,
-for secret_name in ${KUAYLE_SECRET_NAMES:-}; do
+for secret_name in ${KU_SECRET_NAMES:-}; do
   case "$secret_name" in ''|*[!A-Za-z0-9_]*) exit 1 ;; esac
-  secret_file="/run/kuayle-secrets/$secret_name"
+  secret_file="/run/ku-secrets/$secret_name"
   if [ -f "$secret_file" ]; then
     secret_value=$(cat "$secret_file"; printf x)
     secret_value=${secret_value%x}
@@ -50,9 +50,9 @@ for secret_name in ${KUAYLE_SECRET_NAMES:-}; do
   fi
 done
 IFS=$old_ifs
-rm -f /run/kuayle-secrets/.ready
-home_dir=${HOME:-/home/kuayle}
-credential_helper=${KUAYLE_GIT_CREDENTIAL_HELPER:-$home_dir/.kuayle-git-credential}
+rm -f /run/ku-secrets/.ready
+home_dir=${HOME:-/home/ku}
+credential_helper=${KU_GIT_CREDENTIAL_HELPER:-$home_dir/.ku-git-credential}
 case "$credential_helper" in /*) ;; *) exit 1 ;; esac
 helper_dir=${credential_helper%/*}
 [ "$helper_dir" != "$credential_helper" ] || helper_dir=.
@@ -123,11 +123,11 @@ func (r *DockerRuntime) Ping(ctx context.Context) error {
 }
 
 func (r *DockerRuntime) Inspect(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService) (RuntimeInspection, error) {
-	networkName := "kuayle-machine-" + machine.RoutingKey
+	networkName := "ku-machine-" + machine.RoutingKey
 	if machine.DockerNetworkName != nil && *machine.DockerNetworkName != "" {
 		networkName = *machine.DockerNetworkName
 	}
-	volumeName := "kuayle-workspace-" + machine.RoutingKey
+	volumeName := "ku-workspace-" + machine.RoutingKey
 	if machine.WorkspaceVolumeName != nil && *machine.WorkspaceVolumeName != "" {
 		volumeName = *machine.WorkspaceVolumeName
 	}
@@ -179,8 +179,8 @@ func (r *DockerRuntime) Inspect(ctx context.Context, machine *domain.DevMachine,
 }
 
 func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService, secrets map[string]map[string]string) (string, string, map[string]string, error) {
-	networkName := "kuayle-machine-" + machine.RoutingKey
-	volumeName := "kuayle-workspace-" + machine.RoutingKey
+	networkName := "ku-machine-" + machine.RoutingKey
+	volumeName := "ku-workspace-" + machine.RoutingKey
 	labels := machineLabels(machine)
 	containers := make(map[string]string, len(services))
 	createdContainers := make(map[string]string, len(services))
@@ -213,7 +213,7 @@ func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, s
 	if networkCreated, err = r.ensureNetwork(ctx, networkName, true, labels); err != nil {
 		return "", "", nil, fmt.Errorf("create private network: %w", err)
 	}
-	if _, err := r.ensureNetwork(ctx, egressNetworkName, false, map[string]string{"com.kuayle.kind": "machine-egress"}); err != nil {
+	if _, err := r.ensureNetwork(ctx, egressNetworkName, false, map[string]string{"com.ku.kind": "machine-egress"}); err != nil {
 		return "", "", nil, fmt.Errorf("create egress network: %w", err)
 	}
 	if volumeCreated, err = r.ensureVolume(ctx, volumeName, labels, machine.DiskGB); err != nil {
@@ -232,7 +232,7 @@ func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, s
 	if r.config.GatewayContainerName == "" {
 		return "", "", nil, fmt.Errorf("gateway container name is required")
 	}
-	if connected, err := r.connectNetwork(ctx, networkName, r.config.GatewayContainerName, &network.EndpointSettings{Aliases: []string{"kuayle-gateway"}}); err != nil {
+	if connected, err := r.connectNetwork(ctx, networkName, r.config.GatewayContainerName, &network.EndpointSettings{Aliases: []string{"ku-gateway"}}); err != nil {
 		return "", "", nil, fmt.Errorf("attach gateway to machine network: %w", err)
 	} else if connected {
 		createdMachineNetworkConnections["gateway"] = r.config.GatewayContainerName
@@ -302,10 +302,10 @@ func (r *DockerRuntime) prepareWorkspaceVolume(ctx context.Context, machine *dom
 	if err := r.ensureImage(ctx, imageRef); err != nil {
 		return err
 	}
-	containerName := "kuayle-" + machine.RoutingKey + "-volume-init"
+	containerName := "ku-" + machine.RoutingKey + "-volume-init"
 	if inspection, err := r.client.ContainerInspect(ctx, containerName, client.ContainerInspectOptions{}); err == nil {
-		if inspection.Container.Config.Labels["com.kuayle.machine-id"] != machine.ID.String() {
-			return fmt.Errorf("existing volume initializer is not managed by Kuayle")
+		if inspection.Container.Config.Labels["com.ku.machine-id"] != machine.ID.String() {
+			return fmt.Errorf("existing volume initializer is not managed by Ku")
 		}
 		if _, err := r.client.ContainerRemove(ctx, inspection.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 			return err
@@ -314,7 +314,7 @@ func (r *DockerRuntime) prepareWorkspaceVolume(ctx context.Context, machine *dom
 		return err
 	}
 	labels := machineLabels(machine)
-	labels["com.kuayle.service"] = "volume-init"
+	labels["com.ku.service"] = "volume-init"
 	pidsLimit := int64(16)
 	response, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
@@ -520,20 +520,20 @@ func (r *DockerRuntime) Teardown(ctx context.Context, machine *domain.DevMachine
 	}
 	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
-		Filters: make(client.Filters).Add("label", "com.kuayle.machine-id="+machine.ID.String()),
+		Filters: make(client.Filters).Add("label", "com.ku.machine-id="+machine.ID.String()),
 	})
 	if err != nil {
 		return err
 	}
 	for _, item := range containers.Items {
-		if item.Labels["com.kuayle.managed"] != "true" || item.Labels["com.kuayle.machine-id"] != machine.ID.String() {
+		if item.Labels["com.ku.managed"] != "true" || item.Labels["com.ku.machine-id"] != machine.ID.String() {
 			return fmt.Errorf("container %s is not owned by machine", item.ID)
 		}
 		if _, err := r.client.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !errdefs.IsNotFound(err) {
 			return err
 		}
 	}
-	networkName := "kuayle-machine-" + machine.RoutingKey
+	networkName := "ku-machine-" + machine.RoutingKey
 	if machine.DockerNetworkName != nil && *machine.DockerNetworkName != "" {
 		networkName = *machine.DockerNetworkName
 	}
@@ -541,7 +541,7 @@ func (r *DockerRuntime) Teardown(ctx context.Context, machine *domain.DevMachine
 	if err := r.removeManagedNetwork(ctx, networkName, machine.ID); err != nil {
 		return err
 	}
-	volumeName := "kuayle-workspace-" + machine.RoutingKey
+	volumeName := "ku-workspace-" + machine.RoutingKey
 	if machine.WorkspaceVolumeName != nil && *machine.WorkspaceVolumeName != "" {
 		volumeName = *machine.WorkspaceVolumeName
 	}
@@ -617,26 +617,26 @@ func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine
 	if err = json.Unmarshal(run.CommandArgv, &argv); err != nil || len(argv) == 0 {
 		return nil, fmt.Errorf("invalid agent argv")
 	}
-	containerName := "kuayle-" + machine.RoutingKey + "-agent-" + run.ID.String()
+	containerName := "ku-" + machine.RoutingKey + "-agent-" + run.ID.String()
 	labels := machineLabels(machine)
-	labels["com.kuayle.service"] = "agent"
-	labels["com.kuayle.agent-run-id"] = run.ID.String()
+	labels["com.ku.service"] = "agent"
+	labels["com.ku.agent-run-id"] = run.ID.String()
 	secretNames := make([]string, 0, len(secrets))
 	for name := range secrets {
 		secretNames = append(secretNames, name)
 	}
 	hostConfig := r.secureHostConfig(machine, "agent", *machine.DockerNetworkName, *machine.WorkspaceVolumeName)
-	entrypoint := []string{"/usr/local/bin/kuayle-agent-runner"}
+	entrypoint := []string{"/usr/local/bin/ku-agent-runner"}
 	if provider.IsCustom {
-		entrypoint = []string{"/bin/sh", "-c", customAgentBootstrap, "kuayle-agent"}
+		entrypoint = []string{"/bin/sh", "-c", customAgentBootstrap, "ku-agent"}
 	}
 	runtimeEnvironment := []string{
-		"HOME=/home/kuayle", "HTTP_PROXY=http://" + machine.RoutingKey + "-egress:3128",
+		"HOME=/home/ku", "HTTP_PROXY=http://" + machine.RoutingKey + "-egress:3128",
 		"HTTPS_PROXY=http://" + machine.RoutingKey + "-egress:3128", "NO_PROXY=localhost,127.0.0.1," + machine.RoutingKey + "-collector",
-		"KUAYLE_COLLECTOR_URL=http://" + machine.RoutingKey + "-collector:8091", "KUAYLE_SECRET_NAMES=" + strings.Join(secretNames, ","),
+		"KU_COLLECTOR_URL=http://" + machine.RoutingKey + "-collector:8091", "KU_SECRET_NAMES=" + strings.Join(secretNames, ","),
 	}
 	if inspection, inspectErr := r.client.ContainerInspect(ctx, containerName, client.ContainerInspectOptions{}); inspectErr == nil {
-		if inspection.Container.Config.Image != provider.ImageRef || inspection.Container.Config.Labels["com.kuayle.agent-run-id"] != run.ID.String() {
+		if inspection.Container.Config.Image != provider.ImageRef || inspection.Container.Config.Labels["com.ku.agent-run-id"] != run.ID.String() {
 			return nil, fmt.Errorf("existing agent container does not match run")
 		}
 		return r.resumeAgent(ctx, inspection.Container, run.Mode == "interactive", secrets)
@@ -733,11 +733,11 @@ func (r *DockerRuntime) CancelAgent(ctx context.Context, run *domain.DevMachineA
 		return err
 	}
 	for _, item := range containers.Items {
-		if item.Labels["com.kuayle.agent-run-id"] != run.ID.String() {
+		if item.Labels["com.ku.agent-run-id"] != run.ID.String() {
 			continue
 		}
-		if item.Labels["com.kuayle.managed"] != "true" {
-			return fmt.Errorf("agent container %s is not managed by Kuayle", item.ID)
+		if item.Labels["com.ku.managed"] != "true" {
+			return fmt.Errorf("agent container %s is not managed by Ku", item.ID)
 		}
 		_, err := r.client.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		return err
@@ -826,7 +826,7 @@ func (r *DockerRuntime) PrepareCheckout(ctx context.Context, _ *domain.DevMachin
 		return fmt.Errorf("repository credential is unavailable")
 	}
 	if err := r.execWithInput(ctx, developerContainer, []string{
-		"/usr/local/bin/kuayle-checkout", checkout.RepositoryFullName, checkout.BaseBranch,
+		"/usr/local/bin/ku-checkout", checkout.RepositoryFullName, checkout.BaseBranch,
 		checkout.WorkingBranch, checkout.WorkspacePath,
 	}, token+"\n"); err != nil {
 		return err
@@ -862,7 +862,7 @@ func (r *DockerRuntime) TerminateTerminal(ctx context.Context, machine *domain.D
 			}
 		}()
 	}
-	if _, err := r.execOutput(ctx, developerContainer, []string{"/usr/local/bin/kuayle-terminal-session", "--close", session.RuntimeSessionName}); err != nil {
+	if _, err := r.execOutput(ctx, developerContainer, []string{"/usr/local/bin/ku-terminal-session", "--close", session.RuntimeSessionName}); err != nil {
 		return fmt.Errorf("close tmux session: %w", err)
 	}
 	return nil
@@ -897,29 +897,29 @@ func (r *DockerRuntime) SnapshotEnvironment(ctx context.Context, machine *domain
 	}
 	defer restoreState()
 	_, err = r.execOutputAs(ctx, developerContainer, []string{"/bin/sh", "-c", `set -eu
-rm -rf /opt/kuayle-home-template
-mkdir -p /opt/kuayle-home-template/.config /opt/kuayle-home-template/.local/share/code-server
-for file in .bashrc .profile; do [ ! -f "/home/kuayle/$file" ] || cp -a "/home/kuayle/$file" "/opt/kuayle-home-template/$file"; done
-[ ! -d /home/kuayle/.config/code-server ] || cp -a /home/kuayle/.config/code-server /opt/kuayle-home-template/.config/
-[ ! -d /home/kuayle/.local/share/code-server/extensions ] || cp -a /home/kuayle/.local/share/code-server/extensions /opt/kuayle-home-template/.local/share/code-server/
-find /opt/kuayle-home-template -type f \( -name '*history*' -o -name '*token*' -o -name '*credential*' \) -delete
-chown -R 1000:1000 /opt/kuayle-home-template`}, "0:0")
+rm -rf /opt/ku-home-template
+mkdir -p /opt/ku-home-template/.config /opt/ku-home-template/.local/share/code-server
+for file in .bashrc .profile; do [ ! -f "/home/ku/$file" ] || cp -a "/home/ku/$file" "/opt/ku-home-template/$file"; done
+[ ! -d /home/ku/.config/code-server ] || cp -a /home/ku/.config/code-server /opt/ku-home-template/.config/
+[ ! -d /home/ku/.local/share/code-server/extensions ] || cp -a /home/ku/.local/share/code-server/extensions /opt/ku-home-template/.local/share/code-server/
+find /opt/ku-home-template -type f \( -name '*history*' -o -name '*token*' -o -name '*credential*' \) -delete
+chown -R 1000:1000 /opt/ku-home-template`}, "0:0")
 	if err != nil {
 		return "", fmt.Errorf("prepare environment home template: %w", err)
 	}
 	restoreState()
 	response, err := r.client.ContainerCommit(ctx, developerContainer, client.ContainerCommitOptions{
-		Reference: environment.ImageRef, Comment: "Kuayle Development Environment " + environment.Name,
-		Author: "Kuayle", NoPause: true,
+		Reference: environment.ImageRef, Comment: "Ku Development Environment " + environment.Name,
+		Author: "Ku", NoPause: true,
 		Changes: []string{
-			"LABEL com.kuayle.managed=true",
-			"LABEL com.kuayle.kind=dev-machine-environment",
-			"LABEL com.kuayle.environment-id=" + environment.ID.String(),
-			"LABEL com.kuayle.workspace-id=" + environment.WorkspaceID.String(),
-			"LABEL com.kuayle.source-machine-id=" + machine.ID.String(),
-			"LABEL com.kuayle.machine-id=",
-			"LABEL com.kuayle.routing-key=",
-			"LABEL com.kuayle.service=",
+			"LABEL com.ku.managed=true",
+			"LABEL com.ku.kind=dev-machine-environment",
+			"LABEL com.ku.environment-id=" + environment.ID.String(),
+			"LABEL com.ku.workspace-id=" + environment.WorkspaceID.String(),
+			"LABEL com.ku.source-machine-id=" + machine.ID.String(),
+			"LABEL com.ku.machine-id=",
+			"LABEL com.ku.routing-key=",
+			"LABEL com.ku.service=",
 		},
 	})
 	if err != nil {
@@ -945,7 +945,7 @@ func (r *DockerRuntime) DeleteEnvironmentImage(ctx context.Context, environment 
 		labels = inspection.Config.Labels
 	}
 	if err := validateEnvironmentImageLabels(labels, environment.WorkspaceID, environment.ID); err != nil {
-		return fmt.Errorf("environment image %s is not owned by Kuayle: %w", reference, err)
+		return fmt.Errorf("environment image %s is not owned by Ku: %w", reference, err)
 	}
 	_, err = r.client.ImageRemove(ctx, reference, client.ImageRemoveOptions{Force: true, PruneChildren: true})
 	if errdefs.IsNotFound(err) {
@@ -979,7 +979,7 @@ func uniqueContainerIDs(services []domain.DevMachineService) []string {
 func (r *DockerRuntime) ensureService(ctx context.Context, machine *domain.DevMachine, service domain.DevMachineService, networkName, volumeName string, secrets map[string]string) (containerID string, containerCreated bool, networkAttached bool, err error) {
 	inspection, err := r.client.ContainerInspect(ctx, service.ContainerName, client.ContainerInspectOptions{})
 	if err == nil {
-		if inspection.Container.Config.Image != service.ImageRef || inspection.Container.Config.Labels["com.kuayle.machine-id"] != machine.ID.String() || inspection.Container.Config.Labels["com.kuayle.service"] != service.ServiceType {
+		if inspection.Container.Config.Image != service.ImageRef || inspection.Container.Config.Labels["com.ku.machine-id"] != machine.ID.String() || inspection.Container.Config.Labels["com.ku.service"] != service.ServiceType {
 			return "", false, false, fmt.Errorf("existing container does not match service")
 		}
 		containerID = inspection.Container.ID
@@ -1015,38 +1015,38 @@ func (r *DockerRuntime) ensureService(ctx context.Context, machine *domain.DevMa
 		return "", false, false, fmt.Errorf("image %s has no default command", service.ImageRef)
 	}
 	labels := machineLabels(machine)
-	labels["com.kuayle.service"] = service.ServiceType
-	environment := []string{"KUAYLE_MACHINE_ID=" + machine.ID.String()}
+	labels["com.ku.service"] = service.ServiceType
+	environment := []string{"KU_MACHINE_ID=" + machine.ID.String()}
 	secretNames := make([]string, 0, len(secrets))
 	for name := range secrets {
 		secretNames = append(secretNames, name)
 	}
-	environment = append(environment, "KUAYLE_SECRET_NAMES="+strings.Join(secretNames, ","))
+	environment = append(environment, "KU_SECRET_NAMES="+strings.Join(secretNames, ","))
 	if service.ServiceType != "egress" {
 		environment = append(environment, "HTTP_PROXY=http://"+machine.RoutingKey+"-egress:3128", "HTTPS_PROXY=http://"+machine.RoutingKey+"-egress:3128", "NO_PROXY=localhost,127.0.0.1,"+machine.RoutingKey+"-collector,"+machine.RoutingKey+"-ide,"+machine.RoutingKey+"-browser")
-		environment = append(environment, "KUAYLE_COLLECTOR_URL=http://"+machine.RoutingKey+"-collector:8091")
+		environment = append(environment, "KU_COLLECTOR_URL=http://"+machine.RoutingKey+"-collector:8091")
 	}
 	if service.ServiceType == "ide" {
-		environment = append(environment, "KUAYLE_REPO_URL="+machine.RepoURL, "KUAYLE_BASE_BRANCH="+machine.BaseBranch, "KUAYLE_WORKING_BRANCH="+machine.WorkingBranch)
-		environment = append(environment, "SHELL=/usr/local/bin/kuayle-shell")
+		environment = append(environment, "KU_REPO_URL="+machine.RepoURL, "KU_BASE_BRANCH="+machine.BaseBranch, "KU_WORKING_BRANCH="+machine.WorkingBranch)
+		environment = append(environment, "SHELL=/usr/local/bin/ku-shell")
 	}
 	if service.ServiceType == "collector" {
-		environment = append(environment, "KUAYLE_INGEST_URL="+r.config.IngestURL)
-		if _, browserEnabled := secrets["KUAYLE_BROWSER_CDP_TOKEN"]; browserEnabled {
-			environment = append(environment, "KUAYLE_BROWSER_CDP_URL=http://"+machine.RoutingKey+"-browser:9222")
+		environment = append(environment, "KU_INGEST_URL="+r.config.IngestURL)
+		if _, browserEnabled := secrets["KU_BROWSER_CDP_TOKEN"]; browserEnabled {
+			environment = append(environment, "KU_BROWSER_CDP_URL=http://"+machine.RoutingKey+"-browser:9222")
 		}
 	}
 	if service.ServiceType == "egress" {
-		environment = append(environment, "KUAYLE_EGRESS_ALLOWLIST="+r.config.EgressAllowlist, "KUAYLE_EGRESS_DENYLIST="+r.config.EgressDenylist)
+		environment = append(environment, "KU_EGRESS_ALLOWLIST="+r.config.EgressAllowlist, "KU_EGRESS_DENYLIST="+r.config.EgressDenylist)
 	}
 	containerConfig := &container.Config{
 		Image: service.ImageRef, User: "1000:1000", WorkingDir: "/workspace", Env: append(imageEnvironment, environment...), Labels: labels,
-		Entrypoint: []string{"/usr/local/bin/kuayle-service-entrypoint"}, Cmd: command,
+		Entrypoint: []string{"/usr/local/bin/ku-service-entrypoint"}, Cmd: command,
 	}
 	if service.ServiceType == "ide" {
-		containerConfig.Healthcheck = &container.HealthConfig{Test: []string{"CMD", "test", "-f", "/workspace/.kuayle-ready"}, Interval: time.Second, Timeout: time.Second, Retries: 300}
+		containerConfig.Healthcheck = &container.HealthConfig{Test: []string{"CMD", "test", "-f", "/workspace/.ku-ready"}, Interval: time.Second, Timeout: time.Second, Retries: 300}
 	} else if service.ServiceType == "browser" {
-		containerConfig.Healthcheck = &container.HealthConfig{Test: []string{"CMD", "/usr/local/bin/kuayle-browser-healthcheck"}, Interval: 10 * time.Second, Timeout: 2 * time.Second, StartPeriod: 10 * time.Second, Retries: 6}
+		containerConfig.Healthcheck = &container.HealthConfig{Test: []string{"CMD", "/usr/local/bin/ku-browser-healthcheck"}, Interval: 10 * time.Second, Timeout: 2 * time.Second, StartPeriod: 10 * time.Second, Retries: 6}
 	}
 	response, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:           containerConfig,
@@ -1122,8 +1122,8 @@ func (r *DockerRuntime) secureHostConfig(machine *domain.DevMachine, serviceType
 		LogConfig: boundedLogConfig(),
 		Tmpfs: map[string]string{
 			"/tmp":                tmpOptions,
-			"/run/kuayle-secrets": "rw,noexec,nosuid,uid=1000,gid=1000,mode=0700,size=8m",
-			"/home/kuayle":        "rw,nosuid,uid=1000,gid=1000,size=512m",
+			"/run/ku-secrets": "rw,noexec,nosuid,uid=1000,gid=1000,mode=0700,size=8m",
+			"/home/ku":        "rw,nosuid,uid=1000,gid=1000,size=512m",
 		},
 		Mounts: mounts,
 		Resources: container.Resources{
@@ -1227,7 +1227,7 @@ func (r *DockerRuntime) ensureNetwork(ctx context.Context, name string, internal
 		}
 		for key, value := range labels {
 			if inspection.Network.Labels[key] != value {
-				return false, fmt.Errorf("existing network %s is not managed by Kuayle", name)
+				return false, fmt.Errorf("existing network %s is not managed by Ku", name)
 			}
 		}
 		return false, nil
@@ -1315,10 +1315,10 @@ func (r *DockerRuntime) ensureWorkspaceQuotaSupport(ctx context.Context) error {
 	if r.quotaReady {
 		return nil
 	}
-	name := "kuayle-workspace-quota-probe-" + uuid.NewString()
+	name := "ku-workspace-quota-probe-" + uuid.NewString()
 	created, err := r.ensureVolume(ctx, name, map[string]string{
-		"com.kuayle.managed": "true",
-		"com.kuayle.kind":    "workspace-quota-probe",
+		"com.ku.managed": "true",
+		"com.ku.kind":    "workspace-quota-probe",
 	}, 1)
 	if err != nil {
 		return fmt.Errorf("workspace hard quotas are unavailable; Docker's local volume driver requires an XFS data root mounted with project quotas: %w", err)
@@ -1392,7 +1392,7 @@ func installSecrets(ctx context.Context, containerID string, secrets map[string]
 }
 
 func (r *DockerRuntime) clearSecretFiles(ctx context.Context, containerID string) error {
-	_, err := r.execOutput(ctx, containerID, []string{"/bin/sh", "-c", "rm -rf /run/kuayle-secrets/* /run/kuayle-secrets/.[!.]* /run/kuayle-secrets/..?*"})
+	_, err := r.execOutput(ctx, containerID, []string{"/bin/sh", "-c", "rm -rf /run/ku-secrets/* /run/ku-secrets/.[!.]* /run/ku-secrets/..?*"})
 	if err != nil {
 		return fmt.Errorf("clear scoped secrets: %w", err)
 	}
@@ -1401,7 +1401,7 @@ func (r *DockerRuntime) clearSecretFiles(ctx context.Context, containerID string
 
 func (r *DockerRuntime) writeSecretFile(ctx context.Context, containerID, name, value string) error {
 	created, err := r.client.ExecCreate(ctx, containerID, client.ExecCreateOptions{
-		User: "1000:1000", AttachStdin: true, Cmd: []string{"/bin/sh", "-c", "umask 077; cat > /run/kuayle-secrets/" + name},
+		User: "1000:1000", AttachStdin: true, Cmd: []string{"/bin/sh", "-c", "umask 077; cat > /run/ku-secrets/" + name},
 	})
 	if err != nil {
 		return err
@@ -1606,15 +1606,15 @@ func (r *DockerRuntime) removeContainers(ctx context.Context, containers map[str
 
 func machineLabels(machine *domain.DevMachine) map[string]string {
 	return map[string]string{
-		"com.kuayle.managed":      "true",
-		"com.kuayle.machine-id":   machine.ID.String(),
-		"com.kuayle.workspace-id": machine.WorkspaceID.String(),
-		"com.kuayle.routing-key":  machine.RoutingKey,
+		"com.ku.managed":      "true",
+		"com.ku.machine-id":   machine.ID.String(),
+		"com.ku.workspace-id": machine.WorkspaceID.String(),
+		"com.ku.routing-key":  machine.RoutingKey,
 	}
 }
 
 func ownedByMachine(labels map[string]string, machineID uuid.UUID) bool {
-	return labels != nil && labels["com.kuayle.managed"] == "true" && labels["com.kuayle.machine-id"] == machineID.String()
+	return labels != nil && labels["com.ku.managed"] == "true" && labels["com.ku.machine-id"] == machineID.String()
 }
 
 func nonEmptyLines(value string) []string {

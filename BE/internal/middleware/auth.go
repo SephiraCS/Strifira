@@ -3,8 +3,8 @@ package middleware
 import (
 	"strings"
 
-	jwtpkg "github.com/kuayle/kuayle-backend/pkg/jwt"
-	"github.com/kuayle/kuayle-backend/pkg/response"
+	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
+	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 

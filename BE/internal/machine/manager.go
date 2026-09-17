@@ -14,11 +14,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/agent"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	cryptoutil "github.com/kuayle/kuayle-backend/pkg/crypto"
-	githubclient "github.com/kuayle/kuayle-backend/pkg/github"
+	"github.com/ku/ku-backend/internal/agent"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/repository"
+	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
+	githubclient "github.com/ku/ku-backend/pkg/github"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -715,7 +715,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 	}
 	service := &domain.DevMachineService{
 		ID: uuid.New(), WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID, ServiceType: "agent",
-		ServiceKey: "agent-" + run.ID.String(), ContainerName: "kuayle-" + machine.RoutingKey + "-agent-" + run.ID.String(),
+		ServiceKey: "agent-" + run.ID.String(), ContainerName: "ku-" + machine.RoutingKey + "-agent-" + run.ID.String(),
 		ImageRef: providerRecord.ImageRef, InternalHost: "agent-" + run.ID.String(), InternalPort: 8080,
 		Status: "pending", HealthStatus: "unknown",
 	}
@@ -808,7 +808,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 				baseBranch, workingBranch = checkout.BaseBranch, checkout.WorkingBranch
 			}
 			pullRequest, prErr = githubAPI.CreatePullRequest(freshToken, repoOwner, repoName,
-				fmt.Sprintf("Kuayle agent run for %s", workingBranch), result.Branch, baseBranch, result.Summary)
+				fmt.Sprintf("Ku agent run for %s", workingBranch), result.Branch, baseBranch, result.Summary)
 		}
 		if prErr != nil {
 			result.RiskNotes = append(result.RiskNotes, "Pull request creation failed: "+safeError(prErr))

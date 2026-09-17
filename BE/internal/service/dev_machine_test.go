@@ -12,28 +12,28 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/agent"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	cryptoutil "github.com/kuayle/kuayle-backend/pkg/crypto"
+	"github.com/ku/ku-backend/internal/agent"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
+	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
 	"github.com/stretchr/testify/require"
 )
 
 func TestValidateRepositoryRequiresMatchingGitHubIdentity(t *testing.T) {
 	require.NoError(t, validateRepository(dto.DevMachineRepoInput{
-		Provider: "github", Owner: "kuayle", Name: ".github", URL: "https://github.com/kuayle/.github.git",
+		Provider: "github", Owner: "ku", Name: ".github", URL: "https://github.com/ku/.github.git",
 	}))
 	require.Error(t, validateRepository(dto.DevMachineRepoInput{
-		Provider: "github", Owner: "other", Name: "repo", URL: "https://github.com/kuayle/repo",
+		Provider: "github", Owner: "other", Name: "repo", URL: "https://github.com/ku/repo",
 	}))
 	require.Error(t, validateRepository(dto.DevMachineRepoInput{
-		Provider: "github", Owner: "kuayle", Name: "repo", URL: "https://github.com:444/kuayle/repo",
+		Provider: "github", Owner: "ku", Name: "repo", URL: "https://github.com:444/ku/repo",
 	}))
 }
 
 func TestValidGitRefRejectsOptionAndTraversalForms(t *testing.T) {
-	for _, ref := range []string{"main", "kuayle/ENG-42", "feature.with-dots"} {
+	for _, ref := range []string{"main", "ku/ENG-42", "feature.with-dots"} {
 		require.True(t, validGitRef(ref), ref)
 	}
 	for _, ref := range []string{"--orphan", "../main", "feature..main", "refs/@{upstream}", "feature.lock"} {
@@ -150,7 +150,7 @@ func TestCreateAgentRunUsesOnlyExplicitRootOrReadyCheckout(t *testing.T) {
 	workspaceID, machineID, userID, repositoryID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	readyCheckout := domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: uuid.New(), Status: "ready",
-		WorkspacePath: "/workspace/tasks/chk-1", RepositoryFullName: "kuayle/test", BaseBranch: "main", WorkingBranch: "kuayle/chk-1",
+		WorkspacePath: "/workspace/tasks/chk-1", RepositoryFullName: "ku/test", BaseBranch: "main", WorkingBranch: "ku/chk-1",
 	}
 	for _, test := range []struct {
 		name             string
@@ -319,7 +319,7 @@ func TestCreateGenericMachineDoesNotRequireRepositoryOrTTL(t *testing.T) {
 		require.NotEqual(t, "app_preview", service.ServiceType)
 	}
 	for _, envVar := range store.createdEnvVars {
-		require.NotEqual(t, "KUAYLE_BROWSER_CDP_TOKEN", envVar.Name)
+		require.NotEqual(t, "KU_BROWSER_CDP_TOKEN", envVar.Name)
 	}
 }
 
@@ -336,12 +336,12 @@ func TestCreateScopesDedicatedCDPTokenToBrowserAndCollector(t *testing.T) {
 	var collectorToken string
 	cdpTokenCount := 0
 	for _, envVar := range store.createdEnvVars {
-		if envVar.Name == "KUAYLE_MACHINE_TOKEN" {
+		if envVar.Name == "KU_MACHINE_TOKEN" {
 			var decryptErr error
 			collectorToken, decryptErr = cryptoutil.Decrypt(envVar.EncryptedValue, cryptoutil.DeriveKey("test"))
 			require.NoError(t, decryptErr)
 		}
-		if envVar.Name != "KUAYLE_BROWSER_CDP_TOKEN" {
+		if envVar.Name != "KU_BROWSER_CDP_TOKEN" {
 			continue
 		}
 		cdpTokenCount++
@@ -420,7 +420,7 @@ func TestCreateResolvesScopedRepositoryAndEnvironment(t *testing.T) {
 		policy:       testPolicy(workspaceID),
 		issues:       map[uuid.UUID]*domain.Issue{issueID: {ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, ProjectID: &projectID, Identifier: "ENG-42"}},
 		projects:     map[uuid.UUID]*domain.Project{projectID: {ID: projectID, WorkspaceID: workspaceID, TeamID: &teamID}},
-		reposByID:    map[uuid.UUID]*domain.GitHubRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "Kuayle/API", DefaultBranch: "main", IsActive: true}},
+		reposByID:    map[uuid.UUID]*domain.GitHubRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "Ku/API", DefaultBranch: "main", IsActive: true}},
 		environments: map[uuid.UUID]*domain.DevMachineEnvironment{envID: {ID: envID, WorkspaceID: workspaceID, Name: "base", ImageRef: immutableEnvRef, ImageDigest: &immutableEnvRef, Status: "ready"}},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{
 			scopeKey(nil, nil, &issueID):   {WorkspaceID: workspaceID, GitHubRepoID: &repoID, BaseBranch: dmStrPtr("issue-base")},
@@ -437,9 +437,9 @@ func TestCreateResolvesScopedRepositoryAndEnvironment(t *testing.T) {
 	require.Equal(t, &issueID, machine.IssueID)
 	require.Equal(t, &repoID, machine.RepositoryAffinityID)
 	require.Equal(t, &envID, machine.EnvironmentID)
-	require.Equal(t, "Kuayle/API", machine.RepoOwner+"/"+machine.RepoName)
+	require.Equal(t, "Ku/API", machine.RepoOwner+"/"+machine.RepoName)
 	require.Equal(t, "issue-base", machine.BaseBranch)
-	require.Equal(t, "kuayle/eng-42", machine.WorkingBranch)
+	require.Equal(t, "ku/eng-42", machine.WorkingBranch)
 }
 
 func TestCreateUsesImmutableEnvironmentDigestForDeveloperServices(t *testing.T) {
@@ -448,7 +448,7 @@ func TestCreateUsesImmutableEnvironmentDigestForDeveloperServices(t *testing.T) 
 	store := &devMachineStoreFake{
 		policy: testPolicy(workspaceID),
 		environments: map[uuid.UUID]*domain.DevMachineEnvironment{
-			envID: {ID: envID, WorkspaceID: workspaceID, Name: "base", ImageRef: "kuayle/dev-environment-test:snapshot", ImageDigest: &immutableID, Status: "ready"},
+			envID: {ID: envID, WorkspaceID: workspaceID, Name: "base", ImageRef: "ku/dev-environment-test:snapshot", ImageDigest: &immutableID, Status: "ready"},
 		},
 	}
 	svc := newTestDevMachineService(store)
@@ -474,7 +474,7 @@ func TestCheckoutIssueEnforcesRepositoryAffinityAndIsIdempotent(t *testing.T) {
 	store := &devMachineStoreFake{
 		policy: testPolicy(workspaceID), machine: readyMachine,
 		issues:        map[uuid.UUID]*domain.Issue{issueID: issue},
-		reposByID:     map[uuid.UUID]*domain.GitHubRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "kuayle/api", DefaultBranch: "main", IsActive: true}, otherRepoID: {ID: otherRepoID, WorkspaceID: workspaceID, FullName: "kuayle/other", DefaultBranch: "main", IsActive: true}},
+		reposByID:     map[uuid.UUID]*domain.GitHubRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true}, otherRepoID: {ID: otherRepoID, WorkspaceID: workspaceID, FullName: "ku/other", DefaultBranch: "main", IsActive: true}},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, GitHubRepoID: &repoID}},
 		checkouts:     []domain.DevMachineCheckout{existing},
 	}
@@ -501,7 +501,7 @@ func TestCheckoutIssueRetriesFailedCheckout(t *testing.T) {
 		machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, CreatedByUserID: &userID, Status: domain.DevMachineStatusRunning, DesiredStatus: domain.DevMachineStatusRunning, Generation: 3, RepositoryAffinityID: &repoID, ExpiresAt: time.Now().Add(time.Hour)},
 		issues:  map[uuid.UUID]*domain.Issue{issueID: {ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, Identifier: "ENG-7"}},
 		reposByID: map[uuid.UUID]*domain.GitHubRepoModel{
-			repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "kuayle/api", DefaultBranch: "main", IsActive: true},
+			repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true},
 		},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, GitHubRepoID: &repoID}},
 		checkouts:     []domain.DevMachineCheckout{{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID, GitHubRepoID: repoID, Status: "failed", LastError: &message}},
@@ -1011,7 +1011,7 @@ func TestUserScopedMachineAccessRequiresCreator(t *testing.T) {
 			DesiredStatus: domain.DevMachineStatusRunning, Generation: 3, ExpiresAt: time.Now().Add(time.Hour),
 		},
 		service:         &domain.DevMachineService{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide", Status: "running"},
-		agentProvider:   &domain.DevMachineAgentProvider{MachineID: machineID, ProviderID: "opencode", DisplayName: "OpenCode", ImageRef: "kuayle/opencode:test", Enabled: true},
+		agentProvider:   &domain.DevMachineAgentProvider{MachineID: machineID, ProviderID: "opencode", DisplayName: "OpenCode", ImageRef: "ku/opencode:test", Enabled: true},
 		checkouts:       []domain.DevMachineCheckout{{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, Status: "ready"}},
 		events:          []domain.DevMachineEvent{{WorkspaceID: workspaceID, MachineID: machineID, Source: "test", EventType: "machine.test"}},
 		logs:            []domain.DevMachineLogChunk{{WorkspaceID: workspaceID, MachineID: machineID, Stream: "stdout", Sequence: 1, Content: "test"}},

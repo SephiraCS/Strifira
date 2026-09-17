@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/kuayle/kuayle-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/dto"
 )
 
 func TestAnalyticsRepositoryPostgres(t *testing.T) {

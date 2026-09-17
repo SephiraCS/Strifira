@@ -4,8 +4,8 @@
 	import { breadcrumbsFrom } from '$lib/data/routes';
 
 	const meta = {
-		title: 'Kuayle License — Apache 2.0',
-		description: 'A plain-language summary of Kuayle’s Apache 2.0 license, including permissions, redistribution conditions, patent terms, and warranty limits.',
+		title: 'Ku License — Apache 2.0',
+		description: 'A plain-language summary of Ku’s Apache 2.0 license, including permissions, redistribution conditions, patent terms, and warranty limits.',
 		canonical: url('/license'),
 		modifiedAt: contentModifiedAt('/license')
 	};
@@ -15,7 +15,7 @@
 	const sections = [
 		{
 			heading: 'Apache License 2.0',
-			body: 'Kuayle is distributed under the Apache License, Version 2.0. The full license text can be found in the LICENSE file at the root of the repository.',
+			body: 'Ku is distributed under the Apache License, Version 2.0. The full license text can be found in the LICENSE file at the root of the repository.',
 			list: [
 				'Copyright (c) 2025-present Bakney srl',
 				'Licensed under the Apache License, Version 2.0',
@@ -27,16 +27,16 @@
 			heading: 'What you can do',
 			body: 'Apache 2.0 is a permissive open-source license. It grants broad rights to use, reproduce, modify and distribute the software, including as part of commercial products, subject to the license conditions.',
 			list: [
-				'Use Kuayle for any purpose, including commercial use',
+				'Use Ku for any purpose, including commercial use',
 				'Modify the source code to fit your needs',
 				'Distribute original or modified copies',
-				'Include Kuayle code in a larger work',
+				'Include Ku code in a larger work',
 				'Apply different terms to your modifications where the license permits'
 			]
 		},
 		{
 			heading: 'Requirements',
-			body: 'Redistribution carries conditions. Read Sections 4 and 6 of the license before shipping Kuayle or a derivative work; the summary below is not legal advice.',
+			body: 'Redistribution carries conditions. Read Sections 4 and 6 of the license before shipping Ku or a derivative work; the summary below is not legal advice.',
 			list: [
 				'Include the copyright notice and license in redistributions',
 				'State any significant changes made to the original code',
@@ -46,7 +46,7 @@
 		},
 		{
 			heading: 'Patent grant',
-			body: 'Apache 2.0 includes an explicit patent grant from contributors to users. This means anyone who contributes code to Kuayle grants a patent license to anyone who uses that code. This is an important protection that some other permissive licenses (like MIT) do not include.',
+			body: 'Apache 2.0 includes an explicit patent grant from contributors to users. This means anyone who contributes code to Ku grants a patent license to anyone who uses that code. This is an important protection that some other permissive licenses (like MIT) do not include.',
 			list: [
 				'Contributors grant a patent license to users',
 				'Protects users against patent claims from contributors',
@@ -59,7 +59,7 @@
 <StandalonePage
 	{meta}
 	heading="License"
-	intro="Kuayle is distributed under the Apache License 2.0. This page is a practical summary only; the repository’s LICENSE file is the authoritative text."
+	intro="Ku is distributed under the Apache License 2.0. This page is a practical summary only; the repository’s LICENSE file is the authoritative text."
 	{sections}
 	breadcrumbs={crumbs}
 />

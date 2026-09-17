@@ -12,9 +12,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/kuayle/kuayle-backend/internal/config"
-	"github.com/kuayle/kuayle-backend/internal/machine"
-	"github.com/kuayle/kuayle-backend/internal/repository"
+	"github.com/ku/ku-backend/internal/config"
+	"github.com/ku/ku-backend/internal/machine"
+	"github.com/ku/ku-backend/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 

@@ -1,5 +1,5 @@
 /**
- * Latest Kuayle release, resolved at runtime.
+ * Latest Ku release, resolved at runtime.
  *
  * Mirrors the app's mechanism in UI/src/lib/release.ts: the releases
  * manifest is served from the repository's main branch and the first
@@ -79,7 +79,7 @@ function releaseUrlFor(tagName: string, value: string | undefined): string {
 			url.port !== '' ||
 			path.length !== 5 ||
 			path[0].toLowerCase() !== 'carbogninalberto' ||
-			path[1].toLowerCase() !== 'kuayle' ||
+			path[1].toLowerCase() !== 'ku' ||
 			path[2] !== 'releases' ||
 			path[3] !== 'tag' ||
 			path[4] !== tagName

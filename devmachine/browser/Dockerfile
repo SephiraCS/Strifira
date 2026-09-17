@@ -29,15 +29,15 @@ RUN rm -f /usr/bin/pebble \
     && rm -f /tmp/kasmvnc.deb /tmp/chrome.deb /usr/bin/pebble \
         /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /home/kuayle \
-    && chown 1000:1000 /home/kuayle
-COPY common/kuayle-service-entrypoint /usr/local/bin/kuayle-service-entrypoint
-COPY --from=cdp-proxy-build /cdp-proxy /usr/local/bin/kuayle-browser-cdp-proxy
-COPY browser/start.sh /usr/local/bin/kuayle-browser-start
-COPY browser/healthcheck.sh /usr/local/bin/kuayle-browser-healthcheck
-RUN chmod 0755 /usr/local/bin/kuayle-service-entrypoint /usr/local/bin/kuayle-browser-cdp-proxy /usr/local/bin/kuayle-browser-start /usr/local/bin/kuayle-browser-healthcheck
+    && mkdir -p /home/ku \
+    && chown 1000:1000 /home/ku
+COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
+COPY --from=cdp-proxy-build /cdp-proxy /usr/local/bin/ku-browser-cdp-proxy
+COPY browser/start.sh /usr/local/bin/ku-browser-start
+COPY browser/healthcheck.sh /usr/local/bin/ku-browser-healthcheck
+RUN chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-browser-cdp-proxy /usr/local/bin/ku-browser-start /usr/local/bin/ku-browser-healthcheck
 
 USER 1000:1000
-ENV HOME=/home/kuayle DISPLAY=:1
+ENV HOME=/home/ku DISPLAY=:1
 EXPOSE 3000 9222
-CMD ["/usr/local/bin/kuayle-browser-start"]
+CMD ["/usr/local/bin/ku-browser-start"]

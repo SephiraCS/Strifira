@@ -27,12 +27,12 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		status: 'running',
 		desired_status: 'running',
 		generation: 1,
-		repo_url: 'https://github.com/kuayle/kuayle',
+		repo_url: 'https://github.com/ku/ku',
 		repo_provider: 'github',
-		repo_owner: 'kuayle',
-		repo_name: 'kuayle',
+		repo_owner: 'ku',
+		repo_name: 'ku',
 		base_branch: 'main',
-		working_branch: 'kuayle/runtime-smoke',
+		working_branch: 'ku/runtime-smoke',
 		machine_size: 'medium',
 		cpu_millis: 4000,
 		memory_mb: 8192,
@@ -51,15 +51,15 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		id: secondMachineId,
 		routing_key: 'fedcba98765432100123',
 		name: 'Second route machine',
-		working_branch: 'kuayle/second-route'
+		working_branch: 'ku/second-route'
 	};
 	const firstRunId = '00000000-0000-0000-0000-000000000052';
 	const secondRunId = '00000000-0000-0000-0000-000000000058';
 	const checkout = {
 		id: '00000000-0000-0000-0000-000000000053', workspace_id: machine.workspace_id,
 		machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000054',
-		github_repo_id: '00000000-0000-0000-0000-000000000055', repository_full_name: 'kuayle/kuayle',
-		base_branch: 'main', working_branch: 'kuayle/runtime-smoke', workspace_path: '/workspace/tasks/runtime-smoke',
+		github_repo_id: '00000000-0000-0000-0000-000000000055', repository_full_name: 'ku/ku',
+		base_branch: 'main', working_branch: 'ku/runtime-smoke', workspace_path: '/workspace/tasks/runtime-smoke',
 		status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
 	};
 
@@ -134,13 +134,13 @@ test('handles machine actions without applying stale poll, route, or trace respo
 			return route.fulfill({
 				json: [{
 					id: '00000000-0000-0000-0000-000000000051', machine_id: machineId,
-					service_type: 'ide', service_key: 'ide', container_name: 'kuayle-test-ide',
-					image_ref: 'kuayle/dev-machine-ide:0.1.0', status: 'running', health_status: 'healthy'
+					service_type: 'ide', service_key: 'ide', container_name: 'ku-test-ide',
+					image_ref: 'ku/dev-machine-ide:0.1.0', status: 'running', health_status: 'healthy'
 				}]
 			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/providers`) {
-			return route.fulfill({ json: [{ id: 'opencode', display_name: 'OpenCode', default_image: 'kuayle/dev-machine-agent-opencode:0.1.0', required_secrets: [], supported_modes: ['autonomous'], custom: false }] });
+			return route.fulfill({ json: [{ id: 'opencode', display_name: 'OpenCode', default_image: 'ku/dev-machine-agent-opencode:0.1.0', required_secrets: [], supported_modes: ['autonomous'], custom: false }] });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/checkouts`) {
 			return route.fulfill({ json: [checkout] });
@@ -318,7 +318,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	await expect(page.getByText('machine a event', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('[system] machine A log', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('Test run', { exact: true })).toHaveCount(0);
-	await expect(page.getByText('kuayle/runtime-smoke', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('ku/runtime-smoke', { exact: true })).toHaveCount(0);
 	expect(unhandledPaths).toEqual([]);
 });
 
@@ -365,7 +365,7 @@ test('creates a generic machine with an accessible size and inactivity controls'
 			if (requestedName === 'taken-machine') takenNameDelay.markCompleted();
 			return;
 		}
-		if (path === '/api/workspaces/test/dev-machine-providers') return route.fulfill({ json: [{ id: 'opencode', display_name: 'OpenCode', default_image: 'kuayle/opencode:1', required_secrets: [], supported_modes: ['autonomous'], custom: false }] });
+		if (path === '/api/workspaces/test/dev-machine-providers') return route.fulfill({ json: [{ id: 'opencode', display_name: 'OpenCode', default_image: 'ku/opencode:1', required_secrets: [], supported_modes: ['autonomous'], custom: false }] });
 		if (path === '/api/workspaces/test/dev-machine-policy') return route.fulfill({ json: { workspace_id: workspaceId, enabled: true, max_concurrent_machines: 5, max_machines_per_user: 2, max_daily_agent_runs: 25, max_runtime_minutes: 480, max_disk_gb: 100, idle_pause_minutes: 240, allowed_providers: ['opencode'], allowed_repositories: [], allow_custom_providers: false } });
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: [] });
 		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'POST') {
@@ -602,8 +602,8 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
-		const machine = { id: machineId, workspace_id: workspaceId, routing_key: 'terminalmachine0001', name: 'Terminal machine', status: 'running', desired_status: 'running', generation: 1, repo_owner: 'kuayle', repo_name: 'kuayle', base_branch: 'main', working_branch: 'work', machine_size: 'medium', cpu_millis: 4000, memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240, keep_running: false, environment_builder: false, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z', expires_at: '2099-07-13T04:00:00Z' };
-		const checkout = { id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000082', github_repo_id: '00000000-0000-0000-0000-000000000083', repository_full_name: 'kuayle/kuayle', base_branch: 'main', working_branch: 'user/TST-1-terminal', workspace_path: '/workspace/tasks/TST-1-terminal', status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z' };
+		const machine = { id: machineId, workspace_id: workspaceId, routing_key: 'terminalmachine0001', name: 'Terminal machine', status: 'running', desired_status: 'running', generation: 1, repo_owner: 'ku', repo_name: 'ku', base_branch: 'main', working_branch: 'work', machine_size: 'medium', cpu_millis: 4000, memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240, keep_running: false, environment_builder: false, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z', expires_at: '2099-07-13T04:00:00Z' };
+		const checkout = { id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000082', github_repo_id: '00000000-0000-0000-0000-000000000083', repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'user/TST-1-terminal', workspace_path: '/workspace/tasks/TST-1-terminal', status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z' };
 		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
 		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
 		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
@@ -784,16 +784,16 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 	};
 	const machine = {
 		id: machineId, workspace_id: workspaceId, routing_key: 'pickercancellation001', name: 'Picker machine',
-		status: 'paused', desired_status: 'paused', generation: 1, repo_owner: 'kuayle', repo_name: 'kuayle',
-		base_branch: 'main', working_branch: 'kuayle/picker', machine_size: 'medium', cpu_millis: 4000,
+		status: 'paused', desired_status: 'paused', generation: 1, repo_owner: 'ku', repo_name: 'ku',
+		base_branch: 'main', working_branch: 'ku/picker', machine_size: 'medium', cpu_millis: 4000,
 		memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240, keep_running: false,
 		environment_builder: false, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z',
 		expires_at: '2099-07-13T04:00:00Z'
 	};
 	const checkout = {
 		id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: issueId,
-		github_repo_id: '00000000-0000-0000-0000-000000000112', repository_full_name: 'kuayle/kuayle',
-		base_branch: 'main', working_branch: 'kuayle/TST-43-picker', workspace_path: '/workspace/tasks/TST-43-picker',
+		github_repo_id: '00000000-0000-0000-0000-000000000112', repository_full_name: 'ku/ku',
+		base_branch: 'main', working_branch: 'ku/TST-43-picker', workspace_path: '/workspace/tasks/TST-43-picker',
 		status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
 	};
 
@@ -908,8 +908,8 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	let putPayload: Record<string, unknown> | undefined;
 
 	const repos = [
-		{ id: 'repo-1', github_repo_id: 1001, full_name: 'kuayle/kuayle', default_branch: 'main', is_active: true },
-		{ id: 'repo-2', github_repo_id: 1002, full_name: 'kuayle/backend', default_branch: 'develop', is_active: true },
+		{ id: 'repo-1', github_repo_id: 1001, full_name: 'ku/ku', default_branch: 'main', is_active: true },
+		{ id: 'repo-2', github_repo_id: 1002, full_name: 'ku/backend', default_branch: 'develop', is_active: true },
 	];
 
 	const issue = {
@@ -961,7 +961,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	await repoButton.click();
 
 	await page.getByPlaceholder('Search repositories...').fill('backend');
-	await page.getByRole('option', { name: 'kuayle/backend' }).click();
+	await page.getByRole('option', { name: 'ku/backend' }).click();
 
 	await dialog.getByRole('button', { name: 'Save defaults' }).click();
 
@@ -979,8 +979,8 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 	const runId = '00000000-0000-0000-0000-000000000061';
 	const runId2 = '00000000-0000-0000-0000-000000000062';
 	const checkoutId = '00000000-0000-0000-0000-000000000063';
-	const pullRequestUrl = 'https://github.com/kuayle/kuayle/pull/46';
-	const untrustedPullRequestUrl = 'https://github.com/attacker/kuayle/pull/46';
+	const pullRequestUrl = 'https://github.com/ku/ku/pull/46';
+	const untrustedPullRequestUrl = 'https://github.com/attacker/ku/pull/46';
 	let traceRequests = 0;
 	let lastTraceEventsAfterId = 0;
 	let lastTraceLogsAfterId = 0;
@@ -998,7 +998,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		repo_owner: 'machine-owner',
 		repo_name: 'machine-repo',
 		base_branch: 'main',
-		working_branch: 'kuayle/trace',
+		working_branch: 'ku/trace',
 		machine_size: 'medium',
 		cpu_millis: 4000,
 		memory_mb: 8192,
@@ -1014,7 +1014,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 	const checkout = {
 		id: checkoutId, workspace_id: machine.workspace_id, machine_id: machineId,
 		issue_id: '00000000-0000-0000-0000-000000000064', github_repo_id: '00000000-0000-0000-0000-000000000065',
-		repository_full_name: 'kuayle/kuayle', base_branch: 'main', working_branch: 'kuayle/trace',
+		repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'ku/trace',
 		workspace_path: '/workspace/tasks/trace', status: 'ready',
 		created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
 	};
@@ -1061,7 +1061,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 			return route.fulfill({
 				json: {
 					data: [
-						{ id: runId, machine_id: machineId, checkout_id: checkoutId, provider_id: 'opencode', mode: 'autonomous', status: 'succeeded', prompt: 'Fix the bug', summary: 'Fixed bug in login', changed_files: ['src/login.ts'], commits: ['abc1234'], branch: 'kuayle/trace', pull_request_url: pullRequestUrl, tests_run: ['TestLogin'], test_status: 'passed', risk_notes: ['Minor risk'], exit_code: 0, error_message: null, created_at: '2026-07-13T00:00:00Z', started_at: '2026-07-13T00:01:00Z', completed_at: '2026-07-13T00:05:00Z' },
+						{ id: runId, machine_id: machineId, checkout_id: checkoutId, provider_id: 'opencode', mode: 'autonomous', status: 'succeeded', prompt: 'Fix the bug', summary: 'Fixed bug in login', changed_files: ['src/login.ts'], commits: ['abc1234'], branch: 'ku/trace', pull_request_url: pullRequestUrl, tests_run: ['TestLogin'], test_status: 'passed', risk_notes: ['Minor risk'], exit_code: 0, error_message: null, created_at: '2026-07-13T00:00:00Z', started_at: '2026-07-13T00:01:00Z', completed_at: '2026-07-13T00:05:00Z' },
 						{ id: runId2, machine_id: machineId, checkout_id: checkoutId, provider_id: 'claude-code', mode: 'autonomous', status: 'running', prompt: 'Add tests', summary: null, changed_files: [], commits: [], branch: null, pull_request_url: untrustedPullRequestUrl, tests_run: [], test_status: 'not_run', risk_notes: [], exit_code: null, error_message: null, created_at: '2026-07-13T01:00:00Z', started_at: '2026-07-13T01:01:00Z', completed_at: null }
 					],
 					total_count: 2, page: 1, per_page: 50, has_more: false
@@ -1099,7 +1099,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 
 			return route.fulfill({
 				json: {
-					run: { id: runId, machine_id: machineId, checkout_id: checkoutId, provider_id: 'opencode', mode: 'autonomous', status: 'succeeded', prompt: 'Fix the bug', summary: 'Fixed bug in login', changed_files: ['src/login.ts'], commits: ['abc1234'], branch: 'kuayle/trace', pull_request_url: pullRequestUrl, tests_run: ['TestLogin'], test_status: 'passed', risk_notes: ['Minor risk'], exit_code: 0, error_message: null, created_at: '2026-07-13T00:00:00Z', started_at: '2026-07-13T00:01:00Z', completed_at: '2026-07-13T00:05:00Z' },
+					run: { id: runId, machine_id: machineId, checkout_id: checkoutId, provider_id: 'opencode', mode: 'autonomous', status: 'succeeded', prompt: 'Fix the bug', summary: 'Fixed bug in login', changed_files: ['src/login.ts'], commits: ['abc1234'], branch: 'ku/trace', pull_request_url: pullRequestUrl, tests_run: ['TestLogin'], test_status: 'passed', risk_notes: ['Minor risk'], exit_code: 0, error_message: null, created_at: '2026-07-13T00:00:00Z', started_at: '2026-07-13T00:01:00Z', completed_at: '2026-07-13T00:05:00Z' },
 					steps: [{ id: runId, agent_run_id: runId, sequence: 1, step_type: 'shell', name: 'Run tests', status: 'succeeded', command_argv: null, summary: 'All tests passed', exit_code: 0, started_at: '2026-07-13T00:02:00Z', completed_at: '2026-07-13T00:03:00Z', created_at: '2026-07-13T00:02:00Z' }],
 					events: filteredEvents,
 					logs: [], next_event_id: filteredEvents.at(-1)?.id ?? eventsAfterId, next_log_id: logsAfterId,

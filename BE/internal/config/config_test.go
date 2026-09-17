@@ -65,14 +65,14 @@ func TestGatewayValidationDoesNotRequireControlPlaneSecrets(t *testing.T) {
 func TestLoadMachineGatewayDoesNotRequireJWTOrRedis(t *testing.T) {
 	setMachineGatewayEnv(t)
 	t.Setenv("DATABASE_URL", "")
-	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://gateway-db/kuayle?sslmode=disable")
+	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://gateway-db/ku?sslmode=disable")
 	t.Setenv("JWT_SECRET", "")
 	t.Setenv("REDIS_URL", "")
 
 	cfg, err := LoadMachineGateway()
 
 	require.NoError(t, err)
-	require.Equal(t, "postgres://gateway-db/kuayle?sslmode=disable", cfg.DatabaseURL)
+	require.Equal(t, "postgres://gateway-db/ku?sslmode=disable", cfg.DatabaseURL)
 	require.Empty(t, cfg.JWTSecret)
 	require.Empty(t, cfg.RedisURL)
 	require.Equal(t, "https://app.example.com", cfg.FrontendURL)
@@ -139,7 +139,7 @@ func TestLoadMachineGatewayRejectsMissingAndInvalidGatewayValues(t *testing.T) {
 	t.Run("production rejects application database user", func(t *testing.T) {
 		setMachineGatewayEnv(t)
 		t.Setenv("ENVIRONMENT", "production")
-		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres:gateway@postgres/kuayle?sslmode=disable")
+		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres:gateway@postgres/ku?sslmode=disable")
 
 		_, err := LoadMachineGateway()
 
@@ -150,7 +150,7 @@ func TestLoadMachineGatewayRejectsMissingAndInvalidGatewayValues(t *testing.T) {
 		setMachineGatewayEnv(t)
 		t.Setenv("ENVIRONMENT", "production")
 		t.Setenv("DATABASE_URL", "")
-		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres/kuayle")
+		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres/ku")
 
 		_, err := LoadMachineGateway()
 
@@ -160,18 +160,18 @@ func TestLoadMachineGatewayRejectsMissingAndInvalidGatewayValues(t *testing.T) {
 	t.Run("production accepts restricted gateway credential", func(t *testing.T) {
 		setMachineGatewayEnv(t)
 		t.Setenv("ENVIRONMENT", "production")
-		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://kuayle_gateway:gateway@postgres/kuayle?sslmode=disable")
+		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://ku_gateway:gateway@postgres/ku?sslmode=disable")
 
 		cfg, err := LoadMachineGateway()
 
 		require.NoError(t, err)
-		require.Equal(t, "postgres://kuayle_gateway:gateway@postgres/kuayle?sslmode=disable", cfg.DatabaseURL)
+		require.Equal(t, "postgres://ku_gateway:gateway@postgres/ku?sslmode=disable", cfg.DatabaseURL)
 	})
 }
 
 func setMachineGatewayEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATABASE_URL", "postgres://postgres@postgres/kuayle?sslmode=disable")
+	t.Setenv("DATABASE_URL", "postgres://postgres@postgres/ku?sslmode=disable")
 	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "")
 	t.Setenv("FRONTEND_URL", "https://app.example.com")
 	t.Setenv("DEV_MACHINES_ENABLED", "true")
@@ -210,7 +210,7 @@ func TestDemoDevMachineAllowed(t *testing.T) {
 
 func TestLoadMachineGatewayReadsDemoConfig(t *testing.T) {
 	setMachineGatewayEnv(t)
-	t.Setenv("DATABASE_URL", "postgres://postgres/kuayle?sslmode=disable")
+	t.Setenv("DATABASE_URL", "postgres://postgres/ku?sslmode=disable")
 	sysAdminID := uuid.New()
 	t.Setenv("SYSADMINS", sysAdminID.String())
 	t.Setenv("PUBLIC_DEMO_MODE", "true")

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const removedCheckoutTokenPath = "/run/kuayle-secrets/github-token"
+const removedCheckoutTokenPath = "/run/ku-secrets/github-token"
 
 func TestCheckoutScriptCleansEphemeralCredentialsOnSuccess(t *testing.T) {
 	result := runCheckoutScriptFixture(t, false)
@@ -64,7 +64,7 @@ func TestCredentialHelperScriptsDoNotReferencePersistentCheckoutToken(t *testing
 	paths := []string{
 		filepath.Join(repoRoot, "devmachine", "ide", "checkout.sh"),
 		filepath.Join(repoRoot, "devmachine", "ide", "start.sh"),
-		filepath.Join(repoRoot, "devmachine", "common", "kuayle-agent-runner"),
+		filepath.Join(repoRoot, "devmachine", "common", "ku-agent-runner"),
 		filepath.Join(repoRoot, "BE", "internal", "machine", "docker.go"),
 	}
 
@@ -73,7 +73,7 @@ func TestCredentialHelperScriptsDoNotReferencePersistentCheckoutToken(t *testing
 		require.NoError(t, err)
 		content := string(contentBytes)
 		require.NotContains(t, content, removedCheckoutTokenPath, path)
-		require.NotContains(t, content, "cat /run/kuayle-secrets/github-token", path)
+		require.NotContains(t, content, "cat /run/ku-secrets/github-token", path)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestTerminalSessionCloseKillsOnlyTheNamedSessionAndIsIdempotent(t *testing.
 		cmd := exec.Command("sh", script, "--close", "term-test")
 		cmd.Env = []string{
 			"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
-			"KUAYLE_FAKE_TMUX_STATE=" + statePath,
-			"KUAYLE_FAKE_TMUX_LOG=" + logPath,
+			"KU_FAKE_TMUX_STATE=" + statePath,
+			"KU_FAKE_TMUX_LOG=" + logPath,
 		}
 		return cmd.Run()
 	}
@@ -120,9 +120,9 @@ func TestTerminalSessionCloseReportsPersistentTmuxFailure(t *testing.T) {
 	cmd := exec.Command("sh", filepath.Join(repoRoot, "devmachine", "ide", "terminal-session.sh"), "--close", "term-test")
 	cmd.Env = []string{
 		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
-		"KUAYLE_FAKE_TMUX_STATE=" + statePath,
-		"KUAYLE_FAKE_TMUX_LOG=" + logPath,
-		"KUAYLE_FAKE_TMUX_FAIL_KILL=1",
+		"KU_FAKE_TMUX_STATE=" + statePath,
+		"KU_FAKE_TMUX_LOG=" + logPath,
+		"KU_FAKE_TMUX_FAIL_KILL=1",
 	}
 
 	err := cmd.Run()
@@ -155,7 +155,7 @@ func runCheckoutScriptFixture(t *testing.T, failFetch bool) checkoutScriptResult
 	tmpDir := filepath.Join(tempDir, "tmp")
 	homeDir := filepath.Join(tempDir, "home")
 	fakeBin := filepath.Join(tempDir, "bin")
-	helperPath := filepath.Join(homeDir, ".kuayle-git-credential")
+	helperPath := filepath.Join(homeDir, ".ku-git-credential")
 	for _, dir := range []string{filepath.Join(workspaceRoot, "repos"), filepath.Join(workspaceRoot, "tasks"), secretDir, tmpDir, homeDir, fakeBin} {
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 	}
@@ -167,21 +167,21 @@ func runCheckoutScriptFixture(t *testing.T, failFetch bool) checkoutScriptResult
 	writeFakeGit(t, fakeGit)
 
 	rawToken := "checkout-raw-token-SEC02"
-	cmd := exec.Command("sh", filepath.Join(repoRoot, "devmachine", "ide", "checkout.sh"), "octo/repo", "main", "kuayle-sec-02", workspacePath)
+	cmd := exec.Command("sh", filepath.Join(repoRoot, "devmachine", "ide", "checkout.sh"), "octo/repo", "main", "ku-sec-02", workspacePath)
 	cmd.Stdin = strings.NewReader(rawToken + "\n")
 	cmd.Env = []string{
 		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
 		"HOME=" + homeDir,
-		"KUAYLE_WORKSPACE_ROOT=" + workspaceRoot,
-		"KUAYLE_CHECKOUT_SECRET_DIR=" + secretDir,
-		"KUAYLE_CHECKOUT_TMP_DIR=" + tmpDir,
-		"KUAYLE_CHECKOUT_ALLOW_ROOT_OVERRIDE=1",
-		"KUAYLE_GIT_CREDENTIAL_HELPER=" + helperPath,
-		"KUAYLE_FAKE_GIT_LOG=" + filepath.Join(tempDir, "git.log"),
-		"KUAYLE_FAKE_GIT_SECRET_DIR=" + secretDir,
+		"KU_WORKSPACE_ROOT=" + workspaceRoot,
+		"KU_CHECKOUT_SECRET_DIR=" + secretDir,
+		"KU_CHECKOUT_TMP_DIR=" + tmpDir,
+		"KU_CHECKOUT_ALLOW_ROOT_OVERRIDE=1",
+		"KU_GIT_CREDENTIAL_HELPER=" + helperPath,
+		"KU_FAKE_GIT_LOG=" + filepath.Join(tempDir, "git.log"),
+		"KU_FAKE_GIT_SECRET_DIR=" + secretDir,
 	}
 	if failFetch {
-		cmd.Env = append(cmd.Env, "KUAYLE_FAKE_GIT_FAIL_FETCH=1")
+		cmd.Env = append(cmd.Env, "KU_FAKE_GIT_FAIL_FETCH=1")
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -209,12 +209,12 @@ func writeFakeGit(t *testing.T, path string) {
 	t.Helper()
 	script := `#!/bin/sh
 set -eu
-log=${KUAYLE_FAKE_GIT_LOG:?}
+log=${KU_FAKE_GIT_LOG:?}
 printf '%s\n' "$*" >> "$log"
 
-if [ -n "${KUAYLE_CHECKOUT_TOKEN_FILE:-}" ]; then
-  case "$KUAYLE_CHECKOUT_TOKEN_FILE" in "$KUAYLE_FAKE_GIT_SECRET_DIR"/*) ;; *) echo "token file outside secret dir" >&2; exit 90 ;; esac
-  [ -f "$KUAYLE_CHECKOUT_TOKEN_FILE" ] || { echo "missing token file" >&2; exit 91; }
+if [ -n "${KU_CHECKOUT_TOKEN_FILE:-}" ]; then
+  case "$KU_CHECKOUT_TOKEN_FILE" in "$KU_FAKE_GIT_SECRET_DIR"/*) ;; *) echo "token file outside secret dir" >&2; exit 90 ;; esac
+  [ -f "$KU_CHECKOUT_TOKEN_FILE" ] || { echo "missing token file" >&2; exit 91; }
   [ -x "${GIT_ASKPASS:-}" ] || { echo "missing askpass" >&2; exit 92; }
   user=$("$GIT_ASKPASS" Username)
   [ "$user" = x-access-token ] || { echo "bad askpass username" >&2; exit 93; }
@@ -222,7 +222,7 @@ if [ -n "${KUAYLE_CHECKOUT_TOKEN_FILE:-}" ]; then
   [ -n "$password" ] || { echo "empty askpass password" >&2; exit 94; }
 fi
 
-if [ "${KUAYLE_FAKE_GIT_FAIL_FETCH:-}" = "1" ]; then
+if [ "${KU_FAKE_GIT_FAIL_FETCH:-}" = "1" ]; then
   for arg in "$@"; do
     [ "$arg" != fetch ] || exit 42
   done
@@ -327,7 +327,7 @@ case "$command" in
     ;;
   show-ref)
     case "$*" in
-      *refs/remotes/origin/kuayle-sec-02*) exit 1 ;;
+      *refs/remotes/origin/ku-sec-02*) exit 1 ;;
       *refs/remotes/origin/main*) exit 0 ;;
     esac
     exit 1
@@ -341,8 +341,8 @@ func writeFakeTmux(t *testing.T, path string) {
 	t.Helper()
 	script := `#!/bin/sh
 set -eu
-state=${KUAYLE_FAKE_TMUX_STATE:?}
-log=${KUAYLE_FAKE_TMUX_LOG:?}
+state=${KU_FAKE_TMUX_STATE:?}
+log=${KU_FAKE_TMUX_LOG:?}
 printf '%s\n' "$*" >> "$log"
 case "${1:-}" in
   has-session )
@@ -352,7 +352,7 @@ case "${1:-}" in
   kill-session )
     [ "${2:-}" = "-t" ]
     [ -f "$state" ] && [ "$(cat "$state")" = "${3:-}" ]
-    [ "${KUAYLE_FAKE_TMUX_FAIL_KILL:-}" != "1" ]
+    [ "${KU_FAKE_TMUX_FAIL_KILL:-}" != "1" ]
     rm -f "$state"
     ;;
   * ) exit 2 ;;

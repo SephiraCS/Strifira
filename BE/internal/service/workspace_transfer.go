@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	"github.com/kuayle/kuayle-backend/pkg/audit"
-	"github.com/kuayle/kuayle-backend/pkg/storage"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
+	"github.com/ku/ku-backend/pkg/audit"
+	"github.com/ku/ku-backend/pkg/storage"
 )
 
 const (
@@ -160,7 +160,7 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 		RequiresReconfiguration: []string{"webhooks", "GitHub", "AI provider credentials", "Dev Machine environments"},
 	}
 
-	temp, err := os.CreateTemp("", "kuayle-workspace-export-*.zip")
+	temp, err := os.CreateTemp("", "ku-workspace-export-*.zip")
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 	}
 	cleanup = false
 	audit.Log("workspace.exported", actorID, map[string]interface{}{"workspace_id": workspace.ID})
-	return &ExportedWorkspaceArchive{Path: path, Filename: safeTransferFilename(workspace.Slug) + ".kuayle.zip"}, nil
+	return &ExportedWorkspaceArchive{Path: path, Filename: safeTransferFilename(workspace.Slug) + ".ku.zip"}, nil
 }
 
 // omitInvalidSharedLinks removes links whose polymorphic target is absent from

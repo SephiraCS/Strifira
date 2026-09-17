@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/middleware"
-	"github.com/kuayle/kuayle-backend/internal/realtime"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/middleware"
+	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/labstack/echo/v4"
 	"nhooyr.io/websocket"
 )

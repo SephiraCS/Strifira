@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo_primary.svg" alt="Kuayle" width="250">
+  <img src="assets/logo_primary.svg" alt="Ku" width="250">
   <p><strong>快乐 (kuàilè) · happiness, joy</strong></p>
 	<p><strong>The issue tracker with no paid tier.</strong></p>
 	<p>Keyboard-driven, self-hosted, and available in one public Apache 2.0 repository.</p>
@@ -10,7 +10,7 @@
 
 <br />
 
-[![Kuayle Screenshot](assets/product-screenshot.png)](https://github.com/carbogninalberto/kuayle)
+[![Ku Screenshot](assets/product-screenshot.png)](https://github.com/carbogninalberto/kuayle)
 
 ## 🌍 Contributors
 
@@ -22,7 +22,7 @@
 
 ## 🚦 Current Implementation State
 
-Kuayle's published releases are runnable MVPs, not a mature enterprise platform. This development branch also contains unreleased work described below. The repository includes the Go API, SvelteKit frontend, database migrations, development tooling, and reference self-hosting configuration.
+Ku's published releases are runnable MVPs, not a mature enterprise platform. This development branch also contains unreleased work described below. The repository includes the Go API, SvelteKit frontend, database migrations, development tooling, and reference self-hosting configuration.
 
 | Area             | State                                                                                                                                                                                                                                                     |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,9 +33,9 @@ Kuayle's published releases are runnable MVPs, not a mature enterprise platform.
 | **Dev Machines** | Unreleased development-branch functionality implemented as an opt-in self-hosted subsystem: PostgreSQL control plane, multi-container runtime, manager, authenticated gateway, four agent providers, collector, and UI. Disabled by default; see [`TECHNICAL.md`](TECHNICAL.md). |
 | **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
 
-## Why Kuayle?
+## Why Ku?
 
-Kuayle started with a narrow requirement: keep a fast, keyboard-oriented issue workflow while adding multiple assignees, self-hosting, and complete source access.
+Ku started with a narrow requirement: keep a fast, keyboard-oriented issue workflow while adding multiple assignees, self-hosting, and complete source access.
 
 The distribution model is deliberately simple:
 
@@ -74,7 +74,7 @@ The product is intentionally smaller than broad project-management suites. It co
 
 ## 🤖 Dev Machines (Agentic Coding)
 
-Dev Machines are an unreleased opt-in multi-container subsystem for self-hosted Kuayle. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.
+Dev Machines are an unreleased opt-in multi-container subsystem for self-hosted Ku. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.
 
 > See [`TECHNICAL.md`](TECHNICAL.md) for the full specification, architecture diagrams, schema, and API reference.
 
@@ -83,18 +83,18 @@ Dev Machines are an unreleased opt-in multi-container subsystem for self-hosted 
 ```
 You (browser)
   │
-  ├─ 0123456789abcdef0123.kuayle-machines.example.net         → code-server
-  ├─ 0123456789abcdef0123-terminal.kuayle-machines.example.net → native xterm over ttyd.v1
-  └─ 0123456789abcdef0123-browser.kuayle-machines.example.net → Chrome via KasmVNC (in-browser web navigation)
+  ├─ 0123456789abcdef0123.ku-machines.example.net         → code-server
+  ├─ 0123456789abcdef0123-terminal.ku-machines.example.net → native xterm over ttyd.v1
+  └─ 0123456789abcdef0123-browser.ku-machines.example.net → Chrome via KasmVNC (in-browser web navigation)
         │
         └── All routed through Machine Gateway auth — no public ports, no port management
 ```
 
 The implementation:
 
-1. **Orchestrate cooperating containers** per machine. Collector and egress services are always represented. The optional developer service runs code-server on `8080` and ttyd on `7681` in one container (`/workspace`, `HOME`, tools, processes, and tmux); browser and on-demand agent services run separately on the isolated bridge network. The Kuayle UI renders `@xterm/xterm` natively and speaks `ttyd.v1`; it does not expose ttyd's web page.
-2. **Support multiple agent providers** — Claude Code, OpenCode, Codex, or admin-configured generic CLIs. The shared developer image includes pinned OpenCode, Claude Code, and Codex CLIs for direct interactive terminal use. Kuayle's dashboard launches bounded autonomous runs in separately pinned provider images and normalizes their results.
-3. **Assign random subdomains** through a separate registrable wildcard domain (`*.kuayle-machines.example.net`) with launch-ticket auth and host-restricted machine session cookies. The machine domain must be a completely separate registrable domain to prevent cookie leakage between the main application and machine workloads.
+1. **Orchestrate cooperating containers** per machine. Collector and egress services are always represented. The optional developer service runs code-server on `8080` and ttyd on `7681` in one container (`/workspace`, `HOME`, tools, processes, and tmux); browser and on-demand agent services run separately on the isolated bridge network. The Ku UI renders `@xterm/xterm` natively and speaks `ttyd.v1`; it does not expose ttyd's web page.
+2. **Support multiple agent providers** — Claude Code, OpenCode, Codex, or admin-configured generic CLIs. The shared developer image includes pinned OpenCode, Claude Code, and Codex CLIs for direct interactive terminal use. Ku's dashboard launches bounded autonomous runs in separately pinned provider images and normalizes their results.
+3. **Assign random subdomains** through a separate registrable wildcard domain (`*.ku-machines.example.net`) with launch-ticket auth and host-restricted machine session cookies. The machine domain must be a completely separate registrable domain to prevent cookie leakage between the main application and machine workloads.
 4. **Authenticate** through a dedicated unprivileged Machine Gateway; the privileged Machine Manager is the only Dev Machines runtime component with Docker socket access. The separately optional system updater also mounts the socket when enabled.
 5. **Prepare issue worktrees** from issue, project, team, then workspace repository/environment defaults. One machine has affinity to one repository and can hold several independent issue worktrees from that repository; use a separate machine for another repository/environment or concurrent conflicting work.
 6. **Record best-effort activity** from filesystem, shell, root-checkout Git, browser, agent, gateway, and lifecycle telemetry and attach it to project work
@@ -104,7 +104,7 @@ The implementation:
 | Mode              | Who                             | What happens                                                              |
 | ----------------- | ------------------------------- | ------------------------------------------------------------------------- |
 | **Agent-only**    | A user starts a bounded run      | Agent works autonomously, records a normalized result, and optionally pushes a branch or opens a pull request with a repository-scoped GitHub App token |
-| **Human + Agent** | Developer opens an issue workspace | Uses code-server or the dedicated persistent terminal while launching and monitoring bounded agent runs from Kuayle |
+| **Human + Agent** | Developer opens an issue workspace | Uses code-server or the dedicated persistent terminal while launching and monitoring bounded agent runs from Ku |
 
 ### Configuration
 
@@ -120,7 +120,7 @@ Per-container PID limits are derived from the profile basis; 512 is not one aggr
 
 ## 🛠️ Tech Stack
 
-Here's what Kuayle runs on and what each piece does:
+Here's what Ku runs on and what each piece does:
 
 | Layer             | Tech                                 | Role                                                                  |
 | ----------------- | ------------------------------------ | --------------------------------------------------------------------- |
@@ -163,8 +163,8 @@ for supporting services only during local development: Postgres, Redis, the Dev
 Machine gateway/manager, runtime image builds, and the Caddy wildcard TLS proxy
 for `https://*.machines.localhost`. The dev proxy binds `127.0.0.1:80` and
 `127.0.0.1:443`; stop the selfhosting stack first if it is using those ports.
-The root gateway container is named `kuayle-dev-machine-gateway` to avoid the
-selfhosting `kuayle-machine-gateway` name.
+The root gateway container is named `ku-dev-machine-gateway` to avoid the
+selfhosting `ku-machine-gateway` name.
 
 ### 📖 Commands
 
@@ -191,11 +191,11 @@ selfhosting `kuayle-machine-gateway` name.
 
 ## 🏠 Self-Hosting
 
-Kuayle is designed to be self-hosted. The reference stack in [`selfhosting/`](selfhosting/) includes Caddy, PostgreSQL, Redis, the backend, the frontend, and an update script. Review secrets, backups, monitoring, and host security before production use.
+Ku is designed to be self-hosted. The reference stack in [`selfhosting/`](selfhosting/) includes Caddy, PostgreSQL, Redis, the backend, the frontend, and an update script. Review secrets, backups, monitoring, and host security before production use.
 
 ### Portable workspace transfer
 
-Workspace owners and admins can download a versioned `.kuayle.zip` archive from **Settings → General → Workspace transfer**. An authenticated user with no workspace can choose **Import workspace** during workspace setup; an owner or admin can also start an import from the transfer settings. Import always creates a separate workspace and never overwrites an existing one.
+Workspace owners and admins can download a versioned `.ku.zip` archive from **Settings → General → Workspace transfer**. An authenticated user with no workspace can choose **Import workspace** during workspace setup; an owner or admin can also start an import from the transfer settings. Import always creates a separate workspace and never overwrites an existing one.
 
 The archive contains a logical `manifest.json`, `data.json`, and the workspace's uploaded asset bytes. It preserves teams, statuses, labels, projects, cycles, issues and their relationships/history, templates, views, favorites, shared links, workspace notifications, integration metadata, AI prompts, and safe Dev Machine workspace policy/scope settings. Database and asset IDs are regenerated and references—including protected asset URLs—are remapped during import.
 
@@ -215,15 +215,15 @@ This feature transfers one logical workspace. It is not a replacement for an ope
 
 ```sh
 git clone https://github.com/carbogninalberto/kuayle.git
-cd kuayle/selfhosting
+cd ku/selfhosting
 cp .env.example .env
 ```
 
 Edit `.env` with your domain and production values:
 
 ```env
-DOMAIN=kuayle.yourcompany.com
-FRONTEND_URL=https://kuayle.yourcompany.com
+DOMAIN=ku.yourcompany.com
+FRONTEND_URL=https://ku.yourcompany.com
 POSTGRES_PASSWORD=<strong-random-password>
 JWT_SECRET=<random-string-at-least-32-chars>
 ```
@@ -253,9 +253,9 @@ Dev Machines remain disabled in the default five-service deployment. Before enab
 
 1. Set `DEV_MACHINES_ENABLED=true`, then configure `DEV_MACHINE_DOMAIN` on a separate registrable domain from `DOMAIN`, with wildcard DNS pointing to the host.
 2. Replace the checked-in local `tls internal` wildcard configuration with either a mounted wildcard certificate or a DNS-01-enabled Caddy build for production. Profile startup rejects public production machine domains while Caddy internal TLS remains active. The wildcard route already proxies machine HTTP and WebSocket upgrades to the gateway.
-3. Keep `FRONTEND_URL` set to the exact public Kuayle origin; the gateway uses it for native terminal WebSocket `Origin` checks.
+3. Keep `FRONTEND_URL` set to the exact public Ku origin; the gateway uses it for native terminal WebSocket `Origin` checks.
 4. Set `DEV_MACHINE_ENCRYPTION_KEY` to an independent random value of at least 32 characters and set `DEV_MACHINE_INGEST_URL` to the public HTTPS API URL.
-5. Set an independent `DEV_MACHINE_GATEWAY_DB_PASSWORD`; Compose provisions a restricted `kuayle_gateway` login and the gateway rejects the application database credential in production.
+5. Set an independent `DEV_MACHINE_GATEWAY_DB_PASSWORD`; Compose provisions a restricted `ku_gateway` login and the gateway rejects the application database credential in production.
 6. On Linux, set `DEV_MACHINE_DOCKER_GID` to the numeric group owner reported by `stat -c '%g' /var/run/docker.sock`; Docker Desktop commonly uses the default `0`.
 7. Build the runtime images, migrate, provision gateway grants, and start the optional control plane:
 
@@ -277,7 +277,7 @@ The manager process runs as UID/GID 1000 with only the Docker socket's host grou
 ### Updating
 
 ```sh
-cd kuayle
+cd ku
 bash selfhosting/update.sh
 ```
 
@@ -299,7 +299,7 @@ By default, uploads use a local Docker volume (`STORAGE_TYPE=local`). The altern
 ```env
 STORAGE_TYPE=s3
 S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
-S3_BUCKET=kuayle-uploads
+S3_BUCKET=ku-uploads
 S3_REGION=us-east-1
 S3_ACCESS_KEY=your-key
 S3_SECRET_KEY=your-secret
@@ -309,7 +309,7 @@ The backend is intended for AWS S3 and compatible APIs such as R2, MinIO, and Se
 
 ### GitHub Integration (optional)
 
-Kuayle connects to GitHub through a **GitHub App**. By default, each workspace uses GitHub's App Manifest flow and stores the returned credentials encrypted. Deployments with shared App credentials can let workspaces install a preconfigured App instead (see `.env.example` for the `GITHUB_APP_*` variables).
+Ku connects to GitHub through a **GitHub App**. By default, each workspace uses GitHub's App Manifest flow and stores the returned credentials encrypted. Deployments with shared App credentials can let workspaces install a preconfigured App instead (see `.env.example` for the `GITHUB_APP_*` variables).
 
 #### What it does
 
@@ -319,7 +319,7 @@ Kuayle connects to GitHub through a **GitHub App**. By default, each workspace u
 
 #### Publicly reachable instance
 
-If GitHub can reach your Kuayle instance (for example `https://kuayle.yourcompany.com`), the manifest flow can populate the callback and webhook URLs:
+If GitHub can reach your Ku instance (for example `https://ku.yourcompany.com`), the manifest flow can populate the callback and webhook URLs:
 
 1. Go to **Settings → GitHub** in your workspace
 2. Click **Set up GitHub App** — redirects to GitHub with a pre-filled form
@@ -352,22 +352,22 @@ If your instance runs on a private network (for example behind a VPN), GitHub ca
 The smee client must stay running to receive events. You can run it as a systemd service:
 
 ```ini
-# /etc/systemd/system/smee-kuayle.service
+# /etc/systemd/system/smee-ku.service
 [Unit]
-Description=Smee webhook proxy for Kuayle
+Description=Smee webhook proxy for Ku
 After=network.target
 
 [Service]
 ExecStart=/usr/bin/npx smee-client --url https://smee.io/abc123 --target http://localhost:8080/api/github/webhook
 Restart=always
-User=kuayle
+User=ku
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```sh
-sudo systemctl enable --now smee-kuayle
+sudo systemctl enable --now smee-ku
 ```
 
 **Option B: Reverse tunnel**
@@ -401,7 +401,7 @@ For local development, the GitHub App is created without a webhook URL (since lo
 ## 📂 Project Structure
 
 ```
-kuayle/
+ku/
 ├── BE/                     # Backend (Go)
 │   ├── cmd/server/         # Entrypoint (server, migrate, seed)
 │   └── internal/
@@ -454,7 +454,7 @@ Alberto Carbognin, [@carbogninalberto](https://github.com/carbogninalberto)
 
 ---
 
-> **Project note:** Kuayle has been developed with AI-assisted tooling under human direction and review. Published releases remain MVPs; evaluate and test them against your requirements before production use.
+> **Project note:** Ku has been developed with AI-assisted tooling under human direction and review. Published releases remain MVPs; evaluate and test them against your requirements before production use.
 
 <!-- MARKDOWN LINKS & IMAGES -->
 

@@ -30,8 +30,8 @@ test('keeps project and team development settings scoped during rapid navigation
 		{ id: projectBId, name: 'Project Beta', description: null, status: 'planned', team_id: teamBId, lead_id: null, start_date: null, target_date: null, sort_order: 2, created_at: now, updated_at: now }
 	];
 	const repositories = [
-		{ id: repoAId, github_repo_id: 1001, full_name: 'kuayle/repo-alpha', default_branch: 'main', is_active: true },
-		{ id: repoBId, github_repo_id: 1002, full_name: 'kuayle/repo-beta', default_branch: 'develop', is_active: true }
+		{ id: repoAId, github_repo_id: 1001, full_name: 'ku/repo-alpha', default_branch: 'main', is_active: true },
+		{ id: repoBId, github_repo_id: 1002, full_name: 'ku/repo-beta', default_branch: 'develop', is_active: true }
 	];
 	const environments = [
 		{ id: environmentAId, workspace_id: workspaceId, name: 'Alpha environment', status: 'ready', image_ref: 'alpha:latest', created_at: now, updated_at: now },
@@ -111,14 +111,14 @@ test('keeps project and team development settings scoped during rapid navigation
 	await expect(teamSave).toBeDisabled();
 	teamBDelay.release();
 	await teamBDelay.completed;
-	await expect(page.getByText('kuayle/repo-beta', { exact: true })).toBeVisible();
+	await expect(page.getByText('ku/repo-beta', { exact: true })).toBeVisible();
 	await expect(page.getByText('Beta environment', { exact: true })).toBeVisible();
 	await expect(teamSave).toBeEnabled();
 	teamADelay.release();
 	await teamADelay.completed;
 	await page.waitForTimeout(50);
-	await expect(page.getByText('kuayle/repo-beta', { exact: true })).toBeVisible();
-	await expect(page.getByText('kuayle/repo-alpha', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('ku/repo-beta', { exact: true })).toBeVisible();
+	await expect(page.getByText('ku/repo-alpha', { exact: true })).toHaveCount(0);
 	await teamSave.click();
 	await expect.poll(() => savedSettings.length).toBe(1);
 	expect(savedSettings[0]).toMatchObject({ scope_type: 'team', scope_id: teamBId, github_repo_id: repoBId, environment_id: environmentBId });
@@ -144,13 +144,13 @@ test('keeps project and team development settings scoped during rapid navigation
 	await projectBDelay.completed;
 	await page.getByTitle('Development settings').click();
 	const projectDialog = page.getByRole('dialog');
-	await expect(projectDialog.getByText('kuayle/repo-beta', { exact: true })).toBeVisible();
+	await expect(projectDialog.getByText('ku/repo-beta', { exact: true })).toBeVisible();
 	await expect(projectDialog.getByText('Beta environment', { exact: true })).toBeVisible();
 	projectADelay.release();
 	await projectADelay.completed;
 	await page.waitForTimeout(50);
-	await expect(projectDialog.getByText('kuayle/repo-beta', { exact: true })).toBeVisible();
-	await expect(projectDialog.getByText('kuayle/repo-alpha', { exact: true })).toHaveCount(0);
+	await expect(projectDialog.getByText('ku/repo-beta', { exact: true })).toBeVisible();
+	await expect(projectDialog.getByText('ku/repo-alpha', { exact: true })).toHaveCount(0);
 	await projectDialog.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect.poll(() => savedSettings.length).toBe(2);
 	expect(savedSettings[1]).toMatchObject({ scope_type: 'project', scope_id: projectBId, github_repo_id: repoBId, environment_id: environmentBId });
@@ -163,7 +163,7 @@ test('keeps project and team development settings scoped during rapid navigation
 	await readOnlySettings.click();
 	const readOnlyDialog = page.getByRole('dialog');
 	await expect(readOnlyDialog.getByText('Workspace owners and admins manage project development defaults.')).toBeVisible();
-	await expect(readOnlyDialog.getByText('kuayle/repo-alpha', { exact: true })).toBeVisible();
+	await expect(readOnlyDialog.getByText('ku/repo-alpha', { exact: true })).toBeVisible();
 	await expect(readOnlyDialog.getByText('Alpha environment', { exact: true })).toBeVisible();
 	await expect(readOnlyDialog.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
 	expect(savedSettings).toHaveLength(2);

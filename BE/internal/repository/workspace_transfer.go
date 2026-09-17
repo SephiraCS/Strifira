@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/kuayle/kuayle-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/dto"
 )
 
 type WorkspaceTransferTableSpec struct {

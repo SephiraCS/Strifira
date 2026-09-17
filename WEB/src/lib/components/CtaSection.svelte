@@ -4,7 +4,7 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 
 	let {
-		heading = 'Review Kuayle before you deploy it',
+		heading = 'Review Ku before you deploy it',
 		description = 'Inspect the Apache 2.0 source, then follow the Docker Compose guide to run an instance on your infrastructure.'
 	}: {
 		heading?: string;

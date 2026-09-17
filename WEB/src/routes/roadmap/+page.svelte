@@ -8,8 +8,8 @@
 	const release = useLatestRelease();
 
 	const meta = {
-		title: 'Kuayle Roadmap and Development Status',
-		description: 'Kuayle development status, known product gaps, the unreleased Dev Machines subsystem, and where to follow proposed work.',
+		title: 'Ku Roadmap and Development Status',
+		description: 'Ku development status, known product gaps, the unreleased Dev Machines subsystem, and where to follow proposed work.',
 		canonical: url('/roadmap'),
 		modifiedAt: contentModifiedAt('/roadmap')
 	};
@@ -19,7 +19,7 @@
 	const sections = $derived([
 		{
 			heading: 'No invented release dates',
-			body: 'Kuayle does not publish committed release dates or promise features against version numbers. Open issues and merged pull requests are the reliable record of proposed and completed work. This page documents the current product boundary rather than a sales roadmap.',
+			body: 'Ku does not publish committed release dates or promise features against version numbers. Open issues and merged pull requests are the reliable record of proposed and completed work. This page documents the current product boundary rather than a sales roadmap.',
 			list: [
 				'Open issues describe proposed work',
 				'Pull requests and releases describe shipped work',
@@ -40,7 +40,7 @@
 		},
 		{
 			heading: 'Known gaps',
-			body: 'These capabilities are not available in the current user interface. Their absence is documented so teams can evaluate Kuayle against present requirements rather than future assumptions.',
+			body: 'These capabilities are not available in the current user interface. Their absence is documented so teams can evaluate Ku against present requirements rather than future assumptions.',
 			list: [
 				'Data import and export workflows',
 				'Enterprise identity: SSO, SAML, SCIM and LDAP',
@@ -72,7 +72,7 @@
 <StandalonePage
 	{meta}
 	heading="Roadmap and Development Status"
-	intro="What Kuayle implements now, what it does not implement, and where proposed work is tracked. There are no promised dates or invented release milestones."
+	intro="What Ku implements now, what it does not implement, and where proposed work is tracked. There are no promised dates or invented release milestones."
 	{sections}
 	breadcrumbs={crumbs}
 />

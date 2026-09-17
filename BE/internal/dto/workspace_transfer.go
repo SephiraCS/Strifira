@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const WorkspaceExportFormat = "kuayle.workspace"
+const WorkspaceExportFormat = "ku.workspace"
 const WorkspaceExportVersion = 1
 
 type WorkspaceExportManifest struct {

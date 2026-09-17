@@ -5,11 +5,11 @@ repository=${1:-}
 base_branch=${2:-}
 working_branch=${3:-}
 workspace_path=${4:-}
-workspace_root=${KUAYLE_WORKSPACE_ROOT:-/workspace}
-checkout_secret_dir=${KUAYLE_CHECKOUT_SECRET_DIR:-/run/kuayle-secrets}
-checkout_tmp_dir=${KUAYLE_CHECKOUT_TMP_DIR:-/tmp}
-home_dir=${HOME:-/home/kuayle}
-credential_helper=${KUAYLE_GIT_CREDENTIAL_HELPER:-$home_dir/.kuayle-git-credential}
+workspace_root=${KU_WORKSPACE_ROOT:-/workspace}
+checkout_secret_dir=${KU_CHECKOUT_SECRET_DIR:-/run/ku-secrets}
+checkout_tmp_dir=${KU_CHECKOUT_TMP_DIR:-/tmp}
+home_dir=${HOME:-/home/ku}
+credential_helper=${KU_GIT_CREDENTIAL_HELPER:-$home_dir/.ku-git-credential}
 token_file=
 askpass=
 
@@ -21,9 +21,9 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
-if [ "${KUAYLE_CHECKOUT_ALLOW_ROOT_OVERRIDE:-0}" != "1" ]; then
+if [ "${KU_CHECKOUT_ALLOW_ROOT_OVERRIDE:-0}" != "1" ]; then
   [ "$workspace_root" = /workspace ] || { echo "invalid workspace root" >&2; exit 1; }
-  [ "$checkout_secret_dir" = /run/kuayle-secrets ] || { echo "invalid checkout secret dir" >&2; exit 1; }
+  [ "$checkout_secret_dir" = /run/ku-secrets ] || { echo "invalid checkout secret dir" >&2; exit 1; }
   [ "$checkout_tmp_dir" = /tmp ] || { echo "invalid checkout tmp dir" >&2; exit 1; }
 fi
 
@@ -108,21 +108,21 @@ valid_ref "$base_branch" && valid_ref "$working_branch" || { echo "invalid branc
 IFS= read -r github_token
 [ -n "$github_token" ] || { echo "missing repository credential" >&2; exit 1; }
 umask 077
-token_file=$(mktemp "$checkout_secret_dir/kuayle-checkout-token.XXXXXX")
+token_file=$(mktemp "$checkout_secret_dir/ku-checkout-token.XXXXXX")
 printf '%s' "$github_token" > "$token_file"
 chmod 0600 "$token_file"
 unset github_token
 
-askpass=$(mktemp "$checkout_tmp_dir/kuayle-checkout-askpass.XXXXXX")
+askpass=$(mktemp "$checkout_tmp_dir/ku-checkout-askpass.XXXXXX")
 cat > "$askpass" <<'SCRIPT'
 #!/bin/sh
 case "$1" in
   *Username*) printf '%s\n' x-access-token ;;
-  *) cat "$KUAYLE_CHECKOUT_TOKEN_FILE" ;;
+  *) cat "$KU_CHECKOUT_TOKEN_FILE" ;;
 esac
 SCRIPT
 chmod 0700 "$askpass"
-export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KUAYLE_CHECKOUT_TOKEN_FILE="$token_file"
+export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KU_CHECKOUT_TOKEN_FILE="$token_file"
 
 repository_key=$(printf '%s' "$repository" | tr '/' '-')
 bare_repository="$workspace_root/repos/${repository_key}.git"

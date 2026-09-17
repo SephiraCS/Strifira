@@ -55,7 +55,7 @@
 	{#if ready}
 		<div class="w-full max-w-2xl">
 			<div class="text-center">
-				<img src="/favicon.svg" alt="Kuayle" class="mx-auto mb-4 h-12 w-12" />
+				<img src="/favicon.svg" alt="Ku" class="mx-auto mb-4 h-12 w-12" />
 				<h1 class="text-2xl font-semibold text-[var(--color-text-primary)]">{m['workspace_setup.title']()}</h1>
 				<p class="mt-2 text-sm text-[var(--color-text-tertiary)]">{m['workspace_setup.description']()}</p>
 			</div>

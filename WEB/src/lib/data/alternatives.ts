@@ -7,7 +7,7 @@ import type { ContentRegistry } from './routes';
 export const alternatives: ContentRegistry = {
 	'open-source-issue-trackers': {
 		slug: 'open-source-issue-trackers',
-		title: 'Open Source Issue Trackers — Alternatives to Kuayle',
+		title: 'Open Source Issue Trackers — Alternatives to Ku',
 		description:
 			'Compare open-source issue tracker categories by license, deployment model, product scope, and commercial edition structure.',
 		heading: 'Open Source Issue Trackers',
@@ -18,7 +18,7 @@ export const alternatives: ContentRegistry = {
 				heading: 'The landscape',
 				body: 'Start by deciding whether issues are the product’s center or one module in a larger suite.',
 				list: [
-					'Focused and agile tools: Kuayle, Plane, and Taiga — issue workflows and sprint or cycle planning',
+					'Focused and agile tools: Ku, Plane, and Taiga — issue workflows and sprint or cycle planning',
 					'All-in-one PM: Redmine, OpenProject, Leantime — broader scope with Gantt, wikis, time tracking',
 					'Platform-embedded: GitLab Issues, Gitea, Gogs — tracking alongside source code hosting'
 				]
@@ -27,14 +27,14 @@ export const alternatives: ContentRegistry = {
 				heading: 'Licensing differences',
 				body: 'Source availability does not make licenses interchangeable. Permissive licenses and copyleft licenses impose different redistribution obligations, while some vendors maintain paid editions or features alongside a public repository.',
 				list: [
-					'Apache 2.0: Kuayle — permits commercial use and modification subject to license conditions',
+					'Apache 2.0: Ku — permits commercial use and modification subject to license conditions',
 					'Copyleft projects use licenses such as AGPL or GPL; review each project’s current license and obligations',
 					'Open core: some tools offer basic features as open source with paid enterprise add-ons'
 				]
 			},
 			{
-				heading: 'Where Kuayle fits',
-				body: 'Kuayle is a focused, self-hosted issue tracker rather than a general project-management suite. Its current application and deployment code live in one Apache 2.0 repository, with no enterprise edition or license-key path.',
+				heading: 'Where Ku fits',
+				body: 'Ku is a focused, self-hosted issue tracker rather than a general project-management suite. Its current application and deployment code live in one Apache 2.0 repository, with no enterprise edition or license-key path.',
 				list: [
 					'Multiple assignees on one issue',
 					'Keyboard shortcuts and issue search',
@@ -46,7 +46,7 @@ export const alternatives: ContentRegistry = {
 				heading: 'Sources',
 				body: 'Licenses and editions change. Verify them in each project’s first-party repository or documentation.',
 				links: [
-					{ label: 'Kuayle repository', href: 'https://github.com/carbogninalberto/kuayle' },
+					{ label: 'Ku repository', href: 'https://github.com/carbogninalberto/kuayle' },
 					{ label: 'Plane repository', href: 'https://github.com/makeplane/plane' },
 					{ label: 'Taiga repository', href: 'https://github.com/taigaio/taiga-back' },
 					{ label: 'OpenProject repository', href: 'https://github.com/opf/openproject' }
@@ -58,7 +58,7 @@ export const alternatives: ContentRegistry = {
 
 	'self-hosted-issue-trackers': {
 		slug: 'self-hosted-issue-trackers',
-		title: 'Self-Hosted Issue Trackers — Alternatives to Kuayle',
+		title: 'Self-Hosted Issue Trackers — Alternatives to Ku',
 		description:
 			'Compare self-hosted issue trackers by deployment footprint, license, update path, storage, backup responsibilities, and product scope.',
 		heading: 'Self-Hosted Issue Trackers',
@@ -79,7 +79,7 @@ export const alternatives: ContentRegistry = {
 				heading: 'Different product scopes',
 				body: 'The main alternatives do not target exactly the same workflow. Verify current editions and deployment support in first-party documentation.',
 				list: [
-					'Kuayle — focused issue tracking, cycles, projects and GitHub automation; Apache 2.0',
+					'Ku — focused issue tracking, cycles, projects and GitHub automation; Apache 2.0',
 					'Plane — project-management suite with pages, modules, dashboards and commercial plans; AGPL-3.0 public repository',
 					'Taiga — Scrum and Kanban-oriented project management',
 					'OpenProject — broader project management including Gantt and time-related workflows',
@@ -88,7 +88,7 @@ export const alternatives: ContentRegistry = {
 			},
 			{
 				heading: 'What to consider',
-				body: 'Evaluate the deployment you will actually operate, not only a product screenshot. Kuayle’s reference stack uses five services in one Compose file; other products may support additional deployment methods or require more services.',
+				body: 'Evaluate the deployment you will actually operate, not only a product screenshot. Ku’s reference stack uses five services in one Compose file; other products may support additional deployment methods or require more services.',
 				list: [
 					'Deployment and update procedure',
 					'Database, upload and certificate backups',
@@ -100,7 +100,7 @@ export const alternatives: ContentRegistry = {
 				heading: 'Sources',
 				body: 'Use first-party deployment and licensing documentation before selecting a tool.',
 				links: [
-					{ label: 'Kuayle self-hosting guide', href: 'https://kuayle.com/self-hosting' },
+					{ label: 'Ku self-hosting guide', href: 'https://kuayle.com/self-hosting' },
 					{ label: 'Plane self-hosting documentation', href: 'https://developers.plane.so/self-hosting/overview' },
 					{ label: 'Taiga installation guide', href: 'https://docs.taiga.io/setup-production.html' },
 					{ label: 'OpenProject installation guide', href: 'https://www.openproject.org/docs/installation-and-operations/' }

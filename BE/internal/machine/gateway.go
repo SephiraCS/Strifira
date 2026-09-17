@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/repository"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 
-const machineSessionCookie = "__Host-kuayle-machine"
+const machineSessionCookie = "__Host-ku-machine"
 
 var routingKeyPattern = regexp.MustCompile(`^[a-z0-9]{12,32}$`)
 
@@ -489,7 +489,7 @@ func stripCredentials(header http.Header) {
 	header.Del("Authorization")
 	header.Del("Proxy-Authorization")
 	for name := range header {
-		if strings.HasPrefix(strings.ToLower(name), "x-kuayle-") {
+		if strings.HasPrefix(strings.ToLower(name), "x-ku-") {
 			header.Del(name)
 		}
 	}

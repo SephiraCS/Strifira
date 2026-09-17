@@ -63,9 +63,9 @@ func (e *deliveryError) Error() string {
 
 func main() {
 	c := &collector{
-		client: &http.Client{Timeout: 10 * time.Second}, endpoint: strings.TrimRight(os.Getenv("KUAYLE_INGEST_URL"), "/"),
-		token: os.Getenv("KUAYLE_MACHINE_TOKEN"), machineID: os.Getenv("KUAYLE_MACHINE_ID"), files: make(map[string]fileState),
-		browserCDP: strings.TrimRight(os.Getenv("KUAYLE_BROWSER_CDP_URL"), "/"), browserCDPToken: os.Getenv("KUAYLE_BROWSER_CDP_TOKEN"),
+		client: &http.Client{Timeout: 10 * time.Second}, endpoint: strings.TrimRight(os.Getenv("KU_INGEST_URL"), "/"),
+		token: os.Getenv("KU_MACHINE_TOKEN"), machineID: os.Getenv("KU_MACHINE_ID"), files: make(map[string]fileState),
+		browserCDP: strings.TrimRight(os.Getenv("KU_BROWSER_CDP_URL"), "/"), browserCDPToken: os.Getenv("KU_BROWSER_CDP_TOKEN"),
 		browserLocations: make(map[string]string),
 	}
 	if c.endpoint == "" || c.token == "" {

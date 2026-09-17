@@ -14,7 +14,7 @@ func TestSafeGitHubPullRequestURL(t *testing.T) {
 		{name: "http", value: "http://github.com/carbogninalberto/kuayle/pull/46", repository: "carbogninalberto/kuayle"},
 		{name: "lookalike host", value: "https://github.com.example.com/carbogninalberto/kuayle/pull/46", repository: "carbogninalberto/kuayle"},
 		{name: "userinfo", value: "https://github.com@evil.example/carbogninalberto/kuayle/pull/46", repository: "carbogninalberto/kuayle"},
-		{name: "other repository", value: "https://github.com/attacker/kuayle/pull/46", repository: "carbogninalberto/kuayle"},
+		{name: "other repository", value: "https://github.com/attacker/ku/pull/46", repository: "carbogninalberto/kuayle"},
 		{name: "repository prefix", value: "https://github.com/carbogninalberto/kuayle-malicious/pull/46", repository: "carbogninalberto/kuayle"},
 		{name: "non pull request", value: "https://github.com/carbogninalberto/kuayle/issues/46", repository: "carbogninalberto/kuayle"},
 		{name: "invalid pull request number", value: "https://github.com/carbogninalberto/kuayle/pull/zero", repository: "carbogninalberto/kuayle"},

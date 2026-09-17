@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/pkg/assettoken"
+	"github.com/ku/ku-backend/pkg/assettoken"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

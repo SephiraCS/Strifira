@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile kuayle-dev-machine flags=(attach_disconnected,mediate_deleted) {
+profile ku-dev-machine flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 
@@ -17,7 +17,7 @@ profile kuayle-dev-machine flags=(attach_disconnected,mediate_deleted) {
   /workspace/** rwk,
   /tmp/** rwk,
   /run/** rwk,
-  /home/kuayle/** rwk,
+  /home/ku/** rwk,
 
   deny /var/run/docker.sock rwklx,
   deny /proc/sys/** w,

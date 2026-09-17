@@ -8,10 +8,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/middleware"
-	"github.com/kuayle/kuayle-backend/internal/service"
-	"github.com/kuayle/kuayle-backend/pkg/response"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/middleware"
+	"github.com/ku/ku-backend/internal/service"
+	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )
@@ -96,7 +96,7 @@ func receiveWorkspaceArchive(c echo.Context) (string, func(), error) {
 		return "", func() {}, response.Error(c, http.StatusBadRequest, "INVALID_WORKSPACE_ARCHIVE", "Cannot read workspace archive")
 	}
 	defer source.Close()
-	temp, err := os.CreateTemp("", "kuayle-workspace-import-*.zip")
+	temp, err := os.CreateTemp("", "ku-workspace-import-*.zip")
 	if err != nil {
 		cleanupMultipart()
 		return "", func() {}, response.InternalError(c)

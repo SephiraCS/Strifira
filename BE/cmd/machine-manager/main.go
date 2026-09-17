@@ -12,12 +12,12 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/kuayle/kuayle-backend/internal/agent"
-	"github.com/kuayle/kuayle-backend/internal/config"
-	"github.com/kuayle/kuayle-backend/internal/machine"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	cryptoutil "github.com/kuayle/kuayle-backend/pkg/crypto"
-	githubclient "github.com/kuayle/kuayle-backend/pkg/github"
+	"github.com/ku/ku-backend/internal/agent"
+	"github.com/ku/ku-backend/internal/config"
+	"github.com/ku/ku-backend/internal/machine"
+	"github.com/ku/ku-backend/internal/repository"
+	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
+	githubclient "github.com/ku/ku-backend/pkg/github"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -112,7 +112,7 @@ func metricsServer(manager *machine.Manager, database *sqlx.DB) *http.Server {
 	mux.HandleFunc("/metrics", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/plain; version=0.0.4")
 		for name, value := range manager.Metrics() {
-			_, _ = fmt.Fprintf(writer, "kuayle_dev_machine_%s %d\n", name, value)
+			_, _ = fmt.Fprintf(writer, "ku_dev_machine_%s %d\n", name, value)
 		}
 	})
 	port := os.Getenv("DEV_MACHINE_MANAGER_PORT")

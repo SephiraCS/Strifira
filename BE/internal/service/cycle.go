@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/realtime"
-	"github.com/kuayle/kuayle-backend/internal/repository"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/realtime"
+	"github.com/ku/ku-backend/internal/repository"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )

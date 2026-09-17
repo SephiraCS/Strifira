@@ -3,7 +3,7 @@ package machine
 import (
 	"context"
 
-	"github.com/kuayle/kuayle-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/domain"
 )
 
 type AgentExecution struct {

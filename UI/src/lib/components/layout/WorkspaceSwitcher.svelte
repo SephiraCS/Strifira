@@ -35,7 +35,7 @@
 	function switchWorkspace(ws: Workspace) {
 		open = false;
 		if (ws.slug !== slug) {
-			localStorage.setItem('kuayle_last_workspace', ws.slug);
+			localStorage.setItem('ku_last_workspace', ws.slug);
 			goto(`/${ws.slug}/my-issues`);
 		}
 	}
@@ -61,7 +61,7 @@
 		try {
 			const workspace = await createWorkspace(workspaceName, workspaceSlug);
 			workspaces = [...workspaces, workspace].sort((a, b) => a.name.localeCompare(b.name));
-			localStorage.setItem('kuayle_last_workspace', workspace.slug);
+			localStorage.setItem('ku_last_workspace', workspace.slug);
 			appToast.success(m['sidebar.workspace_created']());
 			showCreateWorkspace = false;
 			newWorkspaceName = '';

@@ -91,9 +91,9 @@ ensure-trivy:
 scan: scan-backend scan-frontend
 
 scan-backend: ensure-trivy
-	docker build -t kuayle-backend:scan ./BE
-	trivy image --severity CRITICAL,HIGH --exit-code 1 kuayle-backend:scan
+	docker build -t ku-backend:scan ./BE
+	trivy image --severity CRITICAL,HIGH --exit-code 1 ku-backend:scan
 
 scan-frontend: ensure-trivy
-	docker build -t kuayle-frontend:scan ./UI
-	trivy image --severity CRITICAL,HIGH --exit-code 1 kuayle-frontend:scan
+	docker build -t ku-frontend:scan ./UI
+	trivy image --severity CRITICAL,HIGH --exit-code 1 ku-frontend:scan

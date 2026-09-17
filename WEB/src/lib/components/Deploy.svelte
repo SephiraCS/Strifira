@@ -6,7 +6,7 @@
 	import Github from '$lib/components/GithubIcon.svelte';
 
 	const commands = `git clone https://github.com/carbogninalberto/kuayle
-cd kuayle/selfhosting
+cd ku/selfhosting
 cp .env.example .env
 # edit .env (set DOMAIN, JWT_SECRET, POSTGRES_PASSWORD)
 docker compose up --build -d
@@ -47,7 +47,7 @@ docker compose exec backend /app/server seed`;
 					<span class="size-3 rounded-full bg-[#ff5f57]/80"></span>
 					<span class="size-3 rounded-full bg-[#febc2e]/80"></span>
 					<span class="size-3 rounded-full bg-[#28c840]/80"></span>
-					<span class="ml-3 font-mono text-[10px] text-muted-foreground">~/kuayle — zsh</span>
+					<span class="ml-3 font-mono text-[10px] text-muted-foreground">~/ku — zsh</span>
 				</div>
 				<button
 					onclick={copy}
@@ -62,7 +62,7 @@ docker compose exec backend /app/server seed`;
 			</div>
 				<pre class="overflow-x-auto p-5 font-mono text-sm leading-7"><code
 						><span class="text-muted-foreground">$</span> <span class="text-brand-200">git</span> clone https://github.com/carbogninalberto/kuayle
-<span class="text-muted-foreground">$</span> <span class="text-brand-200">cd</span> kuayle/selfhosting
+<span class="text-muted-foreground">$</span> <span class="text-brand-200">cd</span> ku/selfhosting
 <span class="text-muted-foreground">$</span> <span class="text-brand-200">cp</span> .env.example .env
 <span class="text-muted-foreground">#</span> edit .env (set DOMAIN, JWT_SECRET, POSTGRES_PASSWORD)
 <span class="text-muted-foreground">$</span> <span class="text-brand-200">docker</span> compose up --build -d

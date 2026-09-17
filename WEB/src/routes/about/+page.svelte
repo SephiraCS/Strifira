@@ -8,8 +8,8 @@
 	const release = useLatestRelease();
 
 	const meta = {
-		title: 'About Kuayle — Product, Maintainer and Current State',
-		description: 'Learn why Kuayle exists, who maintains it, how it is built, and what is implemented in the current release.',
+		title: 'About Ku — Product, Maintainer and Current State',
+		description: 'Learn why Ku exists, who maintains it, how it is built, and what is implemented in the current release.',
 		canonical: url('/about'),
 		modifiedAt: contentModifiedAt('/about')
 	};
@@ -18,8 +18,8 @@
 
 	const sections = $derived([
 		{
-			heading: 'What Kuayle is',
-			body: `Kuayle is a self-hosted issue tracker with keyboard shortcuts, multi-assignee issues, cycles, projects, analytics and GitHub automation. An ${DEV_MACHINES_RELEASE_STATUS.toLowerCase()} opt-in Dev Machines subsystem adds agentic coding environments on the development branch. The name comes from 快乐 (kuàilè), the Chinese word for happiness or joy.`,
+			heading: 'What Ku is',
+			body: `Ku is a self-hosted issue tracker with keyboard shortcuts, multi-assignee issues, cycles, projects, analytics and GitHub automation. An ${DEV_MACHINES_RELEASE_STATUS.toLowerCase()} opt-in Dev Machines subsystem adds agentic coding environments on the development branch. The name comes from 快乐 (kuàilè), the Chinese word for happiness or joy.`,
 			list: [
 				'Name: 快乐 (kuàilè) — happiness, joy',
 				`Current version: ${release.version}`,
@@ -29,7 +29,7 @@
 		},
 		{
 			heading: 'Why we built it',
-			body: 'Kuayle started from a specific product requirement: keep the fast, keyboard-oriented workflow of tools such as Linear while adding multi-assignee issues, self-hosting and an open-source license. It began as an internal tool and was released as a public project.',
+			body: 'Ku started from a specific product requirement: keep the fast, keyboard-oriented workflow of tools such as Linear while adding multi-assignee issues, self-hosting and an open-source license. It began as an internal tool and was released as a public project.',
 			list: [
 				'Keyboard shortcuts for issue creation, search, navigation and issue updates',
 				'Multiple assignees on one issue',
@@ -39,7 +39,7 @@
 		},
 		{
 			heading: 'Who is behind it',
-			body: 'Kuayle is developed and maintained by Bakney srl, an Italian software company based in Monteforte d\'Alpone (VR). The project is led by Alberto Carbognin.',
+			body: 'Ku is developed and maintained by Bakney srl, an Italian software company based in Monteforte d\'Alpone (VR). The project is led by Alberto Carbognin.',
 			list: [
 				'Company: Bakney srl (Italy, EU)',
 				'Founder: Alberto Carbognin',
@@ -73,8 +73,8 @@
 
 <StandalonePage
 	{meta}
-	heading="About Kuayle"
-	intro="Kuayle is maintained by Bakney srl as an open-source, self-hosted issue tracker. This page describes the product, the implementation and the limits of the current release."
+	heading="About Ku"
+	intro="Ku is maintained by Bakney srl as an open-source, self-hosted issue tracker. This page describes the product, the implementation and the limits of the current release."
 	{sections}
 	breadcrumbs={crumbs}
 />

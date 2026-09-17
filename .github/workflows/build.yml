@@ -124,8 +124,8 @@ jobs:
           pull: true
           push: ${{ github.event_name == 'release' }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}/kuayle:latest
-            ${{ env.IMAGE_PREFIX }}/kuayle:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}/ku:latest
+            ${{ env.IMAGE_PREFIX }}/ku:${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=all-in-one
           cache-to: type=gha,mode=max,scope=all-in-one
 
@@ -138,8 +138,8 @@ jobs:
           pull: true
           push: ${{ github.event_name == 'release' }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}/kuayle-api:latest
-            ${{ env.IMAGE_PREFIX }}/kuayle-api:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}/ku-api:latest
+            ${{ env.IMAGE_PREFIX }}/ku-api:${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
@@ -152,8 +152,8 @@ jobs:
           pull: true
           push: ${{ github.event_name == 'release' }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}/kuayle-web:latest
-            ${{ env.IMAGE_PREFIX }}/kuayle-web:${{ steps.version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}/ku-web:latest
+            ${{ env.IMAGE_PREFIX }}/ku-web:${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 

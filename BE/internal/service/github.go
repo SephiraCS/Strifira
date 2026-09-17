@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/realtime"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	"github.com/kuayle/kuayle-backend/pkg/crypto"
-	gh "github.com/kuayle/kuayle-backend/pkg/github"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/realtime"
+	"github.com/ku/ku-backend/internal/repository"
+	"github.com/ku/ku-backend/pkg/crypto"
+	gh "github.com/ku/ku-backend/pkg/github"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -143,7 +143,7 @@ func (s *GitHubService) GetManifest(workspaceID uuid.UUID, slug string) (map[str
 	isLocal := strings.Contains(s.frontendURL, "localhost") || strings.Contains(s.frontendURL, "127.0.0.1")
 
 	manifest := map[string]any{
-		"name":            fmt.Sprintf("Kuayle (%s)", slug),
+		"name":            fmt.Sprintf("Ku (%s)", slug),
 		"url":             s.frontendURL,
 		"redirect_url":    callbackURL,
 		"setup_url":       callbackURL,
@@ -267,7 +267,7 @@ func (s *GitHubService) GetInstallURL(ctx context.Context, workspaceID uuid.UUID
 	if s.globalApp != nil {
 		slug := s.globalApp.Slug
 		if slug == "" {
-			slug = "kuayle"
+			slug = "ku"
 		}
 		return fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s", slug, workspaceID.String()), nil
 	}
@@ -276,7 +276,7 @@ func (s *GitHubService) GetInstallURL(ctx context.Context, workspaceID uuid.UUID
 	if err != nil || cfg == nil {
 		return "", fmt.Errorf("GitHub App not configured")
 	}
-	slug := "kuayle"
+	slug := "ku"
 	if cfg.AppSlug != nil {
 		slug = *cfg.AppSlug
 	}

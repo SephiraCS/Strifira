@@ -7,7 +7,7 @@ import (
 )
 
 func TestValidateGatewayDatabaseRoleRejectsElevatedPrivileges(t *testing.T) {
-	require.NoError(t, validateGatewayDatabaseRole(gatewayDatabaseRole{Username: "kuayle_gateway"}))
+	require.NoError(t, validateGatewayDatabaseRole(gatewayDatabaseRole{Username: "ku_gateway"}))
 
 	tests := []struct {
 		name string

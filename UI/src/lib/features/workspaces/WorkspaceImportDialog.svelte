@@ -89,7 +89,7 @@
 	}
 </script>
 
-<input bind:this={input} type="file" accept=".zip,.kuayle.zip,application/zip" class="hidden" onchange={selected} />
+<input bind:this={input} type="file" accept=".zip,.ku.zip,application/zip" class="hidden" onchange={selected} />
 <Button variant={compact ? 'outline' : 'default'} onclick={chooseFile} disabled={loadingPreview}>
 	{#if loadingPreview}<Loader2 size={14} class="animate-spin" />{:else}<Upload size={14} />{/if}
 	{m['workspace_transfer.import_button']()}

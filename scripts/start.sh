@@ -8,7 +8,7 @@ PIDFILE=".dev.pids"
 # Ensure Docker CLI is in PATH (macOS Docker Desktop)
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 
-echo "=== Kuayle - Dev Setup ==="
+echo "=== Ku - Dev Setup ==="
 
 # 1. Create .env if missing
 if [ ! -f .env ]; then
@@ -46,7 +46,7 @@ make migrate-up
 [ -f "$PIDFILE" ] && ./scripts/stop.sh 2>/dev/null || true
 
 echo ""
-echo "=== Starting Kuayle (dev mode) ==="
+echo "=== Starting Ku (dev mode) ==="
 echo "  Frontend: http://localhost:5173"
 echo "  Backend:  http://localhost:8080 (air hot reload)"
 echo "  Stop:     ./scripts/stop.sh"

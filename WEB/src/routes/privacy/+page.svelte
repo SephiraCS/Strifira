@@ -10,9 +10,9 @@
 
 	let resetOpen = $state(false);
 
-	const title = 'Privacy Policy — Kuayle';
+	const title = 'Privacy Policy — Ku';
 	const description =
-		'Kuayle privacy policy: what we collect, the cookies we use, your GDPR rights, and how to contact us.';
+		'Ku privacy policy: what we collect, the cookies we use, your GDPR rights, and how to contact us.';
 	const updated = 'July 11, 2026';
 	const canonical = url('/privacy');
 	const crumbs = breadcrumbsFrom('privacy', 'Privacy');
@@ -37,7 +37,7 @@
 			<section>
 				<h2>1. Who we are</h2>
 				<p>
-					Kuayle is an open source project maintained by
+					Ku is an open source project maintained by
 					<strong class="text-foreground">Bakney srl</strong> (P. IVA 04921790236), with
 					registered office at Q.re Aldo Moro 49, 37032 Monteforte d'Alpone (VR), Italy. We are the
 					data controller for any personal data processed through this website.
@@ -63,7 +63,7 @@
 						security logs.
 					</li>
 					<li>
-						<strong class="text-foreground">Self-hosted deployments:</strong> when you run Kuayle
+						<strong class="text-foreground">Self-hosted deployments:</strong> when you run Ku
 						on your own infrastructure, <em>you</em> are the data controller for the data entered
 						into your instance. This policy does not cover self-hosted deployments.
 					</li>
@@ -75,7 +75,7 @@
 				<p>
 					The marketing site currently installs no analytics, advertising or campaign-measurement
 					scripts. Your consent selection is stored in browser local storage under
-					<code>kuayle_cookie_consent</code>; it is not sent to Kuayle by the site.
+					<code>ku_cookie_consent</code>; it is not sent to Ku by the site.
 				</p>
 				<table class="mt-4 w-full border-collapse text-left">
 					<thead>
@@ -179,7 +179,7 @@
 
 			<section>
 				<h2>8. Children</h2>
-				<p>Kuayle is not directed at children under 16, and we do not knowingly collect their data.</p>
+				<p>Ku is not directed at children under 16, and we do not knowingly collect their data.</p>
 			</section>
 
 			<section>

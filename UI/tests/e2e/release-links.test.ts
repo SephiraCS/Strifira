@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('retries and restricts release manifest links to the Kuayle GitHub repository', async ({ page }) => {
+test('retries and restricts release manifest links to the Ku GitHub repository', async ({ page }) => {
 	const tagName = 'v99.0.0';
 	const releaseUrl = `https://github.com/carbogninalberto/kuayle/releases/tag/${tagName}`;
 	let requireUpgrade = false;
@@ -8,7 +8,7 @@ test('retries and restricts release manifest links to the Kuayle GitHub reposito
 	const transientFailures = ['http', 'json', 'http'];
 
 	await page.addInitScript((tag) => {
-		localStorage.setItem('kuayle_release_notice_dismissed', tag);
+		localStorage.setItem('ku_release_notice_dismissed', tag);
 	}, tagName);
 
 	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => {
@@ -21,7 +21,7 @@ test('retries and restricts release manifest links to the Kuayle GitHub reposito
 				{
 					tag_name: tagName,
 					html_url: 'https://attacker.example/releases/latest',
-					body: '[Trusted pull request](https://github.com/carbogninalberto/kuayle/pull/46)\n\n[Untrusted repository](https://github.com/attacker/kuayle/pull/46)',
+					body: '[Trusted pull request](https://github.com/carbogninalberto/kuayle/pull/46)\n\n[Untrusted repository](https://github.com/attacker/ku/pull/46)',
 					published_at: '2026-07-23T00:00:00Z',
 					prerelease: false,
 					force_upgrade: requireUpgrade,

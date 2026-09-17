@@ -3,7 +3,7 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-echo "=== Kuayle - Run ==="
+echo "=== Ku - Run ==="
 
 # Start services (postgres, redis, backend, frontend)
 ./scripts/start.sh &

@@ -1,6 +1,6 @@
-# Kuayle Marketing Site (WEB)
+# Ku Marketing Site (WEB)
 
-Static marketing/landing site for [Kuayle](https://kuayle.com), built with SvelteKit and the static adapter.
+Static marketing/landing site for [Ku](https://kuayle.com), built with SvelteKit and the static adapter.
 
 ## Canonical origin
 
@@ -61,7 +61,7 @@ Static marketing/landing site for [Kuayle](https://kuayle.com), built with Svelt
 /open-source                                   Open source philosophy
 /license                                       Apache 2.0 license details
 /security                                      Security practices
-/about                                         About Kuayle / Bakney
+/about                                         About Ku / Bakney
 /roadmap                                       Development roadmap
 /privacy                                       Privacy policy
 /sitemap.xml                                   XML sitemap

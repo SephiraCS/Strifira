@@ -33,7 +33,7 @@
 	<div class="mx-auto max-w-6xl px-6 py-12">
 		<div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
 			<div class="flex flex-col gap-3 sm:col-span-2">
-				<img src="/logo_white.svg" alt="Kuayle" class="h-6 w-auto self-start" width={96} height={24} />
+				<img src="/logo_white.svg" alt="Ku" class="h-6 w-auto self-start" width={96} height={24} />
 				<p class="text-xs text-muted-foreground">
 					The keyboard-driven, self-hosted issue tracker with no paid tier. Made by Bakney.
 				</p>
@@ -83,7 +83,7 @@
 			class="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border pt-6 sm:flex-row"
 		>
 			<p class="text-xs text-muted-foreground">
-				© {year} Bakney srl. Kuayle is open source under the Apache 2.0 license.
+				© {year} Bakney srl. Ku is open source under the Apache 2.0 license.
 			</p>
 			<p
 				class="flex items-center gap-1.5 text-xs text-muted-foreground"

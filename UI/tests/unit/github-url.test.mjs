@@ -19,7 +19,7 @@ test('accepts only HTTPS GitHub URLs under the expected repository', () => {
 	);
 	assert.equal(safeGitHubRepositoryUrl('http://github.com/carbogninalberto/kuayle', repository), null);
 	assert.equal(safeGitHubRepositoryUrl('https://github.com.example.com/carbogninalberto/kuayle', repository), null);
-	assert.equal(safeGitHubRepositoryUrl('https://github.com/attacker/kuayle', repository), null);
+	assert.equal(safeGitHubRepositoryUrl('https://github.com/attacker/ku', repository), null);
 	assert.equal(
 		safeGitHubRepositoryUrl('https://github.com@attacker.example/carbogninalberto/kuayle', repository),
 		null
@@ -56,9 +56,9 @@ test('validates GitHub resource paths', () => {
 
 test('validates GitHub App installation destinations', () => {
 	assert.equal(
-		safeGitHubAppInstallUrl('https://github.com/apps/kuayle/installations/new?state=workspace-id'),
-		'https://github.com/apps/kuayle/installations/new?state=workspace-id'
+		safeGitHubAppInstallUrl('https://github.com/apps/ku/installations/new?state=workspace-id'),
+		'https://github.com/apps/ku/installations/new?state=workspace-id'
 	);
-	assert.equal(safeGitHubAppInstallUrl('https://attacker.example/apps/kuayle/installations/new'), null);
-	assert.equal(safeGitHubAppInstallUrl('https://github.com/marketplace/kuayle'), null);
+	assert.equal(safeGitHubAppInstallUrl('https://attacker.example/apps/ku/installations/new'), null);
+	assert.equal(safeGitHubAppInstallUrl('https://github.com/marketplace/ku'), null);
 });

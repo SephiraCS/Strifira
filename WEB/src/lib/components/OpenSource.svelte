@@ -9,7 +9,7 @@
 			icon: ScrollText,
 			title: 'Apache 2.0 license',
 			description:
-				'Use, modify and redistribute Kuayle, including for commercial purposes, subject to the Apache 2.0 terms.'
+				'Use, modify and redistribute Ku, including for commercial purposes, subject to the Apache 2.0 terms.'
 		},
 		{
 			icon: GitFork,
@@ -34,7 +34,7 @@
 				One public edition
 			</h2>
 			<p class="mt-4 text-lg text-muted-foreground">
-				Kuayle is distributed under Apache 2.0 from one public repository. There is no separate
+				Ku is distributed under Apache 2.0 from one public repository. There is no separate
 				commercial codebase for the features listed on this site.
 			</p>
 		</div>

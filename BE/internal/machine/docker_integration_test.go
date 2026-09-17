@@ -10,22 +10,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDockerRuntimeLifecycle(t *testing.T) {
-	if os.Getenv("KUAYLE_DOCKER_INTEGRATION") != "1" {
-		t.Skip("set KUAYLE_DOCKER_INTEGRATION=1 to run Docker runtime tests")
+	if os.Getenv("KU_DOCKER_INTEGRATION") != "1" {
+		t.Skip("set KU_DOCKER_INTEGRATION=1 to run Docker runtime tests")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	routingKey := strings.ReplaceAll(uuid.NewString(), "-", "")[:20]
-	gatewayName := "kuayle-integration-gateway-" + routingKey
+	gatewayName := "ku-integration-gateway-" + routingKey
 	runtime, err := NewDockerRuntime(DockerConfig{
 		GatewayContainerName: gatewayName,
 		IngestURL:            "https://example.invalid/api/dev-machine-ingest",
@@ -37,7 +37,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 
 	gateway, err := runtime.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
-			Image:      "kuayle/dev-machine-ide:0.1.0",
+			Image:      "ku/dev-machine-ide:0.1.0",
 			Entrypoint: []string{"/bin/sleep"},
 			Cmd:        []string{"120"},
 		},
@@ -54,18 +54,18 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 		ID: uuid.New(), WorkspaceID: uuid.New(), RoutingKey: routingKey,
 		Status:    domain.DevMachineStatusQueued,
 		CPUMillis: 4000, MemoryMB: 4096, DiskGB: 20, PidsLimit: 1024,
-		BaseBranch: "main", WorkingBranch: "kuayle/integration-test",
+		BaseBranch: "main", WorkingBranch: "ku/integration-test",
 	}
 	services := []domain.DevMachineService{
-		integrationService(machine, "collector", "collector", "kuayle/dev-machine-collector:0.1.0", 8091),
-		integrationService(machine, "egress", "egress", "kuayle/dev-machine-egress:0.1.0", 3128),
-		integrationService(machine, "ide", "ide", "kuayle/dev-machine-ide:0.1.0", 8080),
-		integrationService(machine, "terminal", "terminal", "kuayle/dev-machine-ide:0.1.0", 7681),
-		integrationService(machine, "browser", "browser", "kuayle/dev-machine-browser:0.1.0", 3000),
+		integrationService(machine, "collector", "collector", "ku/dev-machine-collector:0.1.0", 8091),
+		integrationService(machine, "egress", "egress", "ku/dev-machine-egress:0.1.0", 3128),
+		integrationService(machine, "ide", "ide", "ku/dev-machine-ide:0.1.0", 8080),
+		integrationService(machine, "terminal", "terminal", "ku/dev-machine-ide:0.1.0", 7681),
+		integrationService(machine, "browser", "browser", "ku/dev-machine-browser:0.1.0", 3000),
 	}
 	secrets := map[string]map[string]string{
-		"collector": {"KUAYLE_MACHINE_TOKEN": "integration-test-token", "KUAYLE_BROWSER_CDP_TOKEN": "integration-cdp-token"},
-		"browser":   {"KUAYLE_BROWSER_CDP_TOKEN": "integration-cdp-token"},
+		"collector": {"KU_MACHINE_TOKEN": "integration-test-token", "KU_BROWSER_CDP_TOKEN": "integration-cdp-token"},
+		"browser":   {"KU_BROWSER_CDP_TOKEN": "integration-cdp-token"},
 	}
 
 	networkName, volumeName, containers, err := runtime.Spawn(ctx, machine, services, secrets)
@@ -108,14 +108,14 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 		require.NotZero(t, inspection.Container.HostConfig.Memory)
 		require.NotZero(t, inspection.Container.HostConfig.NanoCPUs)
 		require.NotNil(t, inspection.Container.HostConfig.PidsLimit)
-		require.Contains(t, inspection.Container.HostConfig.Tmpfs, "/run/kuayle-secrets")
+		require.Contains(t, inspection.Container.HostConfig.Tmpfs, "/run/ku-secrets")
 		if service.ServiceType == "egress" {
 			require.Contains(t, inspection.Container.NetworkSettings.Networks, egressNetworkName)
 		}
 	}
 	for _, service := range services {
 		if service.ServiceType == "ide" {
-			_, err := runtime.execOutput(ctx, *service.ContainerID, []string{"/bin/sh", "-c", "touch /workspace/.kuayle-write-test && rm /workspace/.kuayle-write-test"})
+			_, err := runtime.execOutput(ctx, *service.ContainerID, []string{"/bin/sh", "-c", "touch /workspace/.ku-write-test && rm /workspace/.ku-write-test"})
 			require.NoError(t, err)
 			break
 		}
@@ -164,13 +164,13 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 	run := &domain.DevMachineAgentRun{
 		ID: uuid.New(), Mode: "task", CommandArgv: command,
 	}
-	provider := &domain.DevMachineAgentProvider{ImageRef: "kuayle/dev-machine-agent-claude:0.1.0"}
+	provider := &domain.DevMachineAgentProvider{ImageRef: "ku/dev-machine-agent-claude:0.1.0"}
 	execution, err := runtime.RunAgent(ctx, machine, run, provider, nil, map[string]string{
 		"GITHUB_TOKEN": "integration-github-token",
 	})
 	require.NoError(t, err)
 	require.Zero(t, execution.ExitCode)
-	require.Contains(t, execution.Stdout, "/home/kuayle/.kuayle-git-credential")
+	require.Contains(t, execution.Stdout, "/home/ku/.ku-git-credential")
 	retriedExecution, err := runtime.RunAgent(ctx, machine, run, provider, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, execution.ContainerID, retriedExecution.ContainerID)
@@ -179,7 +179,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	customExecution, err := runtime.RunAgent(ctx, machine, &domain.DevMachineAgentRun{
 		ID: uuid.New(), Mode: "task", CommandArgv: customCommand,
-	}, &domain.DevMachineAgentProvider{ImageRef: "kuayle/dev-machine-ide:0.1.0", IsCustom: true}, nil, map[string]string{
+	}, &domain.DevMachineAgentProvider{ImageRef: "ku/dev-machine-ide:0.1.0", IsCustom: true}, nil, map[string]string{
 		"TEST_SECRET": "custom-secret-value", "GITHUB_TOKEN": "custom-github-token",
 	})
 	require.NoError(t, err)
@@ -211,7 +211,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 func integrationService(machine *domain.DevMachine, serviceType, key, image string, port int) domain.DevMachineService {
 	return domain.DevMachineService{
 		ID: uuid.New(), MachineID: machine.ID, ServiceType: serviceType, ServiceKey: key,
-		ContainerName: "kuayle-" + machine.RoutingKey + "-" + key, ImageRef: image,
+		ContainerName: "ku-" + machine.RoutingKey + "-" + key, ImageRef: image,
 		InternalHost: machine.RoutingKey + "-" + key, InternalPort: port,
 	}
 }

@@ -10,12 +10,12 @@ import { DEV_MACHINES_RELEASE_STATUS } from '$lib/config/releases';
 export const selfHosting: ContentRegistry = {
 	'docker-compose': {
 		slug: 'docker-compose',
-		title: 'Docker Compose Setup — Self-Hosting Kuayle',
+		title: 'Docker Compose Setup — Self-Hosting Ku',
 		description:
-			'Deploy Kuayle with the reference Docker Compose stack: Caddy, PostgreSQL 17, Redis 7, the Go API, and the SvelteKit frontend.',
+			'Deploy Ku with the reference Docker Compose stack: Caddy, PostgreSQL 17, Redis 7, the Go API, and the SvelteKit frontend.',
 		heading: 'Docker Compose Setup',
 		intro:
-			'The `selfhosting/` directory contains Kuayle’s reference deployment. It runs five services behind Caddy and supports automatic TLS when DNS and network access are configured correctly.',
+			'The `selfhosting/` directory contains Ku’s reference deployment. It runs five services behind Caddy and supports automatic TLS when DNS and network access are configured correctly.',
 		sections: [
 			{
 				heading: 'Architecture overview',
@@ -33,7 +33,7 @@ export const selfHosting: ContentRegistry = {
 				body: 'Clone the repository, copy the example environment file and replace the placeholder credentials before starting the stack. The launch command builds the local backend and frontend images.',
 				list: [
 					'git clone https://github.com/carbogninalberto/kuayle.git',
-					'cd kuayle/selfhosting',
+					'cd ku/selfhosting',
 					'cp .env.example .env',
 					'# Edit .env: set DOMAIN, POSTGRES_PASSWORD, JWT_SECRET',
 					'docker compose up --build -d'
@@ -58,12 +58,12 @@ export const selfHosting: ContentRegistry = {
 
 	requirements: {
 		slug: 'requirements',
-		title: 'Requirements — Self-Hosting Kuayle',
+		title: 'Requirements — Self-Hosting Ku',
 		description:
-			'Server prerequisites for running Kuayle: a host with Docker and Docker Compose, a domain name, and HTTPS connectivity.',
+			'Server prerequisites for running Ku: a host with Docker and Docker Compose, a domain name, and HTTPS connectivity.',
 		heading: 'Requirements',
 		intro:
-			'Kuayle’s documented deployment uses Docker Compose. Review the host, DNS, network and storage requirements before exposing an instance.',
+			'Ku’s documented deployment uses Docker Compose. Review the host, DNS, network and storage requirements before exposing an instance.',
 		sections: [
 			{
 				heading: 'Server prerequisites',
@@ -97,18 +97,18 @@ export const selfHosting: ContentRegistry = {
 
 	configuration: {
 		slug: 'configuration',
-		title: 'Configuration — Self-Hosting Kuayle',
+		title: 'Configuration — Self-Hosting Ku',
 		description:
-			'Configure Kuayle via environment variables: domain, database credentials, JWT secret, storage backend, GitHub App, and sysadmin settings.',
+			'Configure Ku via environment variables: domain, database credentials, JWT secret, storage backend, GitHub App, and sysadmin settings.',
 		heading: 'Configuration',
 		intro:
-			'Kuayle reads deployment settings from `selfhosting/.env`. Start from `.env.example`; the groups below cover the values that must be reviewed before a public deployment.',
+			'Ku reads deployment settings from `selfhosting/.env`. Start from `.env.example`; the groups below cover the values that must be reviewed before a public deployment.',
 		sections: [
 			{
 				heading: 'Production values',
 				body: 'JWT_SECRET is required by the backend. DOMAIN and POSTGRES_PASSWORD have development-oriented defaults in the Compose file and must be replaced for a public deployment.',
 				list: [
-					'DOMAIN — your public domain (e.g. kuayle.yourcompany.com)',
+					'DOMAIN — your public domain (e.g. ku.yourcompany.com)',
 					'POSTGRES_PASSWORD — strong random password for the database',
 					'JWT_SECRET — random string, at least 32 characters, for signing auth tokens'
 				]
@@ -117,8 +117,8 @@ export const selfHosting: ContentRegistry = {
 				heading: 'Database and cache',
 				body: 'The Compose service names are used by the default connection settings. Change these values only when you also change the corresponding database or Redis deployment.',
 				list: [
-					'POSTGRES_USER — database user (default: kuayle)',
-					'POSTGRES_DB — database name (default: kuayle)',
+					'POSTGRES_USER — database user (default: ku)',
+					'POSTGRES_DB — database name (default: ku)',
 					'REDIS_URL — Redis connection string (default: redis://redis:6379)'
 				]
 			},
@@ -145,10 +145,10 @@ export const selfHosting: ContentRegistry = {
 
 	updating: {
 		slug: 'updating',
-		title: 'Updating Kuayle — Self-Hosting',
+		title: 'Updating Ku — Self-Hosting',
 		description:
-			'Update a self-hosted Kuayle instance with the repository script or optional updater sidecar, including image rebuilds and database migrations.',
-		heading: 'Updating Kuayle',
+			'Update a self-hosted Ku instance with the repository script or optional updater sidecar, including image rebuilds and database migrations.',
+		heading: 'Updating Ku',
 		intro:
 			'The repository update script fetches the current branch, rebuilds the application images, recreates Caddy and the app services, then applies pending migrations. Back up and review changes before running it.',
 		sections: [
@@ -156,7 +156,7 @@ export const selfHosting: ContentRegistry = {
 				heading: 'Manual update via script',
 				body: 'Run the script from a clean repository checkout. It uses `git pull --ff-only`, serves a maintenance page, rebuilds the backend and frontend, recreates the application containers and runs migrations.',
 				list: [
-					'cd kuayle',
+					'cd ku',
 					'bash selfhosting/update.sh',
 					'The script: pulls latest code → rebuilds images → recreates containers → runs migrations'
 				]
@@ -186,12 +186,12 @@ export const selfHosting: ContentRegistry = {
 
 	storage: {
 		slug: 'storage',
-		title: 'Storage — Self-Hosting Kuayle',
+		title: 'Storage — Self-Hosting Ku',
 		description:
-			'Configure Kuayle storage: local filesystem (default) or S3-compatible backends including AWS S3, Cloudflare R2, MinIO, and SeaweedFS.',
+			'Configure Ku storage: local filesystem (default) or S3-compatible backends including AWS S3, Cloudflare R2, MinIO, and SeaweedFS.',
 		heading: 'Storage Configuration',
 		intro:
-			'Kuayle stores uploads either in a local Docker volume or through an S3-compatible API. Choose based on your backup, access-control and deployment requirements.',
+			'Ku stores uploads either in a local Docker volume or through an S3-compatible API. Choose based on your backup, access-control and deployment requirements.',
 		sections: [
 			{
 				heading: 'Local filesystem (default)',
@@ -230,16 +230,16 @@ export const selfHosting: ContentRegistry = {
 
 	'github-app': {
 		slug: 'github-app',
-		title: 'GitHub App Setup — Self-Hosting Kuayle',
+		title: 'GitHub App Setup — Self-Hosting Ku',
 		description:
-			'Configure Kuayle’s GitHub App manifest flow, repository access, webhook delivery, issue linking, and status-transition rules.',
+			'Configure Ku’s GitHub App manifest flow, repository access, webhook delivery, issue linking, and status-transition rules.',
 		heading: 'GitHub App Setup',
 		intro:
-			'Kuayle uses a GitHub App for repository access and webhook delivery. Public instances can use the generated webhook URL; private instances need a relay or tunnel.',
+			'Ku uses a GitHub App for repository access and webhook delivery. Public instances can use the generated webhook URL; private instances need a relay or tunnel.',
 		sections: [
 			{
 				heading: 'Publicly reachable instance',
-				body: 'Settings → GitHub starts GitHub’s App Manifest flow with callback, permission and webhook values generated from your instance URL. After GitHub returns the manifest code, Kuayle stores the App credentials encrypted.',
+				body: 'Settings → GitHub starts GitHub’s App Manifest flow with callback, permission and webhook values generated from your instance URL. After GitHub returns the manifest code, Ku stores the App credentials encrypted.',
 				list: [
 					'Go to Settings → GitHub in your workspace',
 					'Click "Set up GitHub App"',
@@ -259,7 +259,7 @@ export const selfHosting: ContentRegistry = {
 			},
 			{
 				heading: 'What the integration does',
-				body: 'Kuayle scans branch names, pull-request titles and bodies, and commit messages for issue identifiers. Supported webhook events can record activity and move matched issues according to enabled automation rules.',
+				body: 'Ku scans branch names, pull-request titles and bodies, and commit messages for issue identifiers. Supported webhook events can record activity and move matched issues according to enabled automation rules.',
 				list: [
 					'Auto-links PRs, branches, and commits via issue key matching',
 					'Configurable auto-transitions based on GitHub events',
@@ -272,7 +272,7 @@ export const selfHosting: ContentRegistry = {
 
 	'dev-machines': {
 		slug: 'dev-machines',
-		title: 'Dev Machines Setup — Self-Hosting Kuayle',
+		title: 'Dev Machines Setup — Self-Hosting Ku',
 		description:
 			'Prepare the unreleased opt-in Dev Machines subsystem: a separate wildcard domain, wildcard TLS, encrypted secrets, runtime images, and the gateway/manager control plane.',
 		heading: 'Dev Machines Setup',
@@ -291,7 +291,7 @@ export const selfHosting: ContentRegistry = {
 			},
 			{
 				heading: 'Required configuration',
-				body: 'When DEV_MACHINES_ENABLED=true, the backend validates the machine domain, frontend URL, encryption key, ingestion URL and related runtime settings. The Compose provisioning prerequisite separately requires the gateway database password. FRONTEND_URL must be the exact public Kuayle origin; the gateway requires the native terminal WebSocket Origin header to match it exactly.',
+				body: 'When DEV_MACHINES_ENABLED=true, the backend validates the machine domain, frontend URL, encryption key, ingestion URL and related runtime settings. The Compose provisioning prerequisite separately requires the gateway database password. FRONTEND_URL must be the exact public Ku origin; the gateway requires the native terminal WebSocket Origin header to match it exactly.',
 				list: [
 					'DEV_MACHINES_ENABLED=true',
 					'DEV_MACHINE_ENCRYPTION_KEY — independent random value, at least 32 characters',

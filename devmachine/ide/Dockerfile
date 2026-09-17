@@ -17,12 +17,12 @@ ARG OPENCODE_VERSION=1.18.4
 ARG CODEX_VERSION=0.145.0
 
 COPY --from=node-stage /usr/local /usr/local
-COPY common/kuayle-service-entrypoint /usr/local/bin/kuayle-service-entrypoint
-COPY ide/start.sh /usr/local/bin/kuayle-ide-start
-COPY ide/shell.sh /usr/local/bin/kuayle-shell
-COPY ide/checkout.sh /usr/local/bin/kuayle-checkout
-COPY ide/terminal-session.sh /usr/local/bin/kuayle-terminal-session
-COPY ide/command-event.js /usr/local/lib/kuayle-command-event.js
+COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
+COPY ide/start.sh /usr/local/bin/ku-ide-start
+COPY ide/shell.sh /usr/local/bin/ku-shell
+COPY ide/checkout.sh /usr/local/bin/ku-checkout
+COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
+COPY ide/command-event.js /usr/local/lib/ku-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
 # VS Code's npm support extension is not the npm CLI package; keep its manifest identity unambiguous.
 RUN rm -f /usr/bin/pebble \
@@ -59,9 +59,9 @@ RUN rm -f /usr/bin/pebble \
     && rm -rf /root/.npm /tmp/npm-patches /tmp/code-server-patches /var/lib/apt/lists/* \
     && rm -f /tmp/code-server.deb /usr/bin/pebble \
          /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
-    && mkdir -p /home/kuayle \
-    && chown 1000:1000 /home/kuayle \
-    && chmod 0755 /usr/local/bin/kuayle-service-entrypoint /usr/local/bin/kuayle-ide-start /usr/local/bin/kuayle-shell /usr/local/bin/kuayle-checkout /usr/local/bin/kuayle-terminal-session \
+    && mkdir -p /home/ku \
+    && chown 1000:1000 /home/ku \
+    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-checkout /usr/local/bin/ku-terminal-session \
     && code-server --version \
     && node --version \
     && npm --version \
@@ -71,10 +71,10 @@ RUN rm -f /usr/bin/pebble \
     && ttyd --version \
     && rm -rf /root/.config/code-server \
     && user_name=$(getent passwd 1000 | cut -d: -f1) \
-    && printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user_name" > /etc/sudoers.d/kuayle-builder \
-    && chmod 0440 /etc/sudoers.d/kuayle-builder
+    && printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user_name" > /etc/sudoers.d/ku-builder \
+    && chmod 0440 /etc/sudoers.d/ku-builder
 
 USER 1000:1000
-ENV HOME=/home/kuayle
+ENV HOME=/home/ku
 EXPOSE 8080 7681
-CMD ["/usr/local/bin/kuayle-ide-start"]
+CMD ["/usr/local/bin/ku-ide-start"]

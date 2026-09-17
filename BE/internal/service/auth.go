@@ -10,10 +10,10 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	"github.com/kuayle/kuayle-backend/internal/domain"
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/internal/repository"
-	jwtpkg "github.com/kuayle/kuayle-backend/pkg/jwt"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
+	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 

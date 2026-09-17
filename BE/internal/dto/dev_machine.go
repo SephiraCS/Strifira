@@ -3,7 +3,7 @@ package dto
 import (
 	"time"
 
-	"github.com/kuayle/kuayle-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/domain"
 )
 
 type DevMachineRepoInput struct {

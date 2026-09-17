@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kuayle/kuayle-backend/internal/dto"
-	"github.com/kuayle/kuayle-backend/pkg/validate"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

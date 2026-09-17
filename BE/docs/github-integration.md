@@ -1,6 +1,6 @@
 # GitHub Integration
 
-Connects GitHub repositories to Kuayle workspaces, automatically linking pull requests, branches, and commits to issues and transitioning issue status based on GitHub activity.
+Connects GitHub repositories to Ku workspaces, automatically linking pull requests, branches, and commits to issues and transitioning issue status based on GitHub activity.
 
 ## How It Works
 
@@ -12,7 +12,7 @@ Connects GitHub repositories to Kuayle workspaces, automatically linking pull re
 
 Dev Machines use GitHub App installation tokens, not personal access tokens. Issue worktrees resolve their linked repository from development defaults in this order: issue, project, team, workspace. One machine has affinity to one linked repository and can hold multiple issue worktrees from that repository; use a separate machine for another repository or development environment.
 
-For checkout, agent push, and pull request operations, Kuayle mints a short-lived installation token restricted to the selected linked repository and injects it only into the developer or agent container that needs Git.
+For checkout, agent push, and pull request operations, Ku mints a short-lived installation token restricted to the selected linked repository and injects it only into the developer or agent container that needs Git.
 
 ## Deployment Modes
 
@@ -67,7 +67,7 @@ This mode stores app credentials (encrypted with AES-256-GCM) per-workspace in t
 
 ## Webhook Configuration
 
-Webhooks are how GitHub notifies Kuayle about events (PRs, pushes, branches).
+Webhooks are how GitHub notifies Ku about events (PRs, pushes, branches).
 
 - **SaaS mode**: Configure the webhook URL when creating the GitHub App (see above).
 - **Self-hosted mode**: The webhook URL is auto-derived from `FRONTEND_URL`. For localhost/dev, webhooks are disabled by default.

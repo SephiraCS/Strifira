@@ -1,4 +1,4 @@
-module github.com/kuayle/kuayle-backend
+module github.com/ku/ku-backend
 
 go 1.25.12
 

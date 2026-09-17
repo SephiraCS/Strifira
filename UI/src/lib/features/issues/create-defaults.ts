@@ -11,7 +11,7 @@ export type IssueCreateDefaults = {
 	cycleId?: string | null;
 };
 
-const DEFAULTS_STORAGE_KEY = 'kuayle-issue-create-defaults';
+const DEFAULTS_STORAGE_KEY = 'ku-issue-create-defaults';
 
 export function getIssueCreateDefaults(slug: string): IssueCreateDefaults {
 	try {

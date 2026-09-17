@@ -41,8 +41,8 @@
 		: 'border-b border-transparent bg-transparent'}"
 >
 	<nav class="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-		<a href="/" class="flex items-center gap-2" aria-label="Kuayle home">
-			<img src="/logo_white.svg" alt="Kuayle" class="h-7 w-auto" width={112} height={28} />
+		<a href="/" class="flex items-center gap-2" aria-label="Ku home">
+			<img src="/logo_white.svg" alt="Ku" class="h-7 w-auto" width={112} height={28} />
 		</a>
 
 		<!-- Desktop nav links -->

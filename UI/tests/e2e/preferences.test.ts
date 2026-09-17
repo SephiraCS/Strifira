@@ -8,7 +8,7 @@ test('keeps dirty local theme when remote preferences are stale', async ({ page 
 
 	await page.addInitScript((order) => {
 		localStorage.setItem(
-			'kuayle-preferences',
+			'ku-preferences',
 			JSON.stringify({
 				fontSize: 'default',
 				pointerCursors: true,
@@ -103,7 +103,7 @@ test('keeps dirty local theme when remote preferences are stale', async ({ page 
 	await expect.poll(() => patchPayload?.dark_theme).toBe('cyber-77');
 	await expect
 		.poll(() =>
-			page.evaluate(() => JSON.parse(localStorage.getItem('kuayle-preferences') ?? '{}').localDirty)
+			page.evaluate(() => JSON.parse(localStorage.getItem('ku-preferences') ?? '{}').localDirty)
 		)
 		.toBe(false);
 	await expect(page.locator('html')).toHaveClass(/cyber-77/);

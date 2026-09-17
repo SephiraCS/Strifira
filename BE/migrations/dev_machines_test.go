@@ -56,7 +56,7 @@ func TestDevMachineMigrationRoundTripAndTenantConstraints(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, admin.PingContext(ctx))
 
-	databaseName := "kuayle_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "ku_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+databaseName+`"`)
 	if postgresCode(err) == "42501" {
 		_ = admin.Close()
@@ -146,7 +146,7 @@ func insertBaseMigrationFixture(t *testing.T, db *sql.DB) baseMigrationFixture {
 			VALUES ($1,$2,$3,$4,'Organization',$5)`, installationID, workspaceID, externalID, label, userID)
 		require.NoError(t, err)
 		_, err = db.Exec(`INSERT INTO github_repos (id,installation_id,workspace_id,github_repo_id,full_name)
-			VALUES ($1,$2,$3,$4,$5)`, repositoryID, installationID, workspaceID, externalID, "kuayle/"+label)
+			VALUES ($1,$2,$3,$4,$5)`, repositoryID, installationID, workspaceID, externalID, "ku/"+label)
 		require.NoError(t, err)
 	}
 	insertTenant("miga", fixture.userA, fixture.workspaceA, fixture.teamA, fixture.projectA, fixture.issueA, fixture.installationA, fixture.repositoryA, 1001)
@@ -187,7 +187,7 @@ func insertFinalDevMachineFixture(t *testing.T, db *sql.DB, fixture baseMigratio
 		_, err = db.Exec(`INSERT INTO dev_machine_checkouts
 			(id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
 			VALUES ($1,$2,$3,$4,$5,$6,'main',$7,$8,'ready')`, checkoutID, workspaceID, machineID, issueID, repositoryID,
-			"kuayle/"+label, label+"-branch", "/workspace/"+label)
+			"ku/"+label, label+"-branch", "/workspace/"+label)
 		require.NoError(t, err)
 		_, err = db.Exec(`INSERT INTO dev_machine_agent_runs
 			(id,machine_id,workspace_id,issue_id,checkout_id,requested_by_user_id,provider_id,mode,prompt,command_argv,max_runtime_seconds)
@@ -253,10 +253,10 @@ func requireTenantConstraints(t *testing.T, db *sql.DB, fixture baseMigrationFix
 		VALUES ($1,$2,'test','cross')`, fixture.workspaceB, rows.machineA)
 	assertForeignKeyViolation(t, db, `INSERT INTO dev_machine_checkouts
 		(workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path)
-		VALUES ($1,$2,$3,$4,'kuayle/cross','main','cross','/workspace/cross')`, fixture.workspaceA, rows.machineB, fixture.issueA, fixture.repositoryA)
+		VALUES ($1,$2,$3,$4,'ku/cross','main','cross','/workspace/cross')`, fixture.workspaceA, rows.machineB, fixture.issueA, fixture.repositoryA)
 	assertForeignKeyViolation(t, db, `INSERT INTO dev_machine_checkouts
 		(workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path)
-		VALUES ($1,$2,$3,$4,'kuayle/cross-issue','main','cross-issue','/workspace/cross-issue')`, fixture.workspaceA, rows.machineA, fixture.issueB, fixture.repositoryA)
+		VALUES ($1,$2,$3,$4,'ku/cross-issue','main','cross-issue','/workspace/cross-issue')`, fixture.workspaceA, rows.machineA, fixture.issueB, fixture.repositoryA)
 	assertForeignKeyViolation(t, db, `INSERT INTO dev_machine_agent_runs
 		(machine_id,workspace_id,requested_by_user_id,provider_id,mode,status,prompt,command_argv,max_runtime_seconds)
 		VALUES ($1,$2,$3,'opencode','autonomous','succeeded','cross','["test"]',60)`, rows.machineB, fixture.workspaceA, fixture.userA)

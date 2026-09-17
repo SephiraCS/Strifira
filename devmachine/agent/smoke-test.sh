@@ -27,7 +27,7 @@ command -v make >/dev/null 2>&1 || { echo "  FAIL: make not found in PATH"; exit
 
 # 3. Verify Go can compile a tiny offline program
 echo "[3/4] Compiling offline Go program..."
-WORKDIR=$(mktemp -d /tmp/kuayle-agent-smoke.XXXXXX)
+WORKDIR=$(mktemp -d /tmp/ku-agent-smoke.XXXXXX)
 trap 'rm -rf "$WORKDIR"' EXIT
 
 cat > "$WORKDIR/main.go" <<'GOEOF'
@@ -36,7 +36,7 @@ package main
 import "fmt"
 
 func main() {
-	fmt.Println("kuayle-smoke-test-passed")
+	fmt.Println("ku-smoke-test-passed")
 }
 GOEOF
 
@@ -51,7 +51,7 @@ fi
 # 4. Verify the built binary runs
 echo "[4/4] Running compiled binary..."
 OUTPUT=$(./smoke-binary 2>&1) || true
-if [ "$OUTPUT" = "kuayle-smoke-test-passed" ]; then
+if [ "$OUTPUT" = "ku-smoke-test-passed" ]; then
     echo "  PASS: binary output correct: $OUTPUT"
 else
     echo "  FAIL: unexpected output: $OUTPUT"

@@ -24,7 +24,7 @@ type proxy struct {
 var carrierGradeNAT = mustCIDR("100.64.0.0/10")
 
 func main() {
-	p := &proxy{allow: domains(os.Getenv("KUAYLE_EGRESS_ALLOWLIST")), deny: domains(os.Getenv("KUAYLE_EGRESS_DENYLIST"))}
+	p := &proxy{allow: domains(os.Getenv("KU_EGRESS_ALLOWLIST")), deny: domains(os.Getenv("KU_EGRESS_DENYLIST"))}
 	p.transport = &http.Transport{
 		Proxy: nil, DialContext: p.dialContext, TLSHandshakeTimeout: 10 * time.Second,
 		MaxIdleConns: 100, MaxIdleConnsPerHost: 10, IdleConnTimeout: 90 * time.Second,
