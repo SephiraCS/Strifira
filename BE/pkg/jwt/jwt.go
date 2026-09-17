@@ -1,6 +1,8 @@
 package jwt
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -26,10 +28,19 @@ func GenerateAccessToken(userID uuid.UUID, secret string) (string, error) {
 }
 
 func GenerateRefreshToken(userID uuid.UUID, secret string) (string, time.Time, error) {
+	// jti makes every refresh token unique: without it two tokens minted
+	// for the same user within the same second are byte-identical, and
+	// the refresh_tokens token_hash unique constraint turns a same-second
+	// re-login into a 500 (register → immediate login, 2026-09-17).
+	jti := make([]byte, 16)
+	if _, err := rand.Read(jti); err != nil {
+		return "", time.Time{}, fmt.Errorf("refresh token jti: %w", err)
+	}
 	exp := time.Now().Add(7 * 24 * time.Hour)
 	claims := Claims{
 		UserID: userID,
 		RegisteredClaims: jwt.RegisteredClaims{
+			ID:        hex.EncodeToString(jti),
 			ExpiresAt: jwt.NewNumericDate(exp),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
