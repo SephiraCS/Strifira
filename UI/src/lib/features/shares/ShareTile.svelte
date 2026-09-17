@@ -258,20 +258,33 @@
 	}
 
 	async function stopSharing() {
+		if (stopping) return;
 		stopping = true;
-		try {
-			await onPresenterStop?.();
-		} catch {
-			// Server-side end is best-effort here; lazy GC closes the row
-			// if this failed.
-		}
-		if (room) {
-			await room.localParticipant.setScreenShareEnabled(false);
-			await room.disconnect();
-		}
+		// Settle the UI first: after this the wall clears the tile and the
+		// row is either ended below or picked up by lazy GC. Every async
+		// step is best-effort — the capture may already be dead when the
+		// browser-native stop fired it (source track 'ended'), and
+		// livekit-client can reject cleanup calls on a dead track.
 		live = false;
 		presentEnded = true;
 		onEnded?.('stopped');
+		try {
+			await onPresenterStop?.();
+		} catch {
+			// Server-side end failed; lazy GC closes the row.
+		}
+		if (room) {
+			try {
+				await room.localParticipant.setScreenShareEnabled(false);
+			} catch {
+				// already unpublished/ended
+			}
+			try {
+				await room.disconnect();
+			} catch {
+				// already disconnected
+			}
+		}
 	}
 
 	function toggleFullscreen() {
