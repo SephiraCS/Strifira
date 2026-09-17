@@ -85,7 +85,12 @@ jobs:
           mv backend-test.log "backend-${GITHUB_RUN_ID}.log"
           git add "backend-${GITHUB_RUN_ID}.log"
           git commit -m "backend-test log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          for _ in 1 2 3 4 5; do
+            git push "$remote_url" HEAD:ci/logs && break
+            git fetch origin ci/logs
+            git rebase FETCH_HEAD
+          done
 
   docker-integration:
     # The backend manages dev-machine containers through the Docker SDK, so
@@ -155,7 +160,12 @@ jobs:
           mv docker-integration.log "docker-${GITHUB_RUN_ID}.log"
           git add "docker-${GITHUB_RUN_ID}.log"
           git commit -m "docker-integration log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          for _ in 1 2 3 4 5; do
+            git push "$remote_url" HEAD:ci/logs && break
+            git fetch origin ci/logs
+            git rebase FETCH_HEAD
+          done
 
   frontend-check:
     name: Frontend Checks
@@ -190,9 +200,6 @@ jobs:
             echo '--- unit tests ---'
             npm run test:unit
 
-            echo '--- ensure playwright browser revision ---'
-            npx playwright install chromium
-
             echo '--- dev machine browser tests ---'
             npm run test:e2e
 
@@ -224,7 +231,12 @@ jobs:
           mv frontend-check.log "frontend-${GITHUB_RUN_ID}.log"
           git add "frontend-${GITHUB_RUN_ID}.log"
           git commit -m "frontend-check log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          for _ in 1 2 3 4 5; do
+            git push "$remote_url" HEAD:ci/logs && break
+            git fetch origin ci/logs
+            git rebase FETCH_HEAD
+          done
 
   web-check:
     name: Marketing Site Checks
@@ -256,9 +268,6 @@ jobs:
             echo '--- build + seo validation ---'
             npm run validate
 
-            echo '--- ensure playwright browser revision ---'
-            npx playwright install chromium
-
             echo '--- responsive layout tests ---'
             npm run test:responsive
 
@@ -279,7 +288,12 @@ jobs:
           mv web-check.log "web-${GITHUB_RUN_ID}.log"
           git add "web-${GITHUB_RUN_ID}.log"
           git commit -m "web-check log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          for _ in 1 2 3 4 5; do
+            git push "$remote_url" HEAD:ci/logs && break
+            git fetch origin ci/logs
+            git rebase FETCH_HEAD
+          done
 
   # TEMPORARY: publishes each lane's outcome to the ci/status branch so run
   # results are readable without web access during the CI migration. Remove
