@@ -7,8 +7,12 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
 	import IssueContextMenu from './IssueContextMenu.svelte';
+	import { AssigneeSelector } from './selectors';
+	import { issuesState } from './issues.state.svelte';
+	import { appToast } from '$lib/features/toast/toast';
 	import { dndzone, dragHandle } from 'svelte-dnd-action';
-	import { Plus } from 'lucide-svelte';
+	import { Plus, UserCircle } from 'lucide-svelte';
+	import { m } from '$lib/paraglide/messages.js';
 
 	let {
 		statusId,
@@ -40,6 +44,38 @@
 
 	function handleFinalize(e: CustomEvent<{ items: Issue[] }>) {
 		onfinalize?.(statusId, e.detail.items);
+	}
+
+	function assigneeIds(issue: Issue): string[] {
+		const ids = (issue.assignees ?? []).map((assignee) => assignee.id);
+		if (ids.length === 0 && issue.assignee) return [issue.assignee.id];
+		return ids;
+	}
+
+	function displayAssignees(issue: Issue) {
+		if (issue.assignees && issue.assignees.length > 0) return issue.assignees;
+		return issue.assignee ? [issue.assignee] : [];
+	}
+
+	function assigneeName(assignee: NonNullable<Issue['assignee']>) {
+		return assignee.name ?? assignee.email ?? 'Unassigned';
+	}
+
+	function assigneeTitle(issue: Issue) {
+		const assignees = displayAssignees(issue);
+		return assignees.length > 0 ? assignees.map(assigneeName).join(', ') : m['issue.assignee']();
+	}
+
+	async function toggleAssignee(issue: Issue, userId: string) {
+		const currentIds = assigneeIds(issue);
+		const newIds = currentIds.includes(userId)
+			? currentIds.filter((id) => id !== userId)
+			: [...currentIds, userId];
+		try {
+			await issuesState.update(slug, issue.identifier, { assignee_ids: newIds });
+		} catch {
+			appToast.error(m['issue.toast.failed_assignees']());
+		}
 	}
 </script>
 
@@ -74,9 +110,11 @@
 		onfinalize={handleFinalize}
 	>
 		{#each issues as issue (issue.id)}
+			{@const assignees = displayAssignees(issue)}
+			{@const firstAssignee = assignees[0]}
 			<IssueContextMenu {issue} {slug} {members} {labels}>
 				<button
-					class="w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-3 text-left transition-colors hover:border-[var(--app-border-hover)]"
+					class="relative w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 pt-3 pb-7 text-left transition-colors hover:border-[var(--app-border-hover)]"
 					onclick={() => onissueclick(issue)}
 				>
 					<div class="flex items-center gap-2">
@@ -87,6 +125,48 @@
 						<p class="line-clamp-2 min-w-0 flex-1 text-sm text-[var(--color-text-primary)]">{issue.title}</p>
 						<SubIssueCounterTag issue={issue} {slug} {members} onclickissue={onissueclick} compact />
 					</div>
+
+					<!-- Assignee (bottom-right) -->
+					<!-- svelte-ignore a11y_click_events_have_key_events -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<span
+						class="absolute bottom-1.5 right-1.5"
+						onclick={(e) => e.stopPropagation()}
+						onkeydown={(e) => e.stopPropagation()}
+						role="presentation"
+					>
+						<AssigneeSelector
+							{members}
+							value={assigneeIds(issue)}
+							width="w-52"
+							align="end"
+							onchange={(userId) => toggleAssignee(issue, userId)}
+						>
+							{#snippet trigger()}
+								<span
+									class="flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-full text-[var(--color-text-tertiary)] transition-all hover:text-[var(--color-text-primary)]"
+									title={assigneeTitle(issue)}
+								>
+									{#if assignees.length > 1 && firstAssignee}
+										<span class="flex -space-x-2 rounded-full hover:ring-2 hover:ring-[var(--app-accent)]">
+											<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] ring-1 ring-[var(--color-bg)]">
+												{assigneeName(firstAssignee).charAt(0).toUpperCase()}
+											</span>
+											<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[8px] font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-bg)]">
+												+{assignees.length - 1}
+											</span>
+										</span>
+									{:else if firstAssignee}
+										<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] transition-all hover:ring-2 hover:ring-[var(--app-accent)]">
+											{assigneeName(firstAssignee).charAt(0).toUpperCase()}
+										</span>
+									{:else}
+										<UserCircle size={16} />
+									{/if}
+								</span>
+							{/snippet}
+						</AssigneeSelector>
+					</span>
 				</button>
 			</IssueContextMenu>
 		{/each}
