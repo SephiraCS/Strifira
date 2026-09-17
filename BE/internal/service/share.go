@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
@@ -22,13 +23,20 @@ var (
 // recentEndedLimit bounds the history section of the share list.
 const recentEndedLimit = 20
 
+// noSourceGraceSeconds is how long a room may exist without its presenter
+// before List ends the share. The grace covers a presenter's own page
+// reload (their wall rejoins the room within seconds); beyond it, a room
+// with no presenter has no source and the share is auto-removed.
+const noSourceGraceSeconds = 45
+
 // LiveKitGateway is the LiveKit surface the share service depends on.
 // A nil gateway leaves screen sharing disabled.
 type LiveKitGateway interface {
 	ServerURL() string
 	PresenterToken(room, identity, name string) (string, error)
 	ViewerToken(room, identity, name string) (string, error)
-	ViewerCount(ctx context.Context, room, presenterIdentity string) (int, error)
+	ParticipantSummary(ctx context.Context, room, presenterIdentity string) (viewers int, presenterPresent bool, err error)
+	RoomAge(ctx context.Context, room string) (time.Duration, error)
 	DeleteRoom(ctx context.Context, room string) error
 }
 
@@ -93,9 +101,9 @@ func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uui
 	return share, token, nil
 }
 
-// List returns active shares (lazily ending any whose LiveKit room is gone)
-// plus a bounded history of ended shares, both decorated with presenter
-// info and live viewer counts.
+// List returns active shares — lazily ending any whose LiveKit room is
+// gone or has no presenter (no source) — plus a bounded history of ended
+// shares, both decorated with presenter info and live viewer counts.
 func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (dto.ScreenShareListResponse, error) {
 	resp := dto.ScreenShareListResponse{
 		Active: []dto.ScreenShareResponse{},
@@ -113,7 +121,7 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 	var ended []*domain.ScreenShare
 	for i := range active {
 		share := &active[i]
-		count, err := s.client.ViewerCount(ctx, share.RoomName, share.StartedBy.String())
+		viewers, presenterPresent, err := s.client.ParticipantSummary(ctx, share.RoomName, share.StartedBy.String())
 		if err != nil {
 			if livekit.IsRoomGone(err) {
 				// Room vanished (presenter dropped and LiveKit reaped the
@@ -126,9 +134,24 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 			}
 			// LiveKit unreachable: keep the share listed, report zero
 			// viewers rather than failing the whole list.
-			count = 0
+			viewers = 0
+		} else if !presenterPresent {
+			// Room alive but the presenter is not in it. While viewers keep
+			// the room from emptying, a source-less share must not linger
+			// on the wall forever; give fresh rooms a reload grace period,
+			// then end the share and evict everyone.
+			age, ageErr := s.client.RoomAge(ctx, share.RoomName)
+			if ageErr == nil && age > noSourceGraceSeconds*time.Second {
+				if err := s.client.DeleteRoom(ctx, share.RoomName); err == nil {
+					if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
+						return resp, err
+					}
+					ended = append(ended, share)
+					continue
+				}
+			}
 		}
-		decorated, err := s.decorate(ctx, *share, count)
+		decorated, err := s.decorate(ctx, *share, viewers)
 		if err != nil {
 			return resp, err
 		}
@@ -138,6 +161,13 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 	recent, err := s.shareRepo.ListRecentEndedByWorkspace(ctx, workspaceID, recentEndedLimit)
 	if err != nil {
 		return resp, err
+	}
+	for _, share := range ended {
+		decorated, err := s.decorate(ctx, *share, 0)
+		if err != nil {
+			return resp, err
+		}
+		resp.Recent = append([]dto.ScreenShareResponse{decorated}, resp.Recent...)
 	}
 	for _, share := range recent {
 		decorated, err := s.decorate(ctx, share, 0)

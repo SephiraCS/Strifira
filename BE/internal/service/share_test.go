@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
@@ -107,9 +108,14 @@ func (m *mockLiveKit) ViewerToken(room, identity, name string) (string, error) {
 	return args.String(0), args.Error(1)
 }
 
-func (m *mockLiveKit) ViewerCount(ctx context.Context, room, presenterIdentity string) (int, error) {
+func (m *mockLiveKit) ParticipantSummary(ctx context.Context, room, presenterIdentity string) (int, bool, error) {
 	args := m.Called(ctx, room, presenterIdentity)
-	return args.Int(0), args.Error(1)
+	return args.Int(0), args.Bool(1), args.Error(2)
+}
+
+func (m *mockLiveKit) RoomAge(ctx context.Context, room string) (time.Duration, error) {
+	args := m.Called(ctx, room)
+	return time.Duration(args.Int(0)) * time.Second, args.Error(1)
 }
 
 func (m *mockLiveKit) DeleteRoom(ctx context.Context, room string) error {
@@ -293,10 +299,10 @@ func TestScreenShareService_ListGCsRoomsGone(t *testing.T) {
 	ended := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, RoomName: "ku-old", Status: domain.ScreenShareStatusEnded}
 
 	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{live, stale}, nil)
-	lk.On("ViewerCount", ctx, "ku-live", presenterID.String()).Return(3, nil)
-	lk.On("ViewerCount", ctx, "ku-stale", presenterID.String()).Return(0, twirp.NotFound.Error("room not found"))
+	lk.On("ParticipantSummary", ctx, "ku-live", presenterID.String()).Return(3, true, nil)
+	lk.On("ParticipantSummary", ctx, "ku-stale", presenterID.String()).Return(0, false, twirp.NotFound.Error("room not found"))
 	shareRepo.On("MarkEnded", ctx, stale.ID).Return(nil)
-	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{ended, stale}, nil)
+	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{ended}, nil)
 	userRepo.On("GetByID", ctx, presenterID).Return(&domain.User{ID: presenterID, Name: "Mario"}, nil)
 
 	list, err := svc.List(ctx, wsID)
@@ -306,6 +312,7 @@ func TestScreenShareService_ListGCsRoomsGone(t *testing.T) {
 	assert.Equal(t, live.ID.String(), list.Active[0].ID)
 	assert.Equal(t, 3, list.Active[0].ViewerCount)
 	assert.Len(t, list.Recent, 2, "stale share should move to history after GC")
+	assert.Equal(t, stale.ID.String(), list.Recent[0].ID, "just-GC'd share leads the history")
 }
 
 func TestScreenShareService_ListSurvivesLiveKitOutage(t *testing.T) {
@@ -317,7 +324,7 @@ func TestScreenShareService_ListSurvivesLiveKitOutage(t *testing.T) {
 	live := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, RoomName: "ku-live", Status: domain.ScreenShareStatusActive}
 
 	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{live}, nil)
-	lk.On("ViewerCount", ctx, "ku-live", presenterID.String()).Return(0, errors.New("connection refused"))
+	lk.On("ParticipantSummary", ctx, "ku-live", presenterID.String()).Return(0, true, errors.New("connection refused"))
 	shareRepo.On("MarkEnded", ctx, live.ID).Times(0)
 	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{}, nil)
 	userRepo.On("GetByID", ctx, presenterID).Return(&domain.User{ID: presenterID, Name: "Mario"}, nil)
@@ -327,4 +334,54 @@ func TestScreenShareService_ListSurvivesLiveKitOutage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, list.Active, 1, "transport failure must not drop the share")
 	assert.Equal(t, 0, list.Active[0].ViewerCount)
+}
+
+func TestScreenShareService_ListGCsSourcelessRooms(t *testing.T) {
+	shareRepo, userRepo, lk, svc := newShareTestService(t)
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	presenterID := uuid.New()
+	// Presenter dropped without ending; viewers (or only the room record)
+	// keep the LiveKit room alive well past the reload grace period.
+	stale := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, RoomName: "ku-stale", Status: domain.ScreenShareStatusActive}
+
+	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{stale}, nil)
+	lk.On("ParticipantSummary", ctx, "ku-stale", presenterID.String()).Return(2, false, nil)
+	lk.On("RoomAge", ctx, "ku-stale").Return(noSourceGraceSeconds*2, nil)
+	lk.On("DeleteRoom", ctx, "ku-stale").Return(nil)
+	shareRepo.On("MarkEnded", ctx, stale.ID).Return(nil)
+	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{}, nil)
+	userRepo.On("GetByID", ctx, presenterID).Return(&domain.User{ID: presenterID, Name: "Mario"}, nil)
+
+	list, err := svc.List(ctx, wsID)
+
+	assert.NoError(t, err)
+	assert.Empty(t, list.Active, "source-less mature room must be auto-removed")
+	assert.Len(t, list.Recent, 1)
+	assert.Equal(t, stale.ID.String(), list.Recent[0].ID)
+}
+
+func TestScreenShareService_ListKeepsFreshSourcelessRooms(t *testing.T) {
+	shareRepo, userRepo, lk, svc := newShareTestService(t)
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	presenterID := uuid.New()
+	// Room younger than the grace period: the presenter may simply be
+	// mid-reload (their wall rejoins within seconds).
+	fresh := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, RoomName: "ku-fresh", Status: domain.ScreenShareStatusActive}
+
+	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{fresh}, nil)
+	lk.On("ParticipantSummary", ctx, "ku-fresh", presenterID.String()).Return(1, false, nil)
+	lk.On("RoomAge", ctx, "ku-fresh").Return(5, nil)
+	lk.On("DeleteRoom", ctx, mock.Anything).Times(0)
+	shareRepo.On("MarkEnded", ctx, mock.Anything).Times(0)
+	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{}, nil)
+	userRepo.On("GetByID", ctx, presenterID).Return(&domain.User{ID: presenterID, Name: "Mario"}, nil)
+
+	list, err := svc.List(ctx, wsID)
+
+	assert.NoError(t, err)
+	assert.Len(t, list.Active, 1, "fresh room within the reload grace must survive")
 }

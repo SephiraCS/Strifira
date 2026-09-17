@@ -73,21 +73,41 @@ func (c *Client) mint(grant *auth.VideoGrant, identity, name string) (string, er
 		ToJWT()
 }
 
-// ViewerCount returns the number of connected participants other than the
-// presenter identified by presenterIdentity. Returns an error when the room
-// does not exist (callers treat that as "share is over").
-func (c *Client) ViewerCount(ctx context.Context, room, presenterIdentity string) (int, error) {
+// ParticipantSummary reports the room's live membership: how many viewers
+// (participants other than the presenter) and whether the presenter is
+// connected at all. Returns an error when the room does not exist (callers
+// treat that as "share is over").
+func (c *Client) ParticipantSummary(ctx context.Context, room, presenterIdentity string) (viewers int, presenterPresent bool, err error) {
 	resp, err := c.roomService.ListParticipants(ctx, &livekit.ListParticipantsRequest{Room: room})
+	if err != nil {
+		return 0, false, err
+	}
+	for _, p := range resp.GetParticipants() {
+		if p.GetIdentity() == presenterIdentity {
+			presenterPresent = true
+		} else {
+			viewers++
+		}
+	}
+	return viewers, presenterPresent, nil
+}
+
+// RoomAge returns how long the LiveKit room has existed. Used to give a
+// fresh room (presenter mid-reload) a grace period before source-less GC.
+func (c *Client) RoomAge(ctx context.Context, room string) (time.Duration, error) {
+	resp, err := c.roomService.ListRooms(ctx, &livekit.ListRoomsRequest{Names: []string{room}})
 	if err != nil {
 		return 0, err
 	}
-	count := 0
-	for _, p := range resp.GetParticipants() {
-		if p.GetIdentity() != presenterIdentity {
-			count++
-		}
+	rooms := resp.GetRooms()
+	if len(rooms) == 0 {
+		return 0, twirp.NotFound.Error("room not found")
 	}
-	return count, nil
+	createdMs := rooms[0].GetCreationTimeMs()
+	if createdMs == 0 {
+		createdMs = rooms[0].GetCreationTime() * 1000
+	}
+	return time.Since(time.UnixMilli(createdMs)), nil
 }
 
 // DeleteRoom forcibly removes every participant and the room itself. A

@@ -63,6 +63,7 @@
 	let presentEnded = $state(false);
 	let streamEnded = $state(false);
 	let switching = $state(false);
+	let stopping = false;
 	let qualityBusy = $state(false);
 	// Browsers block unmuted autoplay: viewer tiles start muted with an
 	// explicit unmute toggle.
@@ -102,6 +103,16 @@
 		});
 		room = r;
 
+		// Watchdog: ICE can stall indefinitely when the media path is
+		// unreachable (e.g. firewall/NAT rules missing). Never leave a tile
+		// spinning forever — tear down and (for presenters) end the share
+		// so no source-less row lingers.
+		const watchdog = setTimeout(() => {
+			if (!live && !presentEnded && !streamEnded) {
+				void failConnect('timeout');
+			}
+		}, 20000);
+
 		r.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
 			if (track.kind === Track.Kind.Video) track.attach(videoEl);
 		});
@@ -129,6 +140,7 @@
 		try {
 			await r.connect(serverUrl, token);
 		} catch {
+			clearTimeout(watchdog);
 			connecting = false;
 			streamEnded = true;
 			onEnded?.('error');
@@ -139,6 +151,7 @@
 			try {
 				await publishScreen();
 			} catch {
+				clearTimeout(watchdog);
 				// User cancelled the picker, or capture was denied — the
 				// share ends before anyone saw anything.
 				await r.disconnect();
@@ -149,9 +162,30 @@
 			}
 		}
 
+		clearTimeout(watchdog);
 		connecting = false;
 		live = true;
 		reportViewerCount();
+	}
+
+	async function failConnect(_reason: 'timeout') {
+		stopping = true;
+		try {
+			await onPresenterStop?.();
+		} catch {
+			// best-effort
+		}
+		if (room && room.state !== 'disconnected') {
+			try {
+				await room.disconnect();
+			} catch {
+				// already gone
+			}
+		}
+		connecting = false;
+		live = false;
+		streamEnded = true;
+		onEnded?.('error');
 	}
 
 	async function publishScreen() {
@@ -173,7 +207,19 @@
 			// captured audio back into the room.
 			track.attach(videoEl);
 			videoEl.muted = true;
+			// The browser ends the captured track itself when the user hits
+			// the native "Stop sharing" bar or closes the shared surface —
+			// treat that exactly like pressing our Stop button.
+			track.mediaStreamTrack.addEventListener('ended', handleCaptureEnded);
 		}
+	}
+
+	function handleCaptureEnded() {
+		// Track endings we caused ourselves (Stop, or swapping the surface)
+		// already run their own teardown. `stopping` is set synchronously
+		// in stopSharing so its own unpublished track cannot re-enter.
+		if (switching || stopping || presentEnded || !live) return;
+		void stopSharing();
 	}
 
 	/** Re-pick the captured screen/window/tab while staying live. */
@@ -212,6 +258,7 @@
 	}
 
 	async function stopSharing() {
+		stopping = true;
 		try {
 			await onPresenterStop?.();
 		} catch {
