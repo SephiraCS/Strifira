@@ -18,7 +18,8 @@
 		token,
 		mode,
 		onEnded,
-		onStatus
+		onStatus,
+		onPresenterStop
 	}: {
 		serverUrl: string;
 		token: string;
@@ -28,6 +29,13 @@
 		onEnded?: (reason: 'disconnected' | 'stopped' | 'error') => void;
 		/** Optional status sink for the hosting page. */
 		onStatus?: (status: { state: 'connecting' | 'live' | 'reconnecting' | 'ended'; viewerCount?: number }) => void;
+		/**
+		 * Called when the presenter presses Stop, before the room tears
+		 * down — the page owns the workspace/share ids needed to end the
+		 * share server-side (broadcasts share.ended to every viewer).
+		 * Failures are non-fatal: the local stream still stops.
+		 */
+		onPresenterStop?: () => Promise<void>;
 	} = $props();
 
 	// "sharp" prioritizes resolution for text-heavy screens; "smooth"
@@ -178,6 +186,12 @@
 	}
 
 	async function stopSharing() {
+		try {
+			await onPresenterStop?.();
+		} catch {
+			// The server-side end is best-effort here; the local stream
+			// stops regardless and lazy GC closes the row if this failed.
+		}
 		if (room) {
 			await room.localParticipant.setScreenShareEnabled(false);
 			await room.disconnect();

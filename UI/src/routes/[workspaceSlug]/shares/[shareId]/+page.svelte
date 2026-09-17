@@ -4,7 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
-	import { joinShare } from '$lib/api/shares';
+	import { joinShare, endShare } from '$lib/api/shares';
 	import type { ScreenShare, ScreenShareJoin } from '$lib/types/share';
 	import ShareStage from '$lib/features/shares/ShareStage.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -55,6 +55,14 @@
 	function handleStageEnded() {
 		ended = true;
 		void sharesState.reload();
+	}
+
+	// Presenter stop ends the share server-side so every viewer gets the
+	// share.ended WS event immediately instead of waiting for lazy GC.
+	async function handlePresenterStop() {
+		if (isPresenter) {
+			await endShare(slug, shareId);
+		}
 	}
 
 	function backToShares() {
@@ -129,6 +137,7 @@
 					token={joinInfo.token}
 					mode={isPresenter ? 'present' : 'view'}
 					onEnded={handleStageEnded}
+					onPresenterStop={handlePresenterStop}
 				/>
 			</div>
 		{/if}
