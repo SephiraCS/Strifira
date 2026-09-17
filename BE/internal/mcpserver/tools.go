@@ -147,9 +147,10 @@ func registerCatalogTools(s *mcp.Server, deps Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_team_states",
 		Title:       "List team workflow states",
-		Description: "List the custom workflow states of one team (by team_id or team key). Use state ids as `status_id` when creating or updating issues.",
+		Description: "List the custom workflow states of one team (`team` accepts key, name, or id). Use state ids as `status_id` when creating or updating issues.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct {
 		Workspace string `json:"workspace"`
+		Team      string `json:"team,omitempty" jsonschema:"team key, name, or id"`
 		TeamID    string `json:"team_id,omitempty"`
 		TeamKey   string `json:"team_key,omitempty"`
 	}) (*mcp.CallToolResult, any, error) {
@@ -161,7 +162,11 @@ func registerCatalogTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, err
 		}
-		team, err := deps.findTeam(ctx, w.workspace.ID, in.TeamID, in.TeamKey)
+		teamRef := in.Team
+		if in.TeamID != "" || in.TeamKey != "" {
+			teamRef = ""
+		}
+		team, err := deps.resolveTeam(ctx, w.workspace.ID, firstNonEmpty(teamRef, in.TeamID, in.TeamKey))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -847,6 +852,16 @@ type updateIssueIn struct {
 	Parent      *string  `json:"parent,omitempty" jsonschema:"parent issue identifier or id"`
 	DueDate     *string  `json:"due_date,omitempty"`
 	Subscribed  *bool    `json:"subscribed,omitempty"`
+}
+
+// firstNonEmpty returns the first argument that is not the zero value.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // --- shared helpers ---
