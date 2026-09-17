@@ -11,9 +11,6 @@ jobs:
     name: Backend Tests
     runs-on: terrascale-builder
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ./BE
 
     # The runner's service containers are not reachable from job containers on
     # this instance, so PostgreSQL and Redis run as rootful podman containers
@@ -31,44 +28,64 @@ jobs:
           go-version-file: BE/go.mod
           cache: false
 
-      - name: Start PostgreSQL and Redis
-        working-directory: .
-        run: |
-          podman run --detach --name ku-postgres \
-            --publish 127.0.0.1:5432:5432 \
-            --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
-            docker.io/library/postgres:16-alpine
-          podman run --detach --name ku-redis \
-            --publish 127.0.0.1:6379:6379 \
-            docker.io/library/redis:7-alpine
-
-          for _ in $(seq 1 30); do
-            podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
-            sleep 2
-          done
-          podman exec ku-postgres pg_isready -U ku
-          podman exec ku-redis redis-cli ping
-
-      - name: Apply database migrations
-        env:
-          DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
-        run: go run ./cmd/server migrate up
-
-      - name: Run tests with coverage
+      - name: Run backend tests
+        working-directory: BE
         env:
           DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret-that-is-at-least-32-characters-long
-        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
+        run: |
+          set -o pipefail
+          {
+            echo '--- start postgres and redis ---'
+            podman run --detach --name ku-postgres \
+              --publish 127.0.0.1:5432:5432 \
+              --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
+              docker.io/library/postgres:16-alpine
+            podman run --detach --name ku-redis \
+              --publish 127.0.0.1:6379:6379 \
+              docker.io/library/redis:7-alpine
 
-      - name: Show coverage summary
-        run: go tool cover -func=coverage.out
+            for _ in $(seq 1 30); do
+              podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
+              sleep 2
+            done
+            podman exec ku-postgres pg_isready -U ku
+            podman exec ku-redis redis-cli ping
+
+            echo '--- apply database migrations ---'
+            go run ./cmd/server migrate up
+
+            echo '--- run tests with coverage ---'
+            go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
+
+            echo '--- coverage summary ---'
+            go tool cover -func=coverage.out
+
+            echo 'LANE-COMPLETE'
+          } 2>&1 | tee backend-test.log
 
       - name: Upload coverage artifact
         uses: https://data.forgejo.org/actions/upload-artifact@v7.0.1
         with:
           name: backend-coverage
           path: BE/coverage.out
+
+      - name: Publish job log (temporary)
+        if: always()
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          cd BE
+          [ -f backend-test.log ] || echo "(no log captured; failure was in an action step)" > backend-test.log
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          mv backend-test.log "backend-${GITHUB_RUN_ID}.log"
+          git add "backend-${GITHUB_RUN_ID}.log"
+          git commit -m "backend-test log run ${GITHUB_RUN_ID}"
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
 
   docker-integration:
     # The backend manages dev-machine containers through the Docker SDK, so
@@ -78,9 +95,6 @@ jobs:
     name: Docker Runtime Integration
     runs-on: terrascale-builder
     timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: ./BE
 
     steps:
       - name: Check out the source revision
@@ -95,43 +109,58 @@ jobs:
           go-version-file: BE/go.mod
           cache: false
 
-      - name: Ensure Docker CLI and check the daemon socket
-        id: docker
-        working-directory: .
-        run: |
-          if ! command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
-            apt-get update -qq >/dev/null && apt-get install -y -qq docker.io >/dev/null
-          fi
-          if docker info >/dev/null 2>&1; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Docker daemon socket not usable from this job; skipping the Docker lifecycle integration test."
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build integration runtime images
-        if: steps.docker.outputs.available == 'true'
-        working-directory: .
-        run: |
-          docker build --pull --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
-          docker build --pull --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
-          docker build --pull --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
-          docker build --pull --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
-          docker build --pull --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
-
       - name: Run Docker lifecycle integration test
-        if: steps.docker.outputs.available == 'true'
+        working-directory: BE
         env:
           KU_DOCKER_INTEGRATION: '1'
-        run: go test ./internal/machine -run '^TestDockerRuntimeLifecycle$' -race -count=1 -v -timeout=5m
+        run: |
+          set -o pipefail
+          {
+            echo '--- ensure docker cli and check daemon socket ---'
+            if ! command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+              apt-get update -qq >/dev/null && apt-get install -y -qq docker.io >/dev/null
+            fi
+            if ! docker info >/dev/null 2>&1; then
+              echo "Docker daemon socket not usable from this job; skipping the Docker lifecycle integration test."
+              echo 'LANE-COMPLETE (skipped)'
+              exit 0
+            fi
+
+            echo '--- build integration runtime images ---'
+            cd ..
+            docker build --pull --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
+            docker build --pull --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
+            docker build --pull --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
+            docker build --pull --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
+            docker build --pull --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
+            cd BE
+
+            echo '--- run lifecycle test ---'
+            go test ./internal/machine -run '^TestDockerRuntimeLifecycle$' -race -count=1 -v -timeout=5m
+
+            echo 'LANE-COMPLETE'
+          } 2>&1 | tee docker-integration.log
+
+      - name: Publish job log (temporary)
+        if: always()
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          cd BE
+          [ -f docker-integration.log ] || echo "(no log captured; failure was in an action step)" > docker-integration.log
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          mv docker-integration.log "docker-${GITHUB_RUN_ID}.log"
+          git add "docker-${GITHUB_RUN_ID}.log"
+          git commit -m "docker-integration log run ${GITHUB_RUN_ID}"
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
 
   frontend-check:
     name: Frontend Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ./UI
 
     steps:
       - name: Check out the source revision
@@ -143,20 +172,32 @@ jobs:
       # The terrascale-builder image ships the Node toolchain and Playwright
       # browsers (PLAYWRIGHT_BROWSERS_PATH is preset), so no setup-node or
       # browser download with system dependencies is needed here.
-      - name: Install dependencies
-        run: npm ci
+      - name: Run frontend checks
+        working-directory: UI
+        run: |
+          set -o pipefail
+          {
+            echo '--- toolchain ---'
+            node --version
+            npm --version
 
-      - name: Svelte check (type checking)
-        run: npm run check
+            echo '--- install dependencies ---'
+            npm ci
 
-      - name: Unit tests
-        run: npm run test:unit
+            echo '--- svelte check ---'
+            npm run check
 
-      - name: Ensure Playwright browser revision
-        run: npx playwright install chromium
+            echo '--- unit tests ---'
+            npm run test:unit
 
-      - name: Dev Machine browser tests
-        run: npm run test:e2e
+            echo '--- ensure playwright browser revision ---'
+            npx playwright install chromium
+
+            echo '--- dev machine browser tests ---'
+            npm run test:e2e
+
+            echo 'LANE-COMPLETE'
+          } 2>&1 | tee frontend-check.log
 
       - name: Upload Playwright failure artifacts
         if: ${{ failure() }}
@@ -169,13 +210,26 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Publish job log (temporary)
+        if: always()
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          cd UI
+          [ -f frontend-check.log ] || echo "(no log captured; failure was in an action step)" > frontend-check.log
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          mv frontend-check.log "frontend-${GITHUB_RUN_ID}.log"
+          git add "frontend-${GITHUB_RUN_ID}.log"
+          git commit -m "frontend-check log run ${GITHUB_RUN_ID}"
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
+
   web-check:
     name: Marketing Site Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: ./WEB
 
     steps:
       - name: Check out the source revision
@@ -184,20 +238,48 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Run marketing site checks
+        working-directory: WEB
+        run: |
+          set -o pipefail
+          {
+            echo '--- toolchain ---'
+            node --version
+            npm --version
 
-      - name: Svelte check (type checking)
-        run: npm run check
+            echo '--- install dependencies ---'
+            npm ci
 
-      - name: Build + SEO validation
-        run: npm run validate
+            echo '--- svelte check ---'
+            npm run check
 
-      - name: Ensure Playwright browser revision
-        run: npx playwright install chromium
+            echo '--- build + seo validation ---'
+            npm run validate
 
-      - name: Responsive layout tests
-        run: npm run test:responsive
+            echo '--- ensure playwright browser revision ---'
+            npx playwright install chromium
+
+            echo '--- responsive layout tests ---'
+            npm run test:responsive
+
+            echo 'LANE-COMPLETE'
+          } 2>&1 | tee web-check.log
+
+      - name: Publish job log (temporary)
+        if: always()
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          cd WEB
+          [ -f web-check.log ] || echo "(no log captured; failure was in an action step)" > web-check.log
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          mv web-check.log "web-${GITHUB_RUN_ID}.log"
+          git add "web-${GITHUB_RUN_ID}.log"
+          git commit -m "web-check log run ${GITHUB_RUN_ID}"
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/logs || true
 
   # TEMPORARY: publishes each lane's outcome to the ci/status branch so run
   # results are readable without web access during the CI migration. Remove

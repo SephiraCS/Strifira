@@ -81,6 +81,18 @@ jobs:
             curl --fail --silent --show-error \
               --header "Authorization: token ${FORGEJO_TOKEN}" \
               https://git.terrascale.tech/api/v1/user | jq -r '"token user: \(.login)"' || echo "(api call failed)"
+            echo
+
+            echo "=== actions runs api ==="
+            curl -sf --header "Authorization: token ${FORGEJO_TOKEN}" \
+              "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/runs?limit=5" \
+              | head -c 4000 || echo "(runs api failed)"
+            echo
+            echo "=== actions jobs api ==="
+            curl -sf --header "Authorization: token ${FORGEJO_TOKEN}" \
+              "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/jobs?limit=20" \
+              | head -c 8000 || echo "(jobs api failed)"
+            echo
           } > probe-report.txt 2>&1 || true
 
           cat probe-report.txt
