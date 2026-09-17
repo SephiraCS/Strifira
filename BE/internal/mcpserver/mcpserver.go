@@ -201,12 +201,13 @@ type issueOut struct {
 }
 
 type commentOut struct {
-	ID         string     `json:"id"`
-	User       userOut    `json:"user,omitempty"`
-	Body       string     `json:"body"`
-	ParentID   *string    `json:"parent_id,omitempty"`
-	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID         string       `json:"id"`
+	User       userOut      `json:"user,omitempty"`
+	Body       string       `json:"body"`
+	ParentID   *string      `json:"parent_id,omitempty"`
+	ResolvedAt *time.Time   `json:"resolved_at,omitempty"`
+	Replies    []commentOut `json:"replies,omitempty"`
+	CreatedAt  time.Time    `json:"created_at"`
 }
 
 func toLabelOut(l domain.Label) labelOut {

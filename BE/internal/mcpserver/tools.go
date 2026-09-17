@@ -362,27 +362,7 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 
 		commentsOut := []commentOut{}
 		if comments, err := deps.CommentSvc.ListByIssue(ctx, issue.ID); err == nil {
-			usersByID := map[uuid.UUID]domain.User{}
-			for _, c := range comments {
-				if _, ok := usersByID[c.UserID]; !ok {
-					if u, err := deps.Users.GetByID(ctx, c.UserID); err == nil && u != nil {
-						usersByID[c.UserID] = *u
-					}
-				}
-			}
-			for _, c := range comments {
-				co := commentOut{
-					ID: c.ID.String(), Body: c.Body, ParentID: nil,
-					ResolvedAt: c.ResolvedAt, CreatedAt: c.CreatedAt,
-				}
-				if c.ParentID != nil {
-					co.ParentID = ptrString(c.ParentID.String())
-				}
-				if u, ok := usersByID[c.UserID]; ok {
-					co.User = toUserOut(u)
-				}
-				commentsOut = append(commentsOut, co)
-			}
+			commentsOut = deps.commentTree(ctx, comments)
 		}
 
 		return nil, map[string]any{
@@ -576,26 +556,7 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list comments")
 		}
-		usersByID := map[uuid.UUID]domain.User{}
-		for _, c := range comments {
-			if _, ok := usersByID[c.UserID]; !ok {
-				if u, err := deps.Users.GetByID(ctx, c.UserID); err == nil && u != nil {
-					usersByID[c.UserID] = *u
-				}
-			}
-		}
-		out := make([]commentOut, 0, len(comments))
-		for _, c := range comments {
-			co := commentOut{ID: c.ID.String(), Body: c.Body, ResolvedAt: c.ResolvedAt, CreatedAt: c.CreatedAt}
-			if c.ParentID != nil {
-				co.ParentID = ptrString(c.ParentID.String())
-			}
-			if u, ok := usersByID[c.UserID]; ok {
-				co.User = toUserOut(u)
-			}
-			out = append(out, co)
-		}
-		return nil, out, nil
+		return nil, deps.commentTree(ctx, comments), nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -691,6 +652,48 @@ type updateIssueIn struct {
 }
 
 // --- shared helpers ---
+
+// commentTree renders top-level comments with replies nested under their
+// parents (ListByIssue returns only top-level comments; replies ride in
+// Replies like the REST API renders them).
+func (d Deps) commentTree(ctx context.Context, comments []domain.Comment) []commentOut {
+	if len(comments) == 0 {
+		return []commentOut{}
+	}
+	usersByID := map[uuid.UUID]domain.User{}
+	loadUser := func(id uuid.UUID) (domain.User, bool) {
+		if u, ok := usersByID[id]; ok {
+			return u, true
+		}
+		if u, err := d.Users.GetByID(ctx, id); err == nil && u != nil {
+			usersByID[id] = *u
+			return *u, true
+		}
+		return domain.User{}, false
+	}
+	toOut := func(c domain.Comment) commentOut {
+		co := commentOut{ID: c.ID.String(), Body: c.Body, ResolvedAt: c.ResolvedAt, CreatedAt: c.CreatedAt}
+		if c.ParentID != nil {
+			co.ParentID = ptrString(c.ParentID.String())
+		}
+		if u, ok := loadUser(c.UserID); ok {
+			co.User = toUserOut(u)
+		}
+		return co
+	}
+	out := make([]commentOut, 0, len(comments))
+	for _, c := range comments {
+		co := toOut(c)
+		if replies, err := d.CommentSvc.ListReplies(ctx, c.ID); err == nil && len(replies) > 0 {
+			co.Replies = make([]commentOut, len(replies))
+			for i, r := range replies {
+				co.Replies[i] = toOut(r)
+			}
+		}
+		out = append(out, co)
+	}
+	return out
+}
 
 // findTeam resolves a team by id or by key (case-insensitive), both scoped
 // to the workspace.
