@@ -13,6 +13,7 @@
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import IssueStatusIcon from '$lib/features/issues/IssueStatusIcon.svelte';
 	import IssuePriorityIcon from '$lib/features/issues/IssuePriorityIcon.svelte';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { Plus, X, Search, CircleDashed, Signal, User, FolderKanban, Tag, CornerDownRight } from 'lucide-svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -320,14 +321,14 @@
 						{label}
 					</div>
 				{/each}
-			{:else if key === 'assignee'}
+				{:else if key === 'assignee'}
 				<div class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-tertiary)]">
 					{m['sharedComponents.filter_builder.unassigned']()}
 				</div>
 				{#each members as member}
 					{@const selected = filters.assignee === member.user_id}
 					<div class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)]">
-						<User size={14} class="text-[var(--color-text-tertiary)]" />
+						<Avatar name={member.name || member.email} avatarUrl={member.avatar_url} size="xs" />
 						{member.name || member.email}
 					</div>
 				{/each}
@@ -367,7 +368,16 @@
 			{#if filters[option.key]}
 				<HoverCard.Root openDelay={150} closeDelay={100}>
 					<HoverCard.Trigger class={chipClass(true)}>
-						<option.icon size={12} />
+						{#if option.key === 'assignee' && filters.assignee && filters.assignee !== 'none'}
+							{@const chipMember = members.find((member) => member.user_id === filters.assignee)}
+							{#if chipMember}
+								<Avatar name={chipMember.name || chipMember.email} avatarUrl={chipMember.avatar_url} size="2xs" />
+							{:else}
+								<option.icon size={12} />
+							{/if}
+						{:else}
+							<option.icon size={12} />
+						{/if}
 						{getChipLabel(option.key)}
 					</HoverCard.Trigger>
 					<HoverCard.Content class="w-48 p-1" align="start">
@@ -443,7 +453,16 @@
 			<Popover.Root bind:open={assigneeOpen} onOpenChange={(open) => handlePopoverClose('assignee', open)}>
 				<Popover.Trigger>
 					<button class={chipClass(!!filters.assignee)}>
-						<User size={12} />
+						{#if filters.assignee && filters.assignee !== 'none'}
+							{@const chipMember = members.find((member) => member.user_id === filters.assignee)}
+							{#if chipMember}
+								<Avatar name={chipMember.name || chipMember.email} avatarUrl={chipMember.avatar_url} size="2xs" />
+							{:else}
+								<User size={12} />
+							{/if}
+						{:else}
+							<User size={12} />
+						{/if}
 						{getAssigneeChipLabel()}
 					</button>
 				</Popover.Trigger>
@@ -465,7 +484,7 @@
 								? 'bg-[var(--color-bg-hover)]'
 								: ''}"
 						>
-							<User size={14} class="text-[var(--color-text-tertiary)]" />
+							<Avatar name={member.name || member.email} avatarUrl={member.avatar_url} size="xs" />
 							{member.name || member.email}
 						</button>
 					{/each}

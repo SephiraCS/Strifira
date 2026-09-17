@@ -10,6 +10,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import IssuePickerDialog from './IssuePickerDialog.svelte';
 	import DueDatePickerPanel from '$lib/components/shared/DueDatePickerPanel.svelte';
 	import { issuesState } from './issues.state.svelte';
@@ -256,7 +257,7 @@
 								updateField('assignee_ids', newIds);
 							}}
 						>
-							<span class={rowClass}><CircleUser class={iconClass} />{member.name || member.email}</span>
+							<span class={rowClass}><Avatar name={member.name || member.email} avatarUrl={member.avatar_url} size="xs" />{member.name || member.email}</span>
 						</ContextMenu.CheckboxItem>
 					{/each}
 				</ContextMenu.SubContent>

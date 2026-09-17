@@ -3,9 +3,10 @@
 		name,
 		avatarUrl,
 		size = 'sm'
-	}: { name: string; avatarUrl?: string | null; size?: 'xs' | 'sm' | 'md' | 'lg' } = $props();
+	}: { name: string; avatarUrl?: string | null; size?: '2xs' | 'xs' | 'sm' | 'md' | 'lg' } = $props();
 
 	const sizes = {
+		'2xs': 'h-4 w-4 text-[8px]',
 		xs: 'h-5 w-5 text-[9px]',
 		sm: 'h-6 w-6 text-xs',
 		md: 'h-8 w-8 text-sm',
