@@ -9,7 +9,8 @@ on:
 jobs:
   backend-test:
     name: Backend Tests
-    runs-on: ubuntu-latest
+    runs-on: terrascale-builder
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./BE
@@ -40,12 +41,17 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v7.0.0
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6.4.0
+      - name: Set up Go
+        uses: https://data.forgejo.org/actions/setup-go@v6.4.0
         with:
           go-version-file: BE/go.mod
-          cache-dependency-path: BE/go.sum
+          cache: false
 
       - name: Apply database migrations
         env:
@@ -63,82 +69,81 @@ jobs:
         run: go tool cover -func=coverage.out
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: https://data.forgejo.org/actions/upload-artifact@v7.0.1
         with:
           name: backend-coverage
           path: BE/coverage.out
 
   docker-integration:
     name: Docker Runtime Integration
-    runs-on: ubuntu-latest
+    runs-on: terrascale-builder
     timeout-minutes: 45
     defaults:
       run:
         working-directory: ./BE
 
     steps:
-      - uses: actions/checkout@v7.0.0
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
 
-      - uses: actions/setup-go@v6.4.0
+      - name: Set up Go
+        uses: https://data.forgejo.org/actions/setup-go@v6.4.0
         with:
           go-version-file: BE/go.mod
-          cache-dependency-path: BE/go.sum
+          cache: false
 
-      - name: Configure quota-capable Docker storage
+      # The GitHub-hosted workflow re-provisioned the runner's Docker storage as
+      # XFS with project quotas. On the shared TerraScale runner the daemon
+      # configuration is owned by the host, so this lane only runs when a usable
+      # Docker daemon is reachable from the job container.
+      - name: Check for a usable Docker daemon
+        id: docker
         working-directory: .
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes xfsprogs
-          sudo systemctl stop docker.service docker.socket
-          sudo truncate --size 32G /var/lib/docker-integration.xfs
-          sudo mkfs.xfs -f /var/lib/docker-integration.xfs
-          sudo mkdir --parents /mnt/docker-integration
-          sudo mount --options loop,prjquota /var/lib/docker-integration.xfs /mnt/docker-integration
-
-          if sudo test -f /etc/docker/daemon.json; then
-            sudo jq '. + {"data-root": "/mnt/docker-integration"}' /etc/docker/daemon.json > /tmp/docker-daemon.json
+          if docker info >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
           else
-            jq --null-input '{"data-root": "/mnt/docker-integration"}' > /tmp/docker-daemon.json
+            echo "Docker is not usable from this job; skipping the Docker lifecycle integration test."
+            echo "available=false" >> "$GITHUB_OUTPUT"
           fi
-          sudo install --mode 0644 /tmp/docker-daemon.json /etc/docker/daemon.json
-          sudo systemctl start docker.socket docker.service
-
-          backing_filesystem=$(docker info --format '{{range .DriverStatus}}{{if eq (index . 0) "Backing Filesystem"}}{{index . 1}}{{end}}{{end}}')
-          test "$backing_filesystem" = xfs
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.2.0
 
       - name: Build integration runtime images
+        if: steps.docker.outputs.available == 'true'
         working-directory: .
         run: |
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-ide --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-browser --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-collector --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-egress --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
-          docker buildx build --pull --load --platform linux/amd64 --cache-from type=gha,scope=dev-machine-agent-claude --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
+          docker build --pull --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
+          docker build --pull --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
+          docker build --pull --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
+          docker build --pull --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
+          docker build --pull --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
 
       - name: Run Docker lifecycle integration test
+        if: steps.docker.outputs.available == 'true'
         env:
           KU_DOCKER_INTEGRATION: '1'
         run: go test ./internal/machine -run '^TestDockerRuntimeLifecycle$' -race -count=1 -v -timeout=5m
 
   frontend-check:
     name: Frontend Checks
-    runs-on: ubuntu-latest
+    runs-on: terrascale-builder
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./UI
 
     steps:
-      - uses: actions/checkout@v7.0.0
-
-      - uses: actions/setup-node@v6.4.0
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: UI/package-lock.json
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
 
+      # The terrascale-builder image ships the Node toolchain and Playwright
+      # browsers (PLAYWRIGHT_BROWSERS_PATH is preset), so no setup-node or
+      # browser download with system dependencies is needed here.
       - name: Install dependencies
         run: npm ci
 
@@ -148,15 +153,15 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+      - name: Ensure Playwright browser revision
+        run: npx playwright install chromium
 
       - name: Dev Machine browser tests
         run: npm run test:e2e
 
       - name: Upload Playwright failure artifacts
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: https://data.forgejo.org/actions/upload-artifact@v7.0.1
         with:
           name: ui-playwright-failure
           path: |
@@ -167,19 +172,18 @@ jobs:
 
   web-check:
     name: Marketing Site Checks
-    runs-on: ubuntu-latest
+    runs-on: terrascale-builder
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: ./WEB
 
     steps:
-      - uses: actions/checkout@v7.0.0
-
-      - uses: actions/setup-node@v6.4.0
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: WEB/package-lock.json
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
 
       - name: Install dependencies
         run: npm ci
@@ -190,8 +194,8 @@ jobs:
       - name: Build + SEO validation
         run: npm run validate
 
-      - name: Install responsive-test browser
-        run: npx playwright install --with-deps chromium
+      - name: Ensure Playwright browser revision
+        run: npx playwright install chromium
 
       - name: Responsive layout tests
         run: npm run test:responsive

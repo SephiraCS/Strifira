@@ -1,0 +1,172 @@
+name: Build & Push
+
+on:
+  release:
+    types: [published]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # Docker references must be lowercase; the Forgejo registry resolves the
+  # lowercase owner path to the TerraScale organization.
+  REGISTRY: git.terrascale.tech
+  IMAGE_PREFIX: git.terrascale.tech/terrascale
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    name: Build Images
+    runs-on: terrascale-builder
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.sha }}
+          persist-credentials: false
+
+      - name: Extract version
+        id: version
+        run: |
+          case "${{ forgejo.event_name }}" in
+            release)
+              version="${{ forgejo.event.release.tag_name }}"
+              number="${version#v}"
+              push="true"
+              ;;
+            pull_request)
+              version="pr-${{ forgejo.event.number }}"
+              number="0.0.0"
+              push="false"
+              ;;
+            *)
+              version="dev-$(git rev-parse --short HEAD)"
+              number="0.0.0"
+              push="false"
+              ;;
+          esac
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+
+      - name: Bump UI version
+        if: forgejo.event_name == 'release'
+        working-directory: UI
+        env:
+          VERSION_NUMBER: ${{ steps.version.outputs.number }}
+        run: npm version "${VERSION_NUMBER}" --no-git-tag-version --allow-same-version
+
+      - name: Update public release manifest
+        if: forgejo.event_name == 'release'
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: |
+          curl --fail --silent --show-error \
+            --header "Authorization: token ${FORGEJO_TOKEN}" \
+            "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/releases?limit=100" \
+            | jq '[.[] | select(.draft == false) | {
+                tag_name,
+                html_url,
+                body,
+                published_at: .created_at,
+                prerelease: (.prerelease // false),
+                force_upgrade: false,
+                minimum_supported_version: null,
+                upgrade_url: .html_url,
+                upgrade_message: null
+              }]' \
+            > UI/static/releases.json
+
+      # The upstream contributors list came from the GitHub API, which has no
+      # Forgejo equivalent; the README contributor section is left as authored.
+      - name: Commit version bump
+        if: forgejo.event_name == 'release'
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git add UI/package.json UI/package-lock.json UI/static/releases.json
+
+          if git diff --cached --quiet; then
+            echo "Version is already ${VERSION}"
+          else
+            git commit -m "bump(version): ${VERSION}"
+            git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:main
+          fi
+
+      - name: Check for a usable Docker daemon
+        id: docker
+        run: |
+          if docker info >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fail fast when Docker is unavailable on a release
+        if: forgejo.event_name == 'release' && steps.docker.outputs.available != 'true'
+        run: |
+          echo "A usable Docker daemon is required to publish release images." >&2
+          exit 1
+
+      - name: Log in to the Forgejo container registry
+        if: forgejo.event_name == 'release'
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: printf '%s' "${FORGEJO_TOKEN}" | docker login "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
+
+      # All-in-one image
+      - name: Build & push all-in-one
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PUSH: ${{ steps.version.outputs.push }}
+        run: |
+          docker build --pull \
+            --tag "${IMAGE_PREFIX}/ku:latest" \
+            --tag "${IMAGE_PREFIX}/ku:${VERSION}" \
+            .
+          if [ "${PUSH}" = "true" ]; then
+            docker push "${IMAGE_PREFIX}/ku:latest"
+            docker push "${IMAGE_PREFIX}/ku:${VERSION}"
+          fi
+
+      # API-only image
+      - name: Build & push API
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PUSH: ${{ steps.version.outputs.push }}
+        run: |
+          docker build --pull \
+            --tag "${IMAGE_PREFIX}/ku-api:latest" \
+            --tag "${IMAGE_PREFIX}/ku-api:${VERSION}" \
+            ./BE
+          if [ "${PUSH}" = "true" ]; then
+            docker push "${IMAGE_PREFIX}/ku-api:latest"
+            docker push "${IMAGE_PREFIX}/ku-api:${VERSION}"
+          fi
+
+      # Web-only image
+      - name: Build & push Web
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PUSH: ${{ steps.version.outputs.push }}
+        run: |
+          docker build --pull \
+            --tag "${IMAGE_PREFIX}/ku-web:latest" \
+            --tag "${IMAGE_PREFIX}/ku-web:${VERSION}" \
+            ./UI
+          if [ "${PUSH}" = "true" ]; then
+            docker push "${IMAGE_PREFIX}/ku-web:latest"
+            docker push "${IMAGE_PREFIX}/ku-web:${VERSION}"
+          fi
