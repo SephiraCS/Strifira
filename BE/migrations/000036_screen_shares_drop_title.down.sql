@@ -1,0 +1,1 @@
+ALTER TABLE screen_shares ADD COLUMN title TEXT NOT NULL DEFAULT '';

@@ -10,32 +10,43 @@
 		type LocalVideoTrack
 	} from 'livekit-client';
 	import { Button } from '$lib/components/ui/button';
-	import { Maximize2, MonitorUp, Loader2, SignalHigh, SignalMedium, SignalLow } from 'lucide-svelte';
+	import {
+		Maximize2,
+		MonitorUp,
+		RefreshCw,
+		Loader2,
+		SignalHigh,
+		SignalMedium,
+		SignalLow,
+		Volume2,
+		VolumeX
+	} from 'lucide-svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {
 		serverUrl,
 		token,
 		mode,
+		presenterName,
 		onEnded,
-		onStatus,
-		onPresenterStop
+		onPresenterStop,
+		onViewerCount
 	}: {
 		serverUrl: string;
 		token: string;
 		/** 'present' publishes the local screen; 'view' subscribes. */
 		mode: 'present' | 'view';
+		presenterName: string;
 		/** Fired when the room disconnects or the presenter stops. */
 		onEnded?: (reason: 'disconnected' | 'stopped' | 'error') => void;
-		/** Optional status sink for the hosting page. */
-		onStatus?: (status: { state: 'connecting' | 'live' | 'reconnecting' | 'ended'; viewerCount?: number }) => void;
 		/**
-		 * Called when the presenter presses Stop, before the room tears
-		 * down — the page owns the workspace/share ids needed to end the
-		 * share server-side (broadcasts share.ended to every viewer).
-		 * Failures are non-fatal: the local stream still stops.
+		 * Presenter Stop hook: the owning page knows the workspace/share
+		 * ids needed to end the share server-side (broadcasts share.ended).
+		 * Failures are non-fatal; the local stream still stops.
 		 */
 		onPresenterStop?: () => Promise<void>;
+		/** Live viewer count sink (driven by room membership). */
+		onViewerCount?: (count: number) => void;
 	} = $props();
 
 	// "sharp" prioritizes resolution for text-heavy screens; "smooth"
@@ -51,7 +62,17 @@
 	let connQuality = $state<ConnectionQuality>(ConnectionQuality.Unknown);
 	let presentEnded = $state(false);
 	let streamEnded = $state(false);
+	let switching = $state(false);
 	let qualityBusy = $state(false);
+	// Browsers block unmuted autoplay: viewer tiles start muted with an
+	// explicit unmute toggle.
+	let audioMuted = $state(true);
+
+	function toggleAudio() {
+		audioMuted = !audioMuted;
+		if (videoEl) videoEl.muted = audioMuted;
+		if (!audioMuted) void videoEl?.play();
+	}
 
 	// Screenshare-optimized publishing: high-bitrate 1080p with 60fps
 	// headroom, plus simulcast layers so weak links subscribe low instead
@@ -66,16 +87,14 @@
 		degradationPreference: 'maintain-resolution' as const
 	};
 
-	function reportStatus() {
-		onStatus?.({
-			state: presentEnded || streamEnded ? 'ended' : reconnecting ? 'reconnecting' : live ? 'live' : 'connecting',
-			viewerCount
-		});
+	function reportViewerCount() {
+		if (!room) return;
+		viewerCount = room.remoteParticipants.size;
+		onViewerCount?.(viewerCount);
 	}
 
 	async function connect() {
 		connecting = true;
-		reportStatus();
 
 		const r = new Room({
 			adaptiveStream: true,
@@ -89,31 +108,29 @@
 		r.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
 			track.detach(videoEl);
 		});
-		r.on(RoomEvent.ParticipantConnected, updateViewerCount);
-		r.on(RoomEvent.ParticipantDisconnected, updateViewerCount);
+		r.on(RoomEvent.ParticipantConnected, reportViewerCount);
+		r.on(RoomEvent.ParticipantDisconnected, reportViewerCount);
 		r.on(RoomEvent.ConnectionQualityChanged, (quality: ConnectionQuality) => {
 			connQuality = quality;
 		});
 		r.on(RoomEvent.Disconnected, () => {
 			if (mode === 'view') {
 				streamEnded = true;
-				reportStatus();
 				onEnded?.('disconnected');
 			}
 		});
 		r.on(RoomEvent.Reconnecting, () => {
 			reconnecting = true;
-			reportStatus();
 		});
 		r.on(RoomEvent.Reconnected, () => {
 			reconnecting = false;
-			reportStatus();
 		});
 
 		try {
 			await r.connect(serverUrl, token);
 		} catch {
-			reportStatus();
+			connecting = false;
+			streamEnded = true;
 			onEnded?.('error');
 			return;
 		}
@@ -127,7 +144,6 @@
 				await r.disconnect();
 				presentEnded = true;
 				connecting = false;
-				reportStatus();
 				onEnded?.('stopped');
 				return;
 			}
@@ -135,8 +151,7 @@
 
 		connecting = false;
 		live = true;
-		updateViewerCount();
-		reportStatus();
+		reportViewerCount();
 	}
 
 	async function publishScreen() {
@@ -161,6 +176,23 @@
 		}
 	}
 
+	/** Re-pick the captured screen/window/tab while staying live. */
+	async function switchSurface() {
+		if (!room || switching) return;
+		switching = true;
+		try {
+			await room.localParticipant.setScreenShareEnabled(false);
+			await publishScreen();
+		} catch {
+			// Picker cancelled — keep sharing nothing is worse than the
+			// previous state, but the track is already unpublished; end
+			// locally and let the presenter restart if they want to.
+			await stopSharing();
+		} finally {
+			switching = false;
+		}
+	}
+
 	async function applyQualityPreference(pref: 'sharp' | 'smooth') {
 		if (pref === qualityPreference || qualityBusy || !room) return;
 		qualityBusy = true;
@@ -179,18 +211,12 @@
 		}
 	}
 
-	function updateViewerCount() {
-		if (!room) return;
-		viewerCount = room.remoteParticipants.size;
-		reportStatus();
-	}
-
 	async function stopSharing() {
 		try {
 			await onPresenterStop?.();
 		} catch {
-			// The server-side end is best-effort here; the local stream
-			// stops regardless and lazy GC closes the row if this failed.
+			// Server-side end is best-effort here; lazy GC closes the row
+			// if this failed.
 		}
 		if (room) {
 			await room.localParticipant.setScreenShareEnabled(false);
@@ -198,15 +224,6 @@
 		}
 		live = false;
 		presentEnded = true;
-		reportStatus();
-		onEnded?.('stopped');
-	}
-
-	async function leave() {
-		if (room) await room.disconnect();
-		live = false;
-		streamEnded = true;
-		reportStatus();
 		onEnded?.('stopped');
 	}
 
@@ -226,7 +243,7 @@
 	});
 </script>
 
-<div class="relative flex h-full w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black">
+<div class="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black">
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video class="h-full w-full object-contain" playsinline autoplay bind:this={videoEl}></video>
 
@@ -246,10 +263,13 @@
 
 	{#if live && !connecting}
 		<div class="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
-			<span class="flex items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white">
+			<span class="flex max-w-[50%] items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white">
 				<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-white"></span>
 				{mode === 'present' ? m['shares.sharing_badge']() : m['shares.live_badge']()}
 			</span>
+			{#if presenterName}
+				<span class="truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
+			{/if}
 			{#if viewerCount > 0}
 				<span class="rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
 					{m['shares.viewer_count']({ count: viewerCount })}
@@ -282,24 +302,36 @@
 						{m['shares.quality_smooth']()}
 					</button>
 				</div>
+			{:else}
+				<Button variant="secondary" size="sm" class="h-7 bg-black/60 text-white hover:bg-black/80" onclick={toggleAudio} title={audioMuted ? m['shares.unmute']() : m['shares.mute']()}>
+					{#if audioMuted}
+						<VolumeX size={13} />
+					{:else}
+						<Volume2 size={13} />
+					{/if}
+				</Button>
 			{/if}
 			<Button variant="secondary" size="sm" class="h-7 bg-black/60 text-white hover:bg-black/80" onclick={toggleFullscreen}>
 				<Maximize2 size={13} />
 			</Button>
 		</div>
 
-		<div class="absolute bottom-3 right-3">
-			{#if mode === 'present'}
+		{#if mode === 'present'}
+			<div class="absolute bottom-3 right-3 flex items-center gap-2">
+				<Button variant="secondary" size="sm" class="bg-black/60 text-white hover:bg-black/80" onclick={switchSurface} disabled={switching}>
+					{#if switching}
+						<Loader2 size={14} class="animate-spin" />
+					{:else}
+						<RefreshCw size={14} />
+					{/if}
+					{m['shares.switch_surface']()}
+				</Button>
 				<Button variant="destructive" size="sm" onclick={stopSharing}>
 					<MonitorUp size={14} />
 					{m['shares.stop']()}
 				</Button>
-			{:else}
-				<Button variant="secondary" size="sm" onclick={leave}>
-					{m['shares.leave']()}
-				</Button>
-			{/if}
-		</div>
+			</div>
+		{/if}
 	{/if}
 
 	{#if (streamEnded || presentEnded) && !connecting}

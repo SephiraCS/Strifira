@@ -147,7 +147,6 @@ func (h *ScreenShareHandler) decorate(c echo.Context, share domain.ScreenShare) 
 		ID:          share.ID.String(),
 		WorkspaceID: share.WorkspaceID.String(),
 		StartedBy:   share.StartedBy.String(),
-		Title:       share.Title,
 		RoomName:    share.RoomName,
 		Status:      share.Status,
 		CreatedAt:   share.CreatedAt,

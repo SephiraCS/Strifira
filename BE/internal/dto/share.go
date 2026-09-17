@@ -4,9 +4,9 @@ import (
 	"time"
 )
 
-type CreateScreenShareRequest struct {
-	Title string `json:"title" validate:"omitempty,max=200"`
-}
+// CreateScreenShareRequest carries no fields: a share is identified by
+// its presenter (product direction 2026-09-17).
+type CreateScreenShareRequest struct{}
 
 type ScreenShareTokenResponse struct {
 	// LiveKit access token for the requesting user's role in this share.
@@ -15,7 +15,7 @@ type ScreenShareTokenResponse struct {
 	ServerURL string `json:"server_url"`
 }
 
-// ScreenShareUser is the presenter subset needed to render share cards.
+// ScreenShareUser is the presenter subset needed to render share tiles.
 type ScreenShareUser struct {
 	ID          string  `json:"id"`
 	Name        string  `json:"name"`
@@ -24,13 +24,11 @@ type ScreenShareUser struct {
 }
 
 type ScreenShareResponse struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspace_id"`
-	StartedBy   string `json:"started_by"`
-	// StartedByUser is denormalized for list rendering; may be null after
-	// user deletion is introduced.
+	ID          string           `json:"id"`
+	WorkspaceID string           `json:"workspace_id"`
+	StartedBy   string           `json:"started_by"`
+	// StartedByUser names the presenter — the share's identity.
 	StartedByUser *ScreenShareUser `json:"started_by_user,omitempty"`
-	Title         string           `json:"title"`
 	RoomName      string           `json:"room_name"`
 	Status        string           `json:"status"`
 	ViewerCount   int              `json:"viewer_count"`

@@ -73,7 +73,6 @@ func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uui
 		ID:          uuid.New(),
 		WorkspaceID: workspaceID,
 		StartedBy:   userID,
-		Title:       req.Title,
 		RoomName:    fmt.Sprintf("ku-%s", shareRoomID(workspaceID)),
 		Status:      domain.ScreenShareStatusActive,
 	}
@@ -88,7 +87,6 @@ func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uui
 
 	s.broadcast(workspaceID, "share.started", map[string]string{
 		"id":         share.ID.String(),
-		"title":      share.Title,
 		"started_by": share.StartedBy.String(),
 	})
 
@@ -253,7 +251,6 @@ func (s *ScreenShareService) decorate(ctx context.Context, share domain.ScreenSh
 		ID:          share.ID.String(),
 		WorkspaceID: share.WorkspaceID.String(),
 		StartedBy:   share.StartedBy.String(),
-		Title:       share.Title,
 		RoomName:    share.RoomName,
 		Status:      share.Status,
 		ViewerCount: viewerCount,

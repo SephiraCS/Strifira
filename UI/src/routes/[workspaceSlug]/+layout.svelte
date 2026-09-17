@@ -492,16 +492,13 @@
 		}
 	}
 
-	function announceShareStarted(payload: { id?: string; title?: string; started_by?: string }) {
+	function announceShareStarted(payload: { id?: string; started_by?: string }) {
 		if (!payload?.id || payload.started_by === authState.user?.id) return;
 		const member = members.find((mem) => mem.user_id === payload.started_by);
 		const who = member?.name ?? '';
 		appToast.info(
 			who ? m['shares.toast_started']({ name: who }) : m['shares.toast_started_anon'](),
-			{
-				description: payload.title || undefined,
-				duration: 8000
-			}
+			{ duration: 8000 }
 		);
 	}
 </script>

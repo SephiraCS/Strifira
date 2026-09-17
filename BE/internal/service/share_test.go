@@ -159,10 +159,9 @@ func TestScreenShareService_Create(t *testing.T) {
 	userRepo.On("GetByID", ctx, userID).Return(&domain.User{ID: userID, Name: "Mario", DisplayName: "Mario"}, nil)
 	lk.On("PresenterToken", mock.AnythingOfType("string"), userID.String(), "Mario").Return("presenter-jwt", nil)
 
-	share, token, err := svc.Create(ctx, wsID, userID, dto.CreateScreenShareRequest{Title: "Demo"})
+	share, token, err := svc.Create(ctx, wsID, userID, dto.CreateScreenShareRequest{})
 
 	assert.NoError(t, err)
-	assert.Equal(t, "Demo", share.Title)
 	assert.Equal(t, domain.ScreenShareStatusActive, share.Status)
 	assert.Equal(t, wsID, share.WorkspaceID)
 	assert.Equal(t, userID, share.StartedBy)
@@ -176,18 +175,17 @@ func TestScreenShareService_CreateIdempotentForPresenter(t *testing.T) {
 	ctx := context.Background()
 	wsID := uuid.New()
 	userID := uuid.New()
-	existing := &domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: userID, Title: "First", RoomName: "ku-existing", Status: domain.ScreenShareStatusActive}
+	existing := &domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: userID, RoomName: "ku-existing", Status: domain.ScreenShareStatusActive}
 
 	shareRepo.On("GetActiveByPresenter", ctx, wsID, userID).Return(existing, nil)
 	shareRepo.On("Create", ctx, mock.AnythingOfType("*domain.ScreenShare")).Times(0)
 	userRepo.On("GetByID", ctx, userID).Return(&domain.User{ID: userID, Name: "Mario"}, nil)
 	lk.On("PresenterToken", "ku-existing", userID.String(), "Mario").Return("presenter-jwt", nil)
 
-	share, token, err := svc.Create(ctx, wsID, userID, dto.CreateScreenShareRequest{Title: "Second attempt"})
+	share, token, err := svc.Create(ctx, wsID, userID, dto.CreateScreenShareRequest{})
 
 	assert.NoError(t, err)
 	assert.Equal(t, existing.ID, share.ID, "existing active share should be returned")
-	assert.Equal(t, "First", share.Title)
 	assert.Equal(t, "presenter-jwt", token)
 }
 

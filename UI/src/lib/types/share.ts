@@ -10,7 +10,6 @@ export interface ScreenShare {
 	workspace_id: string;
 	started_by: string;
 	started_by_user?: ScreenShareUser | null;
-	title: string;
 	room_name: string;
 	status: 'active' | 'ended';
 	viewer_count: number;
@@ -29,6 +28,5 @@ export interface ScreenShareJoin {
 	server_url: string;
 }
 
-export interface CreateScreenShareRequest {
-	title?: string;
-}
+// A share is identified by its presenter; creation carries no fields.
+export interface CreateScreenShareRequest {}

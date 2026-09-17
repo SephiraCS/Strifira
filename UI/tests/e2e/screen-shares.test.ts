@@ -28,7 +28,6 @@ const activeShare = {
 	workspace_id: '00000000-0000-0000-0000-000000000002',
 	started_by: presenter.id,
 	started_by_user: presenter,
-	title: 'Bug triage walkthrough',
 	room_name: 'ku-abc12345def67890',
 	status: 'active',
 	viewer_count: 2,
@@ -39,11 +38,16 @@ const activeShare = {
 const endedShare = {
 	...activeShare,
 	id: '00000000-0000-0000-0000-000000000091',
-	title: 'Yesterday demo',
 	status: 'ended',
 	viewer_count: 0,
 	ended_at: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
 	created_at: new Date(Date.now() - 27 * 60 * 60 * 1000).toISOString()
+};
+
+const badJoin = {
+	share: activeShare,
+	token: 'not-a-real-jwt',
+	server_url: 'wss://livekit.invalid'
 };
 
 async function stubCommon(page: import('@playwright/test').Page, enabled: boolean) {
@@ -112,6 +116,9 @@ async function stubCommon(page: import('@playwright/test').Page, enabled: boolea
 		if (path === '/api/notifications') {
 			return route.fulfill({ json: { unread_count: 0, notifications: [] } });
 		}
+		if (path === `/api/workspaces/test/shares/${shareId}/join`) {
+			return route.fulfill({ json: badJoin });
+		}
 		if (path === '/api/workspaces/test/shares') {
 			return route.fulfill({
 				json: enabled ? { active: [activeShare], recent: [endedShare] } : { active: [], recent: [] }
@@ -127,90 +134,59 @@ test('shares module hidden when screen sharing is not configured', async ({ page
 	await expect(page.getByRole('link', { name: 'Screen sharing' })).toHaveCount(0);
 });
 
-test('lists active and recent shares and joins from the card', async ({ page }) => {
+test('wall renders the presenter-named tile and recent history', async ({ page }) => {
 	await stubCommon(page, true);
 	await page.goto('/test/shares');
 
 	await expect(page.getByRole('heading', { name: 'Screen sharing' })).toBeVisible();
-	await expect(page.getByText('Bug triage walkthrough')).toBeVisible();
-	await expect(page.getByText('2 watching')).toBeVisible();
-	await expect(page.getByText('Yesterday demo')).toBeVisible();
-
-	let joinRequested = false;
-	await page.route(`**/api/workspaces/test/shares/${shareId}/join`, (route) => {
-		joinRequested = true;
-		return route.fulfill({
-			json: {
-				share: activeShare,
-				token: 'not-a-real-jwt',
-				server_url: 'wss://livekit.invalid'
-			}
-		});
-	});
-
-	await page.getByRole('button', { name: /join/i }).first().click();
-	await expect(page).toHaveURL(new RegExp(`/test/shares/${shareId}$`));
-	await expect.poll(() => joinRequested).toBe(true);
-	// LiveKit cannot connect to .invalid; the stage must land in the
-	// ended/error state rather than spinning forever.
-	await expect(page.getByText(/this screen share has ended|could not join/i)).toBeVisible({
-		timeout: 15_000
-	});
+	// One tile for the active share (join token fetched, LiveKit target
+	// unreachable in the rig, so the tile lands in its ended state).
+	const tile = page.locator(`[data-share-id="${shareId}"]`);
+	await expect(tile).toHaveCount(1);
+	await expect(tile).toContainText('Filippo');
+	// Shares are presenter-named: no free-text title is rendered anywhere.
+	await expect(page.getByText('Bug triage walkthrough')).toHaveCount(0);
+	// History section is presenter-named too.
+	const recent = page.getByRole('heading', { name: 'Recent' }).locator('..');
+	await expect(recent).toContainText('Filippo');
 });
 
-test('viewer page follows the share.ended workspace event', async ({ page }) => {
+test('start flow posts a titleless share and renders the own tile', async ({ page }) => {
 	await stubCommon(page, true);
-	await page.route(`**/api/workspaces/test/shares/${shareId}/join`, (route) =>
-		route.fulfill({
-			json: {
-				share: activeShare,
-				token: 'not-a-real-jwt',
-				server_url: 'wss://livekit.invalid'
-			}
-		})
-	);
-
-	await page.goto(`/test/shares/${shareId}`);
-	await expect(page.getByText('Bug triage walkthrough')).toBeVisible();
-
-	await page.evaluate((id) => {
-		window.dispatchEvent(new CustomEvent('ws:share.ended', { detail: { id } }));
-	}, shareId);
-
-	await expect(page.getByText('This screen share has ended')).toBeVisible();
-});
-
-test('start flow posts a share and navigates to the stage', async ({ page }) => {
-	await stubCommon(page, true);
-	let createdBody: { title?: string } | null = null;
+	let createdBody: unknown = null;
 	await page.route('**/api/workspaces/test/shares', async (route) => {
 		if (route.request().method() !== 'POST') {
-			return route.fulfill({ json: { active: [], recent: [] } });
+			return route.fulfill({ json: { active: [], recent: [endedShare] } });
 		}
 		createdBody = route.request().postDataJSON();
 		return route.fulfill({
-			json: {
-				share: { ...activeShare, started_by: '00000000-0000-0000-0000-000000000001', started_by_user: undefined },
-				token: 'not-a-real-jwt',
-				server_url: 'wss://livekit.invalid'
-			}
-		});
-	});
-	await page.route(`**/api/workspaces/test/shares/${shareId}/join`, (route) =>
-		route.fulfill({
 			json: {
 				share: { ...activeShare, started_by: '00000000-0000-0000-0000-000000000001' },
 				token: 'not-a-real-jwt',
 				server_url: 'wss://livekit.invalid'
 			}
-		})
-	);
+		});
+	});
 
 	await page.goto('/test/shares');
 	await page.getByRole('button', { name: 'Share my screen' }).click();
-	await page.getByPlaceholder('e.g. Bug triage walkthrough').fill('Design review');
-	await page.getByRole('button', { name: 'Start sharing' }).click();
 
-	await expect(page).toHaveURL(new RegExp(`/test/shares/${shareId}$`));
-	await expect.poll(() => createdBody).toEqual({ title: 'Design review' });
+	// No title dialog exists anymore: the share starts immediately and
+	// the presenter's own tile mounts.
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(1);
+	await expect.poll(() => createdBody).toEqual({});
+	// The header action hides while presenting.
+	await expect(page.getByRole('button', { name: 'Share my screen' })).toHaveCount(0);
+});
+
+test('share.ended event removes the tile from the wall', async ({ page }) => {
+	await stubCommon(page, true);
+	await page.goto('/test/shares');
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(1);
+
+	await page.evaluate((id) => {
+		window.dispatchEvent(new CustomEvent('ws:share.ended', { detail: { id } }));
+	}, shareId);
+
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(0);
 });
