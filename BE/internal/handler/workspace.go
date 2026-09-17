@@ -157,6 +157,7 @@ func (h *WorkspaceHandler) ListMembers(c echo.Context) error {
 			UserID:    m.UserID.String(),
 			Email:     m.Email,
 			Name:      m.Name,
+			AvatarURL: m.AvatarURL,
 			Role:      m.Role,
 			CreatedAt: m.CreatedAt,
 		})

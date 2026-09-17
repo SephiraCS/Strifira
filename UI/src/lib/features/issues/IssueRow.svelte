@@ -368,10 +368,11 @@
 							}}
 							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] {isAssigned ? 'bg-[var(--color-bg-hover)]' : ''}"
 						>
-							<div class="flex h-4 w-4 items-center justify-center rounded-full {isAssigned ? 'bg-[var(--app-accent)] text-[var(--app-accent-foreground)]' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-tertiary)]'} text-[8px]">
-								{isAssigned ? '✓' : (member.name || member.email || 'U').charAt(0).toUpperCase()}
-							</div>
-							{member.name || member.email}
+							<Avatar name={member.name || member.email || 'U'} avatarUrl={member.avatar_url} size="xs" />
+							<span class="min-w-0 flex-1 truncate text-left">{member.name || member.email}</span>
+							{#if isAssigned}
+								<span class="text-xs font-medium text-[var(--app-accent)]">✓</span>
+							{/if}
 						</button>
 					{/each}
 				</Popover.Content>
