@@ -8,6 +8,7 @@
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
 	import IssueContextMenu from './IssueContextMenu.svelte';
 	import { AssigneeSelector } from './selectors';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { issuesState } from './issues.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { dndzone, dragHandle } from 'svelte-dnd-action';
@@ -149,16 +150,16 @@
 								>
 									{#if assignees.length > 1 && firstAssignee}
 										<span class="flex -space-x-2 rounded-full hover:ring-2 hover:ring-[var(--app-accent)]">
-											<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] ring-1 ring-[var(--color-bg)]">
-												{assigneeName(firstAssignee).charAt(0).toUpperCase()}
+											<span class="rounded-full ring-1 ring-[var(--color-bg)]">
+												<Avatar name={assigneeName(firstAssignee)} avatarUrl={firstAssignee.avatar_url} size="xs" />
 											</span>
 											<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[8px] font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-bg)]">
 												+{assignees.length - 1}
 											</span>
 										</span>
 									{:else if firstAssignee}
-										<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] transition-all hover:ring-2 hover:ring-[var(--app-accent)]">
-											{assigneeName(firstAssignee).charAt(0).toUpperCase()}
+										<span class="rounded-full transition-all hover:ring-2 hover:ring-[var(--app-accent)]">
+											<Avatar name={assigneeName(firstAssignee)} avatarUrl={firstAssignee.avatar_url} size="xs" />
 										</span>
 									{:else}
 										<UserCircle size={16} />

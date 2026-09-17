@@ -18,6 +18,7 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import DatePickerPopover from '$lib/components/shared/DatePickerPopover.svelte';
 	import RichEditor from '$lib/components/shared/RichEditor.svelte';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { appToast } from '$lib/features/toast/toast';
 	import * as Popover from '$lib/components/ui/popover';
@@ -1110,9 +1111,7 @@
 							<!-- Comment header + body -->
 							<div class="group/comment p-4">
 								<div class="flex items-center gap-2">
-									<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]">
-										{(comment.user?.name ?? 'U').charAt(0).toUpperCase()}
-									</div>
+									<Avatar name={comment.user?.name ?? 'User'} avatarUrl={comment.user?.avatar_url} size="xs" />
 									<span class="text-[13px] font-medium text-[var(--color-text-primary)]">{comment.user?.name ?? 'User'}</span>
 									<span class="text-[11px] text-[var(--color-text-tertiary)]">{formatRelativeTime(comment.created_at, getLocale())}</span>
 									{#if comment.resolved_at}
@@ -1148,11 +1147,9 @@
 							{#if comment.replies && comment.replies.length > 0}
 								{#each comment.replies as reply (reply.id)}
 									<div class="group/reply border-t border-[var(--app-border)] px-4 py-3 pl-4">
-										<div class="flex items-center gap-2">
-											<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]">
-												{(reply.user?.name ?? 'U').charAt(0).toUpperCase()}
-											</div>
-											<span class="text-[13px] font-medium text-[var(--color-text-primary)]">{reply.user?.name ?? 'User'}</span>
+									<div class="flex items-center gap-2">
+										<Avatar name={reply.user?.name ?? 'User'} avatarUrl={reply.user?.avatar_url} size="xs" />
+										<span class="text-[13px] font-medium text-[var(--color-text-primary)]">{reply.user?.name ?? 'User'}</span>
 											<span class="text-[11px] text-[var(--color-text-tertiary)]">{formatRelativeTime(reply.created_at, getLocale())}</span>
 										</div>
 										<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
@@ -1164,10 +1161,8 @@
 
 							<!-- Reply input (hidden when resolved) -->
 							{#if !comment.resolved_at}
-								<div class="border-t border-[var(--app-border)] px-4 py-3 flex items-start gap-3">
-									<div class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] font-medium text-[var(--app-accent-foreground)]">
-										{(authState.user?.name ?? 'U').charAt(0).toUpperCase()}
-									</div>
+							<div class="border-t border-[var(--app-border)] px-4 py-3 flex items-start gap-3">
+								<div class="mt-0.5"><Avatar name={authState.user?.name ?? 'U'} avatarUrl={authState.user?.avatar_url} size="xs" /></div>
 									<div class="min-w-0 flex-1 flex items-end gap-1.5">
 										<div class="min-w-0 flex-1 my-auto">
 											{#key replyVersions[comment.id] ?? 0}
@@ -1325,26 +1320,22 @@
 								>
 									{#snippet trigger()}
 										<button class="flex min-h-5 flex-wrap items-center gap-1 rounded-md text-left transition-colors">
-											{#if issue.assignees && issue.assignees.length > 0}
-												{#each issue.assignees as a}
-													<span class="flex items-center gap-1.5 rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
-														<div class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] text-[var(--app-accent-foreground)]">
-															{(a.name ?? 'U').charAt(0).toUpperCase()}
-														</div>
-														{a.name}
-													</span>
-												{/each}
-												<span class="flex h-5 w-5 items-center justify-center rounded-full text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors">
-													<Plus size={14} />
+										{#if issue.assignees && issue.assignees.length > 0}
+											{#each issue.assignees as a}
+												<span class="flex items-center gap-1.5 rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
+													<Avatar name={a.name ?? 'U'} avatarUrl={a.avatar_url} size="xs" />
+													{a.name}
 												</span>
-											{:else if issue.assignee}
-												<span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
-													<div class="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--app-accent)] text-[8px] text-[var(--app-accent-foreground)]">
-														{(issue.assignee.name ?? 'U').charAt(0).toUpperCase()}
-													</div>
-													{issue.assignee.name}
-												</span>
-											{:else}
+											{/each}
+											<span class="flex h-5 w-5 items-center justify-center rounded-full text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors">
+												<Plus size={14} />
+											</span>
+										{:else if issue.assignee}
+											<span class="flex items-center gap-1.5 rounded-full px-2 py-0.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
+												<Avatar name={issue.assignee.name ?? 'U'} avatarUrl={issue.assignee.avatar_url} size="xs" />
+												{issue.assignee.name}
+											</span>
+										{:else}
 												<span class="text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">{m['issue.assignee']()}</span>
 											{/if}
 										</button>

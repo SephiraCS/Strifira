@@ -23,10 +23,17 @@
 	let open = $state(false);
 	let showCreateWorkspace = $state(false);
 	let workspaces = $state<Workspace[]>([]);
+	let logoFailed = $state(false);
 	let newWorkspaceName = $state('');
 	let newWorkspaceSlug = $state('');
 	let slugEdited = $state(false);
 	let creating = $state(false);
+
+	let currentLogoUrl = $derived(currentWorkspace.logo_url);
+	$effect(() => {
+		currentLogoUrl;
+		logoFailed = false;
+	});
 
 	onMount(async () => {
 		workspaces = await listWorkspaces();
@@ -78,17 +85,26 @@
 
 <Popover.Root bind:open>
 	<Popover.Trigger class="min-w-0 w-full">
-		<button class="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--color-bg-hover)]">
+	<button class="flex w-full min-w-0 items-center gap-2 rounded-md px-1 py-0.5 hover:bg-[var(--color-bg-hover)]">
+		{#if currentWorkspace.logo_url && !logoFailed}
+			<img
+				src={currentWorkspace.logo_url}
+				alt=""
+				class="h-6 w-6 shrink-0 rounded object-contain"
+				onerror={() => (logoFailed = true)}
+			/>
+		{:else}
 			<div
 				class="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[var(--app-accent)] text-xs font-bold text-[var(--app-accent-foreground)]"
 			>
 				{currentWorkspace.name.charAt(0).toUpperCase()}
 			</div>
-			<span class="flex-1 truncate text-left text-sm font-medium text-[var(--color-text-primary)]">
-				{currentWorkspace.name}
-			</span>
-			<ChevronsUpDown size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
-		</button>
+		{/if}
+		<span class="flex-1 truncate text-left text-sm font-medium text-[var(--color-text-primary)]">
+			{currentWorkspace.name}
+		</span>
+		<ChevronsUpDown size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+	</button>
 	</Popover.Trigger>
 	<Popover.Content class="w-56 p-1" align="start">
 		<div class="px-2 py-1">
@@ -99,11 +115,15 @@
 				onclick={() => switchWorkspace(ws)}
 				class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
 			>
-				<div
-					class="flex h-5 w-5 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]"
-				>
-					{ws.name.charAt(0).toUpperCase()}
-				</div>
+				{#if ws.logo_url}
+					<img src={ws.logo_url} alt="" class="h-5 w-5 shrink-0 rounded object-contain" />
+				{:else}
+					<div
+						class="flex h-5 w-5 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]"
+					>
+						{ws.name.charAt(0).toUpperCase()}
+					</div>
+				{/if}
 				<span class="flex-1 truncate text-left">{ws.name}</span>
 				{#if ws.slug === slug}
 					<Check size={14} class="text-[var(--app-accent)]" />

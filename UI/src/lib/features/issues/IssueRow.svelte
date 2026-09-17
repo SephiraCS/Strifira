@@ -11,6 +11,7 @@
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
 	import IssueLabelChips from './IssueLabelChips.svelte';
 	import IssueContextMenu from './IssueContextMenu.svelte';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as HoverCard from '$lib/components/ui/hover-card';
 	import * as Popover from '$lib/components/ui/popover';
@@ -329,21 +330,21 @@
 				<Popover.Trigger class="flex items-center cursor-pointer transition-all">
 					{#if issue.assignees && issue.assignees.length > 1}
 						<div class="flex -space-x-2 rounded-full hover:ring-2 hover:ring-[var(--app-accent)]">
-							<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] ring-1 ring-[var(--color-bg)]" title={issue.assignees[0].name}>
-								{(issue.assignees[0].name ?? 'U').charAt(0).toUpperCase()}
-							</div>
+							<span class="rounded-full ring-1 ring-[var(--color-bg)]" title={issue.assignees[0].name}>
+								<Avatar name={issue.assignees[0].name ?? 'U'} avatarUrl={issue.assignees[0].avatar_url} size="xs" />
+							</span>
 							<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[8px] font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-bg)]">
 								+{issue.assignees.length - 1}
 							</div>
 						</div>
 					{:else if issue.assignees && issue.assignees.length === 1}
-						<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] hover:ring-2 hover:ring-[var(--app-accent)]" title={issue.assignees[0].name}>
-							{(issue.assignees[0].name ?? 'U').charAt(0).toUpperCase()}
-						</div>
+						<span class="rounded-full hover:ring-2 hover:ring-[var(--app-accent)]" title={issue.assignees[0].name}>
+							<Avatar name={issue.assignees[0].name ?? 'U'} avatarUrl={issue.assignees[0].avatar_url} size="xs" />
+						</span>
 					{:else if issue.assignee}
-						<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] hover:ring-2 hover:ring-[var(--app-accent)]" title={issue.assignee.name}>
-							{(issue.assignee.name ?? 'U').charAt(0).toUpperCase()}
-						</div>
+						<span class="rounded-full hover:ring-2 hover:ring-[var(--app-accent)]" title={issue.assignee.name}>
+							<Avatar name={issue.assignee.name ?? 'U'} avatarUrl={issue.assignee.avatar_url} size="xs" />
+						</span>
 					{:else}
 						<span class="text-[var(--color-text-tertiary)] opacity-40 hover:opacity-100 hover:text-[var(--color-text-secondary)] transition-all">
 							<CircleUser size={20} />

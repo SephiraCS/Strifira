@@ -2,6 +2,7 @@
 	import type { PublicIssue } from '$lib/types/shared-link';
 	import type { IssuePriority } from '$lib/types/issue';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import IssueLabelChips from './IssueLabelChips.svelte';
 	import { formatDate, formatIssueListDate, formatIssueListRelativeTime } from '$lib/utils/format';
@@ -64,17 +65,17 @@
 		<span class="shrink-0 flex items-center">
 			{#if issue.assignees.length > 1}
 				<div class="flex -space-x-2">
-					<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)] ring-1 ring-[var(--color-bg)]" title={issue.assignees[0].name}>
-						{(issue.assignees[0].name ?? 'U').charAt(0).toUpperCase()}
-					</div>
+					<span class="rounded-full ring-1 ring-[var(--color-bg)]" title={issue.assignees[0].name}>
+						<Avatar name={issue.assignees[0].name ?? 'U'} avatarUrl={issue.assignees[0].avatar_url} size="xs" />
+					</span>
 					<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[8px] font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-bg)]">
 						+{issue.assignees.length - 1}
 					</div>
 				</div>
 			{:else}
-				<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)]" title={issue.assignees[0].name}>
-					{(issue.assignees[0].name ?? 'U').charAt(0).toUpperCase()}
-				</div>
+				<span class="rounded-full" title={issue.assignees[0].name}>
+					<Avatar name={issue.assignees[0].name ?? 'U'} avatarUrl={issue.assignees[0].avatar_url} size="xs" />
+				</span>
 			{/if}
 		</span>
 	{/if}

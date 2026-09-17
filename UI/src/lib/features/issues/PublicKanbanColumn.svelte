@@ -2,6 +2,7 @@
 	import type { PublicIssue, PublicStatus } from '$lib/types/shared-link';
 	import type { IssuePriority } from '$lib/types/issue';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
+	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import type { StatusCategory } from '$lib/types/team-status';
 
@@ -42,9 +43,9 @@
 				{#if issue.assignees && issue.assignees.length > 0}
 					<div class="mt-2 flex items-center gap-1">
 						{#each issue.assignees.slice(0, 3) as assignee}
-							<div class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--app-accent)] text-[9px] font-medium text-[var(--app-accent-foreground)]" title={assignee.name}>
-								{(assignee.name ?? 'U').charAt(0).toUpperCase()}
-							</div>
+							<span class="rounded-full" title={assignee.name}>
+								<Avatar name={assignee.name ?? 'U'} avatarUrl={assignee.avatar_url} size="xs" />
+							</span>
 						{/each}
 					</div>
 				{/if}
