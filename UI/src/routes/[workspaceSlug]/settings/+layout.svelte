@@ -16,6 +16,7 @@
 		SlidersHorizontal,
 		CircleDot,
 		ChevronDown,
+		KeyRound,
 		Menu,
 		RefreshCw
 	} from 'lucide-svelte';
@@ -86,7 +87,8 @@
 			label: m['settings.nav.personal'](),
 			items: [
 				{ label: m['settings.nav.profile'](), href: `/${slug}/settings/profile`, icon: User },
-				{ label: m['settings.nav.preferences'](), href: `/${slug}/settings/preferences`, icon: Settings2 }
+				{ label: m['settings.nav.preferences'](), href: `/${slug}/settings/preferences`, icon: Settings2 },
+				{ label: m['settings.nav.api_keys'](), href: `/${slug}/settings/api-keys`, icon: KeyRound }
 			]
 		},
 		{

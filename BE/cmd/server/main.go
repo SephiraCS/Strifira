@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -18,6 +19,7 @@ import (
 	"github.com/ku/ku-backend/internal/config"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/handler"
+	"github.com/ku/ku-backend/internal/mcpserver"
 	mw "github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
@@ -153,6 +155,23 @@ func main() {
 	workspaceTransferRepo := repository.NewWorkspaceTransferRepository(db)
 	workspaceTransferSvc := service.NewWorkspaceTransferService(workspaceTransferRepo, store)
 	workspaceTransferH := handler.NewWorkspaceTransferHandler(workspaceTransferSvc)
+
+	// Personal API keys + MCP endpoint
+	apiKeyRepo := repository.NewAPIKeyRepository(db)
+	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, userRepo)
+	apiKeyH := handler.NewAPIKeyHandler(apiKeySvc)
+	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
+		Version:      mcpServerVersion(),
+		Users:        userRepo,
+		Workspaces:   workspaceRepo,
+		Teams:        teamRepo,
+		TeamStatuses: teamStatusRepo,
+		Projects:     projectRepo,
+		Labels:       labelRepo,
+		IssueSvc:     issueSvc,
+		CommentSvc:   commentSvc,
+		RelationSvc:  relationSvc,
+	})
 
 	// GitHub integration
 	var globalGitHubApp *service.GlobalGitHubAppConfig
@@ -442,12 +461,30 @@ func main() {
 	api.POST("/notifications/:id/unarchive", notifH.Unarchive)
 	api.POST("/notifications/mark-all-read", notifH.MarkAllRead)
 
+	// Personal API keys (user-scoped, usable across the owner's workspaces;
+	// no rate limiting per the /api/auth note above)
+	api.GET("/api-keys", apiKeyH.List)
+	api.POST("/api-keys", apiKeyH.Create)
+	api.DELETE("/api-keys/:id", apiKeyH.Revoke)
+
+	// MCP endpoint: stateless streamable HTTP, authenticated with a
+	// personal API key (Authorization: Bearer ku_...). Tools run with the
+	// key owner's identity and workspace RBAC.
+	e.Any("/mcp", echo.WrapHandler(mcpHandler), mw.APIKeyAuth(apiKeySvc))
+
 	// Start
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Infof("Starting server on %s", addr)
 	if err := e.Start(addr); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+func mcpServerVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "dev"
 }
 
 func runMigrate(args []string) {

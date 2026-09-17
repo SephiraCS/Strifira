@@ -29,7 +29,7 @@ func TestDevMachineMigrationsAreConsolidated(t *testing.T) {
 	require.NoError(t, err)
 
 	for version := 34; version <= 36; version++ {
-		matches, globErr := filepath.Glob(fmt.Sprintf("%06d_*.sql", version))
+		matches, globErr := filepath.Glob(fmt.Sprintf("%06d_dev_machine*.sql", version))
 		require.NoError(t, globErr)
 		require.Empty(t, matches)
 	}

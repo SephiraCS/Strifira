@@ -240,3 +240,12 @@ type IssueTemplateRepo interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	ListDueForRecurrence(ctx context.Context) ([]domain.IssueTemplate, error)
 }
+
+type APIKeyRepo interface {
+	Create(ctx context.Context, key *domain.APIKey) error
+	ListByUser(ctx context.Context, userID uuid.UUID) ([]domain.APIKey, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.APIKey, error)
+	GetByHash(ctx context.Context, tokenHash string) (*domain.APIKey, error)
+	Revoke(ctx context.Context, id, userID uuid.UUID) error
+	TouchLastUsed(ctx context.Context, id uuid.UUID) error
+}
