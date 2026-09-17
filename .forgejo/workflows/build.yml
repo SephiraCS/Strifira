@@ -198,3 +198,55 @@ jobs:
             "$ENGINE" push "${IMAGE_PREFIX}/ku-web:latest"
             "$ENGINE" push "${IMAGE_PREFIX}/ku-web:${VERSION}"
           fi
+
+  # TEMPORARY: after a release, pulls every published image back from the
+  # Forgejo registry with the job token and records the outcome on the
+  # ci/status branch, so the registry publication is verifiable without web
+  # access. Remove once the release lane is verified.
+  verify-publish:
+    name: Verify published images (temporary)
+    if: always() && forgejo.event_name == 'release'
+    needs: build
+    runs-on: terrascale-builder
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Pull published images from the Forgejo registry
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+          VERSION: ${{ forgejo.event.release.tag_name }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: |
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          authfile="$(mktemp)"
+          printf '%s' "${FORGEJO_TOKEN}" | podman login --authfile "$authfile" "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
+
+          {
+            echo "release verify at $(date -u +%Y-%m-%dT%H:%M:%SZ) version=${VERSION}"
+            echo "build job result: ${BUILD_RESULT}"
+            for image in ku ku-api ku-web; do
+              ref="${REGISTRY}/terrascale/${image}:${VERSION}"
+              if podman pull --authfile "$authfile" "$ref" >/dev/null 2>&1; then
+                echo "PULL OK    ${ref}"
+                podman rmi "$ref" >/dev/null 2>&1 || true
+              else
+                echo "PULL FAILED ${ref}"
+              fi
+            done
+          } | tee "release-verify-${stamp}.txt"
+
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git checkout -B ci/status "origin/ci/status" 2>/dev/null || git checkout -B ci/status
+          git add "release-verify-${stamp}.txt"
+          git commit -m "release verify ${stamp}"
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/status

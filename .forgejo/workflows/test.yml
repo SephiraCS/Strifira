@@ -15,31 +15,9 @@ jobs:
       run:
         working-directory: ./BE
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: ku
-          POSTGRES_PASSWORD: ku
-          POSTGRES_DB: ku_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U ku"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
+    # The runner's service containers are not reachable from job containers on
+    # this instance, so PostgreSQL and Redis run as rootful podman containers
+    # inside the privileged job (the engine the builder image ships with).
     steps:
       - name: Check out the source revision
         uses: https://data.forgejo.org/actions/checkout@v6.1.0
@@ -52,6 +30,24 @@ jobs:
         with:
           go-version-file: BE/go.mod
           cache: false
+
+      - name: Start PostgreSQL and Redis
+        working-directory: .
+        run: |
+          podman run --detach --name ku-postgres \
+            --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
+            docker.io/library/postgres:16-alpine
+          podman run --detach --name ku-redis \
+            --publish 127.0.0.1:6379:6379 \
+            docker.io/library/redis:7-alpine
+
+          for _ in $(seq 1 30); do
+            podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
+            sleep 2
+          done
+          podman exec ku-postgres pg_isready -U ku
+          podman exec ku-redis redis-cli ping
 
       - name: Apply database migrations
         env:
@@ -202,3 +198,42 @@ jobs:
 
       - name: Responsive layout tests
         run: npm run test:responsive
+
+  # TEMPORARY: publishes each lane's outcome to the ci/status branch so run
+  # results are readable without web access during the CI migration. Remove
+  # once the workflows are verified on this instance.
+  report:
+    name: Report results (temporary)
+    if: always()
+    needs: [backend-test, docker-integration, frontend-check, web-check]
+    runs-on: terrascale-builder
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Publish job results
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: |
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          {
+            echo "tests at $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${{ forgejo.sha }} event=${{ forgejo.event_name }}"
+            echo "backend-test: ${{ needs.backend-test.result }}"
+            echo "docker-integration: ${{ needs.docker-integration.result }}"
+            echo "frontend-check: ${{ needs.frontend-check.result }}"
+            echo "web-check: ${{ needs.web-check.result }}"
+          } | tee "tests-${stamp}.txt"
+
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "noreply@git.terrascale.tech"
+          git checkout -B ci/status "origin/ci/status" 2>/dev/null || git checkout -B ci/status
+          git add "tests-${stamp}.txt"
+          git commit -m "tests status ${stamp}"
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:ci/status
