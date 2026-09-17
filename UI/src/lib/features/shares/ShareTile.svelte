@@ -260,19 +260,20 @@
 	async function stopSharing() {
 		if (stopping) return;
 		stopping = true;
-		// Settle the UI first: after this the wall clears the tile and the
-		// row is either ended below or picked up by lazy GC. Every async
+		// End the share server-side BEFORE notifying the wall: onEnded
+		// triggers a shares reload, which must not race ahead of the end
+		// commit and re-render this share as a viewer tile. Every async
 		// step is best-effort — the capture may already be dead when the
-		// browser-native stop fired it (source track 'ended'), and
-		// livekit-client can reject cleanup calls on a dead track.
-		live = false;
-		presentEnded = true;
-		onEnded?.('stopped');
+		// browser-native stop fired it, and livekit-client can reject
+		// cleanup calls on a dead track.
 		try {
 			await onPresenterStop?.();
 		} catch {
 			// Server-side end failed; lazy GC closes the row.
 		}
+		live = false;
+		presentEnded = true;
+		onEnded?.('stopped');
 		if (room) {
 			try {
 				await room.localParticipant.setScreenShareEnabled(false);
