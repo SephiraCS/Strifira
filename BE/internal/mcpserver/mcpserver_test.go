@@ -449,6 +449,33 @@ func TestMCPAuthFailures(t *testing.T) {
 	require.Error(t, err, "revoked key must fail the next request")
 }
 
+func TestMCPPublicHostHeaderAccepted(t *testing.T) {
+	env := newMCPTestEnv(t)
+
+	// Behind the in-container proxy the connection local address is
+	// loopback while the Host header is the public domain; the SDK's
+	// DNS-rebinding guard must stay disabled for that combination.
+	body := map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2025-06-18",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "t", "version": "0"},
+		},
+	}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, env.server.URL+"/mcp", bytes.NewReader(buf))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+env.fullToken)
+	req.Host = "ku.mariogk.com"
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "public Host header must pass the rebinding guard")
+}
+
 func TestMCPGetIssueNotFound(t *testing.T) {
 	env := newMCPTestEnv(t)
 	session := connectMCP(t, env, env.fullToken)

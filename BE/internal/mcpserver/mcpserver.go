@@ -47,7 +47,16 @@ func NewHTTPHandler(deps Deps) http.Handler {
 	registerTools(srv, deps)
 	return mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
-		&mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true},
+		&mcp.StreamableHTTPOptions{
+			Stateless:    true,
+			JSONResponse: true,
+			// The API listens on loopback behind the in-container Caddy and
+			// the edge proxy; requests legitimately carry the public Host
+			// (ku.mariogk.com). The SDK's DNS-rebinding guard would reject
+			// that Host as non-loopback, but it targets browser-local
+			// servers — this endpoint is remote-facing and bearer-auth'd.
+			DisableLocalhostProtection: true,
+		},
 	)
 }
 
