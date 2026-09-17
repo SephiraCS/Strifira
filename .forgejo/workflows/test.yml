@@ -75,6 +75,10 @@ jobs:
           path: BE/coverage.out
 
   docker-integration:
+    # The backend manages dev-machine containers through the Docker SDK, so
+    # this lane needs the host Docker socket (mounted by the runner), not just
+    # any rootless engine. The builder image ships podman/buildah, so the
+    # Docker CLI is installed on demand when the socket is reachable.
     name: Docker Runtime Integration
     runs-on: terrascale-builder
     timeout-minutes: 45
@@ -95,18 +99,17 @@ jobs:
           go-version-file: BE/go.mod
           cache: false
 
-      # The GitHub-hosted workflow re-provisioned the runner's Docker storage as
-      # XFS with project quotas. On the shared TerraScale runner the daemon
-      # configuration is owned by the host, so this lane only runs when a usable
-      # Docker daemon is reachable from the job container.
-      - name: Check for a usable Docker daemon
+      - name: Ensure Docker CLI and check the daemon socket
         id: docker
         working-directory: .
         run: |
+          if ! command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
+            apt-get update -qq >/dev/null && apt-get install -y -qq docker.io >/dev/null
+          fi
           if docker info >/dev/null 2>&1; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Docker is not usable from this job; skipping the Docker lifecycle integration test."
+            echo "Docker daemon socket not usable from this job; skipping the Docker lifecycle integration test."
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 

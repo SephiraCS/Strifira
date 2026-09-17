@@ -67,6 +67,9 @@ jobs:
             report "podman-info" podman info
             report "docker-cli" docker --version
             report "docker-info" docker info
+            report "docker-socket-file" ls -la /var/run/docker.sock
+            echo "=== docker socket api ==="
+            curl -sf --max-time 10 --unix-socket /var/run/docker.sock http://localhost/version | jq -r '"socket api docker version: \(.Version)"' || echo "(socket api unreachable)"
             report "buildah" buildah --version
             report "skopeo" skopeo --version
             report "playwright-browsers" ls -la /usr/local/share/ms-playwright

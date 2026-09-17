@@ -104,69 +104,97 @@ jobs:
             git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:main
           fi
 
-      - name: Check for a usable Docker daemon
-        id: docker
+      # The builder image ships podman/buildah rather than a Docker CLI, so
+      # image lanes run on whichever engine is usable in the job.
+      - name: Detect the container engine
+        id: engine
         run: |
-          if docker info >/dev/null 2>&1; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
+          if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+            echo "engine=podman" >> "$GITHUB_OUTPUT"
+          elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            echo "engine=docker" >> "$GITHUB_OUTPUT"
           else
-            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "engine=" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Fail fast when Docker is unavailable on a release
-        if: forgejo.event_name == 'release' && steps.docker.outputs.available != 'true'
+      - name: Fail fast when no container engine is available on a release
+        if: forgejo.event_name == 'release' && steps.engine.outputs.engine == ''
         run: |
-          echo "A usable Docker daemon is required to publish release images." >&2
+          echo "A usable container engine (podman or docker) is required to publish release images." >&2
           exit 1
 
+      # The job environment presets REGISTRY_AUTH_FILE to a read-only,
+      # pull-only Harbor authfile. Copy it, add the Forgejo registry
+      # credentials, and point podman at the merged copy so base-image pulls
+      # keep working through the Harbor mirror while pushes authenticate to
+      # the Forgejo registry. The docker engine ignores this variable.
       - name: Log in to the Forgejo container registry
         if: forgejo.event_name == 'release'
+        id: auth
         env:
+          ENGINE: ${{ steps.engine.outputs.engine }}
           FORGEJO_TOKEN: ${{ forgejo.token }}
           FORGEJO_ACTOR: ${{ forgejo.actor }}
-        run: printf '%s' "${FORGEJO_TOKEN}" | docker login "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
+        run: |
+          authfile="${RUNNER_TEMP}/ci-registry-auth.json"
+          cp "${REGISTRY_AUTH_FILE:-/dev/null}" "$authfile" 2>/dev/null || touch "$authfile"
+          if [ "$ENGINE" = "podman" ]; then
+            printf '%s' "${FORGEJO_TOKEN}" | podman login --authfile "$authfile" "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
+          else
+            printf '%s' "${FORGEJO_TOKEN}" | docker login "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
+          fi
+          echo "authfile=$authfile" >> "$GITHUB_OUTPUT"
 
       # All-in-one image
       - name: Build & push all-in-one
         env:
+          ENGINE: ${{ steps.engine.outputs.engine }}
+          AUTHFILE: ${{ steps.auth.outputs.authfile }}
           VERSION: ${{ steps.version.outputs.version }}
           PUSH: ${{ steps.version.outputs.push }}
         run: |
-          docker build --pull \
+          if [ -n "${AUTHFILE:-}" ]; then export REGISTRY_AUTH_FILE="$AUTHFILE"; fi
+          "$ENGINE" build --pull \
             --tag "${IMAGE_PREFIX}/ku:latest" \
             --tag "${IMAGE_PREFIX}/ku:${VERSION}" \
             .
           if [ "${PUSH}" = "true" ]; then
-            docker push "${IMAGE_PREFIX}/ku:latest"
-            docker push "${IMAGE_PREFIX}/ku:${VERSION}"
+            "$ENGINE" push "${IMAGE_PREFIX}/ku:latest"
+            "$ENGINE" push "${IMAGE_PREFIX}/ku:${VERSION}"
           fi
 
       # API-only image
       - name: Build & push API
         env:
+          ENGINE: ${{ steps.engine.outputs.engine }}
+          AUTHFILE: ${{ steps.auth.outputs.authfile }}
           VERSION: ${{ steps.version.outputs.version }}
           PUSH: ${{ steps.version.outputs.push }}
         run: |
-          docker build --pull \
+          if [ -n "${AUTHFILE:-}" ]; then export REGISTRY_AUTH_FILE="$AUTHFILE"; fi
+          "$ENGINE" build --pull \
             --tag "${IMAGE_PREFIX}/ku-api:latest" \
             --tag "${IMAGE_PREFIX}/ku-api:${VERSION}" \
             ./BE
           if [ "${PUSH}" = "true" ]; then
-            docker push "${IMAGE_PREFIX}/ku-api:latest"
-            docker push "${IMAGE_PREFIX}/ku-api:${VERSION}"
+            "$ENGINE" push "${IMAGE_PREFIX}/ku-api:latest"
+            "$ENGINE" push "${IMAGE_PREFIX}/ku-api:${VERSION}"
           fi
 
       # Web-only image
       - name: Build & push Web
         env:
+          ENGINE: ${{ steps.engine.outputs.engine }}
+          AUTHFILE: ${{ steps.auth.outputs.authfile }}
           VERSION: ${{ steps.version.outputs.version }}
           PUSH: ${{ steps.version.outputs.push }}
         run: |
-          docker build --pull \
+          if [ -n "${AUTHFILE:-}" ]; then export REGISTRY_AUTH_FILE="$AUTHFILE"; fi
+          "$ENGINE" build --pull \
             --tag "${IMAGE_PREFIX}/ku-web:latest" \
             --tag "${IMAGE_PREFIX}/ku-web:${VERSION}" \
             ./UI
           if [ "${PUSH}" = "true" ]; then
-            docker push "${IMAGE_PREFIX}/ku-web:latest"
-            docker push "${IMAGE_PREFIX}/ku-web:${VERSION}"
+            "$ENGINE" push "${IMAGE_PREFIX}/ku-web:latest"
+            "$ENGINE" push "${IMAGE_PREFIX}/ku-web:${VERSION}"
           fi
