@@ -28,6 +28,7 @@
 		token,
 		mode,
 		presenterName,
+		sourceStream,
 		onEnded,
 		onPresenterStop,
 		onViewerCount
@@ -37,6 +38,13 @@
 		/** 'present' publishes the local screen; 'view' subscribes. */
 		mode: 'present' | 'view';
 		presenterName: string;
+		/**
+		 * Capture-first flow: the page captures via getDisplayMedia inside
+		 * the click's user-activation window (Chrome denies capture once
+		 * the gesture has expired behind async work — no picker appears)
+		 * and hands the stream here for publishing.
+		 */
+		sourceStream?: MediaStream;
 		/** Fired when the room disconnects or the presenter stops. */
 		onEnded?: (reason: 'disconnected' | 'stopped' | 'error') => void;
 		/**
@@ -148,12 +156,23 @@
 		}
 
 		if (mode === 'present') {
+			if (!sourceStream) {
+				clearTimeout(watchdog);
+				// The page must capture first (user activation); a presenter
+				// tile without a captured stream is a programming error.
+				await r.disconnect();
+				presentEnded = true;
+				connecting = false;
+				onEnded?.('error');
+				return;
+			}
 			try {
-				await publishScreen();
+				await publishCapturedStream(sourceStream);
 			} catch {
 				clearTimeout(watchdog);
-				// User cancelled the picker, or capture was denied — the
-				// share ends before anyone saw anything.
+				// Publishing the pre-captured stream failed — stop its
+				// tracks and end before anyone saw anything.
+				sourceStream.getTracks().forEach((t) => t.stop());
 				await r.disconnect();
 				presentEnded = true;
 				connecting = false;
@@ -188,30 +207,42 @@
 		onEnded?.('error');
 	}
 
-	async function publishScreen() {
+	// Capture options for the switch-surface re-pick (the initial capture
+	// happens in the page, inside the Share click's activation window).
+	// selfBrowserSurface/surfaceSwitching/systemAudio are Chrome capture
+	// extensions beyond the TS DOM lib's DisplayMediaStreamOptions.
+	const captureOptions = {
+		audio: true,
+		video: { frameRate: 60 },
+		selfBrowserSurface: 'exclude',
+		surfaceSwitching: 'include',
+		systemAudio: 'include'
+	} as unknown as DisplayMediaStreamOptions;
+
+	async function publishCapturedStream(stream: MediaStream) {
 		if (!room) return;
-		const publication = await room.localParticipant.setScreenShareEnabled(
-			true,
-			{
-				audio: true,
-				selfBrowserSurface: 'exclude',
-				surfaceSwitching: 'include',
-				systemAudio: 'include',
-				contentHint: qualityPreference === 'sharp' ? 'detail' : 'motion'
-			},
-			screenSharePublishOptions
-		);
-		const track = publication?.videoTrack as LocalVideoTrack | undefined;
-		if (track) {
-			// Presenter previews locally; muted loopback avoids feeding the
-			// captured audio back into the room.
-			track.attach(videoEl);
-			videoEl.muted = true;
-			// The browser ends the captured track itself when the user hits
-			// the native "Stop sharing" bar or closes the shared surface —
-			// treat that exactly like pressing our Stop button.
-			track.mediaStreamTrack.addEventListener('ended', handleCaptureEnded);
+		const video = stream.getVideoTracks()[0];
+		if (!video) throw new Error('capture has no video track');
+		video.contentHint = qualityPreference === 'sharp' ? 'detail' : 'motion';
+		await room.localParticipant.publishTrack(video, {
+			source: Track.Source.ScreenShare,
+			...screenSharePublishOptions
+		});
+		const audio = stream.getAudioTracks()[0];
+		if (audio) {
+			await room.localParticipant.publishTrack(audio, {
+				source: Track.Source.ScreenShareAudio
+			});
 		}
+		// Presenter previews locally; muted loopback avoids feeding the
+		// captured audio back into the room.
+		videoEl.srcObject = stream;
+		videoEl.muted = true;
+		void videoEl.play();
+		// The browser ends the captured track itself when the user hits the
+		// native "Stop sharing" bar or closes the shared surface — treat
+		// that exactly like pressing our Stop button.
+		video.addEventListener('ended', handleCaptureEnded);
 	}
 
 	function handleCaptureEnded() {
@@ -227,12 +258,16 @@
 		if (!room || switching) return;
 		switching = true;
 		try {
+			const previous = videoEl.srcObject as MediaStream | null;
 			await room.localParticipant.setScreenShareEnabled(false);
-			await publishScreen();
+			if (previous) previous.getTracks().forEach((t) => t.stop());
+			const stream = await navigator.mediaDevices.getDisplayMedia(captureOptions);
+			const video = stream.getVideoTracks()[0];
+			if (video) video.contentHint = qualityPreference === 'sharp' ? 'detail' : 'motion';
+			await publishCapturedStream(stream);
 		} catch {
-			// Picker cancelled — keep sharing nothing is worse than the
-			// previous state, but the track is already unpublished; end
-			// locally and let the presenter restart if they want to.
+			// Picker cancelled or capture denied — nothing is being shared
+			// anymore; end the share (the row, viewers, tile) cleanly.
 			await stopSharing();
 		} finally {
 			switching = false;
@@ -286,6 +321,10 @@
 				// already disconnected
 			}
 		}
+		// Release the browser's capture indicator for any still-live
+		// source tracks (pre-captured or switched).
+		const src = videoEl?.srcObject as MediaStream | null;
+		src?.getTracks().forEach((t) => t.stop());
 	}
 
 	function toggleFullscreen() {

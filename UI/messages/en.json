@@ -1569,7 +1569,6 @@
 	"shares.page_title": "Screen sharing",
 	"shares.title": "Screen sharing",
 	"shares.active_now": "Live now",
-	"shares.recent": "Recent",
 	"shares.empty_active_title": "No one is sharing right now",
 	"shares.empty_active_description": "Start a share and everyone in the workspace can join to watch.",
 	"shares.start": "Share my screen",
@@ -1592,5 +1591,6 @@
 	"sidebar.screen_shares": "Screen sharing",
 	"shares.switch_surface": "Change what you share",
 	"shares.mute": "Mute",
-	"shares.unmute": "Unmute"
+	"shares.unmute": "Unmute",
+	"shares.capture_failed": "Could not start screen capture — the screen/window picker was dismissed or permission was denied."
 }

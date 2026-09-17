@@ -1569,7 +1569,6 @@
 	"shares.page_title": "Condivisione schermo",
 	"shares.title": "Condivisione schermo",
 	"shares.active_now": "In diretta",
-	"shares.recent": "Recenti",
 	"shares.empty_active_title": "Nessuno sta condividendo",
 	"shares.empty_active_description": "Avvia una condivisione e tutti nel workspace potranno seguirla.",
 	"shares.start": "Condividi il mio schermo",
@@ -1592,5 +1591,6 @@
 	"sidebar.screen_shares": "Condivisione schermo",
 	"shares.switch_surface": "Cambia sorgente",
 	"shares.mute": "Silenzia",
-	"shares.unmute": "Attiva audio"
+	"shares.unmute": "Attiva audio",
+	"shares.capture_failed": "Impossibile avviare la cattura dello schermo — selettore chiuso o permesso negato."
 }
