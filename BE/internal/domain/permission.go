@@ -18,6 +18,8 @@ const (
 	PermDevMachineCreate  = "dev_machine:create"
 	PermDevMachineManage  = "dev_machine:manage"
 	PermDevMachineAdmin   = "dev_machine:admin"
+	PermShareCreate       = "share:create"
+	PermShareJoin         = "share:join"
 )
 
 var RolePermissions = map[string][]string{
@@ -26,20 +28,24 @@ var RolePermissions = map[string][]string{
 		PermIssueUpdate, PermIssueDelete, PermIssueDeleteOwn, PermProjectManage, PermLabelManage,
 		PermMemberInvite, PermCycleManage, PermViewManage,
 		PermDevMachineRead, PermDevMachineCreate, PermDevMachineManage, PermDevMachineAdmin,
+		PermShareCreate, PermShareJoin,
 	},
 	RoleAdmin: {
 		PermWorkspaceTransfer, PermTeamManage, PermIssueCreate, PermIssueRead, PermIssueUpdate,
 		PermIssueDelete, PermIssueDeleteOwn, PermProjectManage, PermLabelManage, PermMemberInvite,
 		PermCycleManage, PermViewManage,
 		PermDevMachineRead, PermDevMachineCreate, PermDevMachineManage, PermDevMachineAdmin,
+		PermShareCreate, PermShareJoin,
 	},
 	RoleMember: {
 		PermIssueCreate, PermIssueRead, PermIssueUpdate, PermIssueDeleteOwn, PermProjectManage,
 		PermLabelManage, PermCycleManage, PermViewManage,
 		PermDevMachineRead, PermDevMachineCreate, PermDevMachineManage,
+		PermShareCreate, PermShareJoin,
 	},
 	RoleGuest: {
 		PermIssueRead,
+		PermShareJoin,
 	},
 }
 

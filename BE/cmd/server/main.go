@@ -19,6 +19,7 @@ import (
 	"github.com/ku/ku-backend/internal/config"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/handler"
+	"github.com/ku/ku-backend/internal/livekit"
 	"github.com/ku/ku-backend/internal/mcpserver"
 	mw "github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/realtime"
@@ -79,6 +80,14 @@ func main() {
 	// Dev Machine control-plane store
 	devMachineRepo := repository.NewDevMachineRepository(db)
 
+	// Screen sharing (LiveKit) — nil gateway leaves the feature disabled
+	var livekitGW service.LiveKitGateway
+	if cfg.LiveKit.IsConfigured() {
+		livekitGW = livekit.NewClient(cfg.LiveKit.URL, cfg.LiveKit.APIKey, cfg.LiveKit.APISecret)
+		log.WithField("url", cfg.LiveKit.URL).Info("LiveKit screen sharing configured")
+	}
+	shareRepo := repository.NewScreenShareRepository(db)
+
 	// Services
 	authSvc := service.NewAuthService(userRepo, refreshRepo, cfg.JWTSecret)
 	workspaceSvc := service.NewWorkspaceService(workspaceRepo, userRepo)
@@ -122,7 +131,7 @@ func main() {
 	// Handlers
 	healthH := handler.NewHealthHandler(db)
 	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin)
-	workspaceH := handler.NewWorkspaceHandler(workspaceSvc)
+	workspaceH := handler.NewWorkspaceHandler(workspaceSvc, cfg.LiveKit.IsConfigured())
 	teamH := handler.NewTeamHandler(teamSvc)
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	labelH := handler.NewLabelHandler(labelSvc)
@@ -147,6 +156,8 @@ func main() {
 	sharedLinkRepo := repository.NewSharedLinkRepository(db)
 	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)
+	shareSvc := service.NewScreenShareService(shareRepo, userRepo, hub, livekitGW)
+	shareH := handler.NewScreenShareHandler(shareSvc, userRepo, cfg.LiveKit.ClientURL())
 	store, err := storage.New(cfg.Storage)
 	if err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
@@ -355,6 +366,13 @@ func main() {
 	ws.GET("/views/:id", viewH.Get)
 	ws.PATCH("/views/:id", viewH.Update)
 	ws.DELETE("/views/:id", viewH.Delete)
+
+	// Screen sharing
+	ws.GET("/shares", shareH.List)
+	ws.POST("/shares", shareH.Create, mw.RequirePermission(domain.PermShareCreate))
+	ws.GET("/shares/:id", shareH.Get)
+	ws.POST("/shares/:id/join", shareH.Join, mw.RequirePermission(domain.PermShareJoin))
+	ws.POST("/shares/:id/end", shareH.End)
 
 	// Analytics
 	ws.GET("/analytics/overview", analyticsH.Overview)

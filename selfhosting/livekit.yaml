@@ -1,0 +1,14 @@
+# Local/selfhosted LiveKit configuration for ku screen sharing.
+# Keys must match LIVEKIT_API_KEY / LIVEKIT_API_SECRET on the ku backend.
+# Set rtc.use_external_ip: true when deploying behind NAT with the RTC UDP
+# range port-forwarded to this host.
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  use_external_ip: false
+logging:
+  level: info
+keys:
+  devkey: local_dev_livekit_secret_32_chars_min

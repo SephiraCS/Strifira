@@ -67,6 +67,12 @@ services:
       DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:dev}
       DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:dev}
       DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:dev}
+      # Screen sharing: set LIVEKIT_URL (e.g. ws://livekit:7880) to enable,
+      # typically together with `docker compose --profile livekit up`.
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-local_dev_livekit_secret_32_chars_min}
       # STORAGE_TYPE: s3
       # S3_ENDPOINT: http://seaweedfs:8333
       # S3_BUCKET: ku-uploads
@@ -85,10 +91,30 @@ services:
   #   restart: unless-stopped
   #   command: "server -s3 -dir=/data -s3.port=8333 -master.dir=/data/master -volume.dir.idx=/data/volume"
   #   ports:
-  #     - "127.0.0.1:8333:8333"
+  #     - "127.0.0.1:8338:8338"
   #     - "127.0.0.1:9333:9333"
   #   volumes:
   #     - seaweedfs:/data
+
+  # LiveKit SFU for screen sharing. Start with `docker compose --profile livekit up`
+  # and set LIVEKIT_URL=ws://livekit:7880 for the backend to enable the feature.
+  # The browser reaches it via LIVEKIT_PUBLIC_URL (published on 127.0.0.1:7880);
+  # WebRTC media uses the bounded UDP range below, reachable from the host on
+  # Linux bridge networking.
+  livekit:
+    profiles: ["livekit"]
+    image: livekit/livekit-server:v1.13.7
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit.yaml
+    ports:
+      - "127.0.0.1:7880:7880"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./selfhosting/livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      - default
 
   frontend:
     profiles: ["app"]

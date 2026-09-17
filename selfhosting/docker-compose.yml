@@ -94,6 +94,14 @@ services:
       DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:0.1.0}
       DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:0.1.0}
       DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:0.1.0}
+      # Screen sharing (optional). Set LIVEKIT_URL (and a >=32 char
+      # LIVEKIT_API_SECRET) to enable — typically together with
+      # `docker compose --profile livekit up`, which runs the LiveKit SFU
+      # on livekit:7880 (media on UDP 50000-50100).
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -117,6 +125,24 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  # LiveKit SFU for screen sharing (optional). Requires LIVEKIT_URL /
+  # LIVEKIT_API_SECRET on the backend, plus public exposure of the RTC UDP
+  # range (50000-50100) in production deployments behind NAT.
+  livekit:
+    profiles: ["livekit"]
+    image: livekit/livekit-server:v1.13.7
+    restart: unless-stopped
+    command:
+      - --config
+      - /etc/livekit.yaml
+    ports:
+      - "7880:7880"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      - default
 
   machine-gateway-db-provision:
     profiles: ["dev-machines"]

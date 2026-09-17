@@ -51,8 +51,11 @@ type WorkspaceResponse struct {
 	Owner            *WorkspaceOwnerResponse `json:"owner,omitempty"`
 	ShareLinkMinRole string                  `json:"share_link_min_role"`
 	CurrentUserRole  string                  `json:"current_user_role"`
-	CreatedAt        time.Time               `json:"created_at"`
-	UpdatedAt        time.Time               `json:"updated_at"`
+	// ScreenSharingEnabled reports whether the instance has LiveKit
+	// configured; clients hide the screen sharing module when false.
+	ScreenSharingEnabled bool      `json:"screen_sharing_enabled"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type InviteMemberRequest struct {

@@ -22,6 +22,15 @@ type AISettingsRepo interface {
 	Upsert(ctx context.Context, settings *domain.AISettings) error
 }
 
+type ScreenShareRepo interface {
+	Create(ctx context.Context, share *domain.ScreenShare) error
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.ScreenShare, error)
+	ListActiveByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.ScreenShare, error)
+	ListRecentEndedByWorkspace(ctx context.Context, workspaceID uuid.UUID, limit int) ([]domain.ScreenShare, error)
+	GetActiveByPresenter(ctx context.Context, workspaceID, userID uuid.UUID) (*domain.ScreenShare, error)
+	MarkEnded(ctx context.Context, id uuid.UUID) error
+}
+
 type RefreshTokenRepo interface {
 	Create(ctx context.Context, rt *RefreshToken) error
 	GetByHash(ctx context.Context, hash string) (*RefreshToken, error)

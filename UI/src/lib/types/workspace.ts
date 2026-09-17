@@ -14,6 +14,7 @@ export interface Workspace {
 	owner?: WorkspaceOwner | null;
 	share_link_min_role: string;
 	current_user_role: string;
+	screen_sharing_enabled: boolean;
 	created_at: string;
 	updated_at: string;
 }

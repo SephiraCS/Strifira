@@ -26,6 +26,7 @@
 	import type { Favorite } from '$lib/api/favorites';
 	import type { Project } from '$lib/types/project';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
+	import { sharesState } from '$lib/features/shares/shares.state.svelte';
 	import { deleteProject } from '$lib/api/projects';
 	import { deleteView } from '$lib/api/views';
 	import { currentReleaseUrl, currentVersionLabel } from '$lib/release';
@@ -60,7 +61,8 @@
 		Trash2,
 		Info,
 		CircleQuestionMark,
-		BarChart3
+		BarChart3,
+		MonitorPlay
 	} from 'lucide-svelte';
 
 	let {
@@ -735,6 +737,24 @@
 				>
 					<Box size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.dev_machines']()}</span>
+				</a>
+				{/if}
+				{#if workspace.screen_sharing_enabled}
+				<a
+					href="/{slug}/shares"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/shares`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<MonitorPlay size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.screen_shares']()}</span>
+					{#if sharesState.active.length > 0}
+						<span
+							class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+						>
+							{sharesState.active.length > 9 ? '9+' : sharesState.active.length}
+						</span>
+					{/if}
 				</a>
 				{/if}
 			</div>

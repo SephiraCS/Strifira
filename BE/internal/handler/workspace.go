@@ -21,11 +21,12 @@ func parseUUID(s string) (uuid.UUID, error) {
 }
 
 type WorkspaceHandler struct {
-	workspaceSvc *service.WorkspaceService
+	workspaceSvc         *service.WorkspaceService
+	screenSharingEnabled bool
 }
 
-func NewWorkspaceHandler(workspaceSvc *service.WorkspaceService) *WorkspaceHandler {
-	return &WorkspaceHandler{workspaceSvc: workspaceSvc}
+func NewWorkspaceHandler(workspaceSvc *service.WorkspaceService, screenSharingEnabled bool) *WorkspaceHandler {
+	return &WorkspaceHandler{workspaceSvc: workspaceSvc, screenSharingEnabled: screenSharingEnabled}
 }
 
 func (h *WorkspaceHandler) List(c echo.Context) error {
@@ -221,15 +222,16 @@ func validateLogoURL(rawURL string) error {
 // role (if available) and the workspace owner's profile (best-effort).
 func (h *WorkspaceHandler) toWorkspaceResponse(c echo.Context, ws domain.Workspace) dto.WorkspaceResponse {
 	resp := dto.WorkspaceResponse{
-		ID:               ws.ID.String(),
-		Name:             ws.Name,
-		Slug:             ws.Slug,
-		LogoURL:          ws.LogoURL,
-		OwnerID:          ws.OwnerID.String(),
-		ShareLinkMinRole: ws.ShareLinkMinRole,
-		CurrentUserRole:  middleware.GetWorkspaceRole(c),
-		CreatedAt:        ws.CreatedAt,
-		UpdatedAt:        ws.UpdatedAt,
+		ID:                   ws.ID.String(),
+		Name:                 ws.Name,
+		Slug:                 ws.Slug,
+		LogoURL:              ws.LogoURL,
+		OwnerID:              ws.OwnerID.String(),
+		ShareLinkMinRole:     ws.ShareLinkMinRole,
+		CurrentUserRole:      middleware.GetWorkspaceRole(c),
+		ScreenSharingEnabled: h.screenSharingEnabled,
+		CreatedAt:            ws.CreatedAt,
+		UpdatedAt:            ws.UpdatedAt,
 	}
 
 	if ws.OwnerID != uuid.Nil {

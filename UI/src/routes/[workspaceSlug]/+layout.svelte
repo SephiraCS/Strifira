@@ -31,6 +31,7 @@
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
+	import { sharesState } from '$lib/features/shares/shares.state.svelte';
 	import { createShortcutEngine, type ShortcutDef } from '$lib/utils/keyboard';
 	import { Menu, Search, SquarePen } from 'lucide-svelte';
 	import { appToast } from '$lib/features/toast/toast';
@@ -77,6 +78,8 @@
 				workspace = ws;
 				teams = t;
 				sidebarState.teams = t;
+				sharesState.setEnabled(ws.screen_sharing_enabled);
+				if (ws.screen_sharing_enabled) void sharesState.load(workspaceSlug);
 			});
 			const navigationRequest = Promise.all([
 				listProjects(workspaceSlug),
@@ -397,6 +400,8 @@
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
 			window.dispatchEvent(new CustomEvent('ws:reconnected'));
+			// Share lists drift while disconnected (starts/ends/GC); refetch.
+			if (sharesState.enabled) void sharesState.load(workspaceSlug);
 		};
 
 		socket.onerror = () => {
@@ -473,7 +478,31 @@
 				window.dispatchEvent(new CustomEvent(`ws:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
+			case 'share.started': {
+				window.dispatchEvent(new CustomEvent('ws:share.started', { detail: msg.payload }));
+				sharesState.handleStarted(msg.payload);
+				announceShareStarted(msg.payload);
+				break;
+			}
+			case 'share.ended': {
+				window.dispatchEvent(new CustomEvent('ws:share.ended', { detail: msg.payload }));
+				sharesState.handleEnded(msg.payload);
+				break;
+			}
 		}
+	}
+
+	function announceShareStarted(payload: { id?: string; title?: string; started_by?: string }) {
+		if (!payload?.id || payload.started_by === authState.user?.id) return;
+		const member = members.find((mem) => mem.user_id === payload.started_by);
+		const who = member?.name ?? '';
+		appToast.info(
+			who ? m['shares.toast_started']({ name: who }) : m['shares.toast_started_anon'](),
+			{
+				description: payload.title || undefined,
+				duration: 8000
+			}
+		);
 	}
 </script>
 
