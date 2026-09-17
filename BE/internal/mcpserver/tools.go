@@ -397,6 +397,7 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		Title: "Create issue",
 		Description: "Create an issue. `team_id` or `team_key` is required. " +
 			"Use list_team_states to pick a `status_id`; without one the team's default state applies. " +
+			"`parent_id` takes an issue's `id` (as returned by get_issue/list_issues) to create a sub-issue. " +
 			"Requires an API key with write scope.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in createIssueIn) (*mcp.CallToolResult, any, error) {
 		id, err := authenticate(ctx)

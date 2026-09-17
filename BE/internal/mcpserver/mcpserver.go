@@ -175,6 +175,7 @@ type labelOut struct {
 }
 
 type issueOut struct {
+	ID             string     `json:"id"`
 	Identifier     string     `json:"identifier"`
 	Title          string     `json:"title"`
 	Description    *string    `json:"description,omitempty"`
@@ -214,6 +215,7 @@ func toLabelOut(l domain.Label) labelOut {
 
 func toIssueOut(i domain.Issue, teamKey string) issueOut {
 	out := issueOut{
+		ID:          i.ID.String(),
 		Identifier:  i.Identifier,
 		Title:       i.Title,
 		Description: i.Description,
