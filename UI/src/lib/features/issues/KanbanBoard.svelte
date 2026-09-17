@@ -4,6 +4,7 @@
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import type { Label } from '$lib/types/label';
 	import KanbanColumn from './KanbanColumn.svelte';
+	import { dragHandleZone } from 'svelte-dnd-action';
 	import { issuesState } from './issues.state.svelte';
 	import { teamStatusesState } from './team-statuses.state.svelte';
 
@@ -26,13 +27,30 @@
 	// Local mutable copy for drag state
 	let localByStatus = $state<Record<string, Issue[]>>({});
 
+	// Local column order so the board can be reordered by dragging the headers.
+	// Seeded eagerly so there is no empty frame when statuses are already loaded.
+	let columns = $state<TeamStatus[]>([...teamStatusesState.statusOrder]);
+
+	$effect(() => {
+		columns = [...teamStatusesState.statusOrder];
+	});
+
 	$effect(() => {
 		const copy: Record<string, Issue[]> = {};
-		for (const ts of teamStatusesState.statusOrder) {
+		for (const ts of columns) {
 			copy[ts.id] = [...(issuesByStatus[ts.id] ?? [])];
 		}
 		localByStatus = copy;
 	});
+
+	function handleColumnConsider(e: CustomEvent<{ items: TeamStatus[] }>) {
+		columns = e.detail.items;
+	}
+
+	function handleColumnFinalize(e: CustomEvent<{ items: TeamStatus[] }>) {
+		columns = e.detail.items;
+		void teamStatusesState.reorder(slug, columns.map((ts) => ts.id));
+	}
 
 	function handleConsider(statusId: string, items: Issue[]) {
 		localByStatus[statusId] = items;
@@ -71,8 +89,17 @@
 	}
 </script>
 
-<div class="flex h-full gap-4 overflow-x-auto p-4">
-	{#each teamStatusesState.statusOrder as ts (ts.id)}
+<div
+	class="flex h-full gap-4 overflow-x-auto p-4"
+	use:dragHandleZone={{
+		items: columns,
+		type: 'column',
+		dropTargetStyle: {}
+	}}
+	onconsider={handleColumnConsider}
+	onfinalize={handleColumnFinalize}
+>
+	{#each columns as ts (ts.id)}
 		<KanbanColumn
 			statusId={ts.id}
 			teamStatus={ts}

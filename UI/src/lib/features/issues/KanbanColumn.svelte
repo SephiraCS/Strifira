@@ -7,7 +7,7 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
 	import IssueContextMenu from './IssueContextMenu.svelte';
-	import { dndzone } from 'svelte-dnd-action';
+	import { dndzone, dragHandle } from 'svelte-dnd-action';
 	import { Plus } from 'lucide-svelte';
 
 	let {
@@ -43,17 +43,23 @@
 	}
 </script>
 
-<div class="flex w-72 shrink-0 flex-col">
+<div class="flex w-72 shrink-0 flex-col" aria-label={teamStatus.name}>
 	<div class="flex items-center gap-2 px-2 py-2">
-		<IssueStatusIcon category={teamStatus.category} color={teamStatus.color} />
-		<span class="text-sm font-medium text-[var(--color-text-primary)]"
-			>{teamStatus.name}</span
+		<div
+			class="flex min-w-0 flex-1 cursor-grab items-center gap-2 select-none active:cursor-grabbing"
+			use:dragHandle
+			aria-label="Reorder {teamStatus.name} column"
 		>
-		<span class="text-xs text-[var(--color-text-tertiary)]">{issues.length}</span>
+			<IssueStatusIcon category={teamStatus.category} color={teamStatus.color} />
+			<span class="text-sm font-medium text-[var(--color-text-primary)]"
+				>{teamStatus.name}</span
+			>
+			<span class="text-xs text-[var(--color-text-tertiary)]">{issues.length}</span>
+		</div>
 		{#if onquickadd}
 			<button
 				onclick={() => onquickadd?.(statusId)}
-				class="ml-auto rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
+				class="rounded p-0.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] transition-colors"
 				title="New issue in {teamStatus.name}"
 			>
 				<Plus size={14} />

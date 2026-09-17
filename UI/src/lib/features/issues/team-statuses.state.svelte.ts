@@ -1,6 +1,6 @@
 import type { TeamStatus, StatusCategory } from '$lib/types/team-status';
 import { CATEGORY_ORDER } from '$lib/types/team-status';
-import { listTeamStatuses } from '$lib/api/team-statuses';
+import { listTeamStatuses, updateTeamStatus } from '$lib/api/team-statuses';
 
 const CATEGORY_ICONS: Record<StatusCategory, string> = {
 	backlog: 'CircleDashed',
@@ -69,6 +69,37 @@ class TeamStatusesState {
 	async reload(slug: string, teamId: string) {
 		this.loadedTeamId = '';
 		await this.load(slug, teamId);
+	}
+
+	/** Persist a new column order (kanban board drag-and-drop). */
+	async reorder(slug: string, orderedIds: string[]) {
+		const teamId = this.loadedTeamId;
+		if (!teamId || orderedIds.length === 0) return;
+
+		const byId = this.statusById;
+		const seen = new Set<string>();
+		const reordered: TeamStatus[] = [];
+		orderedIds.forEach((id, index) => {
+			const status = byId.get(id);
+			if (status) {
+				reordered.push({ ...status, position: index });
+				seen.add(id);
+			}
+		});
+		// Keep any statuses not present in the payload so nothing disappears.
+		this.statuses
+			.filter((s) => !seen.has(s.id))
+			.forEach((s, index) => reordered.push({ ...s, position: reordered.length + index }));
+
+		this.statuses = reordered;
+
+		try {
+			await Promise.all(
+				orderedIds.map((id, index) => updateTeamStatus(slug, teamId, id, { position: index }))
+			);
+		} catch {
+			await this.reload(slug, teamId);
+		}
 	}
 
 	/** Get statuses visible to a specific project. If no project, returns all. */
