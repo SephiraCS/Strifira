@@ -10,6 +10,7 @@ import (
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 )
 
 type ForgejoHandler struct {
@@ -158,6 +159,7 @@ func (h *ForgejoHandler) HandleWebhook(c echo.Context) error {
 	}
 
 	if err := h.fjSvc.HandleWebhookEvent(c.Request().Context(), eventType, body, repo); err != nil {
+		log.WithError(err).WithFields(log.Fields{"event": eventType, "repo": repo.FullName}).Error("forgejo webhook processing failed")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 

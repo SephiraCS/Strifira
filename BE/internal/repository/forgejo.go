@@ -125,12 +125,12 @@ func (r *ForgejoRepository) UpsertPullRequest(ctx context.Context, pr *domain.Fo
 			head_sha = COALESCE(EXCLUDED.head_sha, forgejo_pull_requests.head_sha),
 			base_branch = EXCLUDED.base_branch,
 			merged_at = EXCLUDED.merged_at, closed_at = EXCLUDED.closed_at, updated_at = NOW()
-		RETURNING created_at, updated_at`
+		RETURNING id, created_at, updated_at`
 	return r.db.QueryRowContext(ctx, query,
 		pr.ID, pr.WorkspaceID, pr.ForgejoRepoID, pr.Number, pr.Title, pr.State, pr.ChecksGreen,
 		pr.AuthorLogin, pr.AuthorAvatarURL, pr.HTMLURL, pr.HeadBranch, pr.HeadSHA, pr.BaseBranch,
 		pr.Additions, pr.Deletions, pr.MergedAt, pr.ClosedAt,
-	).Scan(&pr.CreatedAt, &pr.UpdatedAt)
+	).Scan(&pr.ID, &pr.CreatedAt, &pr.UpdatedAt)
 }
 
 func (r *ForgejoRepository) UpdatePullRequestChecks(ctx context.Context, repoID uuid.UUID, number int, checksGreen bool) error {

@@ -674,6 +674,8 @@ func (s *ForgejoService) processCreateEvent(ctx context.Context, payload []byte,
 	if event.RefType != "branch" {
 		return nil
 	}
+	// Forgejo sends the full ref (refs/heads/<name>) in create events.
+	event.Ref = strings.TrimPrefix(event.Ref, "refs/heads/")
 
 	issue := s.resolveIssueFromRef(ctx, repo.WorkspaceID, event.Ref)
 	var issueID *uuid.UUID
