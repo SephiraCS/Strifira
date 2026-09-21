@@ -112,7 +112,6 @@
 	>
 		{#each issues as issue (issue.id)}
 			{@const assignees = displayAssignees(issue)}
-			{@const firstAssignee = assignees[0]}
 			<IssueContextMenu {issue} {slug} {members} {labels}>
 				<button
 					class="relative w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 pt-3 pb-7 text-left transition-colors hover:border-[var(--app-border-hover)]"
@@ -143,29 +142,24 @@
 							align="end"
 							onchange={(userId) => toggleAssignee(issue, userId)}
 						>
-							{#snippet trigger()}
-								<span
-									class="flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-full text-[var(--color-text-tertiary)] transition-all hover:text-[var(--color-text-primary)]"
-									title={assigneeTitle(issue)}
-								>
-									{#if assignees.length > 1 && firstAssignee}
-										<span class="flex -space-x-2 rounded-full hover:ring-2 hover:ring-[var(--app-accent)]">
-											<span class="rounded-full ring-1 ring-[var(--color-bg)]">
-												<Avatar name={assigneeName(firstAssignee)} avatarUrl={firstAssignee.avatar_url} size="xs" />
+								{#snippet trigger()}
+									<span
+										class="flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-full text-[var(--color-text-tertiary)] transition-all hover:text-[var(--color-text-primary)]"
+										title={assigneeTitle(issue)}
+									>
+										{#if assignees.length > 0}
+											<span class="flex -space-x-2 rounded-full hover:ring-2 hover:ring-[var(--app-accent)]">
+												{#each assignees as assignee}
+													<span class="rounded-full ring-1 ring-[var(--color-bg)]" title={assigneeName(assignee)}>
+														<Avatar name={assigneeName(assignee)} avatarUrl={assignee.avatar_url} size="xs" />
+													</span>
+												{/each}
 											</span>
-											<span class="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--color-bg-tertiary)] text-[8px] font-medium text-[var(--color-text-secondary)] ring-1 ring-[var(--color-bg)]">
-												+{assignees.length - 1}
-											</span>
-										</span>
-									{:else if firstAssignee}
-										<span class="rounded-full transition-all hover:ring-2 hover:ring-[var(--app-accent)]">
-											<Avatar name={assigneeName(firstAssignee)} avatarUrl={firstAssignee.avatar_url} size="xs" />
-										</span>
-									{:else}
-										<UserCircle size={16} />
-									{/if}
-								</span>
-							{/snippet}
+										{:else}
+											<UserCircle size={16} />
+										{/if}
+									</span>
+								{/snippet}
 						</AssigneeSelector>
 					</span>
 				</button>
