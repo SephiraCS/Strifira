@@ -950,13 +950,23 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 		return
 	}
 
-	_ = s.historyRepo.Create(ctx, issue.ID, uuid.Nil, "status", &oldStatus, &newStatus)
+	s.recordAutomationHistory(ctx, issue, oldStatus, newStatus)
 
 	s.broadcastRealtimeEvent(workspaceID, realtime.Event{
 		Type:    "issue.updated",
 		Payload: issue,
 	})
 	s.applyStatusAutomation(ctx, workspaceID, issue, map[uuid.UUID]bool{})
+}
+
+// recordAutomationHistory writes the status-change entry attributed to the
+// issue creator (issue_history.user_id is NOT NULL with an FK to users;
+// uuid.Nil inserts used to fail silently).
+func (s *ForgejoService) recordAutomationHistory(ctx context.Context, issue *domain.Issue, oldStatus, newStatus string) {
+	if issue.CreatorID == uuid.Nil {
+		return
+	}
+	_ = s.historyRepo.Create(ctx, issue.ID, issue.CreatorID, "status", &oldStatus, &newStatus)
 }
 
 func (s *ForgejoService) applyStatusAutomation(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool) {
@@ -1024,7 +1034,7 @@ func (s *ForgejoService) moveIssueToCompleted(ctx context.Context, workspaceID u
 		return
 	}
 	newVal := completedStatus.Slug
-	_ = s.historyRepo.Create(ctx, issue.ID, uuid.Nil, "status", &old, &newVal)
+	s.recordAutomationHistory(ctx, issue, old, newVal)
 	s.broadcastRealtimeEvent(workspaceID, realtime.Event{Type: "issue.updated", Payload: issue})
 	s.applyStatusAutomation(ctx, workspaceID, issue, visited)
 }
