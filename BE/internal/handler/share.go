@@ -18,17 +18,14 @@ import (
 type ScreenShareHandler struct {
 	shareSvc  *service.ScreenShareService
 	userRepo  repository.UserRepo
-	serverURL string
 }
 
-func NewScreenShareHandler(shareSvc *service.ScreenShareService, userRepo repository.UserRepo, serverURL string) *ScreenShareHandler {
-	return &ScreenShareHandler{shareSvc: shareSvc, userRepo: userRepo, serverURL: serverURL}
+func NewScreenShareHandler(shareSvc *service.ScreenShareService, userRepo repository.UserRepo) *ScreenShareHandler {
+	return &ScreenShareHandler{shareSvc: shareSvc, userRepo: userRepo}
 }
 
-type screenShareWithTokenResponse struct {
-	Share     dto.ScreenShareResponse `json:"share"`
-	Token     string                  `json:"token"`
-	ServerURL string                  `json:"server_url"`
+type screenShareResponse struct {
+	Share dto.ScreenShareResponse `json:"share"`
 }
 
 func (h *ScreenShareHandler) List(c echo.Context) error {
@@ -58,7 +55,7 @@ func (h *ScreenShareHandler) Create(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	userID := middleware.GetUserID(c)
 
-	share, token, err := h.shareSvc.Create(c.Request().Context(), ws.ID, userID, req)
+	share, err := h.shareSvc.Create(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
 		return h.mapError(c, err)
 	}
@@ -68,10 +65,8 @@ func (h *ScreenShareHandler) Create(c echo.Context) error {
 		return response.InternalError(c)
 	}
 
-	return response.Success(c, http.StatusCreated, screenShareWithTokenResponse{
-		Share:     decorated,
-		Token:     token,
-		ServerURL: h.serverURL,
+	return response.Success(c, http.StatusCreated, screenShareResponse{
+		Share: decorated,
 	})
 }
 
@@ -95,32 +90,6 @@ func (h *ScreenShareHandler) Get(c echo.Context) error {
 	}
 
 	return response.Success(c, http.StatusOK, decorated)
-}
-
-func (h *ScreenShareHandler) Join(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid share ID")
-	}
-
-	ws := c.Get("workspace").(*domain.Workspace)
-	userID := middleware.GetUserID(c)
-
-	share, token, err := h.shareSvc.JoinToken(c.Request().Context(), ws.ID, id, userID)
-	if err != nil {
-		return h.mapError(c, err)
-	}
-
-	decorated, err := h.decorate(c, *share)
-	if err != nil {
-		return response.InternalError(c)
-	}
-
-	return response.Success(c, http.StatusOK, screenShareWithTokenResponse{
-		Share:     decorated,
-		Token:     token,
-		ServerURL: h.serverURL,
-	})
 }
 
 func (h *ScreenShareHandler) End(c echo.Context) error {
@@ -147,7 +116,6 @@ func (h *ScreenShareHandler) decorate(c echo.Context, share domain.ScreenShare) 
 		ID:          share.ID.String(),
 		WorkspaceID: share.WorkspaceID.String(),
 		StartedBy:   share.StartedBy.String(),
-		RoomName:    share.RoomName,
 		Status:      share.Status,
 		CreatedAt:   share.CreatedAt,
 		EndedAt:     share.EndedAt,
@@ -165,8 +133,6 @@ func (h *ScreenShareHandler) decorate(c echo.Context, share domain.ScreenShare) 
 
 func (h *ScreenShareHandler) mapError(c echo.Context, err error) error {
 	switch {
-	case errors.Is(err, service.ErrScreenSharingDisabled):
-		return response.Error(c, http.StatusNotImplemented, "SCREEN_SHARING_DISABLED", "Screen sharing is not configured on this instance")
 	case errors.Is(err, service.ErrScreenShareNotFound):
 		return response.NotFound(c, "Screen share")
 	case errors.Is(err, service.ErrScreenShareForbidden):

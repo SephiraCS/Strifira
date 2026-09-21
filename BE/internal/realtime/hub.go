@@ -41,14 +41,39 @@ type CursorPayload struct {
 	Y       float64 `json:"y"`
 }
 
+// SharePresencePayload announces a client's role in a screen share so the
+// backend can count viewers and detect a gone presenter (P2P WebRTC: the
+// hub carries signaling; media never transits the server).
+type SharePresencePayload struct {
+	ShareID string `json:"share_id"`
+	Role    string `json:"role"`   // "presenter" | "viewer"
+	Action  string `json:"action"` // "join" | "leave"
+}
+
+// ShareSignalPayload relays an opaque WebRTC signaling message (SDP
+// description or ICE candidate) from the sender to one recipient user.
+type ShareSignalPayload struct {
+	ShareID string          `json:"share_id"`
+	To      string          `json:"to"`
+	Data    json.RawMessage `json:"data"`
+}
+
+// shareState is the live membership of one screen share.
+type shareState struct {
+	presenters map[*Client]bool
+	viewers    map[*Client]bool
+}
+
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]map[*Client]bool // workspaceID -> clients
+	shares  map[uuid.UUID]*shareState      // shareID -> live membership
 }
 
 func NewHub() *Hub {
 	return &Hub{
 		clients: make(map[uuid.UUID]map[*Client]bool),
+		shares:  make(map[uuid.UUID]*shareState),
 	}
 }
 
@@ -78,7 +103,26 @@ func (h *Hub) Unregister(client *Client) {
 			delete(h.clients, client.workspaceID)
 		}
 	}
+	// Leaving the socket leaves every share: broadcast the updated
+	// membership so presenters' counts drop and viewers learn when the
+	// presenter is gone.
+	affected := make([]uuid.UUID, 0)
+	for shareID, state := range h.shares {
+		if state.presenters[client] || state.viewers[client] {
+			delete(state.presenters, client)
+			delete(state.viewers, client)
+			if len(state.presenters) == 0 && len(state.viewers) == 0 {
+				delete(h.shares, shareID)
+			}
+			affected = append(affected, shareID)
+		}
+	}
 	h.mu.Unlock()
+
+	for _, shareID := range affected {
+		h.broadcastSharePresence(client.workspaceID, shareID)
+	}
+
 	close(client.send)
 }
 
@@ -192,6 +236,150 @@ func (h *Hub) ReadPump(ctx context.Context, client *Client) {
 					Type:    msg.Type,
 					Payload: raw,
 				})
+			}
+		case "share.presence":
+			var p SharePresencePayload
+			if json.Unmarshal(msg.Payload, &p) == nil {
+				if shareID, err := uuid.Parse(p.ShareID); err == nil {
+					h.SharePresence(client, shareID, p.Role, p.Action)
+				}
+			}
+		case "share.signal":
+			var p ShareSignalPayload
+			if json.Unmarshal(msg.Payload, &p) == nil {
+				h.handleShareSignal(client, p)
+			}
+		}
+	}
+}
+
+// SharePresence records the client's role announcement for the share and
+// broadcasts the new membership summary to the workspace (presenter online
+// + distinct viewer count).
+func (h *Hub) SharePresence(client *Client, shareID uuid.UUID, role, action string) {
+	h.mu.Lock()
+	if action == "leave" {
+		if state, ok := h.shares[shareID]; ok {
+			delete(state.presenters, client)
+			delete(state.viewers, client)
+			if len(state.presenters) == 0 && len(state.viewers) == 0 {
+				delete(h.shares, shareID)
+			}
+		}
+	} else {
+		state := h.shares[shareID]
+		if state == nil {
+			state = &shareState{
+				presenters: make(map[*Client]bool),
+				viewers:    make(map[*Client]bool),
+			}
+			h.shares[shareID] = state
+		}
+		if role == "presenter" {
+			delete(state.viewers, client)
+			state.presenters[client] = true
+		} else {
+			delete(state.presenters, client)
+			state.viewers[client] = true
+		}
+	}
+	h.mu.Unlock()
+
+	h.broadcastSharePresence(client.workspaceID, shareID)
+}
+
+// handleShareSignal relays a WebRTC signaling message to every connection
+// of the target user in the workspace. Only members of the share (its
+// presenter or a joined viewer) may relay through it.
+func (h *Hub) handleShareSignal(client *Client, p ShareSignalPayload) {
+	shareID, err := uuid.Parse(p.ShareID)
+	if err != nil {
+		return
+	}
+	to, err := uuid.Parse(p.To)
+	if err != nil {
+		return
+	}
+	if len(p.Data) == 0 {
+		return
+	}
+
+	h.mu.RLock()
+	state := h.shares[shareID]
+	member := state != nil && (state.presenters[client] || state.viewers[client])
+	h.mu.RUnlock()
+	if !member {
+		return
+	}
+
+	h.sendToUser(client.workspaceID, to, Event{
+		Type: "share.signal",
+		Payload: map[string]interface{}{
+			"share_id": p.ShareID,
+			"from":     client.userID.String(),
+			"data":     p.Data,
+		},
+	})
+}
+
+// broadcastSharePresence announces the share's live membership summary.
+func (h *Hub) broadcastSharePresence(workspaceID, shareID uuid.UUID) {
+	viewers, presenterOnline := h.shareStateLocked(shareID)
+	h.Broadcast(workspaceID, Event{
+		Type: "share.presence",
+		Payload: map[string]interface{}{
+			"share_id":         shareID.String(),
+			"presenter_online": presenterOnline,
+			"viewers":          viewers,
+		},
+	})
+}
+
+func (h *Hub) shareStateLocked(shareID uuid.UUID) (viewers int, presenterOnline bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	state := h.shares[shareID]
+	if state == nil {
+		return 0, false
+	}
+	seen := make(map[uuid.UUID]bool)
+	for c := range state.viewers {
+		seen[c.userID] = true
+	}
+	return len(seen), len(state.presenters) > 0
+}
+
+// ShareState reports the share's live membership: distinct viewing users
+// and whether any presenter connection is online.
+func (h *Hub) ShareState(shareID uuid.UUID) (viewers int, presenterOnline bool) {
+	return h.shareStateLocked(shareID)
+}
+
+// ClearShare drops all membership state for the share (the share ended).
+func (h *Hub) ClearShare(shareID uuid.UUID) {
+	h.mu.Lock()
+	delete(h.shares, shareID)
+	h.mu.Unlock()
+}
+
+// sendToUser delivers the event to every connection of one user.
+func (h *Hub) sendToUser(workspaceID, userID uuid.UUID, event Event) {
+	event.Timestamp = time.Now()
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+
+	h.mu.RLock()
+	clients := h.clients[workspaceID]
+	h.mu.RUnlock()
+
+	for client := range clients {
+		if client.userID == userID {
+			select {
+			case client.send <- data:
+			default:
 			}
 		}
 	}

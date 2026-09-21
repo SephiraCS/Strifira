@@ -1,3 +1,4 @@
+import { browser } from '$app/environment';
 import { listShares } from '$lib/api/shares';
 import type { ScreenShare } from '$lib/types/share';
 
@@ -15,6 +16,17 @@ class SharesState {
 
 	private slug = '';
 	private loadSeq = 0;
+
+	constructor() {
+		if (browser) {
+			window.addEventListener('ws:share.started', ((e: CustomEvent<{ id?: string; started_by?: string }>) => {
+				this.handleStarted(e.detail);
+			}) as EventListener);
+			window.addEventListener('ws:share.ended', ((e: CustomEvent<{ id?: string }>) => {
+				this.handleEnded(e.detail);
+			}) as EventListener);
+		}
+	}
 
 	setEnabled(enabled: boolean) {
 		this.enabled = enabled;

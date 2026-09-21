@@ -28,7 +28,6 @@ const activeShare = {
 	workspace_id: '00000000-0000-0000-0000-000000000002',
 	started_by: presenter.id,
 	started_by_user: presenter,
-	room_name: 'ku-abc12345def67890',
 	status: 'active',
 	viewer_count: 2,
 	created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
@@ -44,13 +43,13 @@ const endedShare = {
 	created_at: new Date(Date.now() - 27 * 60 * 60 * 1000).toISOString()
 };
 
-const badJoin = {
-	share: activeShare,
-	token: 'not-a-real-jwt',
-	server_url: 'wss://livekit.invalid'
-};
-
 async function stubCommon(page: import('@playwright/test').Page, enabled: boolean) {
+	// Flips to empty when the share.ended test fires, modeling the
+	// server-side end the event represents.
+	let shareEnded = false;
+	await page.exposeFunction('__endShare', () => {
+		shareEnded = true;
+	});
 	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
@@ -116,39 +115,40 @@ async function stubCommon(page: import('@playwright/test').Page, enabled: boolea
 		if (path === '/api/notifications') {
 			return route.fulfill({ json: { unread_count: 0, notifications: [] } });
 		}
-		if (path === `/api/workspaces/test/shares/${shareId}/join`) {
-			return route.fulfill({ json: badJoin });
-		}
 		if (path === '/api/workspaces/test/shares') {
-			return route.fulfill({
-				json: enabled ? { active: [activeShare], recent: [endedShare] } : { active: [], recent: [] }
-			});
+			const activeList = enabled && !shareEnded ? [activeShare] : [];
+			const recentList = enabled ? (shareEnded ? [{ ...activeShare, status: 'ended', viewer_count: 0, ended_at: new Date().toISOString() }, endedShare] : [endedShare]) : [];
+			return route.fulfill({ json: { active: activeList, recent: recentList } });
 		}
 		return route.fulfill({ json: [] });
 	});
 }
 
-test('shares module hidden when screen sharing is not configured', async ({ page }) => {
+test('shares module hidden when the workspace disables it', async ({ page }) => {
 	await stubCommon(page, false);
 	await page.goto('/test/inbox');
 	await expect(page.getByRole('link', { name: 'Screen sharing' })).toHaveCount(0);
 });
 
-test('wall renders the presenter-named tile and recent history', async ({ page }) => {
+test('shares module visible when enabled', async ({ page }) => {
+	await stubCommon(page, true);
+	await page.goto('/test/inbox');
+	await expect(page.getByRole('link', { name: 'Screen sharing' })).toBeVisible();
+});
+
+test('wall renders the presenter-named viewer tile', async ({ page }) => {
 	await stubCommon(page, true);
 	await page.goto('/test/shares');
 
 	await expect(page.getByRole('heading', { name: 'Screen sharing' })).toBeVisible();
-	// One tile for the active share (join token fetched, LiveKit target
-	// unreachable in the rig, so the tile lands in its ended state).
+	// One tile for the active share: viewer tiles mount immediately (no
+	// join token round-trip) and carry the presenter name while the peer
+	// connection negotiates.
 	const tile = page.locator(`[data-share-id="${shareId}"]`);
 	await expect(tile).toHaveCount(1);
 	await expect(tile).toContainText('Filippo');
 	// Shares are presenter-named: no free-text title is rendered anywhere.
 	await expect(page.getByText('Bug triage walkthrough')).toHaveCount(0);
-	// History section is presenter-named too.
-	const recent = page.getByRole('heading', { name: 'Recent' }).locator('..');
-	await expect(recent).toContainText('Filippo');
 });
 
 test('start flow posts a titleless share and renders the own tile', async ({ page }) => {
@@ -161,11 +161,15 @@ test('start flow posts a titleless share and renders the own tile', async ({ pag
 		createdBody = route.request().postDataJSON();
 		return route.fulfill({
 			json: {
-				share: { ...activeShare, started_by: '00000000-0000-0000-0000-000000000001' },
-				token: 'not-a-real-jwt',
-				server_url: 'wss://livekit.invalid'
+				share: { ...activeShare, started_by: '00000000-0000-0000-0000-000000000001' }
 			}
 		});
+	});
+	// Synthetic capture: the picker never opens in the rig; an empty
+	// MediaStream satisfies the capture-first contract.
+	await page.addInitScript(() => {
+		navigator.mediaDevices.getUserMedia = async () => new MediaStream();
+		(navigator.mediaDevices as any).getDisplayMedia = async () => new MediaStream();
 	});
 
 	await page.goto('/test/shares');
@@ -174,6 +178,7 @@ test('start flow posts a titleless share and renders the own tile', async ({ pag
 	// No title dialog exists anymore: the share starts immediately and
 	// the presenter's own tile mounts.
 	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(1);
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
 	await expect.poll(() => createdBody).toEqual({});
 	// The header action hides while presenting.
 	await expect(page.getByRole('button', { name: 'Share my screen' })).toHaveCount(0);
@@ -185,6 +190,7 @@ test('share.ended event removes the tile from the wall', async ({ page }) => {
 	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(1);
 
 	await page.evaluate((id) => {
+		void (window as any).__endShare?.();
 		window.dispatchEvent(new CustomEvent('ws:share.ended', { detail: { id } }));
 	}, shareId);
 

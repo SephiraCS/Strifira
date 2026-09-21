@@ -479,14 +479,20 @@
 				break;
 			}
 			case 'share.started': {
+				// sharesState itself listens for the dispatched event.
 				window.dispatchEvent(new CustomEvent('ws:share.started', { detail: msg.payload }));
-				sharesState.handleStarted(msg.payload);
 				announceShareStarted(msg.payload);
 				break;
 			}
 			case 'share.ended': {
 				window.dispatchEvent(new CustomEvent('ws:share.ended', { detail: msg.payload }));
-				sharesState.handleEnded(msg.payload);
+				break;
+			}
+			// P2P WebRTC share signaling: presence summaries and relayed
+			// SDP/ICE messages (consumed by the share tiles).
+			case 'share.presence':
+			case 'share.signal': {
+				window.dispatchEvent(new CustomEvent(`ws:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
 		}

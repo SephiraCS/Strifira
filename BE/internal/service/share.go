@@ -3,94 +3,64 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/livekit"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
 )
 
 var (
-	ErrScreenSharingDisabled = errors.New("screen sharing is not configured on this instance")
-	ErrScreenShareNotFound   = errors.New("screen share not found")
-	ErrScreenShareForbidden  = errors.New("only the presenter or a workspace admin can end this share")
+	ErrScreenShareNotFound  = errors.New("screen share not found")
+	ErrScreenShareForbidden = errors.New("only the presenter or a workspace admin can end this share")
 )
 
 // recentEndedLimit bounds the history section of the share list.
 const recentEndedLimit = 20
 
-// noSourceGraceSeconds is how long a room may exist without its presenter
-// before List ends the share. The grace covers a presenter's own page
-// reload (their wall rejoins the room within seconds); beyond it, a room
-// with no presenter has no source and the share is auto-removed.
+// noSourceGraceSeconds is how long a share may stay active without a live
+// presenter connection. The grace covers a presenter's own page reload
+// (their wall re-announces presence within seconds); beyond it, a share
+// with no presenter has no source and is auto-removed.
 const noSourceGraceSeconds = 45
-
-// LiveKitGateway is the LiveKit surface the share service depends on.
-// A nil gateway leaves screen sharing disabled.
-type LiveKitGateway interface {
-	ServerURL() string
-	PresenterToken(room, identity, name string) (string, error)
-	ViewerToken(room, identity, name string) (string, error)
-	ParticipantSummary(ctx context.Context, room, presenterIdentity string) (viewers int, presenterPresent bool, err error)
-	RoomAge(ctx context.Context, room string) (time.Duration, error)
-	DeleteRoom(ctx context.Context, room string) error
-}
 
 type ScreenShareService struct {
 	shareRepo repository.ScreenShareRepo
 	userRepo  repository.UserRepo
 	hub       *realtime.Hub
-	client    LiveKitGateway
-	enabled   bool
 }
 
-func NewScreenShareService(shareRepo repository.ScreenShareRepo, userRepo repository.UserRepo, hub *realtime.Hub, client LiveKitGateway) *ScreenShareService {
+func NewScreenShareService(shareRepo repository.ScreenShareRepo, userRepo repository.UserRepo, hub *realtime.Hub) *ScreenShareService {
 	return &ScreenShareService{
 		shareRepo: shareRepo,
 		userRepo:  userRepo,
 		hub:       hub,
-		client:    client,
-		enabled:   client != nil,
 	}
 }
 
 // Create starts a share for the requesting user, or returns their existing
 // active share in the workspace (idempotent for reloads and double-clicks).
-func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uuid.UUID, req dto.CreateScreenShareRequest) (*domain.ScreenShare, string, error) {
-	if !s.enabled {
-		return nil, "", ErrScreenSharingDisabled
-	}
-
+// Media is peer-to-peer WebRTC; the share record only anchors presence and
+// lifecycle — no server-side room or token exists.
+func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uuid.UUID, req dto.CreateScreenShareRequest) (*domain.ScreenShare, error) {
 	existing, err := s.shareRepo.GetActiveByPresenter(ctx, workspaceID, userID)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if existing != nil {
-		token, err := s.presenterToken(ctx, existing, userID)
-		if err != nil {
-			return nil, "", err
-		}
-		return existing, token, nil
+		return existing, nil
 	}
 
 	share := &domain.ScreenShare{
 		ID:          uuid.New(),
 		WorkspaceID: workspaceID,
 		StartedBy:   userID,
-		RoomName:    fmt.Sprintf("ku-%s", shareRoomID(workspaceID)),
 		Status:      domain.ScreenShareStatusActive,
 	}
 	if err := s.shareRepo.Create(ctx, share); err != nil {
-		return nil, "", err
-	}
-
-	token, err := s.presenterToken(ctx, share, userID)
-	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	s.broadcast(workspaceID, "share.started", map[string]string{
@@ -98,19 +68,17 @@ func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uui
 		"started_by": share.StartedBy.String(),
 	})
 
-	return share, token, nil
+	return share, nil
 }
 
-// List returns active shares — lazily ending any whose LiveKit room is
-// gone or has no presenter (no source) — plus a bounded history of ended
-// shares, both decorated with presenter info and live viewer counts.
+// List returns active shares — lazily ending any whose presenter has been
+// offline past the reload grace period (no source) — plus a bounded history
+// of ended shares, both decorated with presenter info and live viewer
+// counts from the signaling hub.
 func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (dto.ScreenShareListResponse, error) {
 	resp := dto.ScreenShareListResponse{
 		Active: []dto.ScreenShareResponse{},
 		Recent: []dto.ScreenShareResponse{},
-	}
-	if !s.enabled {
-		return resp, nil
 	}
 
 	active, err := s.shareRepo.ListActiveByWorkspace(ctx, workspaceID)
@@ -121,35 +89,17 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 	var ended []*domain.ScreenShare
 	for i := range active {
 		share := &active[i]
-		viewers, presenterPresent, err := s.client.ParticipantSummary(ctx, share.RoomName, share.StartedBy.String())
-		if err != nil {
-			if livekit.IsRoomGone(err) {
-				// Room vanished (presenter dropped and LiveKit reaped the
-				// empty room) — close the share on our side too.
-				if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
-					return resp, err
-				}
-				ended = append(ended, share)
-				continue
+		viewers, presenterOnline := s.hub.ShareState(share.ID)
+		if !presenterOnline && time.Since(share.CreatedAt) > noSourceGraceSeconds*time.Second {
+			// No presenter connection has announced this share for longer
+			// than a reload takes; it has no source and must not linger on
+			// the wall. Drop the membership state and close the share.
+			s.hub.ClearShare(share.ID)
+			if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
+				return resp, err
 			}
-			// LiveKit unreachable: keep the share listed, report zero
-			// viewers rather than failing the whole list.
-			viewers = 0
-		} else if !presenterPresent {
-			// Room alive but the presenter is not in it. While viewers keep
-			// the room from emptying, a source-less share must not linger
-			// on the wall forever; give fresh rooms a reload grace period,
-			// then end the share and evict everyone.
-			age, ageErr := s.client.RoomAge(ctx, share.RoomName)
-			if ageErr == nil && age > noSourceGraceSeconds*time.Second {
-				if err := s.client.DeleteRoom(ctx, share.RoomName); err == nil {
-					if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
-						return resp, err
-					}
-					ended = append(ended, share)
-					continue
-				}
-			}
+			ended = append(ended, share)
+			continue
 		}
 		decorated, err := s.decorate(ctx, *share, viewers)
 		if err != nil {
@@ -185,41 +135,10 @@ func (s *ScreenShareService) Get(ctx context.Context, id uuid.UUID) (*domain.Scr
 	return s.shareRepo.GetByID(ctx, id)
 }
 
-// JoinToken returns a LiveKit token for joining the share: the presenter
-// gets a publish token, everyone else a subscribe-only token.
-func (s *ScreenShareService) JoinToken(ctx context.Context, workspaceID, shareID, userID uuid.UUID) (*domain.ScreenShare, string, error) {
-	if !s.enabled {
-		return nil, "", ErrScreenSharingDisabled
-	}
-	share, err := s.shareRepo.GetByID(ctx, shareID)
-	if err != nil {
-		return nil, "", err
-	}
-	if share == nil || share.WorkspaceID != workspaceID {
-		return nil, "", ErrScreenShareNotFound
-	}
-	if share.Status != domain.ScreenShareStatusActive {
-		return nil, "", ErrScreenShareNotFound
-	}
-
-	var token string
-	if share.StartedBy == userID {
-		token, err = s.presenterToken(ctx, share, userID)
-	} else {
-		token, err = s.viewerToken(ctx, share, userID)
-	}
-	if err != nil {
-		return nil, "", err
-	}
-	return share, token, nil
-}
-
-// End tears down the LiveKit room and closes the share. The presenter may
-// end their own share; workspace admins may end any (force).
+// End closes the share. The presenter may end their own share; workspace
+// admins may end any (force). Viewers learn through the share.ended event;
+// peer connections collapse on their own once signaling stops.
 func (s *ScreenShareService) End(ctx context.Context, shareID, userID uuid.UUID, force bool) (*domain.ScreenShare, error) {
-	if !s.enabled {
-		return nil, ErrScreenSharingDisabled
-	}
 	share, err := s.shareRepo.GetByID(ctx, shareID)
 	if err != nil {
 		return nil, err
@@ -234,9 +153,7 @@ func (s *ScreenShareService) End(ctx context.Context, shareID, userID uuid.UUID,
 		return nil, ErrScreenShareForbidden
 	}
 
-	if err := s.client.DeleteRoom(ctx, share.RoomName); err != nil {
-		return nil, fmt.Errorf("deleting livekit room: %w", err)
-	}
+	s.hub.ClearShare(share.ID)
 	if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
 		return nil, err
 	}
@@ -248,40 +165,11 @@ func (s *ScreenShareService) End(ctx context.Context, shareID, userID uuid.UUID,
 	return share, nil
 }
 
-func (s *ScreenShareService) presenterToken(ctx context.Context, share *domain.ScreenShare, userID uuid.UUID) (string, error) {
-	identity, name, err := s.identity(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	return s.client.PresenterToken(share.RoomName, identity, name)
-}
-
-func (s *ScreenShareService) viewerToken(ctx context.Context, share *domain.ScreenShare, userID uuid.UUID) (string, error) {
-	identity, name, err := s.identity(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	return s.client.ViewerToken(share.RoomName, identity, name)
-}
-
-func (s *ScreenShareService) identity(ctx context.Context, userID uuid.UUID) (string, string, error) {
-	user, err := s.userRepo.GetByID(ctx, userID)
-	if err != nil {
-		return "", "", err
-	}
-	name := user.DisplayName
-	if name == "" {
-		name = user.Name
-	}
-	return user.ID.String(), name, nil
-}
-
 func (s *ScreenShareService) decorate(ctx context.Context, share domain.ScreenShare, viewerCount int) (dto.ScreenShareResponse, error) {
 	resp := dto.ScreenShareResponse{
 		ID:          share.ID.String(),
 		WorkspaceID: share.WorkspaceID.String(),
 		StartedBy:   share.StartedBy.String(),
-		RoomName:    share.RoomName,
 		Status:      share.Status,
 		ViewerCount: viewerCount,
 		CreatedAt:   share.CreatedAt,
@@ -306,11 +194,4 @@ func (s *ScreenShareService) broadcast(workspaceID uuid.UUID, eventType string, 
 		Type:    eventType,
 		Payload: payload,
 	})
-}
-
-// shareRoomID derives a short unique room suffix: enough workspace prefix
-// to be recognizable in LiveKit tooling plus fresh randomness. The database
-// unique constraint on room_name is the real guard.
-func shareRoomID(workspaceID uuid.UUID) string {
-	return fmt.Sprintf("%s%s", workspaceID.String()[:8], uuid.New().String()[:8])
 }

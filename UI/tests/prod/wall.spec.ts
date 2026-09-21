@@ -25,7 +25,14 @@ async function newUser(request: APIRequestContext, role: string) {
 		data: { email, password, name: `E2E ${role} ${RUN}` }
 	});
 	expect(reg.status(), `register ${email}`).toBe(201);
-	const cookies = (await reg.cookies()).map((c) => `${c.name}=${c.value}`).join('; ');
+	// set-cookie arrives as one newline-joined header; parse it into a
+	// cookie string (APIResponse.cookies() is not in every version).
+	const setCookie = reg.headers()['set-cookie'] ?? '';
+	const cookies = setCookie
+		.split('\n')
+		.map((line) => line.split(';')[0].trim())
+		.filter(Boolean)
+		.join('; ');
 	return { email, password, cookie: cookies };
 }
 
@@ -76,7 +83,7 @@ async function installSyntheticCapture(page: Page, label: string) {
 
 async function frameCount(page: Page) {
 	return page.evaluate(() => {
-		const v = document.querySelector('[data-share-id] video');
+		const v = document.querySelector('[data-share-id] video') as HTMLVideoElement | null;
 		return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : -1;
 	});
 }
@@ -122,7 +129,7 @@ test.describe('wall solo lifecycle', () => {
 
 		// Native stop bar equivalent: an EXTERNAL 'ended' on the capture.
 		await page.evaluate(() => {
-			const v = document.querySelector('[data-share-id] video');
+			const v = document.querySelector('[data-share-id] video') as HTMLVideoElement | null;
 			const track = v && v.srcObject ? (v.srcObject as MediaStream).getVideoTracks()[0] : null;
 			if (!track) throw new Error('no captured track');
 			track.dispatchEvent(new Event('ended'));
@@ -164,10 +171,11 @@ test.describe('cross-engine wall', () => {
 			.toBeGreaterThan(20);
 
 		const viewers: { page: Page; close: () => Promise<void> }[] = [];
-		const engines: [string, () => Promise<{ newPage: () => Promise<Page>; close: () => Promise<void> }>] = [
-			['firefox', () => playwright.firefox.launch()],
-			['webkit', () => playwright.webkit.launch()],
-			['chrome', () => playwright.chromium.launch({ channel: 'chrome' })]
+		type Launchable = { newPage: () => Promise<Page>; close: () => Promise<void> };
+		const engines: Array<[string, () => Promise<Launchable>]> = [
+			['firefox', () => playwright.firefox.launch() as unknown as Promise<Launchable>],
+			['webkit', () => playwright.webkit.launch() as unknown as Promise<Launchable>],
+			['chrome', () => playwright.chromium.launch({ channel: 'chrome' }) as unknown as Promise<Launchable>]
 		];
 		for (let i = 0; i < engines.length; i++) {
 			const [label, launch] = engines[i];
@@ -209,7 +217,7 @@ test.describe('cross-engine wall', () => {
 
 		// Native stop clears every wall.
 		await presenterPage.evaluate(() => {
-			const v = document.querySelector('[data-share-id] video');
+			const v = document.querySelector('[data-share-id] video') as HTMLVideoElement | null;
 			const track = v && v.srcObject ? (v.srcObject as MediaStream).getVideoTracks()[0] : null;
 			track?.dispatchEvent(new Event('ended'));
 		});

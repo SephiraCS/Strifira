@@ -53,33 +53,6 @@ type Config struct {
 
 	// Dev machine configuration
 	DevMachine DevMachineConfig
-
-	// LiveKit screen sharing (optional — feature disabled when unset)
-	LiveKit LiveKitConfig
-}
-
-type LiveKitConfig struct {
-	// URL is how the backend reaches LiveKit (RoomService API).
-	URL       string `envconfig:"LIVEKIT_URL"`
-	APIKey    string `envconfig:"LIVEKIT_API_KEY"`
-	APISecret string `envconfig:"LIVEKIT_API_SECRET"`
-	// PublicURL overrides the URL handed to browsers for signaling, for
-	// deployments where backend and clients resolve LiveKit differently
-	// (e.g. containers). Empty means use URL.
-	PublicURL string `envconfig:"LIVEKIT_PUBLIC_URL"`
-}
-
-// IsConfigured returns true when the minimum required LiveKit fields are set.
-func (l LiveKitConfig) IsConfigured() bool {
-	return l.URL != "" && l.APIKey != "" && l.APISecret != ""
-}
-
-// ClientURL returns the signaling URL browsers should use.
-func (l LiveKitConfig) ClientURL() string {
-	if l.PublicURL != "" {
-		return l.PublicURL
-	}
-	return l.URL
 }
 
 type DevMachineConfig struct {
@@ -198,18 +171,6 @@ func Load() (*Config, error) {
 	}
 	if cfg.SystemUpdaterToken != "" && len(cfg.SystemUpdaterToken) < 32 {
 		return nil, fmt.Errorf("SYSTEM_UPDATER_TOKEN must be at least 32 characters")
-	}
-	if cfg.LiveKit.IsConfigured() {
-		if strings.ContainsAny(cfg.LiveKit.URL, "\x00\r\n\t ") {
-			return nil, fmt.Errorf("LIVEKIT_URL must be a URL without whitespace")
-		}
-		lkURL, err := url.Parse(cfg.LiveKit.URL)
-		if err != nil || lkURL.Hostname() == "" || (lkURL.Scheme != "http" && lkURL.Scheme != "https" && lkURL.Scheme != "ws" && lkURL.Scheme != "wss") {
-			return nil, fmt.Errorf("LIVEKIT_URL must be an absolute http(s)/ws(s) URL")
-		}
-		if len(cfg.LiveKit.APISecret) < 32 {
-			return nil, fmt.Errorf("LIVEKIT_API_SECRET must be at least 32 characters when LiveKit is configured")
-		}
 	}
 	sysadmins, err := parseSysadmins(cfg.Sysadmins)
 	if err != nil {

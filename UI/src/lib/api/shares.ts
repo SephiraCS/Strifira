@@ -18,10 +18,6 @@ export function createShare(slug: string, data: CreateScreenShareRequest): Promi
 	return api.post<ScreenShareJoin>(`/api/workspaces/${slug}/shares`, data);
 }
 
-export function joinShare(slug: string, id: string): Promise<ScreenShareJoin> {
-	return api.post<ScreenShareJoin>(`/api/workspaces/${slug}/shares/${id}/join`);
-}
-
 export function endShare(slug: string, id: string): Promise<void> {
 	return api.post<void>(`/api/workspaces/${slug}/shares/${id}/end`);
 }

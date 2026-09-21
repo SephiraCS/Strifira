@@ -21,12 +21,11 @@ func parseUUID(s string) (uuid.UUID, error) {
 }
 
 type WorkspaceHandler struct {
-	workspaceSvc         *service.WorkspaceService
-	screenSharingEnabled bool
+	workspaceSvc *service.WorkspaceService
 }
 
-func NewWorkspaceHandler(workspaceSvc *service.WorkspaceService, screenSharingEnabled bool) *WorkspaceHandler {
-	return &WorkspaceHandler{workspaceSvc: workspaceSvc, screenSharingEnabled: screenSharingEnabled}
+func NewWorkspaceHandler(workspaceSvc *service.WorkspaceService) *WorkspaceHandler {
+	return &WorkspaceHandler{workspaceSvc: workspaceSvc}
 }
 
 func (h *WorkspaceHandler) List(c echo.Context) error {
@@ -229,7 +228,7 @@ func (h *WorkspaceHandler) toWorkspaceResponse(c echo.Context, ws domain.Workspa
 		OwnerID:              ws.OwnerID.String(),
 		ShareLinkMinRole:     ws.ShareLinkMinRole,
 		CurrentUserRole:      middleware.GetWorkspaceRole(c),
-		ScreenSharingEnabled: h.screenSharingEnabled,
+		ScreenSharingEnabled: true,
 		CreatedAt:            ws.CreatedAt,
 		UpdatedAt:            ws.UpdatedAt,
 	}
