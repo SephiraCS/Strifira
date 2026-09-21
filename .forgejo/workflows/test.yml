@@ -74,33 +74,6 @@ jobs:
             echo 'LANE-COMPLETE'
           } 2>&1 | tee backend-test.log
 
-      - name: Upload coverage artifact
-        continue-on-error: true
-        uses: https://data.forgejo.org/actions/upload-artifact@v3
-        with:
-          name: backend-coverage
-          path: BE/coverage.out
-
-      - name: Publish job log (temporary)
-        if: always()
-        continue-on-error: true
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-        run: |
-          cd BE
-          [ -f backend-test.log ] || echo "(no log captured; failure was in an action step)" > backend-test.log
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          # One orphan branch per run: no shared history with ci/logs tips, so
-          # concurrent lanes cannot conflict and nothing needs a rebase.
-          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-backend"
-          git rm -rq --cached .
-          mv backend-test.log "backend-${GITHUB_RUN_ID}.log"
-          git add "backend-${GITHUB_RUN_ID}.log"
-          git commit -m "backend-test log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/backend"
-
   docker-integration:
     # The backend manages dev-machine containers through the Docker SDK, so
     # this lane needs the host Docker socket (mounted by the runner), not just
@@ -167,32 +140,14 @@ jobs:
             echo 'LANE-COMPLETE'
           } 2>&1 | tee docker-integration.log
 
-      - name: Publish job log (temporary)
-        if: always()
-        continue-on-error: true
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-        run: |
-          cd BE
-          [ -f docker-integration.log ] || echo "(no log captured; failure was in an action step)" > docker-integration.log
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-docker"
-          git rm -rq --cached .
-          mv docker-integration.log "docker-${GITHUB_RUN_ID}.log"
-          git add "docker-${GITHUB_RUN_ID}.log"
-          git commit -m "docker-integration log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/docker"
-
   frontend-check:
     name: Frontend Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
     env:
-      # The job container is Ubuntu 26.04, which this Playwright has no
-      # browser build for; use the 24.04 registry entries.
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04-x64
+      # The runner image reports Ubuntu 26.04 while Playwright 1.58 ships
+      # browser builds for the Ubuntu 24.04 platform identifier.
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
 
     steps:
       - name: Check out the source revision
@@ -231,42 +186,12 @@ jobs:
             echo 'LANE-COMPLETE'
           } 2>&1 | tee frontend-check.log
 
-      - name: Upload Playwright failure artifacts
-        if: ${{ failure() }}
-        continue-on-error: true
-        uses: https://data.forgejo.org/actions/upload-artifact@v3
-        with:
-          name: ui-playwright-failure
-          path: |
-            UI/playwright-report
-            UI/test-results
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Publish job log (temporary)
-        if: always()
-        continue-on-error: true
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-        run: |
-          cd UI
-          [ -f frontend-check.log ] || echo "(no log captured; failure was in an action step)" > frontend-check.log
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-frontend"
-          git rm -rq --cached .
-          mv frontend-check.log "frontend-${GITHUB_RUN_ID}.log"
-          git add "frontend-${GITHUB_RUN_ID}.log"
-          git commit -m "frontend-check log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/frontend"
-
   web-check:
     name: Marketing Site Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
     env:
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04-x64
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
 
     steps:
       - name: Check out the source revision
@@ -302,35 +227,14 @@ jobs:
             echo 'LANE-COMPLETE'
           } 2>&1 | tee web-check.log
 
-      - name: Publish job log (temporary)
-        if: always()
-        continue-on-error: true
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-        run: |
-          cd WEB
-          [ -f web-check.log ] || echo "(no log captured; failure was in an action step)" > web-check.log
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-web"
-          git rm -rq --cached .
-          mv web-check.log "web-${GITHUB_RUN_ID}.log"
-          git add "web-${GITHUB_RUN_ID}.log"
-          git commit -m "web-check log run ${GITHUB_RUN_ID}"
-          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/web"
-
-  # TEMPORARY: publishes each lane's outcome to the ci/status branch so run
-  # results are readable without web access during the CI migration. Remove
-  # once the workflows are verified on this instance.
+  # Keep the aggregate lane result visible in the Actions UI without pushing
+  # diagnostic refs back into the source repository.
   report:
     name: Report results (temporary)
     if: always()
     needs: [backend-test, docker-integration, frontend-check, web-check]
     runs-on: terrascale-builder
     timeout-minutes: 10
-    permissions:
-      contents: write
     steps:
       - name: Check out the source revision
         uses: https://data.forgejo.org/actions/checkout@v6.1.0
@@ -338,31 +242,10 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Publish job results
-        continue-on-error: true
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
+      - name: Print job results
         run: |
-          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          {
-            echo "tests at $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${{ forgejo.sha }} event=${{ forgejo.event_name }}"
-            echo "backend-test: ${{ needs.backend-test.result }}"
-            echo "docker-integration: ${{ needs.docker-integration.result }}"
-            echo "frontend-check: ${{ needs.frontend-check.result }}"
-            echo "web-check: ${{ needs.web-check.result }}"
-          } | tee "tests-${stamp}.txt"
-
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
-          git fetch "$remote_url" ci/status 2>/dev/null
-          git checkout -B ci/status FETCH_HEAD 2>/dev/null || git checkout -B ci/status
-          git add "tests-${stamp}.txt"
-          git commit -m "tests status ${stamp}"
-          for _ in 1 2 3 4 5; do
-            if git push "$remote_url" HEAD:ci/status; then break; fi
-            git fetch "$remote_url" ci/status
-            git rebase FETCH_HEAD
-            sleep 3
-          done
+          echo "tests at $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${{ forgejo.sha }} event=${{ forgejo.event_name }}"
+          echo "backend-test: ${{ needs.backend-test.result }}"
+          echo "docker-integration: ${{ needs.docker-integration.result }}"
+          echo "frontend-check: ${{ needs.frontend-check.result }}"
+          echo "web-check: ${{ needs.web-check.result }}"

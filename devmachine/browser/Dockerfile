@@ -12,7 +12,7 @@ ARG CHROME_VERSION=150.0.7871.181-1
 ARG CHROME_AMD64_SHA256=fec50905f7b1235a440977a833476e0162874f5ca79e506cdf40b71af64d92f4
 ARG CHROME_ARM64_SHA256=bf6efc4587ecce26ef579dfdc99364da5f3da4a45f2a6b368f075b6bedc92f7d
 
-RUN rm -f /usr/bin/pebble \
+RUN if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/pebble; fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl openbox x11-utils \
     && case "$TARGETARCH" in \
@@ -26,7 +26,8 @@ RUN rm -f /usr/bin/pebble \
     && curl -fsSL -o /tmp/chrome.deb "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_${CHROME_VERSION}_${chrome_arch}.deb" \
     && echo "${chrome_sha}  /tmp/chrome.deb" | sha256sum -c - \
     && apt-get install -y --no-install-recommends /tmp/chrome.deb \
-    && rm -f /tmp/kasmvnc.deb /tmp/chrome.deb /usr/bin/pebble \
+    && rm -f /tmp/kasmvnc.deb /tmp/chrome.deb \
+    && if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/pebble; fi \
         /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /home/ku \
