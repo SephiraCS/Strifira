@@ -4,8 +4,13 @@ import "time"
 
 // --- Requests ---
 
-type LinkGitHubReposRequest struct {
-	GitHubRepoIDs []int64 `json:"github_repo_ids" validate:"required,min=1"`
+type ConnectForgejoRequest struct {
+	InstanceURL string `json:"instance_url" validate:"required,url"`
+	Token       string `json:"token" validate:"required,min=20"`
+}
+
+type LinkForgejoReposRequest struct {
+	ForgejoRepoIDs []int64 `json:"forgejo_repo_ids" validate:"required,min=1"`
 }
 
 type UpdateAutoTransitionsRequest struct {
@@ -14,59 +19,55 @@ type UpdateAutoTransitionsRequest struct {
 
 type AutoTransitionRule struct {
 	Event          string  `json:"event" validate:"required"`
-	TargetStatus   string  `json:"target_status" validate:"required"`
+	TargetStatus   string  `json:"target_status"`
 	TargetStatusID *string `json:"target_status_id"`
 	IsActive       bool    `json:"is_active"`
 }
 
 // --- Responses ---
 
-type GitHubStatusResponse struct {
-	Configured   bool                        `json:"configured"`
-	Installed    bool                        `json:"installed"`
-	GlobalApp    bool                        `json:"global_app"`
-	AppSlug      string                      `json:"app_slug,omitempty"`
-	Installation *GitHubInstallationResponse `json:"installation,omitempty"`
-	Repos        []GitHubRepoResponse        `json:"repos"`
+type ForgejoStatusResponse struct {
+	Configured   bool                    `json:"configured"`
+	Connected    bool                    `json:"connected"`
+	GlobalConfig bool                    `json:"global_config"`
+	InstanceURL  string                  `json:"instance_url,omitempty"`
+	Account      *ForgejoAccountResponse `json:"account,omitempty"`
+	Repos        []ForgejoRepoResponse   `json:"repos"`
 }
 
-type GitHubInstallationResponse struct {
-	ID             string `json:"id"`
-	InstallationID int64  `json:"installation_id"`
-	AccountLogin   string `json:"account_login"`
-	AccountType    string `json:"account_type"`
-	CreatedAt      string `json:"created_at"`
+type ForgejoAccountResponse struct {
+	Login     string `json:"login"`
+	AvatarURL string `json:"avatar_url,omitempty"`
 }
 
-type GitHubInstallURLResponse struct {
-	URL string `json:"url"`
-}
-
-type GitHubRepoResponse struct {
+type ForgejoRepoResponse struct {
 	ID            string `json:"id"`
-	GitHubRepoID  int64  `json:"github_repo_id"`
+	ForgejoRepoID int64  `json:"forgejo_repo_id"`
 	FullName      string `json:"full_name"`
+	InstanceURL   string `json:"instance_url"`
 	DefaultBranch string `json:"default_branch"`
 	IsActive      bool   `json:"is_active"`
 }
 
-type GitHubAvailableRepoResponse struct {
-	GitHubRepoID  int64  `json:"github_repo_id"`
+type ForgejoAvailableRepoResponse struct {
+	ForgejoRepoID int64  `json:"forgejo_repo_id"`
 	FullName      string `json:"full_name"`
 	DefaultBranch string `json:"default_branch"`
 	Private       bool   `json:"private"`
 	Linked        bool   `json:"linked"`
 }
 
-type GitHubPullRequestResponse struct {
+type ForgejoPullRequestResponse struct {
 	ID              string     `json:"id"`
 	Number          int        `json:"number"`
 	Title           string     `json:"title"`
 	State           string     `json:"state"`
+	ChecksGreen     bool       `json:"checks_green"`
 	AuthorLogin     string     `json:"author_login"`
 	AuthorAvatarURL string     `json:"author_avatar_url"`
 	HTMLURL         string     `json:"html_url"`
 	HeadBranch      string     `json:"head_branch"`
+	HeadSHA         string     `json:"head_sha"`
 	BaseBranch      string     `json:"base_branch"`
 	Additions       int        `json:"additions"`
 	Deletions       int        `json:"deletions"`
@@ -76,14 +77,15 @@ type GitHubPullRequestResponse struct {
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
-type GitHubBranchResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	HTMLURL      string `json:"html_url"`
-	RepoFullName string `json:"repo_full_name"`
+type ForgejoBranchResponse struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	HTMLURL      string    `json:"html_url"`
+	RepoFullName string    `json:"repo_full_name"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
-type GitHubCommitResponse struct {
+type ForgejoCommitResponse struct {
 	ID              string    `json:"id"`
 	SHA             string    `json:"sha"`
 	ShortSHA        string    `json:"short_sha"`
@@ -95,13 +97,13 @@ type GitHubCommitResponse struct {
 	CommittedAt     time.Time `json:"committed_at"`
 }
 
-type GitHubIssueActivityResponse struct {
-	PullRequests []GitHubPullRequestResponse `json:"pull_requests"`
-	Branches     []GitHubBranchResponse      `json:"branches"`
-	Commits      []GitHubCommitResponse      `json:"commits"`
+type ForgejoIssueActivityResponse struct {
+	PullRequests []ForgejoPullRequestResponse `json:"pull_requests"`
+	Branches     []ForgejoBranchResponse      `json:"branches"`
+	Commits      []ForgejoCommitResponse      `json:"commits"`
 }
 
-type GitHubAutoTransitionResponse struct {
+type ForgejoAutoTransitionResponse struct {
 	Event          string  `json:"event"`
 	TargetStatus   string  `json:"target_status"`
 	TargetStatusID *string `json:"target_status_id"`

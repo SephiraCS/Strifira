@@ -151,7 +151,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		environmentID = defaults.EnvironmentID
 	}
 
-	var repositoryModel *domain.GitHubRepoModel
+	var repositoryModel *domain.ForgejoRepoModel
 	var baseBranch, workingBranch string
 	if req.Repo != nil {
 		fullName := req.Repo.Owner + "/" + req.Repo.Name
@@ -162,8 +162,8 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		if repositoryModel == nil {
 			return nil, nil, fmt.Errorf("%w: invalid linked repository", ErrInvalidMachineInput)
 		}
-	} else if defaults.GitHubRepoID != nil {
-		repositoryModel, err = s.store.GetLinkedRepository(ctx, workspaceID, *defaults.GitHubRepoID)
+	} else if defaults.ForgejoRepoID != nil {
+		repositoryModel, err = s.store.GetLinkedRepository(ctx, workspaceID, *defaults.ForgejoRepoID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -700,8 +700,8 @@ func (s *DevMachineService) UpdateScopeSetting(ctx context.Context, workspaceID 
 		return nil, fmt.Errorf("%w: invalid development setting scope", ErrInvalidMachineInput)
 	}
 	setting := &domain.DevMachineScopeSetting{WorkspaceID: workspaceID, TeamID: teamID, ProjectID: projectID, IssueID: issueID}
-	if request.GitHubRepoID != nil {
-		repositoryID, _ := uuid.Parse(*request.GitHubRepoID)
+	if request.ForgejoRepoID != nil {
+		repositoryID, _ := uuid.Parse(*request.ForgejoRepoID)
 		repository, err := s.store.GetLinkedRepository(ctx, workspaceID, repositoryID)
 		if err != nil {
 			return nil, err
@@ -709,7 +709,7 @@ func (s *DevMachineService) UpdateScopeSetting(ctx context.Context, workspaceID 
 		if repository == nil {
 			return nil, fmt.Errorf("%w: invalid linked repository", ErrInvalidMachineInput)
 		}
-		setting.GitHubRepoID = &repositoryID
+		setting.ForgejoRepoID = &repositoryID
 		baseBranch := repository.DefaultBranch
 		if request.BaseBranch != nil {
 			baseBranch = strings.TrimSpace(*request.BaseBranch)
@@ -719,7 +719,7 @@ func (s *DevMachineService) UpdateScopeSetting(ctx context.Context, workspaceID 
 		}
 		setting.BaseBranch = &baseBranch
 	} else if request.BaseBranch != nil {
-		return nil, fmt.Errorf("%w: github_repo_id is required when base_branch is provided", ErrInvalidMachineInput)
+		return nil, fmt.Errorf("%w: forgejo_repo_id is required when base_branch is provided", ErrInvalidMachineInput)
 	}
 	if request.EnvironmentID != nil {
 		environmentID, _ := uuid.Parse(*request.EnvironmentID)
@@ -793,7 +793,7 @@ func (s *DevMachineService) resolveDevelopmentSetting(ctx context.Context, works
 	}
 	scopes = append(scopes, [3]*uuid.UUID{nil, nil, nil})
 	for _, scope := range scopes {
-		if resolved.GitHubRepoID != nil && resolved.EnvironmentID != nil {
+		if resolved.ForgejoRepoID != nil && resolved.EnvironmentID != nil {
 			break
 		}
 		setting, err := s.store.GetScopeSetting(ctx, workspaceID, scope[0], scope[1], scope[2])
@@ -803,8 +803,8 @@ func (s *DevMachineService) resolveDevelopmentSetting(ctx context.Context, works
 		if setting == nil {
 			continue
 		}
-		if resolved.GitHubRepoID == nil && setting.GitHubRepoID != nil {
-			resolved.GitHubRepoID, resolved.BaseBranch = setting.GitHubRepoID, setting.BaseBranch
+		if resolved.ForgejoRepoID == nil && setting.ForgejoRepoID != nil {
+			resolved.ForgejoRepoID, resolved.BaseBranch = setting.ForgejoRepoID, setting.BaseBranch
 		}
 		if resolved.EnvironmentID == nil && setting.EnvironmentID != nil {
 			resolved.EnvironmentID = setting.EnvironmentID
@@ -840,13 +840,13 @@ func (s *DevMachineService) CheckoutIssue(ctx context.Context, workspaceID, mach
 	if err != nil {
 		return nil, err
 	}
-	if setting.GitHubRepoID == nil {
+	if setting.ForgejoRepoID == nil {
 		return nil, fmt.Errorf("%w: issue has no development repository", ErrCheckoutNotEligible)
 	}
 	if setting.EnvironmentID != nil && (machine.EnvironmentID == nil || *machine.EnvironmentID != *setting.EnvironmentID) {
 		return nil, fmt.Errorf("%w: issue requires a different development environment", ErrCheckoutNotEligible)
 	}
-	linkedRepository, err := s.store.GetLinkedRepository(ctx, workspaceID, *setting.GitHubRepoID)
+	linkedRepository, err := s.store.GetLinkedRepository(ctx, workspaceID, *setting.ForgejoRepoID)
 	if err != nil {
 		return nil, err
 	}
@@ -897,7 +897,9 @@ func (s *DevMachineService) CheckoutIssue(ctx context.Context, workspaceID, mach
 	}
 	checkout := &domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID,
-		GitHubRepoID: linkedRepository.ID, RepositoryFullName: linkedRepository.FullName, BaseBranch: baseBranch,
+		ForgejoRepoID: linkedRepository.ID, RepositoryFullName: linkedRepository.FullName,
+		RepositoryURL: strings.TrimRight(linkedRepository.InstanceURL, "/") + "/" + linkedRepository.FullName,
+		BaseBranch:    baseBranch,
 		WorkingBranch: "ku/" + identifier, WorkspacePath: "/workspace/tasks/" + identifier, Status: "queued",
 	}
 	operation := &domain.DevMachineOperation{

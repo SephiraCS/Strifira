@@ -6,9 +6,9 @@
 	import { Label } from '$lib/components/ui/label';
 	import ComboboxPopover from '$lib/components/shared/ComboboxPopover.svelte';
 	import { ChevronsUpDown, GitBranch } from 'lucide-svelte';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getForgejoStatus } from '$lib/api/forgejo';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
-	import type { GitHubRepo } from '$lib/types/github';
+	import type { ForgejoRepo } from '$lib/types/forgejo';
 	import type { DevMachineEnvironment } from '$lib/types/dev-machine';
 	import type { Issue } from '$lib/types/issue';
 	import { appToast } from '$lib/features/toast/toast';
@@ -16,7 +16,7 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
 	let { open = $bindable(false), slug, issue }: { open: boolean; slug: string; issue: Issue } = $props();
-	let repositories = $state<GitHubRepo[]>([]);
+	let repositories = $state<ForgejoRepo[]>([]);
 	let environments = $state<DevMachineEnvironment[]>([]);
 	let repositoryId = $state('inherit');
 	let environmentId = $state('inherit');
@@ -35,12 +35,12 @@
 	async function load() {
 		loading = true;
 		try {
-			const [github, setting, availableEnvironments] = await Promise.all([
-				getGitHubStatus(slug), getDevMachineScopeSetting(slug, 'issue', issue.id), listDevMachineEnvironments(slug)
+			const [forgejo, setting, availableEnvironments] = await Promise.all([
+				getForgejoStatus(slug), getDevMachineScopeSetting(slug, 'issue', issue.id), listDevMachineEnvironments(slug)
 			]);
-			repositories = github.repos ?? [];
+			repositories = forgejo.repos ?? [];
 			environments = (availableEnvironments ?? []).filter((item) => item.status === 'ready');
-			repositoryId = setting.github_repo_id ?? 'inherit';
+			repositoryId = setting.forgejo_repo_id ?? 'inherit';
 			environmentId = setting.environment_id ?? 'inherit';
 		} catch (error) {
 			appToast.apiError(error, 'Failed to load issue development defaults');
@@ -57,7 +57,7 @@
 			} else {
 				await updateDevMachineScopeSetting(slug, {
 					scope_type: 'issue', scope_id: issue.id,
-					github_repo_id: selectedRepository?.id,
+					forgejo_repo_id: selectedRepository?.id,
 					base_branch: selectedRepository?.default_branch,
 					environment_id: selectedEnvironment?.id
 				});

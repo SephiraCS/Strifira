@@ -1,45 +1,45 @@
-export interface GitHubInstallation {
-	id: string;
-	installation_id: number;
-	account_login: string;
-	account_type: string;
-	created_at: string;
+export interface ForgejoAccount {
+	login: string;
+	avatar_url?: string;
 }
 
-export interface GitHubRepo {
+export interface ForgejoRepo {
 	id: string;
-	github_repo_id: number;
+	forgejo_repo_id: number;
 	full_name: string;
+	instance_url: string;
 	default_branch: string;
 	is_active: boolean;
 }
 
-export interface GitHubAvailableRepo {
-	github_repo_id: number;
+export interface ForgejoAvailableRepo {
+	forgejo_repo_id: number;
 	full_name: string;
 	default_branch: string;
 	private: boolean;
 	linked: boolean;
 }
 
-export interface GitHubStatus {
+export interface ForgejoStatus {
 	configured: boolean;
-	installed: boolean;
-	global_app: boolean;
-	app_slug?: string;
-	installation?: GitHubInstallation;
-	repos: GitHubRepo[];
+	connected: boolean;
+	global_config: boolean;
+	instance_url?: string;
+	account?: ForgejoAccount;
+	repos: ForgejoRepo[];
 }
 
-export interface GitHubPullRequest {
+export interface ForgejoPullRequest {
 	id: string;
 	number: number;
 	title: string;
 	state: 'open' | 'closed' | 'merged' | 'draft';
+	checks_green: boolean;
 	author_login: string;
 	author_avatar_url: string;
 	html_url: string;
 	head_branch: string;
+	head_sha: string;
 	base_branch: string;
 	additions: number;
 	deletions: number;
@@ -49,14 +49,15 @@ export interface GitHubPullRequest {
 	updated_at: string;
 }
 
-export interface GitHubBranch {
+export interface ForgejoBranch {
 	id: string;
 	name: string;
 	html_url: string;
 	repo_full_name: string;
+	created_at: string;
 }
 
-export interface GitHubCommit {
+export interface ForgejoCommit {
 	id: string;
 	sha: string;
 	short_sha: string;
@@ -68,14 +69,14 @@ export interface GitHubCommit {
 	committed_at: string;
 }
 
-export interface GitHubIssueActivity {
-	pull_requests: GitHubPullRequest[];
-	branches: GitHubBranch[];
-	commits: GitHubCommit[];
+export interface ForgejoIssueActivity {
+	pull_requests: ForgejoPullRequest[];
+	branches: ForgejoBranch[];
+	commits: ForgejoCommit[];
 }
 
-export interface GitHubAutoTransition {
-	event: string;
+export interface ForgejoAutoTransition {
+	event: 'branch_created' | 'pr_opened' | 'pr_checks_green' | 'pr_merged';
 	target_status: string;
 	target_status_id: string | null;
 	is_active: boolean;

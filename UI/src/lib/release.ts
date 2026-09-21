@@ -50,7 +50,7 @@ export function compareVersions(left: string, right: string) {
 	return 0;
 }
 
-// Same trust shape as $lib/security/github-url, anchored to the fork's
+// Same trust shape as $lib/security/forgejo-url, anchored to the fork's
 // Forgejo host instead of github.com.
 function parseReleaseRepositoryUrl(value: unknown, expectedTag?: string): URL | null {
 	if (typeof value !== 'string' || value.trim() !== value || value === '') return null;

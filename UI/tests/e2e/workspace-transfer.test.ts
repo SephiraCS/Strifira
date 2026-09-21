@@ -56,8 +56,8 @@ test('previews, confirms, and imports a workspace archive', async ({ page }) => 
 						source_workspace_slug: 'restored',
 						counts: { teams: 2, projects: 1, issues: 12, comments: 5, assets: 3 },
 						omitted: ['refresh_tokens'],
-						warnings: ['Reconnect GitHub.'],
-						requires_reconfiguration: ['GitHub']
+						warnings: ['Reconnect Forgejo.'],
+						requires_reconfiguration: ['Forgejo']
 					},
 					name: 'Restored Workspace',
 					slug: 'restored',
@@ -86,7 +86,7 @@ test('previews, confirms, and imports a workspace archive', async ({ page }) => 
 	await page.locator('input[type=file]').setInputFiles({ name: 'workspace.ku.zip', mimeType: 'application/zip', buffer: Buffer.from('fake archive') });
 	await expect(page.getByRole('heading', { name: 'Import workspace' }).last()).toBeVisible();
 	await expect(page.getByText('12')).toBeVisible();
-	await expect(page.getByText('Reconnect GitHub.')).toBeVisible();
+	await expect(page.getByText('Reconnect Forgejo.')).toBeVisible();
 	await page.getByLabel('Type restored to confirm creating this workspace').fill('restored');
 	await page.getByRole('button', { name: 'Import workspace' }).last().click();
 	await expect.poll(() => importPosted).toBe(true);

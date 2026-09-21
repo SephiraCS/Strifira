@@ -207,7 +207,7 @@ func TestIngestEventRedactsActiveRuntimeCredential(t *testing.T) {
 		authenticatedToken: &domain.DevMachineToken{ID: uuid.New(), MachineID: machineID, Scopes: json.RawMessage(`{"events:write":true}`), ExpiresAt: time.Now().Add(time.Hour)},
 		runtimeCredentials: []domain.DevMachineRuntimeCredential{{
 			ID: uuid.New(), MachineID: machineID, Scope: domain.DevMachineRuntimeCredentialScopeMachine,
-			CredentialType: domain.DevMachineRuntimeCredentialTypeGitHubToken, EncryptedValue: encrypted,
+			CredentialType: domain.DevMachineRuntimeCredentialTypeForgejoToken, EncryptedValue: encrypted,
 			EncryptionKeyVersion: 1, ExpiresAt: time.Now().Add(time.Hour),
 		}},
 	}
@@ -238,7 +238,7 @@ func TestIngestLogRedactsActiveRuntimeCredential(t *testing.T) {
 		authenticatedToken: &domain.DevMachineToken{ID: uuid.New(), MachineID: machineID, Scopes: json.RawMessage(`{"logs:write":true}`), ExpiresAt: time.Now().Add(time.Hour)},
 		runtimeCredentials: []domain.DevMachineRuntimeCredential{{
 			ID: uuid.New(), MachineID: machineID, Scope: domain.DevMachineRuntimeCredentialScopeMachine,
-			CredentialType: domain.DevMachineRuntimeCredentialTypeGitHubToken, EncryptedValue: encrypted,
+			CredentialType: domain.DevMachineRuntimeCredentialTypeForgejoToken, EncryptedValue: encrypted,
 			EncryptionKeyVersion: 1, ExpiresAt: time.Now().Add(time.Hour),
 		}},
 	}
@@ -420,10 +420,10 @@ func TestCreateResolvesScopedRepositoryAndEnvironment(t *testing.T) {
 		policy:       testPolicy(workspaceID),
 		issues:       map[uuid.UUID]*domain.Issue{issueID: {ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, ProjectID: &projectID, Identifier: "ENG-42"}},
 		projects:     map[uuid.UUID]*domain.Project{projectID: {ID: projectID, WorkspaceID: workspaceID, TeamID: &teamID}},
-		reposByID:    map[uuid.UUID]*domain.GitHubRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "Ku/API", DefaultBranch: "main", IsActive: true}},
+		reposByID:    map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "Ku/API", DefaultBranch: "main", IsActive: true}},
 		environments: map[uuid.UUID]*domain.DevMachineEnvironment{envID: {ID: envID, WorkspaceID: workspaceID, Name: "base", ImageRef: immutableEnvRef, ImageDigest: &immutableEnvRef, Status: "ready"}},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{
-			scopeKey(nil, nil, &issueID):   {WorkspaceID: workspaceID, GitHubRepoID: &repoID, BaseBranch: dmStrPtr("issue-base")},
+			scopeKey(nil, nil, &issueID):   {WorkspaceID: workspaceID, ForgejoRepoID: &repoID, BaseBranch: dmStrPtr("issue-base")},
 			scopeKey(nil, &projectID, nil): {WorkspaceID: workspaceID, EnvironmentID: &envID},
 			scopeKey(nil, nil, nil):        {WorkspaceID: workspaceID, BaseBranch: dmStrPtr("workspace-base")},
 			scopeKey(&teamID, nil, nil):    {WorkspaceID: workspaceID, BaseBranch: dmStrPtr("team-base")},
@@ -470,12 +470,12 @@ func TestCheckoutIssueEnforcesRepositoryAffinityAndIsIdempotent(t *testing.T) {
 	machineID, issueID, repoID, otherRepoID, teamID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	readyMachine := &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, CreatedByUserID: &userID, Status: domain.DevMachineStatusRunning, DesiredStatus: domain.DevMachineStatusRunning, RepositoryAffinityID: &repoID, ExpiresAt: time.Now().Add(time.Hour)}
 	issue := &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, Identifier: "ENG-7"}
-	existing := domain.DevMachineCheckout{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID, GitHubRepoID: repoID, Status: "queued"}
+	existing := domain.DevMachineCheckout{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID, ForgejoRepoID: repoID, Status: "queued"}
 	store := &devMachineStoreFake{
 		policy: testPolicy(workspaceID), machine: readyMachine,
 		issues:        map[uuid.UUID]*domain.Issue{issueID: issue},
-		reposByID:     map[uuid.UUID]*domain.GitHubRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true}, otherRepoID: {ID: otherRepoID, WorkspaceID: workspaceID, FullName: "ku/other", DefaultBranch: "main", IsActive: true}},
-		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, GitHubRepoID: &repoID}},
+		reposByID:     map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true}, otherRepoID: {ID: otherRepoID, WorkspaceID: workspaceID, FullName: "ku/other", DefaultBranch: "main", IsActive: true}},
+		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, ForgejoRepoID: &repoID}},
 		checkouts:     []domain.DevMachineCheckout{existing},
 	}
 	svc := newTestDevMachineService(store)
@@ -486,7 +486,7 @@ func TestCheckoutIssueEnforcesRepositoryAffinityAndIsIdempotent(t *testing.T) {
 	require.False(t, store.createCheckoutCalled)
 
 	store.checkouts = nil
-	store.scopeSettings[scopeKey(nil, nil, &issueID)] = &domain.DevMachineScopeSetting{WorkspaceID: workspaceID, GitHubRepoID: &otherRepoID}
+	store.scopeSettings[scopeKey(nil, nil, &issueID)] = &domain.DevMachineScopeSetting{WorkspaceID: workspaceID, ForgejoRepoID: &otherRepoID}
 	_, err = svc.CheckoutIssue(context.Background(), workspaceID, machineID, userID, dto.CheckoutIssueRequest{IssueID: issueID.String()})
 	require.ErrorContains(t, err, "another repository")
 	require.ErrorIs(t, err, ErrCheckoutNotEligible)
@@ -500,11 +500,11 @@ func TestCheckoutIssueRetriesFailedCheckout(t *testing.T) {
 		policy:  testPolicy(workspaceID),
 		machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, CreatedByUserID: &userID, Status: domain.DevMachineStatusRunning, DesiredStatus: domain.DevMachineStatusRunning, Generation: 3, RepositoryAffinityID: &repoID, ExpiresAt: time.Now().Add(time.Hour)},
 		issues:  map[uuid.UUID]*domain.Issue{issueID: {ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, Identifier: "ENG-7"}},
-		reposByID: map[uuid.UUID]*domain.GitHubRepoModel{
+		reposByID: map[uuid.UUID]*domain.ForgejoRepoModel{
 			repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true},
 		},
-		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, GitHubRepoID: &repoID}},
-		checkouts:     []domain.DevMachineCheckout{{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID, GitHubRepoID: repoID, Status: "failed", LastError: &message}},
+		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, ForgejoRepoID: &repoID}},
+		checkouts:     []domain.DevMachineCheckout{{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID, ForgejoRepoID: repoID, Status: "failed", LastError: &message}},
 	}
 	svc := newTestDevMachineService(store)
 
@@ -1343,8 +1343,8 @@ type devMachineStoreFake struct {
 	createEnvironmentErr        error
 	createBundleErr             error
 	scopeSettings               map[string]*domain.DevMachineScopeSetting
-	reposByID                   map[uuid.UUID]*domain.GitHubRepoModel
-	reposByFullName             map[string]*domain.GitHubRepoModel
+	reposByID                   map[uuid.UUID]*domain.ForgejoRepoModel
+	reposByFullName             map[string]*domain.ForgejoRepoModel
 	issues                      map[uuid.UUID]*domain.Issue
 	projects                    map[uuid.UUID]*domain.Project
 	environments                map[uuid.UUID]*domain.DevMachineEnvironment
@@ -1619,14 +1619,14 @@ func (f *devMachineStoreFake) GetScopeSetting(_ context.Context, _ uuid.UUID, te
 	return f.scopeSettings[scopeKey(teamID, projectID, issueID)], nil
 }
 
-func (f *devMachineStoreFake) GetLinkedRepository(_ context.Context, _ uuid.UUID, repositoryID uuid.UUID) (*domain.GitHubRepoModel, error) {
+func (f *devMachineStoreFake) GetLinkedRepository(_ context.Context, _ uuid.UUID, repositoryID uuid.UUID) (*domain.ForgejoRepoModel, error) {
 	if f.reposByID == nil {
 		return nil, nil
 	}
 	return f.reposByID[repositoryID], nil
 }
 
-func (f *devMachineStoreFake) GetLinkedRepositoryByFullName(_ context.Context, _ uuid.UUID, fullName string) (*domain.GitHubRepoModel, error) {
+func (f *devMachineStoreFake) GetLinkedRepositoryByFullName(_ context.Context, _ uuid.UUID, fullName string) (*domain.ForgejoRepoModel, error) {
 	if f.reposByFullName != nil {
 		if repo := f.reposByFullName[strings.ToLower(fullName)]; repo != nil {
 			return repo, nil

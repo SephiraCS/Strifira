@@ -458,9 +458,9 @@
 				window.dispatchEvent(new CustomEvent('app:refresh', { detail: msg.payload ?? {} }));
 				break;
 			}
-			case 'github:pr_updated':
-			case 'github:branch_created':
-			case 'github:commit_pushed': {
+			case 'forgejo:pr_updated':
+			case 'forgejo:branch_created':
+			case 'forgejo:commit_pushed': {
 				window.dispatchEvent(new CustomEvent(`ws:${msg.type}`, { detail: msg.payload }));
 				break;
 			}

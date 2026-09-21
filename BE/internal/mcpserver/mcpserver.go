@@ -46,6 +46,7 @@ type Deps struct {
 	ProjectSvc   *service.ProjectService
 	LabelSvc     *service.LabelService
 	NotifSvc     *service.NotificationService
+	ForgejoSvc   *service.ForgejoService
 }
 
 // NewHTTPHandler builds the /mcp endpoint. Stateless mode keeps every POST

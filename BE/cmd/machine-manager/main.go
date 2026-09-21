@@ -17,7 +17,6 @@ import (
 	"github.com/ku/ku-backend/internal/machine"
 	"github.com/ku/ku-backend/internal/repository"
 	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	githubclient "github.com/ku/ku-backend/pkg/github"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -61,15 +60,16 @@ func main() {
 		agent.NewCustomCLIProvider(configValue.DevMachine.CustomImage),
 	)
 	hostname, _ := os.Hostname()
-	var gitHubClient *githubclient.Client
-	if configValue.GitHubApp.IsConfigured() {
-		gitHubClient, err = githubclient.NewClient(configValue.GitHubApp.AppID, configValue.GitHubApp.PrivateKey)
-		if err != nil {
-			log.WithError(err).Fatal("initialize GitHub App client")
+	var globalForgejo *machine.GlobalForgejoCredentials
+	if configValue.Forgejo.IsConfigured() {
+		globalForgejo = &machine.GlobalForgejoCredentials{
+			URL:   configValue.Forgejo.NormalizedURL(),
+			Token: configValue.Forgejo.Token,
 		}
 	}
-	manager := machine.NewManager(repository.NewDevMachineRepository(database), runtime, registry, gitHubClient,
-		cryptoutil.DeriveKey(configValue.DevMachine.EncryptionKey), cryptoutil.DeriveKey(configValue.JWTSecret+":github"),
+	manager := machine.NewManager(repository.NewDevMachineRepository(database), runtime, registry,
+		machine.ForgejoAdapter{}, globalForgejo,
+		cryptoutil.DeriveKey(configValue.DevMachine.EncryptionKey), cryptoutil.DeriveKey(configValue.JWTSecret+":forgejo"),
 		hostname+":"+fmt.Sprint(os.Getpid()))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

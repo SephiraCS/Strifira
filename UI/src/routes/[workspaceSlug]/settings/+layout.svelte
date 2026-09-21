@@ -17,9 +17,8 @@
 		ChevronDown,
 		KeyRound,
 		Menu,
-		RefreshCw
-	} from 'lucide-svelte';
-	import { GithubLogoIcon } from 'phosphor-svelte';
+		RefreshCw, GitBranch } from 'lucide-svelte';
+	
 	import type { Snippet } from 'svelte';
 	import type { Team } from '$lib/types/team';
 	import { listTeams } from '$lib/api/teams';
@@ -97,7 +96,7 @@
 				{ label: m['settings.nav.members'](), href: `/${slug}/settings/members`, icon: Users },
 				{ label: m['settings.nav.labels'](), href: `/${slug}/settings/labels`, icon: Tag },
 				{ label: m['settings.nav.webhooks'](), href: `/${slug}/settings/webhooks`, icon: Webhook },
-				{ label: m['settings.nav.github'](), href: `/${slug}/settings/github`, icon: GithubLogoIcon },
+				{ label: m['settings.nav.forgejo'](), href: `/${slug}/settings/forgejo`, icon: GitBranch },
 				{ label: m['settings.nav.templates'](), href: `/${slug}/settings/templates`, icon: FileText },
 				{ label: m['settings.nav.ai'](), href: `/${slug}/settings/ai`, icon: Sparkles },
 				...(canUseDevMachines ? [{ label: m['settings.nav.dev_machines'](), href: `/${slug}/settings/dev-machines`, icon: SlidersHorizontal }] : [])

@@ -169,6 +169,24 @@ func main() {
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, userRepo)
 	apiKeyH := handler.NewAPIKeyHandler(apiKeySvc)
 	analyticsRepoMCP := repository.NewAnalyticsRepository(db)
+
+	// Forgejo integration
+	var globalForgejo *service.GlobalForgejoConfig
+	if cfg.Forgejo.IsConfigured() {
+		globalForgejo = &service.GlobalForgejoConfig{
+			URL:   cfg.Forgejo.NormalizedURL(),
+			Token: cfg.Forgejo.Token,
+		}
+		log.WithField("url", globalForgejo.URL).Info("Global Forgejo instance configured")
+	}
+	forgejoRepo := repository.NewForgejoRepository(db)
+	forgejoSvc := service.NewForgejoService(
+		forgejoRepo, issueRepo, teamRepo, teamStatusRepo, historyRepo,
+		crypto.DeriveKey(cfg.JWTSecret+":forgejo"), hub, cfg.FrontendURL, cfg.ForgejoWebhookURL,
+		globalForgejo,
+	)
+	forgejoH := handler.NewForgejoHandler(forgejoSvc)
+
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:      mcpServerVersion(),
 		Users:        userRepo,
@@ -189,28 +207,8 @@ func main() {
 		ProjectSvc:   projectSvc,
 		LabelSvc:     labelSvc,
 		NotifSvc:     notifSvc,
+		ForgejoSvc:   forgejoSvc,
 	})
-
-	// GitHub integration
-	var globalGitHubApp *service.GlobalGitHubAppConfig
-	if cfg.GitHubApp.IsConfigured() {
-		globalGitHubApp = &service.GlobalGitHubAppConfig{
-			AppID:         cfg.GitHubApp.AppID,
-			PrivateKey:    cfg.GitHubApp.PrivateKey,
-			ClientID:      cfg.GitHubApp.ClientID,
-			ClientSecret:  cfg.GitHubApp.ClientSecret,
-			WebhookSecret: cfg.GitHubApp.WebhookSecret,
-			Slug:          cfg.GitHubApp.Slug,
-		}
-		log.Info("Global GitHub App configured (SaaS mode)")
-	}
-	githubRepo := repository.NewGitHubRepository(db)
-	githubSvc := service.NewGitHubService(
-		githubRepo, issueRepo, teamRepo, teamStatusRepo, historyRepo,
-		crypto.DeriveKey(cfg.JWTSecret+":github"), hub, cfg.FrontendURL, cfg.GitHubWebhookURL,
-		globalGitHubApp,
-	)
-	githubH := handler.NewGitHubHandler(githubSvc)
 
 	// Background: clean up expired refresh tokens every hour
 	go func() {
@@ -396,27 +394,23 @@ func main() {
 	ws.GET("/ai-settings/issue-copy-prompt", aiSettingsH.GetIssueCopyPrompt, mw.RequirePermission("issue:read"))
 	ws.PATCH("/ai-settings", aiSettingsH.Update, mw.RequireOwner())
 
-	// GitHub integration (conditional)
+	// Forgejo integration
 	// Public webhook endpoint (no auth, signature-verified internally)
-	e.POST("/api/github/webhook", githubH.HandleWebhook)
+	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
 	e.POST("/api/dev-machine-ingest/events", devMachineH.IngestEvent, mw.MachineTokenRateLimit(20, 40))
 	e.POST("/api/dev-machine-ingest/logs", devMachineH.IngestLog, mw.MachineTokenRateLimit(50, 100))
 
-	// GitHub integration (workspace-scoped)
-	ws.GET("/github/status", githubH.Status)
-	ws.GET("/github/setup", githubH.Setup, mw.RequirePermission("workspace:manage"))
-	ws.GET("/github/setup/callback", githubH.SetupCallback, mw.RequirePermission("workspace:manage"))
-	ws.GET("/github/install", githubH.InstallURL, mw.RequirePermission("workspace:manage"))
-	ws.GET("/github/callback", githubH.Callback, mw.RequirePermission("workspace:manage"))
-	ws.DELETE("/github/disconnect", githubH.Disconnect, mw.RequirePermission("workspace:manage"))
-	ws.DELETE("/github/app", githubH.DeleteApp, mw.RequirePermission("workspace:manage"))
-	ws.GET("/github/repos", githubH.ListRepos, mw.RequirePermission("workspace:manage"))
-	ws.POST("/github/repos", githubH.LinkRepos, mw.RequirePermission("workspace:manage"))
-	ws.DELETE("/github/repos/:id", githubH.UnlinkRepo, mw.RequirePermission("workspace:manage"))
-	ws.GET("/github/auto-transitions", githubH.ListAutoTransitions)
-	ws.PATCH("/github/auto-transitions", githubH.UpdateAutoTransitions, mw.RequirePermission("workspace:manage"))
-	ws.GET("/issues/:identifier/github", githubH.IssueGitHubActivity)
-	ws.GET("/github/issue-links", githubH.AgentIssueLinks)
+	// Forgejo integration (workspace-scoped)
+	ws.GET("/forgejo/status", forgejoH.Status)
+	ws.PUT("/forgejo/connection", forgejoH.Connect, mw.RequirePermission("workspace:manage"))
+	ws.DELETE("/forgejo/connection", forgejoH.Disconnect, mw.RequirePermission("workspace:manage"))
+	ws.GET("/forgejo/repos", forgejoH.ListRepos, mw.RequirePermission("workspace:manage"))
+	ws.POST("/forgejo/repos", forgejoH.LinkRepos, mw.RequirePermission("workspace:manage"))
+	ws.DELETE("/forgejo/repos/:id", forgejoH.UnlinkRepo, mw.RequirePermission("workspace:manage"))
+	ws.GET("/forgejo/auto-transitions", forgejoH.ListAutoTransitions)
+	ws.PATCH("/forgejo/auto-transitions", forgejoH.UpdateAutoTransitions, mw.RequirePermission("workspace:manage"))
+	ws.GET("/issues/:identifier/forgejo", forgejoH.IssueForgejoActivity)
+	ws.GET("/forgejo/issue-links", forgejoH.AgentIssueLinks)
 
 	// Dev Machines — guarded by demo-mode restriction when active
 	dm := ws.Group("", mw.DevMachineDemoGuard(cfg.DemoDevMachineAllowed))

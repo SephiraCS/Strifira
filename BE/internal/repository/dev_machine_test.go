@@ -232,7 +232,7 @@ func TestUpsertRuntimeCredentialQueryUsesMachineFingerprintConflict(t *testing.T
 
 	err := repo.UpsertRuntimeCredential(context.Background(), &domain.DevMachineRuntimeCredential{
 		ID: uuid.New(), MachineID: machineID, Scope: domain.DevMachineRuntimeCredentialScopeMachine,
-		CredentialType: domain.DevMachineRuntimeCredentialTypeGitHubToken, FingerprintSHA256: fingerprint,
+		CredentialType: domain.DevMachineRuntimeCredentialTypeForgejoToken, FingerprintSHA256: fingerprint,
 		EncryptedValue: "encrypted-runtime-token", EncryptionKeyVersion: 1, ExpiresAt: now.Add(time.Hour),
 	})
 
@@ -245,7 +245,7 @@ func TestUpsertRuntimeCredentialQueryUsesMachineFingerprintConflict(t *testing.T
 	require.Len(t, args, 8)
 	require.Equal(t, machineID.String(), args[1].Value)
 	require.Equal(t, domain.DevMachineRuntimeCredentialScopeMachine, args[2].Value)
-	require.Equal(t, domain.DevMachineRuntimeCredentialTypeGitHubToken, args[3].Value)
+	require.Equal(t, domain.DevMachineRuntimeCredentialTypeForgejoToken, args[3].Value)
 	require.Equal(t, fingerprint, args[4].Value)
 	require.Equal(t, "encrypted-runtime-token", args[5].Value)
 }
@@ -260,7 +260,7 @@ func TestListRuntimeCredentialsQueryReturnsOnlyUnexpired(t *testing.T) {
 	}
 	conn.queryValues = []driver.Value{
 		uuid.New().String(), machineID.String(), domain.DevMachineRuntimeCredentialScopeMachine,
-		domain.DevMachineRuntimeCredentialTypeGitHubToken, strings.Repeat("b", 64), "encrypted", int64(1), now.Add(time.Hour), now, now,
+		domain.DevMachineRuntimeCredentialTypeForgejoToken, strings.Repeat("b", 64), "encrypted", int64(1), now.Add(time.Hour), now, now,
 	}
 
 	credentials, err := repo.ListRuntimeCredentials(context.Background(), machineID)
@@ -1522,7 +1522,7 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 
 	retryCheckout := &domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: fixture.workspaceID, MachineID: machineID, IssueID: missingIssueID,
-		GitHubRepoID: repositoryID, RepositoryFullName: "ku/checkout-test", BaseBranch: "main",
+		ForgejoRepoID: repositoryID, RepositoryFullName: "ku/checkout-test", BaseBranch: "main",
 		WorkingBranch: "ku/chk-1", WorkspacePath: "/workspace/tasks/chk-1", Status: "queued",
 	}
 	retryOperation := &domain.DevMachineOperation{

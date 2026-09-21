@@ -5,7 +5,7 @@
 	import { getAgentRunTrace, cancelAgentRun } from '$lib/api/dev-machines';
 	import type { AgentRun, AgentRunTrace, DevMachine, DevMachineCheckout, DevMachineEvent, DevMachineLogChunk, AgentRunStep } from '$lib/types/dev-machine';
 	import { appToast } from '$lib/features/toast/toast';
-	import { safeGitHubPullRequestUrl } from '$lib/security/github-url';
+	import { safeForgejoPullRequestUrl } from '$lib/security/forgejo-url';
 	import { appendRecentTelemetry, DEV_MACHINE_EVENT_RETENTION, DEV_MACHINE_LOG_RETENTION } from './telemetry-retention';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -37,7 +37,7 @@
 
 	const terminalStatuses = new Set(['succeeded', 'failed', 'cancelled', 'timeout']);
 	const isTerminal = $derived(run ? terminalStatuses.has(run.status) : true);
-	const pullRequestUrl = $derived(run ? safeGitHubPullRequestUrl(run.pull_request_url, repositoryFullNameForRun(run)) : null);
+	const pullRequestUrl = $derived(run ? safeForgejoPullRequestUrl(run.pull_request_url, repositoryFullNameForRun(run), machine?.repo_url ?? '') : null);
 
 	function repositoryFullNameForRun(agentRun: AgentRun): string {
 		if (agentRun.checkout_id) {

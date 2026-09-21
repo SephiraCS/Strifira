@@ -11,11 +11,11 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import ErrorState from '$lib/components/shared/ErrorState.svelte';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getForgejoStatus } from '$lib/api/forgejo';
 	import { createDevMachine, deleteDevMachineEnvironment, deleteDevMachineScopeSetting, getDevMachinePolicy, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachinePolicy, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
 	import { getWorkspace } from '$lib/api/workspaces';
 	import type { DevMachineEnvironment, DevMachinePolicy } from '$lib/types/dev-machine';
-	import type { GitHubRepo } from '$lib/types/github';
+	import type { ForgejoRepo } from '$lib/types/forgejo';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -27,7 +27,7 @@
 	let loading = $state(true);
 	let failed = $state(false);
 	let canAdmin = $state(false);
-	let linkedRepositories = $state<GitHubRepo[]>([]);
+	let linkedRepositories = $state<ForgejoRepo[]>([]);
 	let environments = $state<DevMachineEnvironment[]>([]);
 	let defaultRepositoryId = $state('none');
 	let defaultEnvironmentId = $state('standard');
@@ -48,16 +48,16 @@
 		loading = true;
 		failed = false;
 		try {
-			const [loaded, workspace, github, scope, availableEnvironments] = await Promise.all([
-				getDevMachinePolicy(slug), getWorkspace(slug), getGitHubStatus(slug),
+			const [loaded, workspace, forgejo, scope, availableEnvironments] = await Promise.all([
+				getDevMachinePolicy(slug), getWorkspace(slug), getForgejoStatus(slug),
 				getDevMachineScopeSetting(slug, 'workspace'), listDevMachineEnvironments(slug)
 			]);
 			policy = { ...loaded, allowed_providers: loaded.allowed_providers ?? [], allowed_repositories: loaded.allowed_repositories ?? [] };
 			repositories = policy.allowed_repositories.join('\n');
 			canAdmin = workspace.current_user_role === 'owner' || workspace.current_user_role === 'admin';
-			linkedRepositories = github.repos ?? [];
+			linkedRepositories = forgejo.repos ?? [];
 			environments = availableEnvironments ?? [];
-			defaultRepositoryId = scope.github_repo_id ?? 'none';
+			defaultRepositoryId = scope.forgejo_repo_id ?? 'none';
 			defaultEnvironmentId = scope.environment_id ?? 'standard';
 		} catch (error) {
 			failed = true;
@@ -91,7 +91,7 @@
 			} else {
 				await updateDevMachineScopeSetting(slug, {
 					scope_type: 'workspace',
-					github_repo_id: repository?.id,
+					forgejo_repo_id: repository?.id,
 					base_branch: repository?.default_branch,
 					environment_id: defaultEnvironmentId === 'standard' ? undefined : defaultEnvironmentId
 				});

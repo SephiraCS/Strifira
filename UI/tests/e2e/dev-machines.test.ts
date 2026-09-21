@@ -27,8 +27,8 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		status: 'running',
 		desired_status: 'running',
 		generation: 1,
-		repo_url: 'https://github.com/ku/ku',
-		repo_provider: 'github',
+		repo_url: 'https://git.example.com/ku/ku',
+		repo_provider: 'forgejo',
 		repo_owner: 'ku',
 		repo_name: 'ku',
 		base_branch: 'main',
@@ -58,7 +58,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	const checkout = {
 		id: '00000000-0000-0000-0000-000000000053', workspace_id: machine.workspace_id,
 		machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000054',
-		github_repo_id: '00000000-0000-0000-0000-000000000055', repository_full_name: 'ku/ku',
+		forgejo_repo_id: '00000000-0000-0000-0000-000000000055', repository_full_name: 'ku/ku',
 		base_branch: 'main', working_branch: 'ku/runtime-smoke', workspace_path: '/workspace/tasks/runtime-smoke',
 		status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
 	};
@@ -438,7 +438,7 @@ test('selects a policy-compatible size for environment builders', async ({ page 
 		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		if (path === '/api/workspaces/test/dev-machine-policy') return route.fulfill({ json: { workspace_id: workspaceId, enabled: true, max_concurrent_machines: 5, max_machines_per_user: 2, max_daily_agent_runs: 25, max_runtime_minutes: 480, max_disk_gb: maxDiskGb, idle_pause_minutes: 240, allowed_providers: ['opencode'], allowed_repositories: [], allow_custom_providers: false } });
-		if (path === '/api/workspaces/test/github/status') return route.fulfill({ json: { configured: true, installed: true, global_app: false, repos: [] } });
+		if (path === '/api/workspaces/test/forgejo/status') return route.fulfill({ json: { configured: true, connected: true, global_config: false, instance_url: 'https://git.example.com', repos: [] } });
 		if (path === '/api/workspaces/test/dev-machine-scope-setting') return route.fulfill({ json: { workspace_id: workspaceId } });
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: [] });
 		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'POST') {
@@ -603,7 +603,7 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
 		const machine = { id: machineId, workspace_id: workspaceId, routing_key: 'terminalmachine0001', name: 'Terminal machine', status: 'running', desired_status: 'running', generation: 1, repo_owner: 'ku', repo_name: 'ku', base_branch: 'main', working_branch: 'work', machine_size: 'medium', cpu_millis: 4000, memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240, keep_running: false, environment_builder: false, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z', expires_at: '2099-07-13T04:00:00Z' };
-		const checkout = { id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000082', github_repo_id: '00000000-0000-0000-0000-000000000083', repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'user/TST-1-terminal', workspace_path: '/workspace/tasks/TST-1-terminal', status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z' };
+		const checkout = { id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000082', forgejo_repo_id: '00000000-0000-0000-0000-000000000083', repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'user/TST-1-terminal', workspace_path: '/workspace/tasks/TST-1-terminal', status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z' };
 		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
 		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
 		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
@@ -792,7 +792,7 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 	};
 	const checkout = {
 		id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: issueId,
-		github_repo_id: '00000000-0000-0000-0000-000000000112', repository_full_name: 'ku/ku',
+		forgejo_repo_id: '00000000-0000-0000-0000-000000000112', repository_full_name: 'ku/ku',
 		base_branch: 'main', working_branch: 'ku/TST-43-picker', workspace_path: '/workspace/tasks/TST-43-picker',
 		status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
 	};
@@ -908,8 +908,8 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	let putPayload: Record<string, unknown> | undefined;
 
 	const repos = [
-		{ id: 'repo-1', github_repo_id: 1001, full_name: 'ku/ku', default_branch: 'main', is_active: true },
-		{ id: 'repo-2', github_repo_id: 1002, full_name: 'ku/backend', default_branch: 'develop', is_active: true },
+		{ id: 'repo-1', forgejo_repo_id: 1001, full_name: 'ku/ku', instance_url: 'https://git.example.com', default_branch: 'main', is_active: true },
+		{ id: 'repo-2', forgejo_repo_id: 1002, full_name: 'ku/backend', instance_url: 'https://git.example.com', default_branch: 'develop', is_active: true },
 	];
 
 	const issue = {
@@ -937,7 +937,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 		if (path === `/api/workspaces/test/issues/${issue.identifier}/comments`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/issues/${issue.identifier}/history`) return route.fulfill({ json: [] });
 		if (path === '/api/workspaces/test/issues' && request.method() === 'GET') return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
-		if (path === '/api/workspaces/test/github/status') return route.fulfill({ json: { configured: true, installed: true, repos } });
+		if (path === '/api/workspaces/test/forgejo/status') return route.fulfill({ json: { configured: true, connected: true, instance_url: 'https://git.example.com', repos } });
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: [] });
 		if (path === '/api/workspaces/test/dev-machine-scope-setting' && request.method() === 'GET') return route.fulfill({ json: { workspace_id: workspaceId, issue_id: issueId } });
 		if (path === '/api/workspaces/test/dev-machine-scope-setting' && request.method() === 'PUT') {
@@ -969,7 +969,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	expect(putPayload).toMatchObject({
 		scope_type: 'issue',
 		scope_id: issueId,
-		github_repo_id: 'repo-2',
+		forgejo_repo_id: 'repo-2',
 		base_branch: 'develop'
 	});
 });
@@ -979,8 +979,8 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 	const runId = '00000000-0000-0000-0000-000000000061';
 	const runId2 = '00000000-0000-0000-0000-000000000062';
 	const checkoutId = '00000000-0000-0000-0000-000000000063';
-	const pullRequestUrl = 'https://github.com/ku/ku/pull/46';
-	const untrustedPullRequestUrl = 'https://github.com/attacker/ku/pull/46';
+	const pullRequestUrl = 'https://git.example.com/ku/ku/pull/46';
+	const untrustedPullRequestUrl = 'https://git.example.com/attacker/ku/pull/46';
 	let traceRequests = 0;
 	let lastTraceEventsAfterId = 0;
 	let lastTraceLogsAfterId = 0;
@@ -993,8 +993,8 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		status: 'running',
 		desired_status: 'running',
 		generation: 1,
-		repo_url: 'https://github.com/machine-owner/machine-repo',
-		repo_provider: 'github',
+		repo_url: 'https://git.example.com/machine-owner/machine-repo',
+		repo_provider: 'forgejo',
 		repo_owner: 'machine-owner',
 		repo_name: 'machine-repo',
 		base_branch: 'main',
@@ -1013,7 +1013,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 	};
 	const checkout = {
 		id: checkoutId, workspace_id: machine.workspace_id, machine_id: machineId,
-		issue_id: '00000000-0000-0000-0000-000000000064', github_repo_id: '00000000-0000-0000-0000-000000000065',
+		issue_id: '00000000-0000-0000-0000-000000000064', forgejo_repo_id: '00000000-0000-0000-0000-000000000065',
 		repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'ku/trace',
 		workspace_path: '/workspace/tasks/trace', status: 'ready',
 		created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
@@ -1189,7 +1189,7 @@ test('bounds machine and agent trace telemetry during long-running sessions', as
 		desired_status: 'running',
 		generation: 1,
 		repo_url: '',
-		repo_provider: 'github',
+		repo_provider: 'forgejo',
 		repo_owner: '',
 		repo_name: '',
 		base_branch: '',

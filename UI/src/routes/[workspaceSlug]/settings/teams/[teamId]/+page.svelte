@@ -11,9 +11,9 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getForgejoStatus } from '$lib/api/forgejo';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
-	import type { GitHubRepo } from '$lib/types/github';
+	import type { ForgejoRepo } from '$lib/types/forgejo';
 	import type { DevMachineEnvironment } from '$lib/types/dev-machine';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
@@ -45,7 +45,7 @@
 	let emojiLoading = $state(false);
 	let emojiDatabase: Database | null = null;
 	let emojiRequestId = 0;
-	let developmentRepositories = $state<GitHubRepo[]>([]);
+	let developmentRepositories = $state<ForgejoRepo[]>([]);
 	let developmentEnvironments = $state<DevMachineEnvironment[]>([]);
 	let developmentRepositoryId = $state('inherit');
 	let developmentEnvironmentId = $state('inherit');
@@ -194,13 +194,13 @@
 			if (!isCurrentDevelopmentScope(s, t, version)) return;
 			canManageDevelopment = workspace.current_user_role === 'owner' || workspace.current_user_role === 'admin';
 			if (!canManageDevelopment) return;
-			const [github, setting, environments] = await Promise.all([
-				getGitHubStatus(s), getDevMachineScopeSetting(s, 'team', t), listDevMachineEnvironments(s)
+			const [forgejo, setting, environments] = await Promise.all([
+				getForgejoStatus(s), getDevMachineScopeSetting(s, 'team', t), listDevMachineEnvironments(s)
 			]);
 			if (!isCurrentDevelopmentScope(s, t, version)) return;
-			developmentRepositories = github.repos ?? [];
+			developmentRepositories = forgejo.repos ?? [];
 			developmentEnvironments = (environments ?? []).filter((item) => item.status === 'ready');
-			developmentRepositoryId = setting.github_repo_id ?? 'inherit';
+			developmentRepositoryId = setting.forgejo_repo_id ?? 'inherit';
 			developmentEnvironmentId = setting.environment_id ?? 'inherit';
 			developmentReady = true;
 		} catch (error) {
@@ -358,7 +358,7 @@
 			} else {
 				await updateDevMachineScopeSetting(s, {
 					scope_type: 'team', scope_id: t,
-					github_repo_id: repository?.id, base_branch: repository?.default_branch,
+					forgejo_repo_id: repository?.id, base_branch: repository?.default_branch,
 					environment_id: environmentId === 'inherit' ? undefined : environmentId
 				});
 			}

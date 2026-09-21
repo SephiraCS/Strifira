@@ -153,11 +153,11 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 		Counts:              counts,
 		Omitted: []string{
 			"users.password_hash", "refresh_tokens", "user_preferences", "webhooks.secret",
-			"github_app_configs", "github_installations.access_token", "ai_settings.api_key_encrypted",
+			"forgejo_connections.token", "ai_settings.api_key_encrypted",
 			"dev machine instances, environments, images, volumes, logs, artifacts, sessions, tokens, credentials and secret environment variables",
 		},
 		Warnings:                warnings,
-		RequiresReconfiguration: []string{"webhooks", "GitHub", "AI provider credentials", "Dev Machine environments"},
+		RequiresReconfiguration: []string{"webhooks", "Forgejo", "AI provider credentials", "Dev Machine environments"},
 	}
 
 	temp, err := os.CreateTemp("", "ku-workspace-export-*.zip")

@@ -38,7 +38,7 @@
 	import type { Cycle } from '$lib/types/cycle';
 	import IssueRelations from './IssueRelations.svelte';
 	import SubIssuesList from './SubIssuesList.svelte';
-	import IssueGitHubActivity from './IssueGitHubActivity.svelte';
+	import IssueForgejoActivity from './IssueForgejoActivity.svelte';
 	import { goto } from '$app/navigation';
 	import { sanitizeHtml } from '$lib/security/sanitize';
 	import { mentionInteractivity } from '$lib/components/shared/mention/mention-interactivity.action';
@@ -1006,11 +1006,6 @@
 				<IssueRelations {slug} identifier={issue.identifier} bind:dialogOpen={relationDialogOpen} bind:dialogType={relationType} />
 			</div>
 
-				<!-- GitHub Activity -->
-				<div class="mt-2">
-					<IssueGitHubActivity {slug} identifier={issue.identifier} />
-				</div>
-
 				<!-- Activity -->
 				<div class="mt-6 border-t border-[var(--app-border)] pt-4">
 					<h3 class="text-xs font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide mb-3">{m['issue.activity']()}</h3>
@@ -1250,6 +1245,9 @@
 
 		<!-- Right column — card-based sidebar -->
 		<div class="w-full space-y-2 border-t border-[var(--app-border)] p-3 md:w-[300px] md:shrink-0 md:overflow-y-auto md:border-t-0">
+						<!-- Forgejo code activity -->
+			<IssueForgejoActivity {slug} identifier={issue.identifier} />
+
 			<!-- Details card -->
 			<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
 				<button

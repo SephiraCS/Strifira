@@ -57,7 +57,7 @@ type DevMachineNameAvailabilityResponse struct {
 type DevMachineScopeSettingRequest struct {
 	ScopeType     string  `json:"scope_type" validate:"required,oneof=workspace team project issue"`
 	ScopeID       *string `json:"scope_id,omitempty" validate:"omitempty,uuid"`
-	GitHubRepoID  *string `json:"github_repo_id,omitempty" validate:"omitempty,uuid"`
+	ForgejoRepoID *string `json:"forgejo_repo_id,omitempty" validate:"omitempty,uuid"`
 	BaseBranch    *string `json:"base_branch,omitempty" validate:"omitempty,max=255"`
 	EnvironmentID *string `json:"environment_id,omitempty" validate:"omitempty,uuid"`
 }

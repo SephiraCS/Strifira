@@ -12,20 +12,22 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// GitHubAppConfig holds optional global GitHub App credentials.
-// When set, all workspaces share this app (SaaS mode) instead of creating per-workspace apps.
-type GitHubAppConfig struct {
-	AppID         int64  `envconfig:"GITHUB_APP_ID"`
-	PrivateKey    string `envconfig:"GITHUB_APP_PRIVATE_KEY"` // base64-encoded PEM
-	ClientID      string `envconfig:"GITHUB_APP_CLIENT_ID"`
-	ClientSecret  string `envconfig:"GITHUB_APP_CLIENT_SECRET"`
-	WebhookSecret string `envconfig:"GITHUB_APP_WEBHOOK_SECRET"`
-	Slug          string `envconfig:"GITHUB_APP_SLUG"`
+// ForgejoConfig holds the optional shared Forgejo instance connection
+// (global mode). When set, every workspace uses it instead of per-workspace
+// connection rows.
+type ForgejoConfig struct {
+	URL   string `envconfig:"FORGEJO_URL"`
+	Token string `envconfig:"FORGEJO_TOKEN"`
 }
 
-// IsConfigured returns true if the minimum required fields are set.
-func (g GitHubAppConfig) IsConfigured() bool {
-	return g.AppID != 0 && g.PrivateKey != "" && g.WebhookSecret != ""
+// IsConfigured returns true when both URL and token are set.
+func (f ForgejoConfig) IsConfigured() bool {
+	return f.URL != "" && f.Token != ""
+}
+
+// NormalizedURL returns the URL without a trailing slash.
+func (f ForgejoConfig) NormalizedURL() string {
+	return strings.TrimRight(f.URL, "/")
 }
 
 type Config struct {
@@ -44,12 +46,12 @@ type Config struct {
 
 	sysadminIDs map[uuid.UUID]struct{}
 
-	// GitHub webhook URL (optional — for dev with smee.io or private networks)
-	// If not set, auto-derived from FRONTEND_URL for public domains, or disabled for localhost.
-	GitHubWebhookURL string `envconfig:"GITHUB_WEBHOOK_URL"`
+	// Forgejo webhook URL override (optional — for dev behind tunnels or
+	// private networks). Auto-derived from FRONTEND_URL when unset.
+	ForgejoWebhookURL string `envconfig:"FORGEJO_WEBHOOK_URL"`
 
-	// Global GitHub App (SaaS mode — shared across all workspaces)
-	GitHubApp GitHubAppConfig
+	// Shared Forgejo instance (global mode — used by all workspaces)
+	Forgejo ForgejoConfig
 
 	// Dev machine configuration
 	DevMachine DevMachineConfig

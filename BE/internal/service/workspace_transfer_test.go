@@ -59,7 +59,7 @@ func TestRemapTransferValueRewritesIDsNestedJSONAndAssetURLs(t *testing.T) {
 	require.Contains(t, result["body"], "/api/workspaces/new/assets/"+newAsset)
 }
 
-func TestPrepareIdentityMapIncludesGitHubRepositoryReferences(t *testing.T) {
+func TestPrepareIdentityMapIncludesForgejoRepositoryReferences(t *testing.T) {
 	workspaceID := uuid.New()
 	ownerID := uuid.New()
 	repoID := uuid.New()
@@ -78,11 +78,11 @@ func TestPrepareIdentityMapIncludesGitHubRepositoryReferences(t *testing.T) {
 	for _, spec := range repository.WorkspaceTransferTableSpecs() {
 		data.Tables[spec.Name] = []dto.WorkspaceTransferRow{}
 	}
-	data.Tables["github_repos"] = []dto.WorkspaceTransferRow{{"id": repoID.String(), "workspace_id": workspaceID.String()}}
-	data.Tables["github_pull_requests"] = []dto.WorkspaceTransferRow{{"id": prID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
-	data.Tables["github_branches"] = []dto.WorkspaceTransferRow{{"id": branchID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
-	data.Tables["github_commits"] = []dto.WorkspaceTransferRow{{"id": commitID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String(), "pr_id": prID.String()}}
-	data.Tables["dev_machine_scope_settings"] = []dto.WorkspaceTransferRow{{"id": scopeSettingID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
+	data.Tables["forgejo_repos"] = []dto.WorkspaceTransferRow{{"id": repoID.String(), "workspace_id": workspaceID.String()}}
+	data.Tables["forgejo_pull_requests"] = []dto.WorkspaceTransferRow{{"id": prID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
+	data.Tables["forgejo_branches"] = []dto.WorkspaceTransferRow{{"id": branchID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
+	data.Tables["forgejo_commits"] = []dto.WorkspaceTransferRow{{"id": commitID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
+	data.Tables["dev_machine_scope_settings"] = []dto.WorkspaceTransferRow{{"id": scopeSettingID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
 
 	parsed := &parsedWorkspaceArchive{
 		manifest: dto.WorkspaceExportManifest{SourceWorkspaceID: workspaceID.String()},

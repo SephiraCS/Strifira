@@ -30,13 +30,9 @@ dev-reset:
 	$(MAKE) dev-start-services
 	$(MAKE) dev
 
-dev-smee:
-	@echo "Starting smee webhook proxy..."
-	$(DOTENV) npx smee-client --url $${GITHUB_WEBHOOK_URL} --target http://localhost:8080/api/github/webhook
-
 dev-full: dev-start-services
-	@echo "Starting backend, frontend, and smee..."
-	$(MAKE) -j3 dev-backend dev-frontend dev-smee
+	@echo "Starting backend and frontend..."
+	$(MAKE) -j2 dev-backend dev-frontend
 
 dev-backend:
 	$(DOTENV) cd BE && go run ./cmd/server

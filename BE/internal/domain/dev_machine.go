@@ -190,8 +190,8 @@ type DevMachineEnvVar struct {
 }
 
 const (
-	DevMachineRuntimeCredentialScopeMachine    = "machine"
-	DevMachineRuntimeCredentialTypeGitHubToken = "github_installation_token"
+	DevMachineRuntimeCredentialScopeMachine     = "machine"
+	DevMachineRuntimeCredentialTypeForgejoToken = "forgejo_token"
 )
 
 type DevMachineRuntimeCredential struct {
@@ -447,7 +447,7 @@ type DevMachineScopeSetting struct {
 	TeamID        *uuid.UUID `json:"team_id,omitempty" db:"team_id"`
 	ProjectID     *uuid.UUID `json:"project_id,omitempty" db:"project_id"`
 	IssueID       *uuid.UUID `json:"issue_id,omitempty" db:"issue_id"`
-	GitHubRepoID  *uuid.UUID `json:"github_repo_id,omitempty" db:"github_repo_id"`
+	ForgejoRepoID *uuid.UUID `json:"forgejo_repo_id,omitempty" db:"forgejo_repo_id"`
 	BaseBranch    *string    `json:"base_branch,omitempty" db:"base_branch"`
 	EnvironmentID *uuid.UUID `json:"environment_id,omitempty" db:"environment_id"`
 	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
@@ -459,8 +459,9 @@ type DevMachineCheckout struct {
 	WorkspaceID        uuid.UUID  `json:"workspace_id" db:"workspace_id"`
 	MachineID          uuid.UUID  `json:"machine_id" db:"machine_id"`
 	IssueID            uuid.UUID  `json:"issue_id" db:"issue_id"`
-	GitHubRepoID       uuid.UUID  `json:"github_repo_id" db:"github_repo_id"`
+	ForgejoRepoID      uuid.UUID  `json:"forgejo_repo_id" db:"forgejo_repo_id"`
 	RepositoryFullName string     `json:"repository_full_name" db:"repository_full_name"`
+	RepositoryURL      string     `json:"repository_url,omitempty" db:"-"`
 	BaseBranch         string     `json:"base_branch" db:"base_branch"`
 	WorkingBranch      string     `json:"working_branch" db:"working_branch"`
 	WorkspacePath      string     `json:"workspace_path" db:"workspace_path"`

@@ -19,7 +19,7 @@ Dev Machines target trusted self-hosted workspaces. Docker hardening reduces ris
 - Machine services never publish host ports. Caddy and the Machine Gateway are the only public ingress path.
 - Every machine has an isolated internal Docker network and a dedicated workspace volume.
 - code-server and ttyd run in the same developer container with a shared filesystem, processes, `HOME`, tools, and tmux.
-- Human browser sessions, machine tokens, and GitHub credentials are distinct credentials with different scopes and lifetimes.
+- Human browser sessions, machine tokens, and Forgejo credentials are distinct credentials with different scopes and lifetimes.
 - Top-level browser launches and native terminal WebSockets use distinct one-time ticket flows.
 - PostgreSQL is the durable source of truth. Runtime operations are leased, retried, idempotent, and reconcilable after process restarts.
 - Agent providers produce a common Ku result model regardless of CLI implementation.
@@ -219,7 +219,7 @@ Provider adapters can construct both invocation modes, but the current product d
   "changed_files": ["BE/internal/machine/gateway.go"],
   "commits": ["abc123"],
   "branch": "ku/kua-50",
-  "pull_request_url": "https://github.com/example/repo/pull/42",
+  "pull_request_url": "https://git.example.com/example/repo/pull/42",
   "tests_run": ["go test ./..."],
   "test_status": "passed",
   "risk_notes": [],
@@ -337,11 +337,11 @@ Secret flow:
 6. Browser and egress containers receive no workspace secrets.
 7. Manager-captured provider logs are redacted with the exact injected values. IDE command telemetry redacts common key/token/secret/password patterns.
 
-Reserved `KU_*` variables and `GITHUB_TOKEN` cannot be supplied by users.
+Reserved `KU_*` variables, `GITHUB_TOKEN`, and `FORGEJO_TOKEN` cannot be supplied by users.
 
 ## Scoped Settings, Worktrees, and Environments
 
-Development defaults are stored in `dev_machine_scope_settings`. A setting may provide a linked GitHub repository, base branch, and/or development environment for a workspace, team, project, or issue. Repository and environment values are resolved independently in this order: issue, project, team, workspace. This lets an issue override only the repository while inheriting an environment, or vice versa.
+Development defaults are stored in `dev_machine_scope_settings`. A setting may provide a linked Forgejo repository, base branch, and/or development environment for a workspace, team, project, or issue. Repository and environment values are resolved independently in this order: issue, project, team, workspace. This lets an issue override only the repository while inheriting an environment, or vice versa.
 
 Machine creation accepts optional issue/project/repository information but does not require it. If no repository resolves, legacy repository fields remain empty and the machine starts as a generic developer workspace. When an issue is opened, `POST /dev-machines/:machineId/checkouts` resolves the issue's development settings, enforces the machine's repository affinity, and creates an idempotent issue worktree under `/workspace/tasks/{issue-key}`. A machine can hold multiple ready checkouts from the same repository; checkouts from another repository or environment require a separate machine.
 
@@ -349,11 +349,11 @@ Development Environments are immutable local OCI images created from owner/admin
 
 Environment deletion is two-phase. The API marks an environment `delete_requested`; the manager removes only the immutable local image ID after verifying the Ku environment/workspace labels and only then deletes the database record. Operators migrating hosts must move any required local OCI images separately from PostgreSQL and Docker volumes.
 
-## GitHub Integration
+## Forgejo Integration
 
-Dev Machines use GitHub App installation tokens, not broad personal access tokens. Generic machines may start without a repository; issue checkouts resolve the linked repository through issue, project, team, then workspace development settings. Once a machine has repository affinity, additional issue worktrees must use the same linked repository.
+Dev Machines use the workspace (or globally configured) Forgejo token for clone, push, and pull-request creation. Generic machines may start without a repository; issue checkouts resolve the linked repository through issue, project, team, then workspace development settings. Once a machine has repository affinity, additional issue worktrees must use the same linked repository.
 
-Required GitHub App repository permissions:
+Forgejo token scopes:
 
 | Permission | Level |
 |---|---|
@@ -363,9 +363,9 @@ Required GitHub App repository permissions:
 
 The manager requests a token restricted to the selected linked repository and required permissions for the machine checkout or agent run. The token is short-lived, never stored in plaintext, and injected only into the developer or agent containers that need Git.
 
-The IDE uses an ephemeral askpass helper for clone. Agent containers install an ephemeral Git credential helper. Ku resolves the workspace or global GitHub App client again and mints a fresh token before creating a pull request after a successful run.
+The IDE uses an ephemeral askpass helper for clone. Agent containers install an ephemeral Git credential helper (FORGEJO_TOKEN). Ku resolves the workspace or global Forgejo connection again before creating a pull request after a successful run.
 
-Branches, commits, and pull requests are persisted in `dev_machine_git_refs` with workspace, machine, run, issue, repository, and URL linkage. Existing GitHub webhooks continue to populate the issue development timeline.
+Branches, commits, and pull requests are persisted in `dev_machine_git_refs` with workspace, machine, run, issue, repository, and URL linkage. Existing Forgejo webhooks continue to populate the issue development timeline.
 
 Each issue checkout is an idempotent `dev_machine_checkouts` record with its own working branch and workspace path under `/workspace/tasks/{issue-key}`. Agents and terminal sessions can target a checkout; if multiple checkouts exist, agent runs must name the checkout to avoid ambiguous writes.
 
@@ -530,7 +530,7 @@ Prerequisites:
 - wildcard DNS for `*.${DEV_MACHINE_DOMAIN}`;
 - production wildcard TLS via a custom Caddy build with a DNS-01 module or an operator-provided wildcard certificate (stock Caddy cannot issue wildcard certs via HTTP-01);
 - sufficient host CPU, memory, and disk for configured concurrency;
-- a GitHub App with scoped write permissions for autonomous push/PR workflows;
+- a Forgejo token with repository write permissions for autonomous push/PR workflows;
 - runtime images built locally or available from a trusted registry.
 
 The checked-in Caddy wildcard block uses `tls internal` (Caddy's local CA), which is suitable for local or internal-network installations. For a public production machine domain, the profile prerequisite inspects the mounted Caddyfile and fails before grants or control-plane startup while an active `tls internal`, `issuer internal`, or `local_certs` directive remains. Replace it with a DNS-01 issuer supported by a custom Caddy build or mount an operator-provided wildcard certificate. `machines.localhost` is the local-development exception.
