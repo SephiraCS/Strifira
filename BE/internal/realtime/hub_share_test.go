@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 	"time"
 
@@ -197,4 +198,52 @@ func TestHub_BroadcastDoesNotBlockOnFullBuffers(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("signal relay must not block on a full client buffer")
 	}
+}
+
+// Regression: broadcasts used to iterate h.clients after releasing the read
+// lock while Unregister mutated the same map (and closed client channels)
+// under the write lock — a concurrent map read/write or send-on-closed-
+// channel there is a fatal error that kills the process and every live
+// WebSocket mid-negotiation. Run under -race this test fails on the old
+// code and must stay clean.
+func TestHub_BroadcastSurvivesConcurrentUnregisterStorm(t *testing.T) {
+	h := NewHub()
+	wsID := uuid.New()
+
+	stop := make(chan struct{})
+	broadcasterDone := make(chan struct{})
+	var wg sync.WaitGroup
+
+	// Steady broadcast load across the workspace.
+	go func() {
+		defer close(broadcasterDone)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				h.Broadcast(wsID, Event{Type: "issue.updated", Payload: map[string]string{}})
+			}
+		}
+	}()
+
+	// Churn: clients register, draw a share broadcast, and unregister.
+	for i := 0; i < 50; i++ {
+		c := h.Register(nil, wsID, uuid.New())
+		wg.Add(1)
+		go func(c *Client) {
+			defer wg.Done()
+			h.BroadcastToUser(wsID, c.userID, Event{Type: "share.signal", Payload: map[string]string{}})
+			h.Unregister(c)
+		}(c)
+	}
+
+	wg.Wait()
+	close(stop)
+	<-broadcasterDone
+	// The hub must still be usable afterwards.
+	survivor := h.Register(nil, wsID, uuid.New())
+	h.Broadcast(wsID, Event{Type: "share.ended", Payload: map[string]string{}})
+	assert.NotEmpty(t, drainEvents(t, survivor))
+	h.Unregister(survivor)
 }

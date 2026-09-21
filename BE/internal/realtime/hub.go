@@ -135,11 +135,16 @@ func (h *Hub) Broadcast(workspaceID uuid.UUID, event Event) {
 		return
 	}
 
+	// Send while holding the read lock: Unregister mutates these maps and
+	// closes client channels under the write lock, and an unlocked
+	// iteration racing it is a fatal concurrent map read/write (or a send
+	// on a closed channel) that takes the whole process — and every
+	// WebSocket — down. The selects are non-blocking, so hold time is
+	// bounded.
 	h.mu.RLock()
-	clients := h.clients[workspaceID]
-	h.mu.RUnlock()
+	defer h.mu.RUnlock()
 
-	for client := range clients {
+	for client := range h.clients[workspaceID] {
 		select {
 		case client.send <- data:
 		default:
@@ -158,10 +163,9 @@ func (h *Hub) BroadcastToUser(workspaceID, userID uuid.UUID, event Event) {
 	}
 
 	h.mu.RLock()
-	clients := h.clients[workspaceID]
-	h.mu.RUnlock()
+	defer h.mu.RUnlock()
 
-	for client := range clients {
+	for client := range h.clients[workspaceID] {
 		if client.userID == userID {
 			select {
 			case client.send <- data:
@@ -372,10 +376,9 @@ func (h *Hub) sendToUser(workspaceID, userID uuid.UUID, event Event) {
 	}
 
 	h.mu.RLock()
-	clients := h.clients[workspaceID]
-	h.mu.RUnlock()
+	defer h.mu.RUnlock()
 
-	for client := range clients {
+	for client := range h.clients[workspaceID] {
 		if client.userID == userID {
 			select {
 			case client.send <- data:
@@ -443,10 +446,9 @@ func (h *Hub) BroadcastExcluding(workspaceID uuid.UUID, exclude *Client, event E
 	}
 
 	h.mu.RLock()
-	clients := h.clients[workspaceID]
-	h.mu.RUnlock()
+	defer h.mu.RUnlock()
 
-	for client := range clients {
+	for client := range h.clients[workspaceID] {
 		if client == exclude {
 			continue
 		}

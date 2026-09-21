@@ -196,3 +196,37 @@ test('share.ended event removes the tile from the wall', async ({ page }) => {
 
 	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(0);
 });
+
+test('wall fills the page: one share takes everything, more split evenly', async ({ page }) => {
+	await stubCommon(page, true);
+	await page.goto('/test/shares');
+
+	// A single share fills the whole grid: one column, one row.
+	const grid = page.locator('[data-tile-count]');
+	await expect(page.locator('[data-share-id]')).toHaveCount(1);
+	await expect(grid).toHaveAttribute('data-tile-count', '1');
+	const singleColumns = await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+	expect(singleColumns).toBe(1);
+
+	// Three shares arrange in the squarest grid: 2 columns × 2 rows.
+	const others = [1, 2].map((n) => ({
+		...activeShare,
+		id: `00000000-0000-0000-0000-00000000009${n}`,
+		started_by: `00000000-0000-0000-0000-0000000000${10 + n}`,
+		started_by_user: { ...presenter, id: `00000000-0000-0000-0000-0000000000${10 + n}`, name: `Sharer ${n}`, display_name: `Sharer ${n}` }
+	}));
+	await page.route('**/api/workspaces/test/shares', (route) =>
+		route.fulfill({ json: { active: [activeShare, ...others], recent: [endedShare] } })
+	);
+	await page.evaluate(() => {
+		window.dispatchEvent(new CustomEvent('ws:share.started', { detail: { id: '00000000-0000-0000-0000-000000000091' } }));
+	});
+
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+	await expect(grid).toHaveAttribute('data-tile-count', '3');
+	// 2 columns for 3 tiles (ceil(sqrt(3))), 2 rows.
+	const columns = await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(' ').length);
+	const rows = await grid.evaluate((el) => getComputedStyle(el).gridTemplateRows.split(' ').length);
+	expect(columns).toBe(2);
+	expect(rows).toBe(2);
+});

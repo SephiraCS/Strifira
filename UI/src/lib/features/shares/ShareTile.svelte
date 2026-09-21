@@ -87,6 +87,9 @@
 	// Viewer side: this tab's single connection to the presenter.
 	let viewerPc = $state<RTCPeerConnection | null>(null);
 	let viewerRemoteSettled = false;
+	// Why a viewer tile stopped: 'disconnected' (presenter gone — no source
+	// to retry against) vs 'error' (negotiation/ICE failed — manual retry).
+	let endReason = $state<'disconnected' | 'error' | null>(null);
 	let disposed = false;
 	const cleanups: Array<() => void> = [];
 
@@ -212,8 +215,60 @@
 
 	// ---- Viewer ----
 
-	function startViewerConnection() {
-		if (disposed || viewerPc) return;
+	// Viewer negotiation is a retry loop, not a one-shot: a createOffer can
+	// hang forever (observed on Chromium: a fresh pc on a page that closed a
+	// previously connected pc — the promise never settles and never rejects),
+	// and an offer can be lost when it reaches the presenter before their
+	// tile mounted. Every attempt runs on a fresh peer connection under a
+	// deadline; abandonment is visible with a manual retry.
+	const OFFER_STEP_TIMEOUT_MS = 4000;
+	const ATTEMPT_DEADLINE_MS = 12000;
+	const RETRY_BACKOFF_MS = 1200;
+	const MAX_ATTEMPTS = 4;
+
+	let attempt = 0;
+	let attemptToken = 0;
+
+	/** Reject if `step` (createOffer / setLocalDescription) never settles. */
+	function withDeadline<T>(step: Promise<T>, what: string): Promise<T> {
+		return new Promise<T>((resolve, reject) => {
+			const timer = window.setTimeout(() => reject(new Error(`${what} timed out`)), OFFER_STEP_TIMEOUT_MS);
+			step.then(
+				(v) => {
+					window.clearTimeout(timer);
+					resolve(v);
+				},
+				(e) => {
+					window.clearTimeout(timer);
+					reject(e);
+				}
+			);
+		});
+	}
+
+	function giveUp() {
+		teardownViewerPc();
+		connecting = false;
+		reconnecting = false;
+		endReason = 'error';
+		streamEnded = true;
+		onEnded?.('error');
+	}
+
+	/** Start a negotiation attempt unless one is already in flight or live. */
+	function ensureNegotiating(force = false) {
+		if (disposed || streamEnded || presentEnded || isPresenting()) return;
+		if (live) return;
+		if (!force && viewerPc) return; // an attempt is in flight; its deadline governs
+		startViewerAttempt();
+	}
+
+	function startViewerAttempt() {
+		const token = ++attemptToken;
+		attempt += 1;
+		teardownViewerPc(); // fresh peer connection every attempt
+		connecting = true;
+		reconnecting = false;
 		const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 		viewerPc = pc;
 		viewerRemoteSettled = false;
@@ -239,22 +294,52 @@
 			} else if (pc.connectionState === 'disconnected') {
 				reconnecting = true;
 			} else if (pc.connectionState === 'failed') {
-				teardownViewerPc();
-				streamEnded = true;
-				onEnded?.('error');
+				// A dead attempt recycles immediately (fresh pc) instead of
+				// ending the tile; the retry budget bounds it.
+				if (token === attemptToken && !live) retryOrGiveUp(token);
 			}
 		};
+
+		const attemptExpired = () => {
+			if (token !== attemptToken || disposed || live || streamEnded) return;
+			retryOrGiveUp(token);
+		};
+		// Covers everything after the offer is out: answer lost in the mount
+		// race, ICE that never completes, or a createOffer that hung.
+		window.setTimeout(attemptExpired, ATTEMPT_DEADLINE_MS);
+
 		void (async () => {
 			try {
-				const offer = await pc.createOffer();
-				await pc.setLocalDescription(offer);
+				const offer = await withDeadline(pc.createOffer(), 'createOffer');
+				if (token !== attemptToken || disposed) return;
+				await withDeadline(pc.setLocalDescription(offer), 'setLocalDescription');
+				if (token !== attemptToken || disposed) return;
 				sendShareSignal(shareId, presenterUserId, { type: 'offer', sdp: pc.localDescription!.sdp! });
 			} catch {
-				teardownViewerPc();
-				streamEnded = true;
-				onEnded?.('error');
+				if (token === attemptToken && !live) retryOrGiveUp(token);
 			}
 		})();
+	}
+
+	function retryOrGiveUp(token: number) {
+		if (token !== attemptToken || disposed || live || streamEnded) return;
+		teardownViewerPc();
+		if (attempt >= MAX_ATTEMPTS) {
+			giveUp();
+			return;
+		}
+		window.setTimeout(() => {
+			if (token === attemptToken && !disposed && !live && !streamEnded) startViewerAttempt();
+		}, RETRY_BACKOFF_MS);
+	}
+
+	/** Manual retry after the tile gave up. */
+	function retryConnection() {
+		if (!streamEnded || live || isPresenting()) return;
+		attempt = 0;
+		streamEnded = false;
+		endReason = null;
+		ensureNegotiating(true);
 	}
 
 	function teardownViewerPc() {
@@ -273,9 +358,9 @@
 				viewerRemoteSettled = true;
 				await flushCandidates('viewer', pc);
 			} catch {
-				teardownViewerPc();
-				streamEnded = true;
-				onEnded?.('error');
+				// Broken answer: recycle like any failed attempt instead of
+				// killing the tile.
+				retryOrGiveUp(attemptToken);
 			}
 		} else if (data.type === 'candidate') {
 			queueCandidate('viewer', data.candidate, pc);
@@ -285,6 +370,8 @@
 	function markLive() {
 		connecting = false;
 		reconnecting = false;
+		endReason = null;
+		streamEnded = false;
 		live = true;
 	}
 
@@ -293,6 +380,7 @@
 	function teardown() {
 		if (disposed) return;
 		disposed = true;
+		attemptToken++; // cancel any in-flight attempt bookkeeping
 		announceSharePresence(shareId, isPresenting() ? 'presenter' : 'viewer', 'leave');
 		window.removeEventListener('beforeunload', handleBeforeUnload);
 		for (const pc of peers.values()) pc.close();
@@ -326,17 +414,18 @@
 			connecting = false;
 		} else {
 			announceSharePresence(shareId, 'viewer', 'join');
-			startViewerConnection();
+			startViewerAttempt();
 		}
 
 		cleanups.push(
 			onShareSignal((event) => {
-				if (event.share_id !== shareId || streamEnded || presentEnded) return;
+				if (event.share_id !== shareId || presentEnded) return;
 				if (isPresenting()) {
 					if (event.from) void handleViewerSignal(event.from, event.data);
 				} else {
-					// Only the share's presenter may answer us.
-					if (event.from === presenterUserId) void handlePresenterSignal(event.data);
+					// Only the share's presenter may answer us. Signals still
+					// apply after a give-up so a manual retry finds a live pc.
+					if (event.from === presenterUserId && !streamEnded) void handlePresenterSignal(event.data);
 				}
 			})
 		);
@@ -347,51 +436,43 @@
 				viewerCount = event.viewers;
 				if (!isPresenting() && !event.presenter_online) {
 					// Presenter socket gone: no source exists anymore.
+					attemptToken++;
 					teardownViewerPc();
+					connecting = false;
+					endReason = 'disconnected';
 					streamEnded = true;
 					onEnded?.('disconnected');
-				} else if (
-					!isPresenting() &&
-					event.presenter_online &&
-					!live &&
-					!streamEnded &&
-					(!viewerPc || viewerPc.connectionState === 'failed')
-				) {
-					// The presenter is back (e.g. their socket reconnected);
-					// a viewer whose earlier negotiation died retries now.
-					teardownViewerPc();
-					connecting = true;
-					startViewerConnection();
+				} else if (!isPresenting() && event.presenter_online && !live) {
+					// The presenter is (back) online — e.g. their tile just
+					// mounted after our first offer was lost in the mount
+					// race, or their page reloaded and re-announced. Revive a
+					// tile that died on the earlier offline transition; an
+					// in-flight attempt keeps running under its own deadline.
+					if (streamEnded) {
+						attempt = 0;
+						streamEnded = false;
+						endReason = null;
+					}
+					ensureNegotiating();
 				}
 			})
 		);
 
 		cleanups.push(
 			onWebSocketReconnected(() => {
-				if (disposed || streamEnded || presentEnded) return;
+				if (disposed || presentEnded) return;
 				// Presence is per-connection: re-announce, then renegotiate
 				// whatever died with the old socket.
 				announceSharePresence(shareId, isPresenting() ? 'presenter' : 'viewer', 'join');
-				if (!isPresenting() && (!viewerPc || viewerPc.connectionState !== 'connected')) {
-					teardownViewerPc();
-					connecting = true;
-					live = false;
-					startViewerConnection();
+				if (!isPresenting() && !live) {
+					// The old socket's in-flight negotiation addressed a
+					// membership that no longer exists; restart it. A socket
+					// drop must not burn the whole retry budget.
+					attempt = Math.min(attempt, MAX_ATTEMPTS - 1);
+					if (!streamEnded) ensureNegotiating(true);
 				}
 			})
 		);
-
-		// Watchdog: ICE can stall indefinitely when no direct path exists
-		// (no TURN relay by design). Never leave a tile spinning forever.
-		if (!isPresenting()) {
-			window.setTimeout(() => {
-				if (!disposed && !live && !streamEnded) {
-					teardownViewerPc();
-					streamEnded = true;
-					onEnded?.('error');
-				}
-			}, 20000);
-		}
 	});
 
 	onDestroy(() => {
@@ -518,11 +599,11 @@
 	}
 </script>
 
-<div class="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black">
+<div class="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black">
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video class="h-full w-full object-contain" playsinline autoplay bind:this={videoEl}></video>
 
-	{#if connecting}
+	{#if connecting && !streamEnded}
 		<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
 			<Loader2 size={24} class="animate-spin" />
 			<p class="text-sm">{m['shares.connecting_viewer']()}</p>
@@ -615,7 +696,19 @@
 		{/if}
 	{/if}
 
-	{#if (streamEnded || presentEnded) && !connecting}
+	{#if streamEnded && endReason === 'error'}
+		<!-- Viewer gave up (retry budget exhausted or ICE failed with no
+		     relay by design): say so and offer a manual retry instead of
+		     spinning on "Connecting…" forever. -->
+		<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/80 text-white">
+			<p class="text-sm font-medium">{m['shares.connect_failed']()}</p>
+			<Button variant="secondary" size="sm" class="bg-white/10 text-white hover:bg-white/20" onclick={retryConnection}>
+				<RefreshCw size={14} />
+				{m['shares.retry']()}
+			</Button>
+		</div>
+	{:else if streamEnded || presentEnded}
+		<!-- Presenter gone or stopped: the share has no source. -->
 		<div class="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/80 text-white">
 			<p class="text-sm font-medium">{m['shares.ended']()}</p>
 		</div>

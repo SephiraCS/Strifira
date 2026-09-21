@@ -1580,5 +1580,7 @@
 	"settings.general.logo_upload_failed": "标志更新失败",
 	"settings.general.remove_logo": "移除",
 	"settings.general.upload_logo": "上传图片",
-	"settings.general.uploading_logo": "上传中..."
+	"settings.general.uploading_logo": "上传中...",
+	"shares.connect_failed": "无法连接到此屏幕共享",
+	"shares.retry": "重试"
 }

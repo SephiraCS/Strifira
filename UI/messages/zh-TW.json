@@ -1580,5 +1580,7 @@
 	"settings.general.logo_upload_failed": "標誌更新失敗",
 	"settings.general.remove_logo": "移除",
 	"settings.general.upload_logo": "上傳圖片",
-	"settings.general.uploading_logo": "上傳中..."
+	"settings.general.uploading_logo": "上傳中...",
+	"shares.connect_failed": "無法連結到此螢幕共享",
+	"shares.retry": "重試"
 }

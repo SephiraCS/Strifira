@@ -1608,5 +1608,7 @@
 	"settings.general.logo_upload_failed": "Logo update failed",
 	"settings.general.remove_logo": "Remove",
 	"settings.general.upload_logo": "Upload image",
-	"settings.general.uploading_logo": "Uploading..."
+	"settings.general.uploading_logo": "Uploading...",
+	"shares.connect_failed": "Could not connect to this screen share",
+	"shares.retry": "Retry"
 }

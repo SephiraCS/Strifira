@@ -1608,5 +1608,7 @@
 	"settings.general.logo_upload_failed": "Aggiornamento del logo non riuscito",
 	"settings.general.remove_logo": "Rimuovi",
 	"settings.general.upload_logo": "Carica immagine",
-	"settings.general.uploading_logo": "Caricamento..."
+	"settings.general.uploading_logo": "Caricamento...",
+	"shares.connect_failed": "Impossibile connettersi a questa condivisione",
+	"shares.retry": "Riprova"
 }

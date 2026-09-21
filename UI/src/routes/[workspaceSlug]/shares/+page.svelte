@@ -14,11 +14,34 @@
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const activeShares = $derived(sharesState.active);
 
+	// The wall fills the viewport: one share takes the whole page, two split
+	// it, more arrange in the squarest grid that fits (columns capped so
+	// tiles stay watchable; extra rows scroll).
+	let compact = $state(false);
+	onMount(() => {
+		const mq = window.matchMedia('(max-width: 767px)');
+		const update = () => (compact = mq.matches);
+		update();
+		mq.addEventListener('change', update);
+		return () => mq.removeEventListener('change', update);
+	});
+
 	// The presenter's own share renders in present mode from the create
 	// response with its captured stream; every other active share mounts a
 	// viewer tile that negotiates its own peer connection.
 	let starting = $state(false);
 	let presenterJoin = $state<{ share: ScreenShare; stream: MediaStream } | null>(null);
+
+	const tileCount = $derived(
+		activeShares.length +
+			(presenterJoin && !activeShares.some((s) => s.id === presenterJoin!.share.id) ? 1 : 0)
+	);
+	const gridCols = $derived.by(() => {
+		if (compact || tileCount <= 1) return 1;
+		if (tileCount === 2) return 2;
+		return Math.min(4, Math.ceil(Math.sqrt(tileCount)));
+	});
+	const gridRows = $derived(Math.ceil(tileCount / gridCols));
 
 	function presenterName(share: ScreenShare): string {
 		return share.started_by_user?.display_name || share.started_by_user?.name || '';
@@ -99,16 +122,20 @@
 		{/if}
 	</header>
 
-	<div class="flex-1 overflow-y-auto px-6 py-4">
+	<div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
 		{#if activeShares.length === 0 && !presenterJoin}
 			<EmptyState
 				title={m['shares.empty_active_title']()}
 				description={m['shares.empty_active_description']()}
 			/>
 		{:else}
-			<div class="grid gap-4 md:grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3">
+			<div
+				class="grid h-full min-h-0 gap-4"
+				style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); grid-template-rows: repeat({gridRows}, minmax(0, 1fr));"
+				data-tile-count={tileCount}
+			>
 				{#if presenterJoin}
-					<div class="flex flex-col gap-2" data-share-id={presenterJoin.share.id}>
+					<div class="min-h-0 min-w-0" data-share-id={presenterJoin.share.id}>
 						<ShareTile
 							shareId={presenterJoin.share.id}
 							mode="present"
@@ -122,7 +149,7 @@
 				{/if}
 				{#each activeShares as share (share.id)}
 					{#if share.id !== presenterJoin?.share.id}
-						<div class="flex flex-col gap-2" data-share-id={share.id}>
+						<div class="min-h-0 min-w-0" data-share-id={share.id}>
 							<ShareTile
 								shareId={share.id}
 								mode="view"
