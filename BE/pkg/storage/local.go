@@ -27,6 +27,11 @@ func (b *LocalBackend) Put(_ context.Context, key string, r io.Reader, _ string)
 	if err != nil {
 		return 0, err
 	}
+	// Keys may be namespaced (e.g. avatars/<uuid>.png); the namespace
+	// directory does not exist until the first object is written.
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return 0, fmt.Errorf("creating storage dir: %w", err)
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return 0, fmt.Errorf("creating file: %w", err)
@@ -36,7 +41,7 @@ func (b *LocalBackend) Put(_ context.Context, key string, r io.Reader, _ string)
 	if err != nil {
 		return 0, fmt.Errorf("writing file: %w", err)
 	}
-	return n, nil
+	return n, err
 }
 
 func (b *LocalBackend) Get(_ context.Context, key string) (io.ReadCloser, error) {

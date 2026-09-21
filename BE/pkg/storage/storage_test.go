@@ -53,6 +53,29 @@ func TestLocalBackend_CreatesDir(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestLocalBackend_PutCreatesNamespacedSubdirs(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewLocalBackend(dir, "/uploads")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	key := "avatars/0d0f4d88-b3ec-4c4e-a1e6-2ac08d4ba63e.png"
+	content := "avatar bytes"
+
+	_, err = b.Put(ctx, key, strings.NewReader(content), "image/png")
+	require.NoError(t, err)
+
+	rc, err := b.Get(ctx, key)
+	require.NoError(t, err)
+	data, _ := io.ReadAll(rc)
+	rc.Close()
+	assert.Equal(t, content, string(data))
+
+	require.NoError(t, b.Delete(ctx, key))
+	_, err = b.Get(ctx, key)
+	assert.Error(t, err)
+}
+
 func TestLocalBackend_RejectsPathTraversal(t *testing.T) {
 	b, err := NewLocalBackend(t.TempDir(), "/uploads")
 	require.NoError(t, err)
