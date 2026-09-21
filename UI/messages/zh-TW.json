@@ -1554,5 +1554,13 @@
 	"workspace_transfer.reconfigure": "需要重新設定",
 	"workspace_transfer.title": "工作區移轉",
 	"workspace_transfer.workspace_name": "工作區名稱",
-	"workspace_transfer.workspace_slug": "工作區 URL 識別碼"
+	"workspace_transfer.workspace_slug": "工作區 URL 識別碼",
+	"settings.profile.avatar": "頭像",
+	"settings.profile.avatar_desc": "在 Ku 中顯示在你的名字旁邊。上傳圖片，或在下方貼上公開 URL。",
+	"settings.profile.avatar_removed": "頭像已移除",
+	"settings.profile.avatar_updated": "頭像已更新",
+	"settings.profile.avatar_upload_failed": "頭像更新失敗",
+	"settings.profile.remove_avatar": "移除",
+	"settings.profile.upload_avatar": "上傳圖片",
+	"settings.profile.uploading_avatar": "上傳中..."
 }

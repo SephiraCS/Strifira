@@ -97,6 +97,12 @@ type AssetRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Asset, error)
 }
 
+type UserAvatarRepo interface {
+	Upsert(ctx context.Context, avatar *domain.UserAvatar) error
+	GetByUserID(ctx context.Context, userID uuid.UUID) (*domain.UserAvatar, error)
+	Delete(ctx context.Context, userID uuid.UUID) error
+}
+
 type LabelRepo interface {
 	Create(ctx context.Context, label *domain.Label) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Label, error)

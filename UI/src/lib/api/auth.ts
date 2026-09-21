@@ -20,3 +20,13 @@ export function getMe(): Promise<User> {
 export function updateProfile(req: UpdateProfileRequest): Promise<User> {
 	return api.patch<User>('/api/auth/me', req);
 }
+
+export function uploadAvatar(file: File): Promise<User> {
+	const form = new FormData();
+	form.append('file', file);
+	return api.postForm<User>('/api/auth/me/avatar', form);
+}
+
+export function removeAvatar(): Promise<User> {
+	return api.delete<User>('/api/auth/me/avatar');
+}

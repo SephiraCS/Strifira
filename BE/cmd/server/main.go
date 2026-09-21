@@ -157,6 +157,8 @@ func main() {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 	uploadH := handler.NewUploadHandler(store, assetRepo, issueRepo, cfg.JWTSecret)
+	userAvatarRepo := repository.NewUserAvatarRepository(db)
+	avatarH := handler.NewAvatarHandler(store, userAvatarRepo, userRepo)
 	workspaceTransferRepo := repository.NewWorkspaceTransferRepository(db)
 	workspaceTransferSvc := service.NewWorkspaceTransferService(workspaceTransferRepo, store)
 	workspaceTransferH := handler.NewWorkspaceTransferHandler(workspaceTransferSvc)
@@ -252,12 +254,18 @@ func main() {
 	pub.GET("/share/:token/issues", sharedLinkH.ListPublicIssues)
 	e.GET("/api/public/assets/:token", uploadH.PublicAsset)
 
+	// User avatars: public read so they also render on public share views
+	// (uploaded avatars point users.avatar_url here; see AvatarHandler.Get).
+	e.GET("/api/avatars/:userId", avatarH.Get)
+
 	// Authenticated routes
 	api := e.Group("/api", mw.Auth(cfg.JWTSecret))
 
 	// User
 	api.GET("/auth/me", authH.Me)
 	api.PATCH("/auth/me", authH.UpdateProfile)
+	api.POST("/auth/me/avatar", avatarH.Upload)
+	api.DELETE("/auth/me/avatar", avatarH.Remove)
 	api.GET("/preferences", prefsH.Get)
 	api.PATCH("/preferences", prefsH.Update)
 	api.GET("/system/update-status", systemH.UpdateStatus)

@@ -1,13 +1,17 @@
-import packageJson from '../../package.json';
-import { safeGitHubReleaseUrl, safeGitHubRepositoryUrl } from '$lib/security/github-url';
+import packageJson from '../../package.json' with { type: 'json' };
 
 export const currentVersion = packageJson.version;
 export const currentVersionLabel = `v${currentVersion}`;
-export const releaseRepositoryFullName = 'carbogninalberto/kuayle';
-export const releasesPageUrl = `https://github.com/${releaseRepositoryFullName}/releases`;
+
+// Releases track the operator fork on git.terrascale.tech. The manifest is
+// the fork's own UI/static/releases.json served same-origin from the
+// deployed build: the Forgejo instance is private and sends no CORS
+// headers, so browsers cannot fetch it cross-origin.
+export const releaseRepositoryHost = 'git.terrascale.tech';
+export const releaseRepositoryFullName = 'TerraScale/ku';
+export const releasesPageUrl = `https://${releaseRepositoryHost}/${releaseRepositoryFullName}/releases`;
 export const currentReleaseUrl = `${releasesPageUrl}/tag/${currentVersionLabel}`;
-export const releasesManifestUrl =
-	'https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json';
+export const releasesManifestUrl = '/releases.json';
 
 const RELEASE_VERSION = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const RELEASE_RETRY_DELAYS_MS = [0, 250, 1000];
@@ -46,6 +50,43 @@ export function compareVersions(left: string, right: string) {
 	return 0;
 }
 
+// Same trust shape as $lib/security/github-url, anchored to the fork's
+// Forgejo host instead of github.com.
+function parseReleaseRepositoryUrl(value: unknown, expectedTag?: string): URL | null {
+	if (typeof value !== 'string' || value.trim() !== value || value === '') return null;
+
+	let url: URL;
+	try {
+		url = new URL(value);
+	} catch {
+		return null;
+	}
+	if (
+		url.protocol !== 'https:' ||
+		url.hostname !== releaseRepositoryHost ||
+		url.username !== '' ||
+		url.password !== '' ||
+		url.port !== ''
+	) {
+		return null;
+	}
+
+	const repository = releaseRepositoryFullName.split('/');
+	const path = url.pathname.split('/').slice(1).map((part) => decodeURIComponent(part));
+	if (
+		path.length < 2 ||
+		path[0].toLowerCase() !== repository[0].toLowerCase() ||
+		path[1].toLowerCase() !== repository[1].toLowerCase() ||
+		path.slice(2).some((part) => part === '.' || part === '..' || part === '')
+	) {
+		return null;
+	}
+	if (expectedTag !== undefined && (path[2] !== 'releases' || path[3] !== 'tag' || path[4] !== expectedTag)) {
+		return null;
+	}
+	return url;
+}
+
 export function parseReleaseManifest(manifest: unknown): GitHubRelease[] {
 	let releases: unknown[] = [];
 	if (Array.isArray(manifest)) releases = manifest;
@@ -61,8 +102,8 @@ export function parseReleaseManifest(manifest: unknown): GitHubRelease[] {
 
 		const tagName = release.tag_name;
 		const fallbackUrl = `${releasesPageUrl}/tag/${encodeURIComponent(tagName)}`;
-		const htmlUrl = safeGitHubReleaseUrl(release.html_url, releaseRepositoryFullName, tagName) ?? fallbackUrl;
-		const upgradeUrl = safeGitHubReleaseUrl(release.upgrade_url, releaseRepositoryFullName);
+		const htmlUrl = parseReleaseRepositoryUrl(release.html_url, tagName)?.href ?? fallbackUrl;
+		const upgradeUrl = parseReleaseRepositoryUrl(release.upgrade_url)?.href ?? null;
 
 		return [
 			{
@@ -85,7 +126,7 @@ export function parseReleaseManifest(manifest: unknown): GitHubRelease[] {
 }
 
 export function isTrustedReleaseNoteUrl(value: string): boolean {
-	return safeGitHubRepositoryUrl(value, releaseRepositoryFullName) !== null;
+	return parseReleaseRepositoryUrl(value) !== null;
 }
 
 async function fetchReleasesWithRetry(): Promise<GitHubRelease[]> {

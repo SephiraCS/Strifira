@@ -40,7 +40,10 @@ func (s *memoryStorage) Get(_ context.Context, key string) (io.ReadCloser, error
 	return io.NopCloser(strings.NewReader(s.files[key])), nil
 }
 
-func (s *memoryStorage) Delete(_ context.Context, key string) error { return nil }
+func (s *memoryStorage) Delete(_ context.Context, key string) error {
+	delete(s.files, key)
+	return nil
+}
 func (s *memoryStorage) URL(_ context.Context, key string) (string, error) {
 	return "/uploads/" + key, nil
 }

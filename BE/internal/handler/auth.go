@@ -203,7 +203,12 @@ func clearAuthCookies(c echo.Context) {
 }
 
 func validateProfileURL(rawURL string) error {
-	u, err := url.Parse(strings.TrimSpace(rawURL))
+	trimmed := strings.TrimSpace(rawURL)
+	// Uploaded avatars are served same-origin from the app itself.
+	if strings.HasPrefix(trimmed, "/api/avatars/") {
+		return nil
+	}
+	u, err := url.Parse(trimmed)
 	if err != nil || u.Hostname() == "" {
 		return errors.New("must be a valid URL")
 	}

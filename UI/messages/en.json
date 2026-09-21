@@ -1581,5 +1581,13 @@
 	"shares.switch_surface": "Change what you share",
 	"shares.mute": "Mute",
 	"shares.unmute": "Unmute",
-	"shares.capture_failed": "Could not start screen capture — the screen/window picker was dismissed or permission was denied."
+	"shares.capture_failed": "Could not start screen capture — the screen/window picker was dismissed or permission was denied.",
+	"settings.profile.avatar": "Avatar",
+	"settings.profile.avatar_desc": "Shown next to your name across Ku. Upload an image, or paste a public URL below.",
+	"settings.profile.avatar_removed": "Avatar removed",
+	"settings.profile.avatar_updated": "Avatar updated",
+	"settings.profile.avatar_upload_failed": "Avatar update failed",
+	"settings.profile.remove_avatar": "Remove",
+	"settings.profile.upload_avatar": "Upload image",
+	"settings.profile.uploading_avatar": "Uploading..."
 }

@@ -1581,5 +1581,13 @@
 	"shares.switch_surface": "Cambia sorgente",
 	"shares.mute": "Silenzia",
 	"shares.unmute": "Attiva audio",
-	"shares.capture_failed": "Impossibile avviare la cattura dello schermo — selettore chiuso o permesso negato."
+	"shares.capture_failed": "Impossibile avviare la cattura dello schermo — selettore chiuso o permesso negato.",
+	"settings.profile.avatar": "Avatar",
+	"settings.profile.avatar_desc": "Mostrato accanto al tuo nome in Ku. Carica un'immagine o incolla un URL pubblico qui sotto.",
+	"settings.profile.avatar_removed": "Avatar rimosso",
+	"settings.profile.avatar_updated": "Avatar aggiornato",
+	"settings.profile.avatar_upload_failed": "Aggiornamento dell'avatar non riuscito",
+	"settings.profile.remove_avatar": "Rimuovi",
+	"settings.profile.upload_avatar": "Carica immagine",
+	"settings.profile.uploading_avatar": "Caricamento..."
 }
