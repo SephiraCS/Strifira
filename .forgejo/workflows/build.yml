@@ -246,14 +246,14 @@ jobs:
 
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          git fetch origin ci/status 2>/dev/null
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          git fetch "$remote_url" ci/status 2>/dev/null
           git checkout -B ci/status FETCH_HEAD 2>/dev/null || git checkout -B ci/status
           git add "release-verify-${stamp}.txt"
           git commit -m "release verify ${stamp}"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
           for _ in 1 2 3 4 5; do
             if git push "$remote_url" HEAD:ci/status; then break; fi
-            git fetch origin ci/status
+            git fetch "$remote_url" ci/status
             git rebase FETCH_HEAD
             sleep 3
           done

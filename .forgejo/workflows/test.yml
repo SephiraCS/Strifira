@@ -22,14 +22,20 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Set up Go
-        uses: https://data.forgejo.org/actions/setup-go@v6.4.0
-        with:
-          # go-version-file is ignored by this action build and its
-          # preinstalled-version fallback runs a literal `version` command;
-          # pin the toolchain explicitly instead.
-          go-version: '1.27'
-          cache: false
+      # The builder image ships no Go and this runner never delivers `with:`
+      # inputs to setup-go (both go-version-file and go-version arrive empty,
+      # then its fallback runs a literal `version` command), so install the
+      # toolchain directly. Skips itself once the image ships Go 1.27.
+      - name: Install Go toolchain
+        run: |
+          if command -v go >/dev/null 2>&1 && go version | grep -q 'go1.27'; then
+            go version
+            exit 0
+          fi
+          curl -fsSL https://go.dev/dl/go1.27.1.linux-amd64.tar.gz -o /tmp/go.tgz
+          rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
+          echo '/usr/local/go/bin' >> "$GITHUB_PATH"
+          /usr/local/go/bin/go version
 
       - name: Run backend tests
         working-directory: BE
@@ -85,17 +91,17 @@ jobs:
           [ -f backend-test.log ] || echo "(no log captured; failure was in an action step)" > backend-test.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
           mv backend-test.log "backend-${GITHUB_RUN_ID}.log"
           git add "backend-${GITHUB_RUN_ID}.log"
           git commit -m "backend-test log run ${GITHUB_RUN_ID}"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
           # `git push ... && break` exits the shell on the first rejection
           # under set -e; use an explicit if so retries actually happen, and
           # space them out — all lanes race on the same branch.
           for _ in 1 2 3 4 5; do
             if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch origin ci/logs
+            git fetch "$remote_url" ci/logs
             git rebase FETCH_HEAD
             sleep 3
           done
@@ -116,14 +122,20 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Set up Go
-        uses: https://data.forgejo.org/actions/setup-go@v6.4.0
-        with:
-          # go-version-file is ignored by this action build and its
-          # preinstalled-version fallback runs a literal `version` command;
-          # pin the toolchain explicitly instead.
-          go-version: '1.27'
-          cache: false
+      # The builder image ships no Go and this runner never delivers `with:`
+      # inputs to setup-go (both go-version-file and go-version arrive empty,
+      # then its fallback runs a literal `version` command), so install the
+      # toolchain directly. Skips itself once the image ships Go 1.27.
+      - name: Install Go toolchain
+        run: |
+          if command -v go >/dev/null 2>&1 && go version | grep -q 'go1.27'; then
+            go version
+            exit 0
+          fi
+          curl -fsSL https://go.dev/dl/go1.27.1.linux-amd64.tar.gz -o /tmp/go.tgz
+          rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
+          echo '/usr/local/go/bin' >> "$GITHUB_PATH"
+          /usr/local/go/bin/go version
 
       - name: Run Docker lifecycle integration test
         working-directory: BE
@@ -168,17 +180,17 @@ jobs:
           [ -f docker-integration.log ] || echo "(no log captured; failure was in an action step)" > docker-integration.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
           mv docker-integration.log "docker-${GITHUB_RUN_ID}.log"
           git add "docker-${GITHUB_RUN_ID}.log"
           git commit -m "docker-integration log run ${GITHUB_RUN_ID}"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
           # `git push ... && break` exits the shell on the first rejection
           # under set -e; use an explicit if so retries actually happen, and
           # space them out — all lanes race on the same branch.
           for _ in 1 2 3 4 5; do
             if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch origin ci/logs
+            git fetch "$remote_url" ci/logs
             git rebase FETCH_HEAD
             sleep 3
           done
@@ -187,6 +199,10 @@ jobs:
     name: Frontend Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
+    env:
+      # The job container is Ubuntu 26.04, which this Playwright has no
+      # browser build for; use the 24.04 registry entries.
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04
 
     steps:
       - name: Check out the source revision
@@ -217,7 +233,7 @@ jobs:
             npm run test:unit
 
             echo '--- install playwright browsers ---'
-            npx playwright install --with-deps chromium
+            npx playwright install chromium
 
             echo '--- dev machine browser tests ---'
             npm run test:e2e
@@ -247,17 +263,17 @@ jobs:
           [ -f frontend-check.log ] || echo "(no log captured; failure was in an action step)" > frontend-check.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
           mv frontend-check.log "frontend-${GITHUB_RUN_ID}.log"
           git add "frontend-${GITHUB_RUN_ID}.log"
           git commit -m "frontend-check log run ${GITHUB_RUN_ID}"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
           # `git push ... && break` exits the shell on the first rejection
           # under set -e; use an explicit if so retries actually happen, and
           # space them out — all lanes race on the same branch.
           for _ in 1 2 3 4 5; do
             if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch origin ci/logs
+            git fetch "$remote_url" ci/logs
             git rebase FETCH_HEAD
             sleep 3
           done
@@ -266,6 +282,8 @@ jobs:
     name: Marketing Site Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
+    env:
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04
 
     steps:
       - name: Check out the source revision
@@ -292,6 +310,9 @@ jobs:
             echo '--- build + seo validation ---'
             npm run validate
 
+            echo '--- install playwright browsers ---'
+            npx playwright install chromium
+
             echo '--- responsive layout tests ---'
             npm run test:responsive
 
@@ -309,17 +330,17 @@ jobs:
           [ -f web-check.log ] || echo "(no log captured; failure was in an action step)" > web-check.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          git fetch origin ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
           mv web-check.log "web-${GITHUB_RUN_ID}.log"
           git add "web-${GITHUB_RUN_ID}.log"
           git commit -m "web-check log run ${GITHUB_RUN_ID}"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
           # `git push ... && break` exits the shell on the first rejection
           # under set -e; use an explicit if so retries actually happen, and
           # space them out — all lanes race on the same branch.
           for _ in 1 2 3 4 5; do
             if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch origin ci/logs
+            git fetch "$remote_url" ci/logs
             git rebase FETCH_HEAD
             sleep 3
           done
@@ -359,14 +380,14 @@ jobs:
 
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          git fetch origin ci/status 2>/dev/null
+          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
+          git fetch "$remote_url" ci/status 2>/dev/null
           git checkout -B ci/status FETCH_HEAD 2>/dev/null || git checkout -B ci/status
           git add "tests-${stamp}.txt"
           git commit -m "tests status ${stamp}"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
           for _ in 1 2 3 4 5; do
             if git push "$remote_url" HEAD:ci/status; then break; fi
-            git fetch origin ci/status
+            git fetch "$remote_url" ci/status
             git rebase FETCH_HEAD
             sleep 3
           done
