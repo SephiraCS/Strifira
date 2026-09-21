@@ -42,6 +42,7 @@ func (s *PreferencesService) Get(ctx context.Context, userID uuid.UUID) (*domain
 			TeamWorkflowSortOverrides: domain.TeamWorkflowSortOverrides{},
 			RecentDueDates:            domain.RecentDueDates{},
 			IssuesGroupBy:             "status",
+			DefaultViewLayout:         "list",
 		}, nil
 	}
 	if prefs.WorkflowSortMode == "" {
@@ -56,6 +57,9 @@ func (s *PreferencesService) Get(ctx context.Context, userID uuid.UUID) (*domain
 	prefs.RecentDueDates = domain.RecentDueDates(normalizeRecentDueDates([]string(prefs.RecentDueDates)))
 	if prefs.IssuesGroupBy == "" {
 		prefs.IssuesGroupBy = "status"
+	}
+	if prefs.DefaultViewLayout == "" {
+		prefs.DefaultViewLayout = "list"
 	}
 	return prefs, nil
 }
@@ -106,6 +110,12 @@ func (s *PreferencesService) Update(ctx context.Context, userID uuid.UUID, req d
 			return nil, fmt.Errorf("%w: invalid issues_group_by %q", ErrInvalidPreferences, *req.IssuesGroupBy)
 		}
 		prefs.IssuesGroupBy = *req.IssuesGroupBy
+	}
+	if req.DefaultViewLayout != nil {
+		if !validViewLayout(*req.DefaultViewLayout) {
+			return nil, fmt.Errorf("%w: invalid default_view_layout %q", ErrInvalidPreferences, *req.DefaultViewLayout)
+		}
+		prefs.DefaultViewLayout = *req.DefaultViewLayout
 	}
 
 	if err := s.prefsRepo.Upsert(ctx, prefs); err != nil {
@@ -193,6 +203,15 @@ func validOverrideMode(mode string) bool {
 func validIssuesGroupBy(val string) bool {
 	switch val {
 	case "status", "priority", "assignee", "project", "none":
+		return true
+	default:
+		return false
+	}
+}
+
+func validViewLayout(val string) bool {
+	switch val {
+	case "list", "board":
 		return true
 	default:
 		return false

@@ -62,6 +62,11 @@
 		custom: m['prefs.custom'](),
 	});
 
+	const defaultViewLabels = $derived<Record<string, string>>({
+		list: m['prefs.default_view.list'](),
+		board: m['prefs.default_view.board']()
+	});
+
 	let dragCategory = $state<StatusCategory | null>(null);
 	let dragOverCategory = $state<StatusCategory | null>(null);
 	let dropIndicator = $state<'above' | 'below'>('below');
@@ -363,6 +368,32 @@
 	<h2 class="mt-8 text-sm font-medium text-[var(--color-text-secondary)]">{m['prefs.issue_list_display']()}</h2>
 
 	<div class="mt-3 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+		<!-- Default view -->
+		<div class="flex items-center justify-between px-5 py-4">
+			<div>
+				<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['prefs.default_view']()}</p>
+				<p class="text-xs text-[var(--color-text-tertiary)]">{m['prefs.default_view_desc']()}</p>
+			</div>
+			<Select.Root
+				type="single"
+				value={preferencesState.defaultViewLayout}
+				onValueChange={(v) => {
+					if (v) preferencesState.setDefaultViewLayout(v as 'list' | 'board');
+				}}
+			>
+				<Select.Trigger size="sm" class="w-[130px]">
+					{defaultViewLabels[preferencesState.defaultViewLayout]}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="list">{m['prefs.default_view.list']()}</Select.Item>
+					<Select.Item value="board">{m['prefs.default_view.board']()}</Select.Item>
+				</Select.Content>
+			</Select.Root>
+		</div>
+
+		<div class="border-t border-[var(--app-border)]"></div>
+
+		<!-- Workflow sorting -->
 		<div class="flex items-center justify-between px-5 py-4">
 			<div>
 				<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['prefs.workflow_sorting']()}</p>

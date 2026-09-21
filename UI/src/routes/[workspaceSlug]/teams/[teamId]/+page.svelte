@@ -42,7 +42,7 @@
 	import type { IssueStatus, IssuePriority, RelationType } from '$lib/types/issue';
 	import AddRelationDialog from '$lib/features/issues/AddRelationDialog.svelte';
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
-	import { viewLayoutState } from '$lib/features/issues/view-layout.state.svelte';
+	import { viewLayoutState, setSessionViewLayout } from '$lib/features/issues/view-layout.state.svelte';
 	import { loadCollapsedGroups, saveCollapsedGroups } from '$lib/features/issues/collapsed-groups';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
@@ -103,6 +103,11 @@
 			.then(() => {
 				if (currentInitialization !== initializationId || s !== slug || t !== teamId) return;
 				issuesState.groupBy = preferencesState.issuesGroupBy;
+				// Follow the preferred default view once preferences are in
+				// (session memory captures it at mount when the cache is warm).
+				if (!viewLayoutState.overridden && viewLayoutState.layout !== layout) {
+					layout = viewLayoutState.layout;
+				}
 				void teamStatusesState.reload(s, t);
 				return Promise.all([
 					issuesState.load(s, getIssueParams()),
@@ -165,7 +170,7 @@
 
 	function handleLayoutChange(l: ViewLayout) {
 		layout = l;
-		viewLayoutState.layout = l;
+		setSessionViewLayout(l);
 		loadIssues();
 	}
 

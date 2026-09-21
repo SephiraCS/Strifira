@@ -21,7 +21,7 @@
 	import type { Label } from '$lib/types/label';
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import type { ViewFilter, ViewLayout } from '$lib/types/view';
-	import { viewLayoutState } from '$lib/features/issues/view-layout.state.svelte';
+	import { viewLayoutState, setSessionViewLayout } from '$lib/features/issues/view-layout.state.svelte';
 	import type { Issue, RelationType } from '$lib/types/issue';
 	import AddRelationDialog from '$lib/features/issues/AddRelationDialog.svelte';
 	import { CircleUser, PenLine } from 'lucide-svelte';
@@ -73,6 +73,15 @@
 		relationDefaultType = type;
 		relationDialogOpen = true;
 	}
+
+	// Follow the preferred default view once preferences sync (session
+	// memory captures it at mount when the local cache is warm).
+	$effect(() => {
+		if (!viewLayoutState.overridden && viewLayoutState.layout !== layout) {
+			layout = viewLayoutState.layout;
+			loadIssues();
+		}
+	});
 
 	onMount(() => {
 		void loadIssues();
@@ -133,7 +142,7 @@
 
 	function handleLayoutChange(l: ViewLayout) {
 		layout = l;
-		viewLayoutState.layout = l;
+		setSessionViewLayout(l);
 		loadIssues();
 	}
 

@@ -1,5 +1,6 @@
-import { getPreferences, updatePreferences, type IssuesGroupByPreference } from '$lib/api/preferences';
+import { getPreferences, updatePreferences, type IssuesGroupByPreference, type ViewLayoutPreference } from '$lib/api/preferences';
 import { CATEGORY_ORDER, type StatusCategory } from '$lib/types/team-status';
+import { viewLayoutState } from '$lib/features/issues/view-layout.state.svelte';
 
 type FontSize = 'small' | 'default' | 'large';
 type ThemeMode = 'system' | 'light' | 'dark';
@@ -25,6 +26,7 @@ interface PreferencesData {
 	teamWorkflowSortOverrides: Record<string, TeamWorkflowSortOverride>;
 	recentDueDates: string[];
 	issuesGroupBy: GroupByField;
+	defaultViewLayout: ViewLayoutPreference;
 	localDirty?: boolean;
 }
 
@@ -52,6 +54,7 @@ class PreferencesState {
 	teamWorkflowSortOverrides = $state<Record<string, TeamWorkflowSortOverride>>({});
 	recentDueDates = $state<string[]>([]);
 	issuesGroupBy = $state<GroupByField>('status');
+	defaultViewLayout = $state<ViewLayoutPreference>('list');
 
 	private systemPrefersDark = $state(true);
 	private initialized = false;
@@ -117,7 +120,9 @@ class PreferencesState {
 			if (data.teamWorkflowSortOverrides) this.teamWorkflowSortOverrides = normalizeTeamOverrides(data.teamWorkflowSortOverrides);
 			if (data.recentDueDates) this.recentDueDates = normalizeRecentDueDates(data.recentDueDates);
 			if (data.issuesGroupBy !== undefined) this.issuesGroupBy = normalizeIssuesGroupBy(data.issuesGroupBy);
+			if (data.defaultViewLayout !== undefined) this.defaultViewLayout = normalizeViewLayout(data.defaultViewLayout);
 			if (data.localDirty !== undefined) this.localDirty = data.localDirty;
+			this.applyDefaultViewLayout();
 		} catch {
 			// ignore corrupt data
 		}
@@ -154,6 +159,8 @@ class PreferencesState {
 			);
 			this.recentDueDates = normalizeRecentDueDates(data.recent_due_dates ?? []);
 			this.issuesGroupBy = normalizeIssuesGroupBy(data.issues_group_by);
+			this.defaultViewLayout = normalizeViewLayout(data.default_view_layout);
+			this.applyDefaultViewLayout();
 			this.localDirty = false;
 			this.persistLocal();
 		} catch {
@@ -173,6 +180,7 @@ class PreferencesState {
 			teamWorkflowSortOverrides: this.teamWorkflowSortOverrides,
 			recentDueDates: this.recentDueDates,
 			issuesGroupBy: this.issuesGroupBy,
+			defaultViewLayout: this.defaultViewLayout,
 			localDirty: this.localDirty
 		};
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -229,7 +237,8 @@ class PreferencesState {
 				])
 			),
 			recent_due_dates: this.recentDueDates,
-			issues_group_by: toIssuesGroupByPreference(this.issuesGroupBy)
+			issues_group_by: toIssuesGroupByPreference(this.issuesGroupBy),
+			default_view_layout: this.defaultViewLayout
 		};
 	}
 
@@ -315,6 +324,20 @@ class PreferencesState {
 		this.issuesGroupBy = groupBy;
 		this.persist();
 	}
+
+	setDefaultViewLayout(layout: ViewLayoutPreference) {
+		this.defaultViewLayout = layout;
+		this.applyDefaultViewLayout();
+		this.persist();
+	}
+
+	// Seed the session layout memory with the preferred default view. After
+	// an explicit in-session switch the user's choice wins until reload.
+	private applyDefaultViewLayout() {
+		if (!viewLayoutState.overridden) {
+			viewLayoutState.layout = this.defaultViewLayout;
+		}
+	}
 }
 
 function teamWorkflowSortKey(workspaceSlug: string, teamId: string) {
@@ -371,6 +394,10 @@ function normalizeIssuesGroupBy(value: unknown): GroupByField {
 
 function toIssuesGroupByPreference(value: GroupByField): IssuesGroupByPreference {
 	return value ?? 'none';
+}
+
+function normalizeViewLayout(value: unknown): ViewLayoutPreference {
+	return value === 'board' ? 'board' : 'list';
 }
 
 export const preferencesState = new PreferencesState();

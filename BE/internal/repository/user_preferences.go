@@ -29,8 +29,8 @@ func (r *UserPreferencesRepository) Get(ctx context.Context, userID uuid.UUID) (
 
 func (r *UserPreferencesRepository) Upsert(ctx context.Context, prefs *domain.UserPreferences) error {
 	query := `
-		INSERT INTO user_preferences (user_id, font_size, pointer_cursors, theme_mode, light_theme, dark_theme, workflow_sort_mode, workflow_sort_order, team_workflow_sort_overrides, recent_due_dates, issues_group_by, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+		INSERT INTO user_preferences (user_id, font_size, pointer_cursors, theme_mode, light_theme, dark_theme, workflow_sort_mode, workflow_sort_order, team_workflow_sort_overrides, recent_due_dates, issues_group_by, default_view_layout, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
 		ON CONFLICT (user_id) DO UPDATE SET
 			font_size = EXCLUDED.font_size,
 			pointer_cursors = EXCLUDED.pointer_cursors,
@@ -42,11 +42,12 @@ func (r *UserPreferencesRepository) Upsert(ctx context.Context, prefs *domain.Us
 			team_workflow_sort_overrides = EXCLUDED.team_workflow_sort_overrides,
 			recent_due_dates = EXCLUDED.recent_due_dates,
 			issues_group_by = EXCLUDED.issues_group_by,
+			default_view_layout = EXCLUDED.default_view_layout,
 			updated_at = NOW()
 		RETURNING updated_at`
 	return r.db.QueryRowContext(ctx, query,
 		prefs.UserID, prefs.FontSize, prefs.PointerCursors,
 		prefs.ThemeMode, prefs.LightTheme, prefs.DarkTheme,
-		prefs.WorkflowSortMode, prefs.WorkflowSortOrder, prefs.TeamWorkflowSortOverrides, prefs.RecentDueDates, prefs.IssuesGroupBy,
+		prefs.WorkflowSortMode, prefs.WorkflowSortOrder, prefs.TeamWorkflowSortOverrides, prefs.RecentDueDates, prefs.IssuesGroupBy, prefs.DefaultViewLayout,
 	).Scan(&prefs.UpdatedAt)
 }

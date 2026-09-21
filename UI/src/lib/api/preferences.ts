@@ -1,6 +1,7 @@
 import { api } from './client';
 
 export type IssuesGroupByPreference = 'status' | 'priority' | 'assignee' | 'project' | 'none';
+export type ViewLayoutPreference = 'list' | 'board';
 
 export interface PreferencesData {
 	font_size: string;
@@ -13,6 +14,7 @@ export interface PreferencesData {
 	team_workflow_sort_overrides: Record<string, WorkflowSortOverride>;
 	recent_due_dates: string[];
 	issues_group_by: IssuesGroupByPreference;
+	default_view_layout: ViewLayoutPreference;
 }
 
 export interface WorkflowSortOverride {
