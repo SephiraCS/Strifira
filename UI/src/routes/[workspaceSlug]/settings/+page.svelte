@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { getWorkspace, updateWorkspace, deleteWorkspace, downloadWorkspaceExport } from '$lib/api/workspaces';
+	import { getWorkspace, updateWorkspace, deleteWorkspace, downloadWorkspaceExport, uploadWorkspaceLogo, removeWorkspaceLogo } from '$lib/api/workspaces';
 	import type { Workspace } from '$lib/types/workspace';
 	import { onMount } from 'svelte';
 	import { appToast } from '$lib/features/toast/toast';
@@ -10,6 +10,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Trash2, Download, Loader2 } from 'lucide-svelte';
+	import AvatarUploader from '$lib/components/shared/AvatarUploader.svelte';
 	import WorkspaceImportDialog from '$lib/features/workspaces/WorkspaceImportDialog.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -26,6 +27,8 @@
 	let deleteConfirm = $state('');
 	let deleting = $state(false);
 	let exporting = $state(false);
+
+	const hasUploadedLogo = $derived(logoUrl.startsWith('/api/workspace-avatars/'));
 
 	const minRoleOptions = $derived([
 		{ value: 'owner', label: m['settings.role_owner']() },
@@ -90,6 +93,39 @@
 		} catch (err: any) {
 			appToast.apiError(err, m['settings.general.failed_update_logo']());
 			logoUrl = workspace.logo_url ?? '';
+		} finally {
+			savingLogo = false;
+		}
+	}
+
+	async function refreshWorkspace() {
+		workspace = await getWorkspace(slug);
+		wsName = workspace.name;
+		logoUrl = workspace.logo_url ?? '';
+		shareLinkMinRole = workspace.share_link_min_role ?? 'admin';
+	}
+
+	async function handleLogoUpload(file: File) {
+		savingLogo = true;
+		try {
+			await uploadWorkspaceLogo(slug, file);
+			await refreshWorkspace();
+			appToast.success(m['settings.general.logo_updated']());
+		} catch (err: any) {
+			appToast.apiError(err, m['settings.general.logo_upload_failed']());
+		} finally {
+			savingLogo = false;
+		}
+	}
+
+	async function handleLogoRemove() {
+		savingLogo = true;
+		try {
+			await removeWorkspaceLogo(slug);
+			await refreshWorkspace();
+			appToast.success(m['settings.general.logo_removed']());
+		} catch (err: any) {
+			appToast.apiError(err, m['settings.general.logo_upload_failed']());
 		} finally {
 			savingLogo = false;
 		}
@@ -162,21 +198,45 @@
 
 			<div class="border-t border-[var(--app-border)]"></div>
 
-			<!-- Logo URL -->
-			<div class="flex items-center justify-between px-5 py-4">
+			<!-- Logo -->
+			<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
 				<div class="min-w-0">
-					<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.general.logo_url']()}</p>
-					<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.general.logo_url_desc']()}</p>
+					<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.general.logo']()}</p>
+					<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.general.logo_desc']()}</p>
 				</div>
-				<input
-					type="url"
-					bind:value={logoUrl}
-					onblur={handleLogoBlur}
-					placeholder="https://"
-					disabled={!isOwner || savingLogo}
-					class="w-[240px] rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+				<AvatarUploader
+					class="ml-auto"
+					name={workspace.name}
+					avatarUrl={workspace.logo_url}
+					busy={savingLogo}
+					disabled={!isOwner}
+					uploadLabel={m['settings.general.upload_logo']()}
+					uploadingLabel={m['settings.general.uploading_logo']()}
+					removeLabel={m['settings.general.remove_logo']()}
+					onfile={handleLogoUpload}
+					onremove={hasUploadedLogo ? handleLogoRemove : undefined}
 				/>
 			</div>
+
+			{#if !hasUploadedLogo}
+				<div class="border-t border-[var(--app-border)]"></div>
+
+				<!-- Logo URL (external) -->
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+					<div class="min-w-0">
+						<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.general.logo_url']()}</p>
+						<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.general.logo_url_desc']()}</p>
+					</div>
+					<input
+						type="url"
+						bind:value={logoUrl}
+						onblur={handleLogoBlur}
+						placeholder="https://"
+						disabled={!isOwner || savingLogo}
+						class="ml-auto w-[240px] max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--app-accent)] disabled:cursor-not-allowed disabled:opacity-60"
+					/>
+				</div>
+			{/if}
 
 			<div class="border-t border-[var(--app-border)]"></div>
 

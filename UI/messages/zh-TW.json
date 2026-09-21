@@ -1562,5 +1562,12 @@
 	"settings.profile.avatar_upload_failed": "頭像更新失敗",
 	"settings.profile.remove_avatar": "移除",
 	"settings.profile.upload_avatar": "上傳圖片",
-	"settings.profile.uploading_avatar": "上傳中..."
+	"settings.profile.uploading_avatar": "上傳中...",
+	"settings.general.logo": "標誌",
+	"settings.general.logo_desc": "顯示在工作區切換器中。上傳圖片，或在下方貼上公開 URL。",
+	"settings.general.logo_removed": "標誌已移除",
+	"settings.general.logo_upload_failed": "標誌更新失敗",
+	"settings.general.remove_logo": "移除",
+	"settings.general.upload_logo": "上傳圖片",
+	"settings.general.uploading_logo": "上傳中..."
 }

@@ -1589,5 +1589,12 @@
 	"settings.profile.avatar_upload_failed": "Aggiornamento dell'avatar non riuscito",
 	"settings.profile.remove_avatar": "Rimuovi",
 	"settings.profile.upload_avatar": "Carica immagine",
-	"settings.profile.uploading_avatar": "Caricamento..."
+	"settings.profile.uploading_avatar": "Caricamento...",
+	"settings.general.logo": "Logo",
+	"settings.general.logo_desc": "Mostrato nel selettore workspace. Carica un'immagine o incolla un URL pubblico qui sotto.",
+	"settings.general.logo_removed": "Logo rimosso",
+	"settings.general.logo_upload_failed": "Aggiornamento del logo non riuscito",
+	"settings.general.remove_logo": "Rimuovi",
+	"settings.general.upload_logo": "Carica immagine",
+	"settings.general.uploading_logo": "Caricamento..."
 }

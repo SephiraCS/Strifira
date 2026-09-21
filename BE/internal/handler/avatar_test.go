@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/repository"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,6 +76,40 @@ func (r *memoryUserRepo) Update(_ context.Context, user *domain.User) error {
 	return nil
 }
 
+type memoryWorkspaceAvatarRepo struct {
+	avatars map[uuid.UUID]*domain.WorkspaceAvatar
+}
+
+func (r *memoryWorkspaceAvatarRepo) Upsert(_ context.Context, avatar *domain.WorkspaceAvatar) error {
+	if r.avatars == nil {
+		r.avatars = make(map[uuid.UUID]*domain.WorkspaceAvatar)
+	}
+	avatar.UpdatedAt = time.Now()
+	stored := *avatar
+	r.avatars[avatar.WorkspaceID] = &stored
+	return nil
+}
+
+func (r *memoryWorkspaceAvatarRepo) GetByWorkspaceID(_ context.Context, workspaceID uuid.UUID) (*domain.WorkspaceAvatar, error) {
+	avatar := r.avatars[workspaceID]
+	return avatar, nil
+}
+
+func (r *memoryWorkspaceAvatarRepo) Delete(_ context.Context, workspaceID uuid.UUID) error {
+	delete(r.avatars, workspaceID)
+	return nil
+}
+
+type memoryWorkspaceRepo struct {
+	repository.WorkspaceRepo
+	workspaces map[uuid.UUID]*domain.Workspace
+}
+
+func (r *memoryWorkspaceRepo) Update(_ context.Context, ws *domain.Workspace) error {
+	r.workspaces[ws.ID] = ws
+	return nil
+}
+
 func avatarMultipart(t *testing.T, filename, contentType string, payload []byte) (*bytes.Buffer, string) {
 	t.Helper()
 	body := &bytes.Buffer{}
@@ -106,7 +142,7 @@ func TestAvatarUploadStoresImageAndSetsURL(t *testing.T) {
 	userRepo := &memoryUserRepo{users: map[uuid.UUID]*domain.User{
 		userID: {ID: userID, Email: "mario@example.com", Name: "Mario"},
 	}}
-	h := NewAvatarHandler(store, avatarRepo, userRepo)
+	h := NewAvatarHandler(store, avatarRepo, userRepo, nil, nil)
 
 	pngBytes := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
 	body, contentType := avatarMultipart(t, "me.png", "image/png", pngBytes)
@@ -131,7 +167,7 @@ func TestAvatarUploadReplacesPreviousObject(t *testing.T) {
 	store := &memoryStorage{}
 	avatarRepo := &memoryAvatarRepo{}
 	userRepo := &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}}
-	h := NewAvatarHandler(store, avatarRepo, userRepo)
+	h := NewAvatarHandler(store, avatarRepo, userRepo, nil, nil)
 
 	gifBytes := []byte("GIF89a....")
 	body, contentType := avatarMultipart(t, "old.gif", "image/gif", gifBytes)
@@ -158,7 +194,7 @@ func TestAvatarUploadAcceptsSVG(t *testing.T) {
 	store := &memoryStorage{}
 	avatarRepo := &memoryAvatarRepo{}
 	userRepo := &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}}
-	h := NewAvatarHandler(store, avatarRepo, userRepo)
+	h := NewAvatarHandler(store, avatarRepo, userRepo, nil, nil)
 
 	svgBytes := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8"/></svg>`)
 	body, contentType := avatarMultipart(t, "logo.svg", "image/svg+xml", svgBytes)
@@ -172,7 +208,7 @@ func TestAvatarUploadAcceptsSVG(t *testing.T) {
 func TestAvatarUploadRejectsNonImage(t *testing.T) {
 	e := echo.New()
 	userID := uuid.New()
-	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}})
+	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}}, nil, nil)
 
 	body, contentType := avatarMultipart(t, "page.html", "text/html", []byte("<html><script>alert(1)</script></html>"))
 	c, rec := newAvatarContext(e, body, contentType, userID)
@@ -184,7 +220,7 @@ func TestAvatarUploadRejectsNonImage(t *testing.T) {
 func TestAvatarUploadRejectsSpoofedImage(t *testing.T) {
 	e := echo.New()
 	userID := uuid.New()
-	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}})
+	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}}, nil, nil)
 
 	body, contentType := avatarMultipart(t, "evil.png", "image/png", []byte("<!doctype html><html><body>not an image</body></html>"))
 	c, rec := newAvatarContext(e, body, contentType, userID)
@@ -196,7 +232,7 @@ func TestAvatarUploadRejectsSpoofedImage(t *testing.T) {
 func TestAvatarUploadRejectsExtensionMismatch(t *testing.T) {
 	e := echo.New()
 	userID := uuid.New()
-	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}})
+	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID}}}, nil, nil)
 
 	pngBytes := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
 	body, contentType := avatarMultipart(t, "image.gif", "image/png", pngBytes)
@@ -215,7 +251,7 @@ func TestAvatarRemoveClearsURLAndObject(t *testing.T) {
 	}}
 	url := "/api/avatars/" + userID.String() + "?v=1"
 	userRepo := &memoryUserRepo{users: map[uuid.UUID]*domain.User{userID: {ID: userID, AvatarURL: &url}}}
-	h := NewAvatarHandler(store, avatarRepo, userRepo)
+	h := NewAvatarHandler(store, avatarRepo, userRepo, nil, nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/auth/me/avatar", nil)
 	rec := httptest.NewRecorder()
@@ -245,7 +281,7 @@ func TestAvatarGetStreamsImageWithScriptlessCSP(t *testing.T) {
 	avatarRepo := &memoryAvatarRepo{avatars: map[uuid.UUID]*domain.UserAvatar{
 		userID: {ID: uuid.New(), UserID: userID, StorageKey: "avatars/a.svg", ContentType: "image/svg+xml"},
 	}}
-	h := NewAvatarHandler(store, avatarRepo, nil)
+	h := NewAvatarHandler(store, avatarRepo, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/avatars/"+userID.String(), nil)
 	rec := httptest.NewRecorder()
@@ -263,7 +299,7 @@ func TestAvatarGetStreamsImageWithScriptlessCSP(t *testing.T) {
 
 func TestAvatarGetUnknownUserReturns404(t *testing.T) {
 	e := echo.New()
-	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, nil)
+	h := NewAvatarHandler(&memoryStorage{}, &memoryAvatarRepo{}, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/avatars/"+uuid.New().String(), nil)
 	rec := httptest.NewRecorder()
@@ -272,5 +308,133 @@ func TestAvatarGetUnknownUserReturns404(t *testing.T) {
 	c.SetParamValues(uuid.New().String())
 
 	require.NoError(t, h.Get(c))
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func newWorkspaceAvatarContext(e *echo.Echo, method, target string, body *bytes.Buffer, contentType string, ws *domain.Workspace) (echo.Context, *httptest.ResponseRecorder) {
+	var reader io.Reader
+	if body != nil {
+		reader = body
+	}
+	req := httptest.NewRequest(method, target, reader)
+	if contentType != "" {
+		req.Header.Set(echo.HeaderContentType, contentType)
+	}
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set("workspace", ws)
+	return c, rec
+}
+
+func TestWorkspaceAvatarUploadStoresLogoAndSetsURL(t *testing.T) {
+	e := echo.New()
+	wsID := uuid.New()
+	ws := &domain.Workspace{ID: wsID, Slug: "acme", Name: "Acme"}
+	store := &memoryStorage{}
+	avatarRepo := &memoryWorkspaceAvatarRepo{}
+	wsRepo := &memoryWorkspaceRepo{workspaces: map[uuid.UUID]*domain.Workspace{wsID: ws}}
+	h := NewAvatarHandler(store, nil, nil, avatarRepo, wsRepo)
+
+	pngBytes := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+	body, contentType := avatarMultipart(t, "logo.png", "image/png", pngBytes)
+	c, rec := newWorkspaceAvatarContext(e, http.MethodPost, "/api/workspaces/acme/avatar", body, contentType, &domain.Workspace{ID: wsID, Slug: "acme", Name: "Acme"})
+
+	require.NoError(t, h.UploadWorkspace(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), `/api/workspace-avatars/`+wsID.String()+`?v=`)
+
+	avatar := avatarRepo.avatars[wsID]
+	require.NotNil(t, avatar)
+	assert.Equal(t, "image/png", avatar.ContentType)
+	assert.Equal(t, "logo.png", avatar.Filename)
+	assert.True(t, strings.HasPrefix(avatar.StorageKey, "workspace-avatars/"))
+	assert.Equal(t, string(pngBytes), store.files[avatar.StorageKey])
+	assert.Equal(t, fmt.Sprintf("/api/workspace-avatars/%s?v=%d", wsID, avatarRepo.avatars[wsID].UpdatedAt.Unix()), *wsRepo.workspaces[wsID].LogoURL)
+}
+
+func TestWorkspaceAvatarUploadReplacesPreviousObject(t *testing.T) {
+	e := echo.New()
+	wsID := uuid.New()
+	store := &memoryStorage{}
+	avatarRepo := &memoryWorkspaceAvatarRepo{}
+	wsRepo := &memoryWorkspaceRepo{workspaces: map[uuid.UUID]*domain.Workspace{wsID: {ID: wsID, Slug: "acme"}}}
+	h := NewAvatarHandler(store, nil, nil, avatarRepo, wsRepo)
+
+	body, contentType := avatarMultipart(t, "first.gif", "image/gif", []byte("GIF89a...."))
+	c, _ := newWorkspaceAvatarContext(e, http.MethodPost, "/api/workspaces/acme/avatar", body, contentType, &domain.Workspace{ID: wsID, Slug: "acme"})
+	require.NoError(t, h.UploadWorkspace(c))
+	firstKey := avatarRepo.avatars[wsID].StorageKey
+
+	pngBytes := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+	body, contentType = avatarMultipart(t, "second.png", "image/png", pngBytes)
+	c, rec := newWorkspaceAvatarContext(e, http.MethodPost, "/api/workspaces/acme/avatar", body, contentType, &domain.Workspace{ID: wsID, Slug: "acme"})
+	require.NoError(t, h.UploadWorkspace(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	require.Len(t, avatarRepo.avatars, 1)
+	secondKey := avatarRepo.avatars[wsID].StorageKey
+	assert.NotEqual(t, firstKey, secondKey)
+	assert.Equal(t, string(pngBytes), store.files[secondKey])
+	assert.NotContains(t, store.files, firstKey)
+}
+
+func TestWorkspaceAvatarRemoveClearsLogoAndObject(t *testing.T) {
+	e := echo.New()
+	wsID := uuid.New()
+	store := &memoryStorage{files: map[string]string{"workspace-avatars/old.png": "bytes"}}
+	avatarRepo := &memoryWorkspaceAvatarRepo{avatars: map[uuid.UUID]*domain.WorkspaceAvatar{
+		wsID: {ID: uuid.New(), WorkspaceID: wsID, StorageKey: "workspace-avatars/old.png", ContentType: "image/png"},
+	}}
+	logo := "/api/workspace-avatars/" + wsID.String() + "?v=1"
+	wsRepo := &memoryWorkspaceRepo{workspaces: map[uuid.UUID]*domain.Workspace{wsID: {ID: wsID, Slug: "acme", LogoURL: &logo}}}
+	h := NewAvatarHandler(store, nil, nil, avatarRepo, wsRepo)
+
+	c, rec := newWorkspaceAvatarContext(e, http.MethodDelete, "/api/workspaces/acme/avatar", nil, "", &domain.Workspace{ID: wsID, Slug: "acme"})
+	require.NoError(t, h.RemoveWorkspace(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Nil(t, wsRepo.workspaces[wsID].LogoURL)
+	assert.NotContains(t, store.files, "workspace-avatars/old.png")
+	assert.NotContains(t, avatarRepo.avatars, wsID)
+
+	// Idempotent.
+	c, rec = newWorkspaceAvatarContext(e, http.MethodDelete, "/api/workspaces/acme/avatar", nil, "", &domain.Workspace{ID: wsID, Slug: "acme"})
+	require.NoError(t, h.RemoveWorkspace(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestWorkspaceAvatarGetStreamsLogo(t *testing.T) {
+	e := echo.New()
+	wsID := uuid.New()
+	svg := `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
+	store := &memoryStorage{files: map[string]string{"workspace-avatars/a.svg": svg}}
+	avatarRepo := &memoryWorkspaceAvatarRepo{avatars: map[uuid.UUID]*domain.WorkspaceAvatar{
+		wsID: {ID: uuid.New(), WorkspaceID: wsID, StorageKey: "workspace-avatars/a.svg", ContentType: "image/svg+xml"},
+	}}
+	h := NewAvatarHandler(store, nil, nil, avatarRepo, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspace-avatars/"+wsID.String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("workspaceId")
+	c.SetParamValues(wsID.String())
+
+	require.NoError(t, h.GetWorkspace(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "image/svg+xml", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "default-src 'none'; style-src 'unsafe-inline'", rec.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, svg, rec.Body.String())
+}
+
+func TestWorkspaceAvatarGetUnknownReturns404(t *testing.T) {
+	e := echo.New()
+	h := NewAvatarHandler(nil, nil, nil, &memoryWorkspaceAvatarRepo{}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspace-avatars/"+uuid.New().String(), nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("workspaceId")
+	c.SetParamValues(uuid.New().String())
+
+	require.NoError(t, h.GetWorkspace(c))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }

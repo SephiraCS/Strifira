@@ -206,6 +206,10 @@ func (h *WorkspaceHandler) RemoveMember(c echo.Context) error {
 }
 
 func validateLogoURL(rawURL string) error {
+	// Uploaded workspace logos are served same-origin from the app itself.
+	if strings.HasPrefix(strings.TrimSpace(rawURL), "/api/workspace-avatars/") {
+		return nil
+	}
 	u, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || u.Hostname() == "" {
 		return errors.New("must be a valid URL")

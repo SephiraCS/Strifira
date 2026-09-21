@@ -158,7 +158,8 @@ func main() {
 	}
 	uploadH := handler.NewUploadHandler(store, assetRepo, issueRepo, cfg.JWTSecret)
 	userAvatarRepo := repository.NewUserAvatarRepository(db)
-	avatarH := handler.NewAvatarHandler(store, userAvatarRepo, userRepo)
+	workspaceAvatarRepo := repository.NewWorkspaceAvatarRepository(db)
+	avatarH := handler.NewAvatarHandler(store, userAvatarRepo, userRepo, workspaceAvatarRepo, workspaceRepo)
 	workspaceTransferRepo := repository.NewWorkspaceTransferRepository(db)
 	workspaceTransferSvc := service.NewWorkspaceTransferService(workspaceTransferRepo, store)
 	workspaceTransferH := handler.NewWorkspaceTransferHandler(workspaceTransferSvc)
@@ -257,6 +258,7 @@ func main() {
 	// User avatars: public read so they also render on public share views
 	// (uploaded avatars point users.avatar_url here; see AvatarHandler.Get).
 	e.GET("/api/avatars/:userId", avatarH.Get)
+	e.GET("/api/workspace-avatars/:workspaceId", avatarH.GetWorkspace)
 
 	// Authenticated routes
 	api := e.Group("/api", mw.Auth(cfg.JWTSecret))
@@ -281,6 +283,8 @@ func main() {
 	ws := api.Group("/workspaces/:slug", mw.WorkspaceMembership(workspaceRepo))
 	ws.GET("", workspaceH.Get)
 	ws.PATCH("", workspaceH.Update, mw.RequireOwner())
+	ws.POST("/avatar", avatarH.UploadWorkspace, mw.RequireOwner())
+	ws.DELETE("/avatar", avatarH.RemoveWorkspace, mw.RequireOwner())
 	ws.DELETE("", workspaceH.Delete, mw.RequireOwner())
 	ws.GET("/export", workspaceTransferH.Export, mw.RequirePermission(domain.PermWorkspaceTransfer))
 	ws.POST("/invite", workspaceH.Invite, mw.RequirePermission("member:invite"))

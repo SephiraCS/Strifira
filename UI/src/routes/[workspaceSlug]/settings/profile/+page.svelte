@@ -4,13 +4,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { getMe, updateProfile, uploadAvatar, removeAvatar } from '$lib/api/auth';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
-	import Avatar from '$lib/components/shared/Avatar.svelte';
+	import AvatarUploader from '$lib/components/shared/AvatarUploader.svelte';
 	import type { User } from '$lib/types/auth';
-	import { Copy, Upload, X } from 'lucide-svelte';
+	import { Copy } from 'lucide-svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-
-	const AVATAR_ACCEPT = 'image/png,image/jpeg,image/gif,image/webp,image/avif,image/bmp,image/svg+xml';
 
 	let user = $state<User | null>(null);
 	let name = $state('');
@@ -18,7 +16,6 @@
 	let avatarUrl = $state('');
 	let saving = $state(false);
 	let avatarBusy = $state(false);
-	let avatarInput = $state<HTMLInputElement | null>(null);
 
 	const hasUploadedAvatar = $derived(avatarUrl.startsWith('/api/avatars/'));
 
@@ -63,11 +60,7 @@
 		}
 	}
 
-	async function onAvatarFileChosen(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = '';
-		if (!file) return;
+	async function onAvatarFileChosen(file: File) {
 		avatarBusy = true;
 		try {
 			await uploadAvatar(file);
@@ -136,38 +129,29 @@
 
 			<div class="border-t border-[var(--app-border)]"></div>
 
-			<div class="flex items-center justify-between gap-4 px-5 py-4">
-				<div>
+			<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+				<div class="min-w-0">
 					<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.profile.avatar']()}</p>
 					<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.profile.avatar_desc']()}</p>
 				</div>
-				<div class="flex items-center gap-2">
-					<Avatar name={user.name} avatarUrl={user.avatar_url} size="lg" />
-					<input
-						type="file"
-						accept={AVATAR_ACCEPT}
-						class="hidden"
-						bind:this={avatarInput}
-						onchange={onAvatarFileChosen}
-					/>
-					<Button variant="outline" size="sm" disabled={avatarBusy} onclick={() => avatarInput?.click()}>
-						<Upload size={13} />
-						{avatarBusy ? m['settings.profile.uploading_avatar']() : m['settings.profile.upload_avatar']()}
-					</Button>
-					{#if hasUploadedAvatar}
-						<Button variant="outline" size="sm" disabled={avatarBusy} onclick={removeUploadedAvatar}>
-							<X size={13} />
-							{m['settings.profile.remove_avatar']()}
-						</Button>
-					{/if}
-				</div>
+				<AvatarUploader
+					class="ml-auto"
+					name={user.name}
+					avatarUrl={user.avatar_url}
+					busy={avatarBusy}
+					uploadLabel={m['settings.profile.upload_avatar']()}
+					uploadingLabel={m['settings.profile.uploading_avatar']()}
+					removeLabel={m['settings.profile.remove_avatar']()}
+					onfile={onAvatarFileChosen}
+					onremove={hasUploadedAvatar ? removeUploadedAvatar : undefined}
+				/>
 			</div>
 
 			{#if !hasUploadedAvatar}
 				<div class="border-t border-[var(--app-border)]"></div>
 
-				<div class="flex items-center justify-between gap-4 px-5 py-4">
-					<div>
+				<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 px-5 py-4">
+					<div class="min-w-0">
 						<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.profile.avatar_url']()}</p>
 						<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.profile.avatar_url_desc']()}</p>
 					</div>
@@ -175,7 +159,7 @@
 						type="url"
 						bind:value={avatarUrl}
 						placeholder="https://"
-						class="w-[240px] rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--app-accent)]"
+						class="ml-auto w-[240px] max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-3 py-1.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--app-accent)]"
 					/>
 				</div>
 			{/if}

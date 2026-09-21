@@ -1589,5 +1589,12 @@
 	"settings.profile.avatar_upload_failed": "Avatar update failed",
 	"settings.profile.remove_avatar": "Remove",
 	"settings.profile.upload_avatar": "Upload image",
-	"settings.profile.uploading_avatar": "Uploading..."
+	"settings.profile.uploading_avatar": "Uploading...",
+	"settings.general.logo": "Logo",
+	"settings.general.logo_desc": "Shown in the workspace switcher. Upload an image, or paste a public URL below.",
+	"settings.general.logo_removed": "Logo removed",
+	"settings.general.logo_upload_failed": "Logo update failed",
+	"settings.general.remove_logo": "Remove",
+	"settings.general.upload_logo": "Upload image",
+	"settings.general.uploading_logo": "Uploading..."
 }

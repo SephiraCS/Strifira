@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -34,16 +35,26 @@ var allowedAvatarTypes = map[string]map[string]bool{
 }
 
 type AvatarHandler struct {
-	store      storage.Backend
-	avatarRepo repository.UserAvatarRepo
-	userRepo   repository.UserRepo
+	store         storage.Backend
+	avatarRepo    repository.UserAvatarRepo
+	userRepo      repository.UserRepo
+	wsAvatarRepo  repository.WorkspaceAvatarRepo
+	workspaceRepo repository.WorkspaceRepo
 }
 
-func NewAvatarHandler(store storage.Backend, avatarRepo repository.UserAvatarRepo, userRepo repository.UserRepo) *AvatarHandler {
+func NewAvatarHandler(
+	store storage.Backend,
+	avatarRepo repository.UserAvatarRepo,
+	userRepo repository.UserRepo,
+	wsAvatarRepo repository.WorkspaceAvatarRepo,
+	workspaceRepo repository.WorkspaceRepo,
+) *AvatarHandler {
 	return &AvatarHandler{
-		store:      store,
-		avatarRepo: avatarRepo,
-		userRepo:   userRepo,
+		store:         store,
+		avatarRepo:    avatarRepo,
+		userRepo:      userRepo,
+		wsAvatarRepo:  wsAvatarRepo,
+		workspaceRepo: workspaceRepo,
 	}
 }
 
@@ -52,50 +63,20 @@ func NewAvatarHandler(store storage.Backend, avatarRepo repository.UserAvatarRep
 // is bumped on every replacement so cached <img> entries refetch.
 func (h *AvatarHandler) Upload(c echo.Context) error {
 	userID := middleware.GetUserID(c)
-	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, maxAvatarSize+1024*1024)
 
-	file, err := c.FormFile("file")
+	upload, err := readAvatarUpload(c)
 	if err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
-			return response.Error(c, http.StatusRequestEntityTooLarge, "BAD_REQUEST", "File too large (max 5MB)")
-		}
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "No file provided")
+		return respondAvatarUploadError(c, err)
 	}
-	if file.Size > maxAvatarSize {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "File too large (max 5MB)")
-	}
-
-	src, err := file.Open()
-	if err != nil {
-		return response.InternalError(c)
-	}
-	defer src.Close()
-
-	detected, err := mimetype.DetectReader(src)
-	if err != nil {
-		return response.InternalError(c)
-	}
-	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return response.InternalError(c)
-	}
-
-	ext := strings.ToLower(filepath.Ext(file.Filename))
-	contentType, ok := allowedAvatarType(detected.String(), ext)
-	if !ok {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Unsupported file type; use a PNG, JPEG, GIF, WebP, AVIF, BMP, or SVG image")
-	}
-	if ext == "" {
-		ext = detected.Extension()
-	}
+	defer upload.file.Close()
 
 	previous, err := h.avatarRepo.GetByUserID(c.Request().Context(), userID)
 	if err != nil {
 		return response.InternalError(c)
 	}
 
-	key := fmt.Sprintf("avatars/%s%s", uuid.New().String(), ext)
-	if _, err := h.store.Put(c.Request().Context(), key, src, contentType); err != nil {
+	key := fmt.Sprintf("avatars/%s.%s", uuid.New().String(), strings.TrimPrefix(extOf(upload.filename, upload.contentType), "."))
+	if err := h.storePut(c, key, upload.file, upload.contentType); err != nil {
 		return response.InternalError(c)
 	}
 
@@ -103,9 +84,9 @@ func (h *AvatarHandler) Upload(c echo.Context) error {
 		ID:          uuid.New(),
 		UserID:      userID,
 		StorageKey:  key,
-		Filename:    filepath.Base(file.Filename),
-		ContentType: contentType,
-		Size:        file.Size,
+		Filename:    filepath.Base(upload.filename),
+		ContentType: upload.contentType,
+		Size:        upload.size,
 	}
 	if err := h.avatarRepo.Upsert(c.Request().Context(), avatar); err != nil {
 		return response.InternalError(c)
@@ -121,12 +102,7 @@ func (h *AvatarHandler) Upload(c echo.Context) error {
 		return response.InternalError(c)
 	}
 
-	if previous != nil && previous.StorageKey != key {
-		if err := h.store.Delete(c.Request().Context(), previous.StorageKey); err != nil {
-			log.WithFields(log.Fields{"event": "avatar.old_delete_failed", "key": previous.StorageKey}).Warn("failed to delete replaced avatar object")
-		}
-	}
-
+	h.deletePreviousObject(c, previous != nil, func() string { return previous.StorageKey }, key)
 	return response.Success(c, http.StatusOK, user)
 }
 
@@ -144,9 +120,7 @@ func (h *AvatarHandler) Remove(c echo.Context) error {
 		if err := h.avatarRepo.Delete(c.Request().Context(), userID); err != nil {
 			return response.InternalError(c)
 		}
-		if err := h.store.Delete(c.Request().Context(), avatar.StorageKey); err != nil {
-			log.WithFields(log.Fields{"event": "avatar.delete_failed", "key": avatar.StorageKey}).Warn("failed to delete avatar object")
-		}
+		h.deleteStorageObject(c, avatar.StorageKey)
 	}
 
 	user, err := h.userRepo.GetByID(c.Request().Context(), userID)
@@ -174,8 +148,115 @@ func (h *AvatarHandler) Get(c echo.Context) error {
 	if err != nil || avatar == nil {
 		return response.NotFound(c, "Avatar")
 	}
+	return h.streamAvatar(c, avatar.StorageKey, avatar.ContentType)
+}
 
-	rc, err := h.store.Get(c.Request().Context(), avatar.StorageKey)
+// UploadWorkspace stores an image file as the workspace logo and points
+// workspaces.logo_url at the served /api/workspace-avatars/<id> route.
+// Owner-only (enforced by route middleware, like PATCH workspace).
+func (h *AvatarHandler) UploadWorkspace(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+
+	upload, err := readAvatarUpload(c)
+	if err != nil {
+		return respondAvatarUploadError(c, err)
+	}
+	defer upload.file.Close()
+
+	previous, err := h.wsAvatarRepo.GetByWorkspaceID(c.Request().Context(), ws.ID)
+	if err != nil {
+		return response.InternalError(c)
+	}
+
+	key := fmt.Sprintf("workspace-avatars/%s.%s", uuid.New().String(), strings.TrimPrefix(extOf(upload.filename, upload.contentType), "."))
+	if err := h.storePut(c, key, upload.file, upload.contentType); err != nil {
+		return response.InternalError(c)
+	}
+
+	avatar := &domain.WorkspaceAvatar{
+		ID:          uuid.New(),
+		WorkspaceID: ws.ID,
+		StorageKey:  key,
+		Filename:    filepath.Base(upload.filename),
+		ContentType: upload.contentType,
+		Size:        upload.size,
+	}
+	if err := h.wsAvatarRepo.Upsert(c.Request().Context(), avatar); err != nil {
+		return response.InternalError(c)
+	}
+
+	logoURL := workspaceLogoURLFor(ws.ID, avatar.UpdatedAt)
+	ws.LogoURL = &logoURL
+	if err := h.workspaceRepo.Update(c.Request().Context(), ws); err != nil {
+		return response.InternalError(c)
+	}
+
+	h.deletePreviousObject(c, previous != nil, func() string { return previous.StorageKey }, key)
+	return response.Success(c, http.StatusOK, ws)
+}
+
+// RemoveWorkspace deletes the workspace's uploaded logo and clears
+// workspaces.logo_url. Idempotent.
+func (h *AvatarHandler) RemoveWorkspace(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+
+	avatar, err := h.wsAvatarRepo.GetByWorkspaceID(c.Request().Context(), ws.ID)
+	if err != nil {
+		return response.InternalError(c)
+	}
+	if avatar != nil {
+		if err := h.wsAvatarRepo.Delete(c.Request().Context(), ws.ID); err != nil {
+			return response.InternalError(c)
+		}
+		h.deleteStorageObject(c, avatar.StorageKey)
+	}
+
+	ws.LogoURL = nil
+	if err := h.workspaceRepo.Update(c.Request().Context(), ws); err != nil {
+		return response.InternalError(c)
+	}
+
+	return response.Success(c, http.StatusOK, ws)
+}
+
+// GetWorkspace streams a workspace's uploaded logo (public, mirroring user
+// avatars, so logos render wherever the workspace is named).
+func (h *AvatarHandler) GetWorkspace(c echo.Context) error {
+	workspaceID, err := uuid.Parse(c.Param("workspaceId"))
+	if err != nil {
+		return response.NotFound(c, "Avatar")
+	}
+
+	avatar, err := h.wsAvatarRepo.GetByWorkspaceID(c.Request().Context(), workspaceID)
+	if err != nil || avatar == nil {
+		return response.NotFound(c, "Avatar")
+	}
+	return h.streamAvatar(c, avatar.StorageKey, avatar.ContentType)
+}
+
+func (h *AvatarHandler) storePut(c echo.Context, key string, file multipart.File, contentType string) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	_, err := h.store.Put(c.Request().Context(), key, file, contentType)
+	return err
+}
+
+func (h *AvatarHandler) deletePreviousObject(c echo.Context, hasPrevious bool, previousKey func() string, newKey string) {
+	if !hasPrevious || previousKey() == newKey {
+		return
+	}
+	h.deleteStorageObject(c, previousKey())
+}
+
+func (h *AvatarHandler) deleteStorageObject(c echo.Context, key string) {
+	if err := h.store.Delete(c.Request().Context(), key); err != nil {
+		log.WithFields(log.Fields{"event": "avatar.delete_failed", "key": key}).Warn("failed to delete avatar object")
+	}
+}
+
+func (h *AvatarHandler) streamAvatar(c echo.Context, storageKey, contentType string) error {
+	rc, err := h.store.Get(c.Request().Context(), storageKey)
 	if err != nil {
 		return response.NotFound(c, "Avatar")
 	}
@@ -186,7 +267,70 @@ func (h *AvatarHandler) Get(c echo.Context) error {
 	c.Response().Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
 	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
 	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
-	return c.Stream(http.StatusOK, avatar.ContentType, rc)
+	return c.Stream(http.StatusOK, contentType, rc)
+}
+
+// avatarUpload is the validated result of readAvatarUpload.
+type avatarUpload struct {
+	file        multipart.File
+	filename    string
+	contentType string
+	size        int64
+}
+
+// avatarValidationError marks a rejected upload (bad request semantics);
+// respondAvatarUploadError turns it into the JSON error response.
+type avatarValidationError struct {
+	status  int
+	message string
+}
+
+func (e *avatarValidationError) Error() string { return e.message }
+
+func respondAvatarUploadError(c echo.Context, err error) error {
+	var ve *avatarValidationError
+	if errors.As(err, &ve) {
+		return response.Error(c, ve.status, "BAD_REQUEST", ve.message)
+	}
+	return response.InternalError(c)
+}
+
+// readAvatarUpload performs the shared request-side validation for avatar
+// uploads: body size cap, form file presence, magic-byte MIME detection and
+// the image allowlist. On success the caller owns closing upload.file.
+func readAvatarUpload(c echo.Context) (avatarUpload, error) {
+	c.Request().Body = http.MaxBytesReader(c.Response().Writer, c.Request().Body, maxAvatarSize+1024*1024)
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return avatarUpload{}, &avatarValidationError{status: http.StatusRequestEntityTooLarge, message: "File too large (max 5MB)"}
+		}
+		return avatarUpload{}, &avatarValidationError{status: http.StatusBadRequest, message: "No file provided"}
+	}
+	if fileHeader.Size > maxAvatarSize {
+		return avatarUpload{}, &avatarValidationError{status: http.StatusBadRequest, message: "File too large (max 5MB)"}
+	}
+
+	file, err := fileHeader.Open()
+	if err != nil {
+		return avatarUpload{}, err
+	}
+
+	detected, err := mimetype.DetectReader(file)
+	if err != nil {
+		file.Close()
+		return avatarUpload{}, err
+	}
+
+	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
+	contentType, ok := allowedAvatarType(detected.String(), ext)
+	if !ok {
+		file.Close()
+		return avatarUpload{}, &avatarValidationError{status: http.StatusBadRequest, message: "Unsupported file type; use a PNG, JPEG, GIF, WebP, AVIF, BMP, or SVG image"}
+	}
+	return avatarUpload{file: file, filename: fileHeader.Filename, contentType: contentType, size: fileHeader.Size}, nil
 }
 
 func allowedAvatarType(detectedType, ext string) (string, bool) {
@@ -200,6 +344,19 @@ func allowedAvatarType(detectedType, ext string) (string, bool) {
 	return detectedType, true
 }
 
+// extOf returns the filename extension when it is present, falling back to
+// the detected type's canonical extension.
+func extOf(filename, contentType string) string {
+	if ext := strings.ToLower(filepath.Ext(filename)); ext != "" {
+		return ext
+	}
+	return mimetype.Lookup(contentType).Extension()
+}
+
 func avatarURLFor(userID uuid.UUID, version time.Time) string {
 	return fmt.Sprintf("/api/avatars/%s?v=%d", userID, version.Unix())
+}
+
+func workspaceLogoURLFor(workspaceID uuid.UUID, version time.Time) string {
+	return fmt.Sprintf("/api/workspace-avatars/%s?v=%d", workspaceID, version.Unix())
 }

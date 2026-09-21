@@ -103,6 +103,12 @@ type UserAvatarRepo interface {
 	Delete(ctx context.Context, userID uuid.UUID) error
 }
 
+type WorkspaceAvatarRepo interface {
+	Upsert(ctx context.Context, avatar *domain.WorkspaceAvatar) error
+	GetByWorkspaceID(ctx context.Context, workspaceID uuid.UUID) (*domain.WorkspaceAvatar, error)
+	Delete(ctx context.Context, workspaceID uuid.UUID) error
+}
+
 type LabelRepo interface {
 	Create(ctx context.Context, label *domain.Label) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Label, error)

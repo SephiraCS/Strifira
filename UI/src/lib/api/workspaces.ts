@@ -10,6 +10,20 @@ export function getWorkspace(slug: string): Promise<Workspace> {
 	return api.get<Workspace>(`/api/workspaces/${slug}`);
 }
 
+export async function uploadWorkspaceLogo(slug: string, file: File): Promise<Workspace> {
+	const form = new FormData();
+	form.append('file', file);
+	const workspace = await api.postForm<Workspace>(`/api/workspaces/${slug}/avatar`, form);
+	emitAppRefresh(['workspace'], slug);
+	return workspace;
+}
+
+export async function removeWorkspaceLogo(slug: string): Promise<Workspace> {
+	const workspace = await api.delete<Workspace>(`/api/workspaces/${slug}/avatar`);
+	emitAppRefresh(['workspace'], slug);
+	return workspace;
+}
+
 export function createWorkspace(name: string, slug: string): Promise<Workspace> {
 	return api.post<Workspace>('/api/workspaces', { name, slug });
 }
