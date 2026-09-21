@@ -13,6 +13,8 @@
 	} from '$lib/api/forgejo';
 	import { forgejoRepositoryHomeUrl } from '$lib/security/forgejo-url';
 	import type { ForgejoStatus, ForgejoAvailableRepo, ForgejoAutoTransition } from '$lib/types/forgejo';
+	import { listTeams } from '$lib/api/teams';
+	import { listTeamStatuses } from '$lib/api/team-statuses';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Switch } from '$lib/components/ui/switch';
@@ -38,6 +40,7 @@
 	let instanceUrl = $state(DEFAULT_INSTANCE_URL);
 	let token = $state('');
 	let connecting = $state(false);
+	let workflowStates = $state<{ value: string; label: string }[]>([]);
 
 	const filteredRepos = $derived(
 		repoSearch
@@ -64,6 +67,7 @@
 	}
 
 	onMount(async () => {
+		loadWorkflowStates();
 		try {
 			status = await getForgejoStatus(slug);
 			if (status.connected) {
@@ -75,6 +79,31 @@
 			loading = false;
 		}
 	});
+
+	// Automation targets are workspace-level but resolve against each team's
+	// own workflow at fire time — offer the union of the states actually
+	// configured on the workspace's teams, deduped by slug. Teams that lack
+	// the selected state simply stay unchanged.
+	async function loadWorkflowStates() {
+		try {
+			const teams = await listTeams(slug);
+			const perTeam = await Promise.all(
+				teams.map((team) => listTeamStatuses(slug, team.id).catch(() => []))
+			);
+			const bySlug = new Map<string, { names: Set<string>; position: number }>();
+			perTeam.flat().forEach((state) => {
+				const entry = bySlug.get(state.slug) ?? { names: new Set<string>(), position: state.position };
+				entry.names.add(state.name);
+				entry.position = Math.min(entry.position, state.position);
+				bySlug.set(state.slug, entry);
+			});
+			workflowStates = [...bySlug.entries()]
+				.map(([slug, entry]) => ({ value: slug, label: [...entry.names].sort().join(' / ') }))
+				.sort((a, b) => a.label.localeCompare(b.label));
+		} catch {
+			workflowStates = [];
+		}
+	}
 
 	async function handleConnect() {
 		connecting = true;
@@ -167,16 +196,15 @@
 		{ event: 'pr_merged', label: () => m['settings.forgejo.pr_merged'](), description: () => m['settings.forgejo.pr_merged_desc']() }
 	]);
 
-	const STATUS_OPTIONS: { value: string; label: () => string }[] = $derived([
-		{ value: '', label: () => m['settings.forgejo.no_transition']() },
-		{ value: 'backlog', label: () => m['common.status.backlog']() },
-		{ value: 'todo', label: () => m['common.status.todo']() },
-		{ value: 'in_progress', label: () => m['common.status.in_progress']() },
-		{ value: 'in_review', label: () => m['common.status.in_review']() },
-		{ value: 'pr', label: () => m['common.status.pr']() },
-		{ value: 'done', label: () => m['common.status.done']() },
-		{ value: 'cancelled', label: () => m['common.status.cancelled']() }
-	]);
+	// The configured states, plus the rule's current slug when it no longer
+	// exists on any team (so a stale selection stays visible and changeable).
+	function pickerOptions(currentSlug: string): { value: string; label: string }[] {
+		const options = [{ value: '', label: m['settings.forgejo.no_transition']() }, ...workflowStates];
+		if (currentSlug && !workflowStates.some((o) => o.value === currentSlug)) {
+			options.push({ value: currentSlug, label: currentSlug });
+		}
+		return options;
+	}
 
 	function ruleFor(event: ForgejoAutoTransition['event']): ForgejoAutoTransition | undefined {
 		return transitions.find((t) => t.event === event);
@@ -400,23 +428,15 @@
 									<select
 										aria-label={m['settings.forgejo.target_status']()}
 										class="h-8 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
-										value={rule.target_status_id ?? rule.target_status}
+										value={rule.target_status}
 										disabled={!rule.is_active}
 										onchange={(e) => {
 											const value = (e.currentTarget as HTMLSelectElement).value;
-											const option = STATUS_OPTIONS.find((o) => (o.value || '') === value);
-											patchRule(meta.event, {
-												target_status: option && option.value !== '' ? option.value : value,
-												target_status_id: null
-											});
+											patchRule(meta.event, { target_status: value, target_status_id: null });
 										}}
 									>
-										{#each STATUS_OPTIONS as option}
-											{#if option.value === ''}
-												<option value="">{option.label()}</option>
-											{:else}
-												<option value={option.value} selected={rule.target_status === option.value}>{option.label()}</option>
-											{/if}
+										{#each pickerOptions(rule.target_status) as option}
+											<option value={option.value} selected={rule.target_status === option.value}>{option.label}</option>
 										{/each}
 									</select>
 									<Switch
