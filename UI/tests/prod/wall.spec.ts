@@ -84,7 +84,13 @@ async function installSyntheticCapture(page: Page, label: string) {
 async function frameCount(page: Page) {
 	return page.evaluate(() => {
 		const v = document.querySelector('[data-share-id] video') as HTMLVideoElement | null;
-		return v && v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : -1;
+		if (!v) return -1;
+		// Firefox's frame counters stay at 0 for MediaStream video even
+		// while decoding (currentTime advances, readyState 4); fall back
+		// to playback progress expressed as ~30fps-equivalent frames.
+		const q = v.getVideoPlaybackQuality?.();
+		if (q && q.totalVideoFrames > 0) return q.totalVideoFrames;
+		return Math.floor(v.currentTime * 30);
 	});
 }
 
@@ -162,6 +168,10 @@ test.describe('cross-engine wall', () => {
 			const [name, value] = part.split('=');
 			await presenterPage.context().addCookies([{ name, value, url: BASE }]);
 		}
+		presenterPage.on('console', (m) => {
+			if (m.type() === 'error') console.log('[P-console] ' + m.text().slice(0, 300));
+		});
+		presenterPage.on('pageerror', (e) => console.log('[P-PAGEERROR] ' + String(e).slice(0, 500)));
 		await presenterPage.goto(`${BASE}/${ws.slug}/shares`);
 		await installSyntheticCapture(presenterPage, 'xp');
 		await presenterPage.getByRole('button', { name: 'Share my screen' }).click();
@@ -217,7 +227,7 @@ test.describe('cross-engine wall', () => {
 		for (const v of viewers) {
 			await expect
 				.poll(async () => frameCount(v.page), { timeout: 45_000, intervals: [2000] })
-					.toBeGreaterThan(10);
+				.toBeGreaterThan(10);
 		}
 
 		// Native stop clears every wall.

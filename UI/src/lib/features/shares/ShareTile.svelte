@@ -373,11 +373,19 @@
 		teardown();
 	});
 
+	// A native 'ended' that lands mid-switch (user hit the stop bar while
+	// the picker was up) must survive the switch: the source is dead.
+	let endAfterSwitch = false;
+
 	function handleCaptureEnded() {
 		// Track endings we caused ourselves (Stop, or swapping the surface)
-		// already run their own teardown. `stopping`/`switching` are set
-		// synchronously so their own stopped track cannot re-enter.
-		if (switching || stopping || presentEnded || !live) return;
+		// already run their own teardown. `stopping` is set synchronously so
+		// its own stopped track cannot re-enter.
+		if (stopping || presentEnded || !live) return;
+		if (switching) {
+			endAfterSwitch = true;
+			return;
+		}
 		void stopSharing();
 	}
 
@@ -385,6 +393,7 @@
 	async function switchSurface() {
 		if (!sourceStream || switching) return;
 		switching = true;
+		endAfterSwitch = false;
 		try {
 			// Chrome capture extensions (selfBrowserSurface etc.) sit beyond
 			// the TS DOM lib's DisplayMediaStreamOptions.
@@ -402,13 +411,16 @@
 				nextVideo.addEventListener('ended', handleCaptureEnded);
 			}
 			// Swap the track on every live peer; renegotiation is not needed
-			// for a same-kind replaceTrack.
+			// for a same-kind replaceTrack. replaceTrack can take a long
+			// time to settle (observed tens of seconds on a Firefox peer) —
+			// the switch must not block on it: fire-and-forget, and a dead
+			// old source is stopped only after the new capture is live.
 			const senders = [...peers.values()].flatMap((pc) => pc.getSenders());
 			for (const sender of senders) {
-				if (sender.track?.kind === 'video' && nextVideo) await sender.replaceTrack(nextVideo).catch(() => {});
+				if (sender.track?.kind === 'video' && nextVideo) void sender.replaceTrack(nextVideo).catch(() => {});
 				if (sender.track?.kind === 'audio') {
 					const nextAudio = next.getAudioTracks()[0];
-					if (sender.track || nextAudio) await sender.replaceTrack(nextAudio ?? null).catch(() => {});
+					if (sender.track || nextAudio) void sender.replaceTrack(nextAudio ?? null).catch(() => {});
 				}
 			}
 			// Retire the previous capture; the new one feeds the preview.
@@ -423,6 +435,10 @@
 			await stopSharing();
 		} finally {
 			switching = false;
+			if (endAfterSwitch && !stopping && !presentEnded) {
+				endAfterSwitch = false;
+				void stopSharing();
+			}
 		}
 	}
 
