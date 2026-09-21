@@ -54,7 +54,7 @@ func WorkspaceTransferTableSpecs() []WorkspaceTransferTableSpec {
 		{Name: "forgejo_connections", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_connections x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id"},
 		{Name: "forgejo_repos", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_repos x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id"},
 		{Name: "forgejo_pull_requests", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_pull_requests x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id"},
-		{Name: "forgejo_pull_request_issues", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_pull_request_issues li JOIN forgejo_pull_requests p ON p.id=li.pr_id WHERE p.workspace_id=$1 ORDER BY li.created_at,li.pr_id`, IDColumn: "pr_id"},
+		{Name: "forgejo_pull_request_issues", SelectSQL: `SELECT to_jsonb(li)::text FROM forgejo_pull_request_issues li JOIN forgejo_pull_requests p ON p.id=li.pr_id WHERE p.workspace_id=$1 ORDER BY li.created_at,li.pr_id`, IDColumn: "pr_id"},
 		{Name: "forgejo_branches", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_branches x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id"},
 		{Name: "forgejo_commits", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_commits x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id"},
 		{Name: "forgejo_auto_transitions", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_auto_transitions x WHERE workspace_id=$1 ORDER BY event,id`, IDColumn: "id"},

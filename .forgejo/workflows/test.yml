@@ -75,7 +75,8 @@ jobs:
           } 2>&1 | tee backend-test.log
 
       - name: Upload coverage artifact
-        uses: https://data.forgejo.org/actions/upload-artifact@v7.0.1
+        continue-on-error: true
+        uses: https://data.forgejo.org/actions/upload-artifact@v3
         with:
           name: backend-coverage
           path: BE/coverage.out
@@ -91,20 +92,14 @@ jobs:
           [ -f backend-test.log ] || echo "(no log captured; failure was in an action step)" > backend-test.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
-          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          # One orphan branch per run: no shared history with ci/logs tips, so
+          # concurrent lanes cannot conflict and nothing needs a rebase.
+          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-backend"
+          git rm -rq --cached .
           mv backend-test.log "backend-${GITHUB_RUN_ID}.log"
           git add "backend-${GITHUB_RUN_ID}.log"
           git commit -m "backend-test log run ${GITHUB_RUN_ID}"
-          # `git push ... && break` exits the shell on the first rejection
-          # under set -e; use an explicit if so retries actually happen, and
-          # space them out — all lanes race on the same branch.
-          for _ in 1 2 3 4 5; do
-            if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch "$remote_url" ci/logs
-            git rebase FETCH_HEAD
-            sleep 3
-          done
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/backend"
 
   docker-integration:
     # The backend manages dev-machine containers through the Docker SDK, so
@@ -156,11 +151,14 @@ jobs:
 
             echo '--- build integration runtime images ---'
             cd ..
-            docker build --pull --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
-            docker build --pull --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
-            docker build --pull --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
-            docker build --pull --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
-            docker build --pull --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
+            # The classic builder never sets TARGETARCH (BuildKit-only ARG);
+            # pass the host architecture explicitly.
+            build_arch="$(dpkg --print-architecture)"
+            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
+            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
+            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
+            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
+            docker build --pull --build-arg TARGETARCH="$build_arch" --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
             cd BE
 
             echo '--- run lifecycle test ---'
@@ -180,20 +178,12 @@ jobs:
           [ -f docker-integration.log ] || echo "(no log captured; failure was in an action step)" > docker-integration.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
-          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-docker"
+          git rm -rq --cached .
           mv docker-integration.log "docker-${GITHUB_RUN_ID}.log"
           git add "docker-${GITHUB_RUN_ID}.log"
           git commit -m "docker-integration log run ${GITHUB_RUN_ID}"
-          # `git push ... && break` exits the shell on the first rejection
-          # under set -e; use an explicit if so retries actually happen, and
-          # space them out — all lanes race on the same branch.
-          for _ in 1 2 3 4 5; do
-            if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch "$remote_url" ci/logs
-            git rebase FETCH_HEAD
-            sleep 3
-          done
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/docker"
 
   frontend-check:
     name: Frontend Checks
@@ -202,7 +192,7 @@ jobs:
     env:
       # The job container is Ubuntu 26.04, which this Playwright has no
       # browser build for; use the 24.04 registry entries.
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04-x64
 
     steps:
       - name: Check out the source revision
@@ -243,7 +233,8 @@ jobs:
 
       - name: Upload Playwright failure artifacts
         if: ${{ failure() }}
-        uses: https://data.forgejo.org/actions/upload-artifact@v7.0.1
+        continue-on-error: true
+        uses: https://data.forgejo.org/actions/upload-artifact@v3
         with:
           name: ui-playwright-failure
           path: |
@@ -263,27 +254,19 @@ jobs:
           [ -f frontend-check.log ] || echo "(no log captured; failure was in an action step)" > frontend-check.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
-          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-frontend"
+          git rm -rq --cached .
           mv frontend-check.log "frontend-${GITHUB_RUN_ID}.log"
           git add "frontend-${GITHUB_RUN_ID}.log"
           git commit -m "frontend-check log run ${GITHUB_RUN_ID}"
-          # `git push ... && break` exits the shell on the first rejection
-          # under set -e; use an explicit if so retries actually happen, and
-          # space them out — all lanes race on the same branch.
-          for _ in 1 2 3 4 5; do
-            if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch "$remote_url" ci/logs
-            git rebase FETCH_HEAD
-            sleep 3
-          done
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/frontend"
 
   web-check:
     name: Marketing Site Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
     env:
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu-24.04-x64
 
     steps:
       - name: Check out the source revision
@@ -330,20 +313,12 @@ jobs:
           [ -f web-check.log ] || echo "(no log captured; failure was in an action step)" > web-check.log
           git config user.name "forgejo-actions[bot]"
           git config user.email "noreply@git.terrascale.tech"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
-          git fetch "$remote_url" ci/logs 2>/dev/null && git checkout -B ci/logs FETCH_HEAD || git checkout -B ci/logs
+          git checkout --orphan "ci/log-${GITHUB_RUN_ID}-web"
+          git rm -rq --cached .
           mv web-check.log "web-${GITHUB_RUN_ID}.log"
           git add "web-${GITHUB_RUN_ID}.log"
           git commit -m "web-check log run ${GITHUB_RUN_ID}"
-          # `git push ... && break` exits the shell on the first rejection
-          # under set -e; use an explicit if so retries actually happen, and
-          # space them out — all lanes race on the same branch.
-          for _ in 1 2 3 4 5; do
-            if git push "$remote_url" HEAD:ci/logs; then break; fi
-            git fetch "$remote_url" ci/logs
-            git rebase FETCH_HEAD
-            sleep 3
-          done
+          git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:"refs/heads/ci/logs/${GITHUB_RUN_ID}/web"
 
   # TEMPORARY: publishes each lane's outcome to the ci/status branch so run
   # results are readable without web access during the CI migration. Remove

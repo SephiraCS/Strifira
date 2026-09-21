@@ -303,13 +303,13 @@ func TestGetAccessSessionQueryRevalidatesCreatorAndTuple(t *testing.T) {
 func accessTicketColumnsAndValuesForTest() ([]string, []driver.Value) {
 	now := time.Now().UTC()
 	return []string{
-			"id", "workspace_id", "machine_id", "service_id", "user_id", "token_hash",
-			"status", "bound_host", "expires_at", "used_at", "created_at", "revoked_at", "terminal_session_id",
-		}, []driver.Value{
-			uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(),
-			strings.Repeat("b", 64), string(domain.DevMachineAccessTicketStatusUsed), "0123456789abcdef0123.machines.example.com",
-			now.Add(time.Minute), now, now, nil, nil,
-		}
+		"id", "workspace_id", "machine_id", "service_id", "user_id", "token_hash",
+		"status", "bound_host", "expires_at", "used_at", "created_at", "revoked_at", "terminal_session_id",
+	}, []driver.Value{
+		uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(),
+		strings.Repeat("b", 64), string(domain.DevMachineAccessTicketStatusUsed), "0123456789abcdef0123.machines.example.com",
+		now.Add(time.Minute), now, now, nil, nil,
+	}
 }
 
 func TestTerminalCloseRequestRevokesTicketAndReusesOperation(t *testing.T) {
@@ -431,12 +431,12 @@ func TestTerminalCloseRequestRevokesTicketAndReusesOperation(t *testing.T) {
 func accessSessionColumnsAndValuesForTest() ([]string, []driver.Value) {
 	now := time.Now().UTC()
 	return []string{
-			"id", "workspace_id", "machine_id", "service_id", "user_id", "token_hash",
-			"bound_host", "expires_at", "last_seen_at", "created_at", "revoked_at",
-		}, []driver.Value{
-			uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(),
-			strings.Repeat("d", 64), "0123456789abcdef0123.machines.example.com", now.Add(time.Hour), now, now, nil,
-		}
+		"id", "workspace_id", "machine_id", "service_id", "user_id", "token_hash",
+		"bound_host", "expires_at", "last_seen_at", "created_at", "revoked_at",
+	}, []driver.Value{
+		uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(), uuid.New().String(),
+		strings.Repeat("d", 64), "0123456789abcdef0123.machines.example.com", now.Add(time.Hour), now, now, nil,
+	}
 }
 
 func requireAccessTicketAuthorizationQuery(t *testing.T, query, alias string) {
@@ -1430,19 +1430,15 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	fixture := newEnvironmentRaceFixture(t, db)
 	machineID := fixture.insertMachine(t, domain.DevMachineStatusRunning, domain.DevMachineStatusRunning, false)
-	teamID, statusID, installationID, repositoryID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	teamID, statusID, repositoryID := uuid.New(), uuid.New(), uuid.New()
 	_, err = db.Exec(`INSERT INTO teams (id,workspace_id,name,key) VALUES ($1,$2,'Checkout Test','CHK')`, teamID, fixture.workspaceID)
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO team_statuses (id,team_id,name,slug,category,is_default)
 		VALUES ($1,$2,'Todo','todo','unstarted',TRUE)`, statusID, teamID)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO github_installations
-		(id,workspace_id,installation_id,account_login,account_type,installed_by)
-		VALUES ($1,$2,$3,'checkout-test','Organization',$4)`, installationID, fixture.workspaceID, time.Now().UnixNano(), fixture.userID)
-	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO github_repos
-		(id,installation_id,workspace_id,github_repo_id,full_name,default_branch)
-		VALUES ($1,$2,$3,$4,'ku/checkout-test','main')`, repositoryID, installationID, fixture.workspaceID, time.Now().UnixNano())
+	_, err = db.Exec(`INSERT INTO forgejo_repos
+		(id,workspace_id,forgejo_repo_id,full_name,instance_url,default_branch)
+		VALUES ($1,$2,$3,'ku/checkout-test','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
 	require.NoError(t, err)
 
 	issueNumber := 0
