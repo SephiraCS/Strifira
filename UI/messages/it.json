@@ -1575,6 +1575,7 @@
 	"shares.stop": "Termina condivisione",
 	"shares.leave": "Esci",
 	"shares.ended": "Questa condivisione schermo è terminata",
+	"shares.leave_warning": "Stai ancora condividendo lo schermo. Interrompere la condivisione e uscire?",
 	"shares.toast_started": "{name} ha avviato una condivisione schermo",
 	"shares.toast_started_anon": "Una condivisione schermo è iniziata",
 	"sidebar.screen_shares": "Condivisione schermo",

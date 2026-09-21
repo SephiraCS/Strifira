@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { beforeNavigate } from '$app/navigation';
 	import {
 		announceSharePresence,
 		onSharePresence,
@@ -92,6 +93,28 @@
 	function isPresenting(): boolean {
 		return mode === 'present';
 	}
+
+	// ---- Leave guard ----
+
+	// Leaving this tab (route change, reload, close) while it is the live
+	// source of a share stops the stream for every viewer — confirm the
+	// departure instead of dropping the share silently.
+	function presentingLive(): boolean {
+		return isPresenting() && live && !presentEnded && !stopping;
+	}
+
+	function handleBeforeUnload(e: BeforeUnloadEvent) {
+		if (presentingLive()) e.preventDefault();
+	}
+
+	// In-app route changes only. Anything that unloads the document
+	// (type 'leave', external links — willUnload) is left to beforeunload
+	// so one departure never prompts twice.
+	beforeNavigate((nav) => {
+		if (nav.willUnload || !nav.from || !nav.to) return;
+		if (nav.to.url.pathname === nav.from.url.pathname) return;
+		if (presentingLive() && !confirm(m['shares.leave_warning']())) nav.cancel();
+	});
 
 	function applyContentHints(stream: MediaStream) {
 		const video = stream.getVideoTracks()[0];
@@ -271,6 +294,7 @@
 		if (disposed) return;
 		disposed = true;
 		announceSharePresence(shareId, isPresenting() ? 'presenter' : 'viewer', 'leave');
+		window.removeEventListener('beforeunload', handleBeforeUnload);
 		for (const pc of peers.values()) pc.close();
 		peers.clear();
 		pendingCandidates.clear();
@@ -280,6 +304,7 @@
 	}
 
 	onMount(() => {
+		window.addEventListener('beforeunload', handleBeforeUnload);
 		if (isPresenting()) {
 			if (!sourceStream) {
 				presentEnded = true;
