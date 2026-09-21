@@ -172,11 +172,16 @@ test.describe('cross-engine wall', () => {
 
 		const viewers: { page: Page; close: () => Promise<void> }[] = [];
 		type Launchable = { newPage: () => Promise<Page>; close: () => Promise<void> };
-		const engines: Array<[string, () => Promise<Launchable>]> = [
+		// WALL_ENGINES overrides the viewer engine set (comma-separated:
+		// firefox, webkit, chrome) for hosts that cannot run all of them.
+		const wanted = (process.env.WALL_ENGINES ?? 'firefox,webkit,chrome').split(',');
+		const all: Array<[string, () => Promise<Launchable>]> = [
 			['firefox', () => playwright.firefox.launch() as unknown as Promise<Launchable>],
 			['webkit', () => playwright.webkit.launch() as unknown as Promise<Launchable>],
 			['chrome', () => playwright.chromium.launch({ channel: 'chrome' }) as unknown as Promise<Launchable>]
 		];
+		const engines = all.filter(([label]) => wanted.includes(label));
+		if (engines.length === 0) throw new Error('WALL_ENGINES selected no viewer engines');
 		for (let i = 0; i < engines.length; i++) {
 			const [label, launch] = engines[i];
 			const browser = await launch();
@@ -198,10 +203,10 @@ test.describe('cross-engine wall', () => {
 				.toBeGreaterThan(10);
 		}
 
-		// Presenter sees all three viewers.
+		// Presenter sees every viewer (count comes from hub presence).
 		await expect
-			.poll(async () => (await tileText(presenterPage)).includes('3 watching'), { timeout: 20_000 })
-				.toBe(true);
+			.poll(async () => (await tileText(presenterPage)).includes(`${engines.length} watching`), { timeout: 20_000 })
+			.toBe(true);
 
 		// Switch surface: re-capture under the button's own gesture.
 		await installSyntheticCapture(presenterPage, 'xp2');
