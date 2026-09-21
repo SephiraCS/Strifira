@@ -3,6 +3,11 @@
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="%sveltekit.assets%/apple-touch-icon.png" />
+		<meta name="apple-mobile-web-app-title" content="Ku" />
+		<meta name="theme-color" content="#111111" media="(prefers-color-scheme: dark)" />
+		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>Ku</title>
 		<script>
@@ -30,6 +35,15 @@
 					document.documentElement.style.setProperty('--app-font-size', '100%');
 				}
 			})();
+		</script>
+		<script>
+			// Installable web app: register the passthrough service worker
+			// after first paint. Failures are non-fatal.
+			if ('serviceWorker' in navigator) {
+				window.addEventListener('load', function () {
+					navigator.serviceWorker.register('%sveltekit.assets%/sw.js').catch(function () {});
+				});
+			}
 		</script>
 		%sveltekit.head%
 	</head>
