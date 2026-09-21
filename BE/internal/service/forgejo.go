@@ -58,8 +58,8 @@ type ForgejoService struct {
 	encryptionKey  []byte
 	hub            *realtime.Hub
 	frontendURL    string
-	webhookURL     string                 // optional override for private-network dev
-	global         *GlobalForgejoConfig    // nil = per-workspace connections
+	webhookURL     string               // optional override for private-network dev
+	global         *GlobalForgejoConfig // nil = per-workspace connections
 }
 
 type forgejoConnection struct {
@@ -157,7 +157,7 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 		return nil, err
 	}
 
-	s.seedDefaults(ctx, workspaceID)
+	s.seedDefaultsIfMissing(ctx, workspaceID)
 	return &dto.ForgejoAccountResponse{Login: user.Login, AvatarURL: user.AvatarURL}, nil
 }
 
@@ -169,6 +169,16 @@ func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) 
 		_ = s.UnlinkRepo(ctx, workspaceID, repos[i].ID)
 	}
 	return s.fRepo.DeleteConnection(ctx, workspaceID)
+}
+
+// seedDefaultsIfMissing seeds the transition rules and per-team "PR" state
+// exactly once (never overwrites user customizations).
+func (s *ForgejoService) seedDefaultsIfMissing(ctx context.Context, workspaceID uuid.UUID) {
+	existing, err := s.fRepo.ListAutoTransitions(ctx, workspaceID)
+	if err != nil || len(existing) > 0 {
+		return
+	}
+	s.seedDefaults(ctx, workspaceID)
 }
 
 // seedDefaults creates the auto-transition rules (idempotent) and a "PR"
@@ -238,6 +248,9 @@ func (s *ForgejoService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (
 		if account, err := conn.client().GetCurrentUser(); err == nil {
 			resp.Account = &dto.ForgejoAccountResponse{Login: account.Login, AvatarURL: account.AvatarURL}
 		}
+
+		// Global mode has no Connect flow to seed defaults; self-heal once.
+		s.seedDefaultsIfMissing(ctx, workspaceID)
 
 		repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
 		if err != nil {
@@ -379,9 +392,9 @@ func splitRepoOwnerName(fullName string) (string, string, bool) {
 // forgejoWebhookEnvelope carries the fields every Forgejo payload shares.
 type forgejoWebhookEnvelope struct {
 	Repository struct {
-		ID      int64  `json:"id"`
+		ID       int64  `json:"id"`
 		FullName string `json:"full_name"`
-		HTMLURL string `json:"html_url"`
+		HTMLURL  string `json:"html_url"`
 	} `json:"repository"`
 }
 
@@ -538,7 +551,7 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 		HTMLURL: event.PullRequest.HTMLURL, HeadBranch: &headRef, HeadSHA: &headSHA,
 		BaseBranch: &baseRef, Additions: event.PullRequest.Additions,
 		Deletions: event.PullRequest.Deletions,
-		MergedAt: event.PullRequest.MergedAt, ClosedAt: event.PullRequest.ClosedAt,
+		MergedAt:  event.PullRequest.MergedAt, ClosedAt: event.PullRequest.ClosedAt,
 	}
 	if err := s.fRepo.UpsertPullRequest(ctx, pr); err != nil {
 		return fmt.Errorf("upserting PR: %w", err)
@@ -690,10 +703,10 @@ func (s *ForgejoService) processCreateEvent(ctx context.Context, payload []byte,
 }
 
 type fjWebhookStatus struct {
-	State string `json:"state"`
-	SHA   string `json:"sha"`
+	State  string `json:"state"`
+	SHA    string `json:"sha"`
 	Commit struct {
-		ID string `json:"id"`
+		ID  string `json:"id"`
 		SHA string `json:"sha"`
 	} `json:"commit"`
 }
@@ -753,6 +766,68 @@ func (s *ForgejoService) processStatusEvent(ctx context.Context, payload []byte,
 		})
 	}
 	return nil
+}
+
+// StartStatusPoller periodically recomputes CI greenness for open PRs.
+// Forgejo 16 has no commit-status webhook event, so the combined status is
+// polled; the (harmless) status webhook path above still reacts instantly on
+// Forgejo versions that do deliver one.
+func (s *ForgejoService) StartStatusPoller(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = time.Minute
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.pollOpenPRChecks(ctx)
+			}
+		}
+	}()
+}
+
+func (s *ForgejoService) pollOpenPRChecks(ctx context.Context) {
+	repos, err := s.fRepo.ListReposWithOpenPRs(ctx)
+	if err != nil {
+		return
+	}
+	for i := range repos {
+		repo := repos[i]
+		conn, err := s.resolveConnection(ctx, repo.WorkspaceID)
+		if err != nil {
+			continue
+		}
+		owner, name, ok := splitRepoOwnerName(repo.FullName)
+		if !ok {
+			continue
+		}
+		prs, err := s.fRepo.ListOpenPRsByRepo(ctx, repo.ID)
+		if err != nil {
+			continue
+		}
+		for j := range prs {
+			pr := prs[j]
+			if pr.HeadSHA == nil || *pr.HeadSHA == "" || pr.ChecksGreen {
+				continue
+			}
+			combined, err := conn.client().GetCombinedStatus(owner, name, *pr.HeadSHA)
+			if err != nil || !combined.AllChecksPassed() {
+				continue
+			}
+			if err := s.fRepo.UpdatePullRequestChecks(ctx, repo.ID, pr.Number, true); err != nil {
+				continue
+			}
+			s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr.ID)
+			s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
+				Type:    "forgejo:pr_updated",
+				Payload: map[string]any{"pr_number": pr.Number, "checks_green": true},
+			})
+		}
+	}
 }
 
 func (s *ForgejoService) applyChecksGreenTransition(ctx context.Context, workspaceID, prID uuid.UUID) {

@@ -138,6 +138,28 @@ func (r *ForgejoRepository) UpdatePullRequestChecks(ctx context.Context, repoID 
 	return err
 }
 
+// ListReposWithOpenPRs lists linked repos that have at least one open PR —
+// the status poller's work list.
+func (r *ForgejoRepository) ListReposWithOpenPRs(ctx context.Context) ([]domain.ForgejoRepoModel, error) {
+	var repos []domain.ForgejoRepoModel
+	err := r.db.SelectContext(ctx, &repos, `
+		SELECT r.* FROM forgejo_repos r
+		WHERE r.is_active AND EXISTS (
+			SELECT 1 FROM forgejo_pull_requests p
+			WHERE p.forgejo_repo_id = r.id AND p.state IN ('open', 'draft'))
+		ORDER BY r.full_name`)
+	return repos, err
+}
+
+// ListOpenPRsByRepo lists a repo's open PRs (with head sha) for status polling.
+func (r *ForgejoRepository) ListOpenPRsByRepo(ctx context.Context, repoID uuid.UUID) ([]domain.ForgejoPullRequest, error) {
+	var prs []domain.ForgejoPullRequest
+	err := r.db.SelectContext(ctx, &prs, `
+		SELECT * FROM forgejo_pull_requests
+		WHERE forgejo_repo_id = $1 AND state IN ('open', 'draft')`, repoID)
+	return prs, err
+}
+
 // ListOpenPRsByHeadSHA finds open PRs whose head commit matches — used to
 // react to commit-status (CI) events.
 func (r *ForgejoRepository) ListOpenPRsByHeadSHA(ctx context.Context, repoID uuid.UUID, sha string) ([]domain.ForgejoPullRequest, error) {

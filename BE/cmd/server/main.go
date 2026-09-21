@@ -186,6 +186,8 @@ func main() {
 		globalForgejo,
 	)
 	forgejoH := handler.NewForgejoHandler(forgejoSvc)
+	// Forgejo has no commit-status webhook; poll open PRs for CI greenness.
+	go forgejoSvc.StartStatusPoller(context.Background(), time.Minute)
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:      mcpServerVersion(),

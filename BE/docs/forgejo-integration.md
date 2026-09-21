@@ -10,7 +10,8 @@ Two configuration modes:
 - **Per-workspace** (self-hosted default): Settings → Forgejo → paste the
   instance URL and a personal access token. The token is validated against
   `GET /api/v1/user` and stored AES-256-GCM encrypted
-  (key derived from `JWT_SECRET + ":forgejo"`).
+  (key derived from `JWT_SECRET + ":forgejo"`). Connecting seeds the default
+  transition rules and the per-team "PR" workflow state exactly once.
 - **Global** (SaaS-style): set `FORGEJO_URL` and `FORGEJO_TOKEN` in the
   environment; every workspace shares the connection and the settings page
   shows it as server-managed.
@@ -58,7 +59,7 @@ configurable target status or "No transition"):
 | --- | --- | --- |
 | `branch_created` | a branch whose name contains an identifier is pushed | `in_progress` |
 | `pr_opened` | a referencing pull request opens | `in_review` |
-| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (commit-status webhook + combined status API recheck; at least one check must exist) | `pr` (workflow state "PR", auto-created per team, category started) |
+| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo 16 has no commit-status webhook, so ku polls open PRs every minute; a `status` webhook is still accepted from versions that deliver one | `pr` (workflow state "PR", auto-created per team, category started) |
 | `pr_merged` | the pull request merges | `done` |
 
 Slug targets resolve against each issue's team workflow at fire time, so one
