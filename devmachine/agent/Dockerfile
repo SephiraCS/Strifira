@@ -1,4 +1,4 @@
-FROM golang:1.25.12-alpine AS go-stage
+FROM golang:1.27.1-alpine AS go-stage
 
 FROM node:22.23.1-alpine3.23
 
