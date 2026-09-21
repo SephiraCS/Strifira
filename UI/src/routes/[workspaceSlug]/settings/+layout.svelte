@@ -10,7 +10,6 @@
 		Webhook,
 		Settings,
 		FileText,
-		ScrollText,
 		Settings2,
 		Sparkles,
 		SlidersHorizontal,
@@ -107,8 +106,7 @@
 		{
 			label: m['settings.nav.system'](),
 			items: [
-				{ label: m['settings.nav.version'](), href: `/${slug}/settings/version`, icon: RefreshCw },
-				{ label: m['settings.nav.licenses'](), href: `/${slug}/settings/licenses`, icon: ScrollText }
+				{ label: m['settings.nav.version'](), href: `/${slug}/settings/version`, icon: RefreshCw }
 			]
 		}
 	]);
