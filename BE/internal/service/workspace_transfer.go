@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -282,10 +281,9 @@ func sanitizeExportRow(table string, row dto.WorkspaceTransferRow) {
 	case "webhooks":
 		delete(row, "secret")
 		row["is_active"] = false
-	case "github_installations":
-		delete(row, "access_token")
-		delete(row, "token_expires_at")
-	case "github_repos", "github_auto_transitions":
+	case "forgejo_connections":
+		delete(row, "token")
+	case "forgejo_repos", "forgejo_auto_transitions":
 		row["is_active"] = false
 	case "shared_links":
 		delete(row, "token")
@@ -718,11 +716,9 @@ func prepareImportedRow(table string, row dto.WorkspaceTransferRow) {
 	case "shared_links":
 		row["token"] = randomTransferToken(32)
 		row["is_active"] = false
-	case "github_installations":
-		row["installation_id"] = negativeTransferID(transferString(row["id"]))
-		row["access_token"] = nil
-		row["token_expires_at"] = nil
-	case "github_repos", "github_auto_transitions":
+	case "forgejo_connections":
+		row["token"] = nil
+	case "forgejo_repos", "forgejo_auto_transitions":
 		row["is_active"] = false
 	case "ai_settings":
 		row["api_key_encrypted"] = nil
@@ -740,18 +736,6 @@ func randomTransferToken(bytes int) string {
 		return uuid.New().String() + uuid.New().String()
 	}
 	return hex.EncodeToString(value)
-}
-
-func negativeTransferID(value string) int64 {
-	hash := sha256.Sum256([]byte(value))
-	var n int64
-	for i := 0; i < 7; i++ {
-		n = (n << 8) | int64(hash[i])
-	}
-	if n == 0 {
-		n = 1
-	}
-	return -n
 }
 
 func prepareIdentityMap(parsed *parsedWorkspaceArchive, workspaceID uuid.UUID, users map[string]string) (map[string]string, map[string]string, error) {

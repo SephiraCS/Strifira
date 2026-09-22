@@ -29,7 +29,7 @@ func TestSanitizeExportRowRemovesSecretsAndDisablesIntegrations(t *testing.T) {
 		removed string
 	}{
 		{"webhooks", dto.WorkspaceTransferRow{"secret": "secret", "is_active": true}, "secret"},
-		{"github_installations", dto.WorkspaceTransferRow{"access_token": "token", "token_expires_at": "later"}, "access_token"},
+		{"forgejo_connections", dto.WorkspaceTransferRow{"token": "token"}, "token"},
 		{"ai_settings", dto.WorkspaceTransferRow{"api_key_encrypted": "ciphertext"}, "api_key_encrypted"},
 		{"assets", dto.WorkspaceTransferRow{"storage_key": "private-key"}, "storage_key"},
 		{"shared_links", dto.WorkspaceTransferRow{"token": "bearer", "is_active": true}, "token"},
@@ -168,9 +168,9 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	cycleID := uuid.New()
 	issue2ID := uuid.New()
 	groupID := uuid.New()
-	githubInstallationID := uuid.New()
-	githubRepoID := uuid.New()
-	githubPRID := uuid.New()
+	forgejoConnectionID := uuid.New()
+	forgejoRepoID := uuid.New()
+	forgejoPRID := uuid.New()
 	validTeamSharedLinkID := uuid.New()
 	orphanedTeamSharedLinkID := uuid.New()
 	orphanedTeamID := uuid.New()
@@ -252,23 +252,25 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO webhooks(id,workspace_id,url,secret,events,is_active) VALUES(gen_random_uuid(),$1,'https://example.test/hook','top-secret',ARRAY['issue.created','issue.updated'],true)`, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO github_installations(id,workspace_id,installation_id,account_login,account_type,access_token,installed_by) VALUES($1,$2,987654321,'portable-org','Organization','secret-token',$3)`, githubInstallationID, workspaceID, userID)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_connections(id,workspace_id,instance_url,token,account_login) VALUES($1,$2,'https://git.example.test','secret-token','portable-org')`, forgejoConnectionID, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO github_repos(id,installation_id,workspace_id,github_repo_id,full_name,default_branch,is_active) VALUES($1,$2,$3,123456789,'portable/repo','main',true)`, githubRepoID, githubInstallationID, workspaceID)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_repos(id,workspace_id,forgejo_repo_id,full_name,instance_url,default_branch,is_active) VALUES($1,$2,123456789,'portable/repo','https://git.example.test','main',true)`, forgejoRepoID, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO github_pull_requests(id,workspace_id,issue_id,github_repo_id,github_pr_id,number,title,state,author_login,html_url) VALUES($1,$2,$3,$4,111,7,'Portable PR','open','developer','https://github.com/portable/repo/pull/7')`, githubPRID, workspaceID, issueID, githubRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_pull_requests(id,workspace_id,forgejo_repo_id,number,title,state,author_login,html_url) VALUES($1,$2,$3,7,'Portable PR','open','developer','https://git.example.test/portable/repo/pulls/7')`, forgejoPRID, workspaceID, forgejoRepoID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO github_branches(id,workspace_id,issue_id,github_repo_id,name,html_url) VALUES(gen_random_uuid(),$1,$2,$3,'eng-1','https://github.com/portable/repo/tree/eng-1')`, workspaceID, issueID, githubRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_pull_request_issues(pr_id,issue_id) VALUES($1,$2)`, forgejoPRID, issueID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO github_commits(id,workspace_id,issue_id,github_repo_id,pr_id,sha,message,author_login,html_url,committed_at) VALUES(gen_random_uuid(),$1,$2,$3,$4,'0123456789012345678901234567890123456789','Portable commit','developer','https://github.com/portable/repo/commit/0123',NOW())`, workspaceID, issueID, githubRepoID, githubPRID)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_branches(id,workspace_id,issue_id,forgejo_repo_id,name,html_url) VALUES(gen_random_uuid(),$1,$2,$3,'eng-1','https://git.example.test/portable/repo/src/branch/eng-1')`, workspaceID, issueID, forgejoRepoID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO github_auto_transitions(id,workspace_id,event,target_status,target_status_id,is_active) VALUES(gen_random_uuid(),$1,'pr_merged','done',$2,true)`, workspaceID, statusID)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_commits(id,workspace_id,issue_id,forgejo_repo_id,sha,message,author_login,html_url,committed_at) VALUES(gen_random_uuid(),$1,$2,$3,'0123456789012345678901234567890123456789','Portable commit','developer','https://git.example.test/portable/repo/commit/0123',NOW())`, workspaceID, issueID, forgejoRepoID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_auto_transitions(id,workspace_id,event,target_status,target_status_id,is_active) VALUES(gen_random_uuid(),$1,'pr_merged','done',$2,true)`, workspaceID, statusID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO ai_settings(workspace_id,provider,base_url,model,api_key_encrypted,description_expand_prompt,issue_copy_prompt) VALUES($1,'openai_compatible','https://ai.example.test','portable-model','encrypted-secret','Expand prompt','Copy prompt')`, workspaceID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_workspace_policies(workspace_id,enabled,allowed_providers,allowed_repositories) VALUES($1,true,'["codex"]','["portable/repo"]')`, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_scope_settings(id,workspace_id,team_id,github_repo_id,base_branch) VALUES(gen_random_uuid(),$1,$2,$3,'main')`, workspaceID, teamID, githubRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_scope_settings(id,workspace_id,team_id,forgejo_repo_id,base_branch) VALUES(gen_random_uuid(),$1,$2,$3,'main')`, workspaceID, teamID, forgejoRepoID)
 	require.NoError(t, err)
 
 	storageDir := t.TempDir()
@@ -289,7 +291,7 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	exported, err := parseWorkspaceArchive(archive.Path)
 	require.NoError(t, err)
 	require.NotContains(t, exported.data.Tables["webhooks"][0], "secret")
-	require.NotContains(t, exported.data.Tables["github_installations"][0], "access_token")
+	require.NotContains(t, exported.data.Tables["forgejo_connections"][0], "token")
 	require.NotContains(t, exported.data.Tables["ai_settings"][0], "api_key_encrypted")
 	require.NotContains(t, exported.data.Users[0], "password_hash")
 	require.Contains(t, exported.manifest.Omitted, "refresh_tokens")
@@ -337,7 +339,7 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.Equal(t, 2, counts["comments"])
 	require.Equal(t, 1, counts["assets"])
 	require.Equal(t, 1, counts["webhooks"])
-	require.Equal(t, 1, counts["github_commits"])
+	require.Equal(t, 1, counts["forgejo_commits"])
 	require.Equal(t, 2, counts["shared_links"])
 	var importedWebhookActive, importedDevMachinesEnabled bool
 	var importedWebhookSecret string
