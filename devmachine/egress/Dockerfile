@@ -4,7 +4,7 @@ COPY egress/main.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /egress main.go
 
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates \
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates \
     && addgroup -g 1000 ku \
     && adduser -D -u 1000 -G ku ku
 COPY --from=build /egress /usr/local/bin/ku-egress

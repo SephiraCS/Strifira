@@ -42,12 +42,10 @@ RUN apt-get update \
     && npm install -g --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && npm install -g --allow-scripts=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \
-    && npm install --prefix /tmp/npm-patches --ignore-scripts --package-lock=false "brace-expansion@${BRACE_EXPANSION_VERSION}" \
-    && rm -rf /usr/local/lib/node_modules/npm/node_modules/brace-expansion \
-    && cp -a /tmp/npm-patches/node_modules/brace-expansion /usr/local/lib/node_modules/npm/node_modules/ \
-    && node -e 'const actual=require("/usr/local/lib/node_modules/npm/node_modules/brace-expansion/package.json").version;if(actual!==process.argv[1])throw new Error(`unexpected brace-expansion ${actual}`)' "${BRACE_EXPANSION_VERSION}" \
+    && for pair in "brace-expansion@5.0.9" "ip-address@10.3.1" "js-yaml@4.3.2" "tar@7.5.21" "undici@7.29.0"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
+    && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
-         "js-yaml@4.3.0" "shell-quote@1.9.0" "tar@7.5.19" \
+         "js-yaml@4.3.2" "shell-quote@1.9.0" "tar@7.5.21" \
     && rm -rf /usr/lib/code-server/node_modules/js-yaml \
          /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
          /usr/lib/code-server/lib/vscode/node_modules/tar \
