@@ -7,13 +7,15 @@ COPY UI/ .
 RUN npm run build
 
 # Stage 2: Build Caddy from source with patched Go
-FROM golang:1.26.5-alpine AS caddy-builder
+FROM golang:1.26.6-alpine AS caddy-builder
 RUN apk add --no-cache git
 RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-RUN xcaddy build latest --replace golang.org/x/text=golang.org/x/text@v0.39.0
+RUN xcaddy build latest --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
+    --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
+    --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.2
 
 # Stage 3: Build backend
-FROM golang:1.26.5-alpine AS be-builder
+FROM golang:1.27.1-alpine AS be-builder
 WORKDIR /app
 COPY BE/go.mod BE/go.sum ./
 RUN go mod download
