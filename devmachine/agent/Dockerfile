@@ -9,7 +9,7 @@ ARG CLAUDE_CODE_VERSION=2.1.218
 ARG OPENCODE_VERSION=1.18.4
 ARG CODEX_VERSION=0.145.0
 
-RUN apk add --no-cache bash ca-certificates curl git make openssh-client \
+RUN apk upgrade --no-cache && apk add --no-cache bash ca-certificates curl git make openssh-client \
     && npm install -g "npm@${NPM_VERSION}" \
     && case "$PROVIDER" in \
          claude-code) npm install -g --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" ;; \
