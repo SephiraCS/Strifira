@@ -45,10 +45,27 @@ class ApiClient {
 
 	private async refresh(): Promise<void> {
 		if (this.refreshing) return this.refreshing;
-		this.refreshing = this.fetch<void>('/api/auth/refresh', { method: 'POST' }).finally(() => {
+		this.refreshing = this.refreshAcrossContexts().finally(() => {
 			this.refreshing = null;
 		});
 		return this.refreshing;
+	}
+
+	// The cookie jar is shared by every context of one browser profile (tab,
+	// second tab, installed PWA), and the server rotates the refresh token on
+	// every refresh. Serializing through a Web Lock keeps those contexts from
+	// racing the rotation; the server's grace window covers browsers without
+	// the Locks API.
+	private refreshAcrossContexts(): Promise<void> {
+		const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+		if (!locks) {
+			return this.fetch<void>('/api/auth/refresh', { method: 'POST' });
+		}
+		return locks.request<void>(
+			'ku:auth-refresh',
+			{ mode: 'exclusive' },
+			() => this.fetch<void>('/api/auth/refresh', { method: 'POST' })
+		);
 	}
 
 	get<T>(path: string): Promise<T> {

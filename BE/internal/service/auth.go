@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -125,20 +126,28 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest) (*domain.
 	return user, accessToken, refreshToken, nil
 }
 
+// refreshRotationGrace is how long a just-rotated refresh token still
+// refreshes. A cookie jar is shared by every context of one browser profile
+// (tab, second tab, installed PWA): when the 15-minute access token lapses,
+// each context refreshes on its own and the server receives the same token
+// several times within milliseconds. Without grace, every context but the
+// first loses the rotation and its 401 clears the jar's cookies, killing
+// the session everywhere (users see auth-failed toasts mid-work).
+const refreshRotationGrace = 30 * time.Second
+
 func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (string, string, error) {
 	claims, err := jwtpkg.ValidateToken(refreshToken, s.jwtSecret)
 	if err != nil {
 		return "", "", ErrInvalidToken
 	}
 
-	tokenHash := hashToken(refreshToken)
-	rt, err := s.refreshRepo.GetByHash(ctx, tokenHash)
-	if err != nil {
+	// Rotate: unknown, expired, or rotated longer than grace ago is replay
+	// of a stale token and fails; a token still inside grace (a racing
+	// context) refreshes again so no context loses the session.
+	usable, err := s.refreshRepo.RotateByHash(ctx, hashToken(refreshToken), refreshRotationGrace)
+	if err != nil || !usable {
 		return "", "", ErrInvalidToken
 	}
-
-	// Rotate refresh token
-	_ = s.refreshRepo.DeleteByHash(ctx, tokenHash)
 
 	newAccessToken, err := jwtpkg.GenerateAccessToken(claims.UserID, s.jwtSecret)
 	if err != nil {
@@ -152,7 +161,7 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (s
 
 	newRT := &repository.RefreshToken{
 		ID:        uuid.New(),
-		UserID:    rt.UserID,
+		UserID:    claims.UserID,
 		TokenHash: hashToken(newRefreshToken),
 		ExpiresAt: expiresAt,
 	}

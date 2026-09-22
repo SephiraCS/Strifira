@@ -34,6 +34,11 @@ type ScreenShareRepo interface {
 type RefreshTokenRepo interface {
 	Create(ctx context.Context, rt *RefreshToken) error
 	GetByHash(ctx context.Context, hash string) (*RefreshToken, error)
+	// RotateByHash marks an unexpired, unrotated token as rotated and
+	// reports whether the token was still usable: rotated now for the first
+	// time, or already rotated within grace. A token missing, expired, or
+	// rotated longer than grace ago is reported as not usable.
+	RotateByHash(ctx context.Context, hash string, grace time.Duration) (bool, error)
 	DeleteByHash(ctx context.Context, hash string) error
 	DeleteByUser(ctx context.Context, userID uuid.UUID) error
 	DeleteExpired(ctx context.Context) error

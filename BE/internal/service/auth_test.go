@@ -64,6 +64,11 @@ func (m *mockRefreshTokenRepo) GetByHash(ctx context.Context, hash string) (*rep
 	return args.Get(0).(*repository.RefreshToken), args.Error(1)
 }
 
+func (m *mockRefreshTokenRepo) RotateByHash(ctx context.Context, hash string, grace time.Duration) (bool, error) {
+	args := m.Called(ctx, hash, grace)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *mockRefreshTokenRepo) DeleteByHash(ctx context.Context, hash string) error {
 	args := m.Called(ctx, hash)
 	return args.Error(0)
@@ -263,20 +268,42 @@ func TestRefreshTokens_Happy(t *testing.T) {
 
 	// Now test refresh
 	tokenHash := hashToken(refreshToken)
-	rt := &repository.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    userID,
-		TokenHash: tokenHash,
-		ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
-	}
-	refreshRepo.On("GetByHash", ctx, tokenHash).Return(rt, nil)
-	refreshRepo.On("DeleteByHash", ctx, tokenHash).Return(nil)
+	refreshRepo.On("RotateByHash", ctx, tokenHash, refreshRotationGrace).Return(true, nil)
 
 	newAccess, newRefresh, err := svc.RefreshTokens(ctx, refreshToken)
 
 	assert.NoError(t, err)
 	assert.NotEmpty(t, newAccess)
 	assert.NotEmpty(t, newRefresh)
+}
+
+func TestRefreshTokens_TokenBeyondRotationGrace(t *testing.T) {
+	userRepo := new(mockUserRepo)
+	refreshRepo := new(mockRefreshTokenRepo)
+	svc := NewAuthService(userRepo, refreshRepo, "test-secret")
+
+	ctx := context.Background()
+
+	hash, _ := bcryptGenerateHelper("Password123!!")
+	existingUser := &domain.User{
+		ID:           uuid.New(),
+		Email:        "test@example.com",
+		PasswordHash: hash,
+	}
+	userRepo.On("GetByEmail", ctx, "test@example.com").Return(existingUser, nil)
+	refreshRepo.On("Create", ctx, mock.AnythingOfType("*repository.RefreshToken")).Return(nil)
+
+	_, _, refreshToken, _ := svc.Login(ctx, dto.LoginRequest{
+		Email:    "test@example.com",
+		Password: "Password123!!",
+	})
+
+	// The token was already rotated longer than grace ago: stale-jar replay.
+	refreshRepo.On("RotateByHash", ctx, hashToken(refreshToken), refreshRotationGrace).Return(false, nil)
+
+	_, _, err := svc.RefreshTokens(ctx, refreshToken)
+
+	assert.ErrorIs(t, err, ErrInvalidToken)
 }
 
 func TestRefreshTokens_InvalidToken(t *testing.T) {

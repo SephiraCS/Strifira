@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,11 +11,12 @@ import (
 )
 
 type RefreshToken struct {
-	ID        uuid.UUID `db:"id"`
-	UserID    uuid.UUID `db:"user_id"`
-	TokenHash string    `db:"token_hash"`
-	ExpiresAt time.Time `db:"expires_at"`
-	CreatedAt time.Time `db:"created_at"`
+	ID        uuid.UUID  `db:"id"`
+	UserID    uuid.UUID  `db:"user_id"`
+	TokenHash string     `db:"token_hash"`
+	ExpiresAt time.Time  `db:"expires_at"`
+	CreatedAt time.Time  `db:"created_at"`
+	RotatedAt *time.Time `db:"rotated_at"`
 }
 
 type RefreshTokenRepository struct {
@@ -36,6 +39,29 @@ func (r *RefreshTokenRepository) GetByHash(ctx context.Context, hash string) (*R
 		return nil, err
 	}
 	return &rt, nil
+}
+
+func (r *RefreshTokenRepository) RotateByHash(ctx context.Context, hash string, grace time.Duration) (bool, error) {
+	// One atomic statement decides the race: the first rotation stamps
+	// rotated_at, later rotations within grace still match the WHERE clause
+	// (each context racing the same cookie gets its own refreshed session),
+	// and replays after grace no longer match.
+	query := `
+		UPDATE refresh_tokens
+		SET rotated_at = NOW()
+		WHERE token_hash = $1
+		  AND expires_at > NOW()
+		  AND (rotated_at IS NULL OR rotated_at >= NOW() - $2::interval)
+		RETURNING id`
+	var id uuid.UUID
+	err := r.db.QueryRowContext(ctx, query, hash, grace.Seconds()).Scan(&id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *RefreshTokenRepository) DeleteByHash(ctx context.Context, hash string) error {

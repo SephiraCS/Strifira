@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
@@ -271,6 +272,9 @@ func (r *testUserRepo) Update(_ context.Context, user *domain.User) error {
 
 type testRefreshTokenRepo struct {
 	tokens map[string]*repository.RefreshToken
+	// backdateRotations marks rotations as long past, simulating a replay
+	// outside the grace window without sleeping in tests.
+	backdateRotations bool
 }
 
 func (r *testRefreshTokenRepo) Create(_ context.Context, rt *repository.RefreshToken) error {
@@ -288,6 +292,25 @@ func (r *testRefreshTokenRepo) GetByHash(_ context.Context, hash string) (*repos
 		}
 	}
 	return nil, fmt.Errorf("not found")
+}
+
+func (r *testRefreshTokenRepo) RotateByHash(_ context.Context, hash string, grace time.Duration) (bool, error) {
+	rt, ok := r.tokens[hash]
+	if !ok || rt.ExpiresAt.Before(time.Now()) {
+		return false, nil
+	}
+	if rt.RotatedAt != nil {
+		// backdateRotations simulates a replay that arrives after grace.
+		if r.backdateRotations {
+			return false, nil
+		}
+		if time.Since(*rt.RotatedAt) > grace {
+			return false, nil
+		}
+	}
+	now := time.Now()
+	rt.RotatedAt = &now
+	return true, nil
 }
 
 func (r *testRefreshTokenRepo) DeleteByHash(_ context.Context, hash string) error {
