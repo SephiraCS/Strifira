@@ -143,9 +143,14 @@ func (s *AuthService) RefreshTokens(ctx context.Context, refreshToken string) (s
 
 	// Rotate: unknown, expired, or rotated longer than grace ago is replay
 	// of a stale token and fails; a token still inside grace (a racing
-	// context) refreshes again so no context loses the session.
+	// context) refreshes again so no context loses the session. Store
+	// failures propagate as-is so the handler can 500 instead of silently
+	// reporting every refresh as invalid credentials.
 	usable, err := s.refreshRepo.RotateByHash(ctx, hashToken(refreshToken), refreshRotationGrace)
-	if err != nil || !usable {
+	if err != nil {
+		return "", "", err
+	}
+	if !usable {
 		return "", "", ErrInvalidToken
 	}
 

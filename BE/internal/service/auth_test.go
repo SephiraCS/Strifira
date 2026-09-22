@@ -306,6 +306,39 @@ func TestRefreshTokens_TokenBeyondRotationGrace(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidToken)
 }
 
+func TestRefreshTokens_StoreErrorIsNotInvalidToken(t *testing.T) {
+	userRepo := new(mockUserRepo)
+	refreshRepo := new(mockRefreshTokenRepo)
+	svc := NewAuthService(userRepo, refreshRepo, "test-secret")
+
+	ctx := context.Background()
+
+	hash, _ := bcryptGenerateHelper("Password123!!")
+	existingUser := &domain.User{
+		ID:           uuid.New(),
+		Email:        "test@example.com",
+		PasswordHash: hash,
+	}
+	userRepo.On("GetByEmail", ctx, "test@example.com").Return(existingUser, nil)
+	refreshRepo.On("Create", ctx, mock.AnythingOfType("*repository.RefreshToken")).Return(nil)
+
+	_, _, refreshToken, _ := svc.Login(ctx, dto.LoginRequest{
+		Email:    "test@example.com",
+		Password: "Password123!!",
+	})
+
+	// A store failure must surface as itself (→ HTTP 500), never as
+	// ErrInvalidToken, whose handler path clears the jar's cookies and
+	// reports invalid credentials for what is an infrastructure blip.
+	storeErr := errors.New("relation missing")
+	refreshRepo.On("RotateByHash", ctx, hashToken(refreshToken), refreshRotationGrace).Return(false, storeErr)
+
+	_, _, err := svc.RefreshTokens(ctx, refreshToken)
+
+	assert.ErrorIs(t, err, storeErr)
+	assert.NotErrorIs(t, err, ErrInvalidToken)
+}
+
 func TestRefreshTokens_InvalidToken(t *testing.T) {
 	userRepo := new(mockUserRepo)
 	refreshRepo := new(mockRefreshTokenRepo)

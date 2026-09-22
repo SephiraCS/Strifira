@@ -98,9 +98,15 @@ func (h *AuthHandler) Refresh(c echo.Context) error {
 
 	accessToken, refreshToken, err := h.authService.RefreshTokens(c.Request().Context(), cookie.Value)
 	if err != nil {
-		log.WithFields(log.Fields{"event": "auth.refresh_failed", "ip": c.RealIP()}).Warn("token refresh failed")
-		clearAuthCookies(c)
-		return response.Unauthorized(c)
+		if errors.Is(err, service.ErrInvalidToken) {
+			log.WithFields(log.Fields{"event": "auth.refresh_failed", "ip": c.RealIP()}).Warn("token refresh failed")
+			clearAuthCookies(c)
+			return response.Unauthorized(c)
+		}
+		// Store failure: the token's validity is unknown, not rejected —
+		// clearing the jar here would log out every context on a blip.
+		log.WithFields(log.Fields{"event": "auth.refresh_store_error", "ip": c.RealIP()}).Error("token refresh store error")
+		return response.InternalError(c)
 	}
 
 	log.WithFields(log.Fields{"event": "auth.refresh", "ip": c.RealIP()}).Info("token refreshed")

@@ -45,13 +45,15 @@ func (r *RefreshTokenRepository) RotateByHash(ctx context.Context, hash string, 
 	// One atomic statement decides the race: the first rotation stamps
 	// rotated_at, later rotations within grace still match the WHERE clause
 	// (each context racing the same cookie gets its own refreshed session),
-	// and replays after grace no longer match.
+	// and replays after grace no longer match. make_interval takes the
+	// seconds as a double parameter — a float8::interval cast is invalid
+	// PostgreSQL and turned every refresh into a 401 in 20260922-1.
 	query := `
 		UPDATE refresh_tokens
 		SET rotated_at = NOW()
 		WHERE token_hash = $1
 		  AND expires_at > NOW()
-		  AND (rotated_at IS NULL OR rotated_at >= NOW() - $2::interval)
+		  AND (rotated_at IS NULL OR rotated_at >= NOW() - make_interval(secs => $2))
 		RETURNING id`
 	var id uuid.UUID
 	err := r.db.QueryRowContext(ctx, query, hash, grace.Seconds()).Scan(&id)
