@@ -717,7 +717,10 @@ func prepareImportedRow(table string, row dto.WorkspaceTransferRow) {
 		row["token"] = randomTransferToken(32)
 		row["is_active"] = false
 	case "forgejo_connections":
-		row["token"] = nil
+		// Forgejo connections require a token at the schema level. Replace the
+		// exported secret with a fresh placeholder; the import result already
+		// marks Forgejo credentials for reconfiguration.
+		row["token"] = randomTransferToken(32)
 	case "forgejo_repos", "forgejo_auto_transitions":
 		row["is_active"] = false
 	case "ai_settings":

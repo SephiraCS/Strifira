@@ -352,49 +352,49 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.NoError(t, db.Get(&importedAISecret, `SELECT api_key_encrypted FROM ai_settings WHERE workspace_id=$1`, targetWorkspaceID))
 	require.Nil(t, importedAISecret)
 
-	var importedRepoID, importedInstallationID uuid.UUID
+	var importedRepoID uuid.UUID
 	var importedRepoActive bool
 	require.NoError(t, db.QueryRow(`
-		SELECT r.id, r.installation_id, r.is_active
-		FROM github_repos r
+		SELECT r.id, r.is_active
+		FROM forgejo_repos r
 		WHERE r.workspace_id=$1 AND r.full_name='portable/repo'
-	`, targetWorkspaceID).Scan(&importedRepoID, &importedInstallationID, &importedRepoActive))
-	require.NotEqual(t, githubRepoID, importedRepoID)
+	`, targetWorkspaceID).Scan(&importedRepoID, &importedRepoActive))
+	require.NotEqual(t, forgejoRepoID, importedRepoID)
 	require.False(t, importedRepoActive)
 
-	var importedInstallationWorkspaceID uuid.UUID
-	var importedAccessToken *string
+	var importedConnectionID, importedConnectionWorkspaceID uuid.UUID
+	var importedConnectionToken *string
 	require.NoError(t, db.QueryRow(`
-		SELECT workspace_id, access_token
-		FROM github_installations
-		WHERE id=$1
-	`, importedInstallationID).Scan(&importedInstallationWorkspaceID, &importedAccessToken))
-	require.Equal(t, targetWorkspaceID, importedInstallationWorkspaceID)
-	require.Nil(t, importedAccessToken)
+		SELECT id, workspace_id, token
+		FROM forgejo_connections
+		WHERE workspace_id=$1 AND account_login='portable-org'
+	`, targetWorkspaceID).Scan(&importedConnectionID, &importedConnectionWorkspaceID, &importedConnectionToken))
+	require.Equal(t, targetWorkspaceID, importedConnectionWorkspaceID)
+	require.NotNil(t, importedConnectionToken)
+	require.NotEqual(t, "secret-token", *importedConnectionToken)
 
 	var importedPRID, importedPRRepoID uuid.UUID
 	require.NoError(t, db.QueryRow(`
-		SELECT id, github_repo_id
-		FROM github_pull_requests
-		WHERE workspace_id=$1 AND github_pr_id=111
+		SELECT id, forgejo_repo_id
+		FROM forgejo_pull_requests
+		WHERE workspace_id=$1 AND number=7
 	`, targetWorkspaceID).Scan(&importedPRID, &importedPRRepoID))
-	require.NotEqual(t, githubPRID, importedPRID)
+	require.NotEqual(t, forgejoPRID, importedPRID)
 	require.Equal(t, importedRepoID, importedPRRepoID)
 
-	var importedBranchRepoID, importedCommitRepoID, importedCommitPRID uuid.UUID
+	var importedBranchRepoID, importedCommitRepoID uuid.UUID
 	require.NoError(t, db.QueryRow(`
-		SELECT github_repo_id
-		FROM github_branches
+		SELECT forgejo_repo_id
+		FROM forgejo_branches
 		WHERE workspace_id=$1 AND name='eng-1'
 	`, targetWorkspaceID).Scan(&importedBranchRepoID))
 	require.NoError(t, db.QueryRow(`
-		SELECT github_repo_id, pr_id
-		FROM github_commits
+		SELECT forgejo_repo_id
+		FROM forgejo_commits
 		WHERE workspace_id=$1 AND sha='0123456789012345678901234567890123456789'
-	`, targetWorkspaceID).Scan(&importedCommitRepoID, &importedCommitPRID))
+	`, targetWorkspaceID).Scan(&importedCommitRepoID))
 	require.Equal(t, importedRepoID, importedBranchRepoID)
 	require.Equal(t, importedRepoID, importedCommitRepoID)
-	require.Equal(t, importedPRID, importedCommitPRID)
 
 	var importedTeamID uuid.UUID
 	require.NoError(t, db.Get(&importedTeamID, `SELECT id FROM teams WHERE workspace_id=$1 AND key='ENG'`, targetWorkspaceID))
@@ -412,11 +412,11 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.NotEmpty(t, importedSharedLinkToken)
 	require.NotEqual(t, validTeamSharedLinkToken, importedSharedLinkToken)
 	var importedScopeRepoID uuid.UUID
-	require.NoError(t, db.Get(&importedScopeRepoID, `SELECT github_repo_id FROM dev_machine_scope_settings WHERE workspace_id=$1 AND team_id=$2`, targetWorkspaceID, importedTeamID))
+	require.NoError(t, db.Get(&importedScopeRepoID, `SELECT forgejo_repo_id FROM dev_machine_scope_settings WHERE workspace_id=$1 AND team_id=$2`, targetWorkspaceID, importedTeamID))
 	require.Equal(t, importedRepoID, importedScopeRepoID)
 
 	var importedTransitionStatusID, importedTeamStatusID uuid.UUID
-	require.NoError(t, db.Get(&importedTransitionStatusID, `SELECT target_status_id FROM github_auto_transitions WHERE workspace_id=$1 AND event='pr_merged'`, targetWorkspaceID))
+	require.NoError(t, db.Get(&importedTransitionStatusID, `SELECT target_status_id FROM forgejo_auto_transitions WHERE workspace_id=$1 AND event='pr_merged'`, targetWorkspaceID))
 	require.NoError(t, db.Get(&importedTeamStatusID, `SELECT id FROM team_statuses WHERE team_id=$1 AND slug='backlog'`, importedTeamID))
 	require.Equal(t, importedTeamStatusID, importedTransitionStatusID)
 

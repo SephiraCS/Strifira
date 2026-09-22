@@ -1452,7 +1452,7 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 			issueID, fixture.workspaceID, teamID, issueNumber, identifier, fixture.userID, statusID)
 		require.NoError(t, insertErr)
 		_, insertErr = db.Exec(`INSERT INTO dev_machine_checkouts
-			(id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
+			(id,workspace_id,machine_id,issue_id,forgejo_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
 			VALUES ($1,$2,$3,$4,$5,'ku/checkout-test','main',$6,$7,$8)`,
 			checkoutID, fixture.workspaceID, machineID, issueID, repositoryID,
 			"ku/"+strings.ToLower(identifier), "/workspace/tasks/"+strings.ToLower(identifier), status)
