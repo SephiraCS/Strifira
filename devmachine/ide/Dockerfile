@@ -25,7 +25,7 @@ COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
 COPY ide/command-event.js /usr/local/lib/ku-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
 # VS Code's npm support extension is not the npm CLI package; keep its manifest identity unambiguous.
-RUN if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/pebble; fi \
+RUN rm -f /usr/bin/pebble \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep sudo tmux xz-utils \
     && case "${TARGETARCH}" in \
@@ -58,7 +58,7 @@ RUN if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/p
     && node -e 'const fs=require("fs"),path="/usr/lib/code-server/lib/vscode/extensions/npm/package.json",manifest=JSON.parse(fs.readFileSync(path));manifest.name="npm-support";fs.writeFileSync(path,JSON.stringify(manifest,null,2)+"\n")' \
     && rm -rf /root/.npm /tmp/npm-patches /tmp/code-server-patches /var/lib/apt/lists/* \
     && rm -f /tmp/code-server.deb \
-    && if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/pebble; fi \
+    && rm -f /usr/bin/pebble \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku \
