@@ -47,20 +47,32 @@ jobs:
           set -o pipefail
           {
             echo '--- start postgres and redis ---'
-            podman run --detach --name ku-postgres \
+            # Prefer the host Docker socket; nested podman needs
+            # --cgroups=disabled or conmon cannot create its sandbox cgroup
+            # ("enabling controller io: no such file or directory") and the
+            # database never becomes ready.
+            if docker info >/dev/null 2>&1; then
+              ENGINE=docker
+              CGROUPS=""
+            else
+              ENGINE=podman
+              CGROUPS="--cgroups=disabled"
+            fi
+            echo "using $ENGINE"
+            $ENGINE run --detach $CGROUPS --name ku-postgres \
               --publish 127.0.0.1:5432:5432 \
               --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
               docker.io/library/postgres:16-alpine
-            podman run --detach --name ku-redis \
+            $ENGINE run --detach $CGROUPS --name ku-redis \
               --publish 127.0.0.1:6379:6379 \
               docker.io/library/redis:7-alpine
 
             for _ in $(seq 1 30); do
-              podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
+              $ENGINE exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
               sleep 2
             done
-            podman exec ku-postgres pg_isready -U ku
-            podman exec ku-redis redis-cli ping
+            $ENGINE exec ku-postgres pg_isready -U ku
+            $ENGINE exec ku-redis redis-cli ping
 
             echo '--- apply database migrations ---'
             go run ./cmd/server migrate up
@@ -163,9 +175,10 @@ jobs:
     runs-on: terrascale-builder
     timeout-minutes: 30
     env:
-      # The runner image reports Ubuntu 26.04 while Playwright 1.58 ships
-      # browser builds for the Ubuntu 24.04 platform identifier.
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
+      # Playwright 1.58 ships no ubuntu x64 builds for bundled chromium
+      # (20.04/22.04/24.04/26.04 all resolve to "not supported"); the
+      # debian12 build runs fine on the Ubuntu job container.
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: debian12-x64
 
     steps:
       - name: Check out the source revision
@@ -209,7 +222,7 @@ jobs:
     runs-on: terrascale-builder
     timeout-minutes: 30
     env:
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: ubuntu24.04-x64
+      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: debian12-x64
 
     steps:
       - name: Check out the source revision
