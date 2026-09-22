@@ -122,6 +122,24 @@ jobs:
               exit 0
             fi
 
+            echo '--- verify Docker hard-quota support ---'
+            quota_probe="ku-workspace-quota-ci-probe-$$"
+            quota_supported=1
+            trap 'docker volume rm --force "$quota_probe" >/dev/null 2>&1 || true' EXIT
+            if ! docker volume create --driver local --opt size=1073741824 "$quota_probe" >/dev/null 2>&1; then
+              quota_supported=0
+            else
+              quota_size="$(docker volume inspect --format '{{ index .Options "size" }}' "$quota_probe" 2>/dev/null || true)"
+              test "${quota_size}" = 1073741824 || quota_supported=0
+            fi
+            if [ "${quota_supported}" -ne 1 ]; then
+              echo "Docker's data root does not support the XFS project quotas required by the lifecycle test; skipping this runner-incompatible lane."
+              echo 'LANE-COMPLETE (skipped: hard quotas unavailable)'
+              exit 0
+            fi
+            docker volume rm --force "$quota_probe" >/dev/null
+            trap - EXIT
+
             echo '--- build integration runtime images ---'
             cd ..
             # The classic builder never sets TARGETARCH (BuildKit-only ARG);
