@@ -3,7 +3,7 @@ WORKDIR /src
 COPY browser/cdp-proxy/main.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /cdp-proxy main.go
 
-FROM ubuntu:26.04
+FROM ubuntu:24.04
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
@@ -12,8 +12,7 @@ ARG CHROME_VERSION=150.0.7871.181-1
 ARG CHROME_AMD64_SHA256=fec50905f7b1235a440977a833476e0162874f5ca79e506cdf40b71af64d92f4
 ARG CHROME_ARM64_SHA256=bf6efc4587ecce26ef579dfdc99364da5f3da4a45f2a6b368f075b6bedc92f7d
 
-RUN rm -f /usr/bin/pebble \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl openbox x11-utils \
     && case "$TARGETARCH" in \
          amd64) kasm_arch=amd64; kasm_sha=12bac6014149c5fdee75f0d403785aaa3e5dd4ea222de73253a5d4181bc9567e; chrome_arch=amd64; chrome_sha="$CHROME_AMD64_SHA256" ;; \
@@ -27,7 +26,6 @@ RUN rm -f /usr/bin/pebble \
     && echo "${chrome_sha}  /tmp/chrome.deb" | sha256sum -c - \
     && apt-get install -y --no-install-recommends /tmp/chrome.deb \
     && rm -f /tmp/kasmvnc.deb /tmp/chrome.deb \
-    && rm -f /usr/bin/pebble \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /home/ku \

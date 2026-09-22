@@ -1,6 +1,6 @@
 FROM node:22.23.1-bookworm-slim@sha256:6c74791e557ce11fc957704f6d4fe134a7bc8d6f5ca4403205b2966bd488f6b3 AS node-stage
 
-FROM ubuntu:26.04
+FROM ubuntu:24.04
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
@@ -25,8 +25,7 @@ COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
 COPY ide/command-event.js /usr/local/lib/ku-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
 # VS Code's npm support extension is not the npm CLI package; keep its manifest identity unambiguous.
-RUN rm -f /usr/bin/pebble \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep sudo tmux xz-utils \
     && case "${TARGETARCH}" in \
          amd64) package_arch=amd64; code_server_sha="$CODE_SERVER_AMD64_SHA256"; ttyd_arch=x86_64; ttyd_sha="$TTYD_AMD64_SHA256" ;; \
@@ -58,7 +57,6 @@ RUN rm -f /usr/bin/pebble \
     && node -e 'const fs=require("fs"),path="/usr/lib/code-server/lib/vscode/extensions/npm/package.json",manifest=JSON.parse(fs.readFileSync(path));manifest.name="npm-support";fs.writeFileSync(path,JSON.stringify(manifest,null,2)+"\n")' \
     && rm -rf /root/.npm /tmp/npm-patches /tmp/code-server-patches /var/lib/apt/lists/* \
     && rm -f /tmp/code-server.deb \
-    && rm -f /usr/bin/pebble \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku \
