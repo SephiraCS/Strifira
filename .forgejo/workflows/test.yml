@@ -59,10 +59,14 @@ jobs:
               CGROUPS="--cgroups=disabled"
             fi
             echo "using $ENGINE"
+            # fsync off: this database is throwaway test state and the
+            # overlay-backed volume in the job container makes committed
+            # writes slow enough to overrun test deadlines.
             $ENGINE run --detach $CGROUPS --name ku-postgres \
               --publish 127.0.0.1:5432:5432 \
               --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
-              docker.io/library/postgres:16-alpine
+              docker.io/library/postgres:16-alpine \
+              -c fsync=off -c synchronous_commit=off -c full_page_writes=off
             $ENGINE run --detach $CGROUPS --name ku-redis \
               --publish 127.0.0.1:6379:6379 \
               docker.io/library/redis:7-alpine

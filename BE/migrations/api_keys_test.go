@@ -31,7 +31,7 @@ func TestAPIKeysMigrationRoundTrip(t *testing.T) {
 		t.Skip("DATABASE_URL is not configured")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
