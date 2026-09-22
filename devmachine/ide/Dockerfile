@@ -59,7 +59,7 @@ RUN if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/p
     && rm -rf /root/.npm /tmp/npm-patches /tmp/code-server-patches /var/lib/apt/lists/* \
     && rm -f /tmp/code-server.deb \
     && if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/pebble; fi \
-         /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
+    && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku \
     && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-checkout /usr/local/bin/ku-terminal-session \

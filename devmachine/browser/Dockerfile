@@ -28,7 +28,7 @@ RUN if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/p
     && apt-get install -y --no-install-recommends /tmp/chrome.deb \
     && rm -f /tmp/kasmvnc.deb /tmp/chrome.deb \
     && if [ -e /usr/bin/pebble ] && [ ! -c /usr/bin/pebble ]; then rm -f /usr/bin/pebble; fi \
-        /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
+    && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku
