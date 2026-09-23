@@ -68,12 +68,35 @@ type Hub struct {
 	mu      sync.RWMutex
 	clients map[uuid.UUID]map[*Client]bool // workspaceID -> clients
 	shares  map[uuid.UUID]*shareState      // shareID -> live membership
+	// presenterSeen remembers, per share, when a presenter last announced
+	// here. It deliberately survives the share's last connection leaving
+	// (only ClearShare drops it): the no-source GC measures its grace from
+	// this moment rather than from the share's creation, so a long-lived
+	// share is not ended by a brief signaling drop.
+	presenterSeen map[uuid.UUID]time.Time
+	// startedAt anchors the grace window after a process restart: the
+	// in-memory map above is empty then, and reconnecting presenters get a
+	// fresh grace period rather than being judged against a pre-restart
+	// timestamp.
+	startedAt time.Time
+	// OnPresenterSeen, when set, is invoked (never under the lock) after a
+	// presenter announces for a share, so the persistence layer can record
+	// contact across restarts. Optional and best-effort.
+	OnPresenterSeen func(shareID uuid.UUID)
 }
 
 func NewHub() *Hub {
+	return NewHubStartedAt(time.Now())
+}
+
+// NewHubStartedAt builds a hub whose restart-grace anchor is the given
+// instant; production uses NewHub, tests simulate long-running processes.
+func NewHubStartedAt(startedAt time.Time) *Hub {
 	return &Hub{
-		clients: make(map[uuid.UUID]map[*Client]bool),
-		shares:  make(map[uuid.UUID]*shareState),
+		clients:       make(map[uuid.UUID]map[*Client]bool),
+		shares:        make(map[uuid.UUID]*shareState),
+		presenterSeen: make(map[uuid.UUID]time.Time),
+		startedAt:     startedAt,
 	}
 }
 
@@ -261,6 +284,7 @@ func (h *Hub) ReadPump(ctx context.Context, client *Client) {
 // broadcasts the new membership summary to the workspace (presenter online
 // + distinct viewer count).
 func (h *Hub) SharePresence(client *Client, shareID uuid.UUID, role, action string) {
+	presenterJoined := false
 	h.mu.Lock()
 	if action == "leave" {
 		if state, ok := h.shares[shareID]; ok {
@@ -282,12 +306,18 @@ func (h *Hub) SharePresence(client *Client, shareID uuid.UUID, role, action stri
 		if role == "presenter" {
 			delete(state.viewers, client)
 			state.presenters[client] = true
+			h.presenterSeen[shareID] = time.Now()
+			presenterJoined = true
 		} else {
 			delete(state.presenters, client)
 			state.viewers[client] = true
 		}
 	}
 	h.mu.Unlock()
+
+	if presenterJoined && h.OnPresenterSeen != nil {
+		h.OnPresenterSeen(shareID)
+	}
 
 	h.broadcastSharePresence(client.workspaceID, shareID)
 }
@@ -359,10 +389,28 @@ func (h *Hub) ShareState(shareID uuid.UUID) (viewers int, presenterOnline bool) 
 	return h.shareStateLocked(shareID)
 }
 
+// PresenterSeenAt reports when a presenter last announced for the share in
+// this process. ok is false when no presenter was seen since startup —
+// callers fall back to their persisted timestamp.
+func (h *Hub) PresenterSeenAt(shareID uuid.UUID) (t time.Time, ok bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	t, ok = h.presenterSeen[shareID]
+	return t, ok
+}
+
+// StartedAt reports when this hub process started. The no-source GC never
+// judges a share against a contact older than this moment: after a restart
+// every still-live share gets a fresh grace window to be re-announced.
+func (h *Hub) StartedAt() time.Time {
+	return h.startedAt
+}
+
 // ClearShare drops all membership state for the share (the share ended).
 func (h *Hub) ClearShare(shareID uuid.UUID) {
 	h.mu.Lock()
 	delete(h.shares, shareID)
+	delete(h.presenterSeen, shareID)
 	h.mu.Unlock()
 }
 

@@ -61,6 +61,11 @@ func (m *mockScreenShareRepo) MarkEnded(ctx context.Context, id uuid.UUID) error
 	return args.Error(0)
 }
 
+func (m *mockScreenShareRepo) TouchPresenterSeen(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 type mockUserRepoForShares struct {
 	mock.Mock
 }
@@ -96,7 +101,9 @@ func (m *mockUserRepoForShares) Update(ctx context.Context, user *domain.User) e
 func newShareTestService(t *testing.T) (*mockScreenShareRepo, *mockUserRepoForShares, *realtime.Hub, *ScreenShareService) {
 	shareRepo := new(mockScreenShareRepo)
 	userRepo := new(mockUserRepoForShares)
-	hub := realtime.NewHub()
+	// A hub that has been up for an hour: the restart grace window is over,
+	// so GC decisions reflect the presenter-contact clock alone.
+	hub := realtime.NewHubStartedAt(time.Now().Add(-time.Hour))
 	svc := NewScreenShareService(shareRepo, userRepo, hub)
 	return shareRepo, userRepo, hub, svc
 }
@@ -223,9 +230,9 @@ func TestScreenShareService_ListGCsSourcelessShares(t *testing.T) {
 	ctx := context.Background()
 	wsID := uuid.New()
 	presenterID := uuid.New()
-	// Presenter dropped without ending; the share has had no presenter
-	// connection for far longer than the reload grace period.
-	stale := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-noSourceGraceSeconds * 2 * time.Second)}
+	// Presenter dropped without ending; their last contact is far older
+	// than the reconnect grace period.
+	stale := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-noSourceGraceSeconds * 2 * time.Second), LastPresenterSeenAt: time.Now().Add(-noSourceGraceSeconds * 2 * time.Second)}
 
 	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{stale}, nil)
 	shareRepo.On("MarkEnded", ctx, stale.ID).Return(nil)
@@ -235,7 +242,7 @@ func TestScreenShareService_ListGCsSourcelessShares(t *testing.T) {
 	list, err := svc.List(ctx, wsID)
 
 	assert.NoError(t, err)
-	assert.Empty(t, list.Active, "source-less mature share must be auto-removed")
+	assert.Empty(t, list.Active, "share with no presenter contact past the grace must be auto-removed")
 	assert.Len(t, list.Recent, 1)
 	assert.Equal(t, stale.ID.String(), list.Recent[0].ID)
 }
@@ -246,9 +253,9 @@ func TestScreenShareService_ListKeepsFreshSourcelessShares(t *testing.T) {
 	ctx := context.Background()
 	wsID := uuid.New()
 	presenterID := uuid.New()
-	// Share younger than the grace period: the presenter may simply be
-	// mid-reload (their wall re-announces presence within seconds).
-	fresh := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-5 * time.Second)}
+	// Last presenter contact seconds ago: the presenter may simply be
+	// mid-reconnect (a WS drop, a page reload — both re-announce quickly).
+	fresh := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-5 * time.Second), LastPresenterSeenAt: time.Now().Add(-5 * time.Second)}
 
 	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{fresh}, nil)
 	shareRepo.On("MarkEnded", ctx, mock.Anything).Times(0)
@@ -258,7 +265,76 @@ func TestScreenShareService_ListKeepsFreshSourcelessShares(t *testing.T) {
 	list, err := svc.List(ctx, wsID)
 
 	assert.NoError(t, err)
-	assert.Len(t, list.Active, 1, "fresh share within the reload grace must survive")
+	assert.Len(t, list.Active, 1, "share within the presenter-contact grace must survive")
+}
+
+func TestScreenShareService_ListGrantsRestartGrace(t *testing.T) {
+	shareRepo := new(mockScreenShareRepo)
+	userRepo := new(mockUserRepoForShares)
+	// A freshly restarted backend: every previously live share gets a new
+	// grace window so reconnecting presenters (WS backoff) re-adopt their
+	// share instead of finding it GC'd by the first wall load.
+	hub := realtime.NewHubStartedAt(time.Now().Add(-2 * time.Second))
+	svc := NewScreenShareService(shareRepo, userRepo, hub)
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	presenterID := uuid.New()
+	preRestart := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-time.Hour), LastPresenterSeenAt: time.Now().Add(-time.Hour)}
+
+	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{preRestart}, nil)
+	shareRepo.On("MarkEnded", ctx, mock.Anything).Times(0)
+	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{}, nil)
+	userRepo.On("GetByID", ctx, presenterID).Return(&domain.User{ID: presenterID, Name: "Mario"}, nil)
+
+	list, err := svc.List(ctx, wsID)
+
+	assert.NoError(t, err)
+	assert.Len(t, list.Active, 1, "a backend restart must not end shares older than the restart grace")
+}
+
+func TestScreenShareService_ListUsesHubSightingOverStalePersistedClock(t *testing.T) {
+	shareRepo, userRepo, hub, svc := newShareTestService(t)
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	presenterID := uuid.New()
+	// The persisted timestamp is an hour old, but the presenter announced
+	// seconds ago and then dropped — the freshest contact governs.
+	reconnecting := domain.ScreenShare{ID: uuid.New(), WorkspaceID: wsID, StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-time.Hour), LastPresenterSeenAt: time.Now().Add(-time.Hour)}
+
+	shareRepo.On("ListActiveByWorkspace", ctx, wsID).Return([]domain.ScreenShare{reconnecting}, nil)
+	shareRepo.On("MarkEnded", ctx, mock.Anything).Times(0)
+	shareRepo.On("ListRecentEndedByWorkspace", ctx, wsID, recentEndedLimit).Return([]domain.ScreenShare{}, nil)
+	userRepo.On("GetByID", ctx, presenterID).Return(&domain.User{ID: presenterID, Name: "Mario"}, nil)
+
+	client := hub.Register(nil, wsID, presenterID)
+	hub.SharePresence(client, reconnecting.ID, "presenter", "join")
+	hub.Unregister(client)
+
+	list, err := svc.List(ctx, wsID)
+
+	assert.NoError(t, err)
+	assert.Len(t, list.Active, 1, "a presenter seen seconds ago is within grace even with an old persisted clock")
+}
+
+func TestScreenShareService_TouchPresenterSeen(t *testing.T) {
+	shareRepo, _, _, svc := newShareTestService(t)
+
+	ctx := context.Background()
+	presenterID := uuid.New()
+	active := &domain.ScreenShare{ID: uuid.New(), WorkspaceID: uuid.New(), StartedBy: presenterID, Status: domain.ScreenShareStatusActive, CreatedAt: time.Now()}
+	ended := &domain.ScreenShare{ID: uuid.New(), WorkspaceID: uuid.New(), StartedBy: presenterID, Status: domain.ScreenShareStatusEnded, CreatedAt: time.Now()}
+
+	shareRepo.On("GetByID", ctx, active.ID).Return(active, nil)
+	shareRepo.On("TouchPresenterSeen", ctx, active.ID).Return(nil)
+	shareRepo.On("GetByID", ctx, ended.ID).Return(ended, nil)
+
+	svc.TouchPresenterSeen(ctx, active.ID)
+	svc.TouchPresenterSeen(ctx, ended.ID)
+
+	shareRepo.AssertCalled(t, "TouchPresenterSeen", ctx, active.ID)
+	shareRepo.AssertNotCalled(t, "TouchPresenterSeen", ctx, ended.ID)
 }
 
 func TestScreenShareService_ListKeepsPresentedSharesRegardlessOfAge(t *testing.T) {

@@ -59,3 +59,8 @@ func (r *ScreenShareRepository) MarkEnded(ctx context.Context, id uuid.UUID) err
 	_, err := r.db.ExecContext(ctx, `UPDATE screen_shares SET status = 'ended', ended_at = NOW() WHERE id = $1 AND status = 'active'`, id)
 	return err
 }
+
+func (r *ScreenShareRepository) TouchPresenterSeen(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE screen_shares SET last_presenter_seen_at = NOW() WHERE id = $1 AND status = 'active'`, id)
+	return err
+}

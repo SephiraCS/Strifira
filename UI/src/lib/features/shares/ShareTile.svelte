@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import { beforeNavigate } from '$app/navigation';
 	import {
 		announceSharePresence,
 		onSharePresence,
 		onShareSignal,
+		onWebSocketDisconnected,
 		onWebSocketReconnected,
 		sendShareSignal,
 		ICE_SERVERS,
 		type SignalData
 	} from './signaling';
+	import { presenterSession } from './presenter.session.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		Maximize2,
@@ -28,39 +29,21 @@
 		shareId,
 		mode,
 		presenterName,
-		presenterUserId,
-		sourceStream,
-		onEnded,
-		onPresenterStop
+		presenterUserId
 	}: {
 		shareId: string;
-		/** 'present' sends the local screen; 'view' receives it. */
+		/**
+		 * 'present' previews this tab's own persistent share (the engine
+		 * lives in presenterSession and survives navigation); 'view'
+		 * receives a remote share with this tile's own peer connection.
+		 */
 		mode: 'present' | 'view';
 		presenterName: string;
 		/** The share's started_by user id — viewers address offers to them. */
-		presenterUserId: string;
-		/**
-		 * Capture-first flow: the page captures via getDisplayMedia inside
-		 * the click's user-activation window (Chrome denies capture once
-		 * the gesture has expired behind async work — no picker appears)
-		 * and hands the stream here for sending.
-		 */
-		sourceStream?: MediaStream;
-		/** Fired when the share ends from any side. */
-		onEnded?: (reason: 'disconnected' | 'stopped' | 'error') => void;
-		/**
-		 * Presenter Stop hook: the owning page knows the workspace/share
-		 * ids needed to end the share server-side (broadcasts share.ended).
-		 * Failures are non-fatal; the local stream still stops.
-		 */
-		onPresenterStop?: () => Promise<void>;
+		presenterUserId?: string;
 	} = $props();
 
-	// "sharp" prioritizes resolution for text-heavy screens; "smooth"
-	// prioritizes framerate for video/motion content.
-	let qualityPreference = $state<'sharp' | 'smooth'>('sharp');
-
-	let videoEl: HTMLVideoElement;
+	let videoEl = $state<HTMLVideoElement | null>(null);
 	// Initial-value capture is intentional: `mode` never changes for a
 	// mounted tile.
 	// svelte-ignore state_referenced_locally
@@ -71,19 +54,16 @@
 	let viewerCount = $state(0);
 	let presentEnded = $state(false);
 	let streamEnded = $state(false);
-	let switching = $state(false);
-	let stopping = false;
-	let qualityBusy = $state(false);
 	// Browsers block unmuted autoplay: viewer tiles start muted with an
 	// explicit unmute toggle.
 	let audioMuted = $state(true);
+	// Viewer-side: the presenter's *signaling* is down (their socket
+	// dropped). Media may still flow — the share gets a grace window
+	// before it is treated as source-less.
+	let presenterOffline = $state(false);
 
 	// ---- Peer plumbing (P2P WebRTC over the workspace WS) ----
 
-	// Presenter side: one RTCPeerConnection per viewer.
-	const peers = new Map<string, RTCPeerConnection>();
-	// ICE candidates that arrived before the remote description was set.
-	const pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
 	// Viewer side: this tab's single connection to the presenter.
 	let viewerPc = $state<RTCPeerConnection | null>(null);
 	let viewerRemoteSettled = false;
@@ -93,50 +73,8 @@
 	let disposed = false;
 	const cleanups: Array<() => void> = [];
 
-	function isPresenting(): boolean {
-		return mode === 'present';
-	}
-
-	// ---- Leave guard ----
-
-	// Leaving this tab (route change, reload, close) while it is the live
-	// source of a share stops the stream for every viewer — confirm the
-	// departure instead of dropping the share silently.
-	function presentingLive(): boolean {
-		return isPresenting() && live && !presentEnded && !stopping;
-	}
-
-	function handleBeforeUnload(e: BeforeUnloadEvent) {
-		if (presentingLive()) e.preventDefault();
-	}
-
-	// In-app route changes only. Anything that unloads the document
-	// (type 'leave', external links — willUnload) is left to beforeunload
-	// so one departure never prompts twice.
-	beforeNavigate((nav) => {
-		if (nav.willUnload || !nav.from || !nav.to) return;
-		if (nav.to.url.pathname === nav.from.url.pathname) return;
-		if (presentingLive() && !confirm(m['shares.leave_warning']())) nav.cancel();
-	});
-
-	function applyContentHints(stream: MediaStream) {
-		const video = stream.getVideoTracks()[0];
-		if (video) video.contentHint = qualityPreference === 'sharp' ? 'detail' : 'motion';
-	}
-
-	async function applySenderQuality(pc: RTCPeerConnection) {
-		for (const sender of pc.getSenders()) {
-			if (sender.track?.kind !== 'video') continue;
-			try {
-				const params = sender.getParameters();
-				params.degradationPreference = qualityPreference === 'sharp' ? 'maintain-resolution' : 'balanced';
-				await sender.setParameters(params);
-			} catch {
-				// Browser without degradationPreference support: contentHint
-				// already carries the intent.
-			}
-		}
-	}
+	// ICE candidates that arrived before the remote description was set.
+	const pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
 
 	function queueCandidate(key: string, candidate: RTCIceCandidateInit | null, pc: RTCPeerConnection) {
 		if (candidate === null) return;
@@ -157,61 +95,21 @@
 		}
 	}
 
-	// ---- Presenter ----
-
-	function createPresenterPeer(viewerId: string): RTCPeerConnection {
-		const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-		peers.set(viewerId, pc);
-		if (sourceStream) {
-			applyContentHints(sourceStream);
-			for (const track of sourceStream.getTracks()) {
-				pc.addTrack(track, sourceStream);
-			}
-			void applySenderQuality(pc);
-		}
-		pc.onicecandidate = (e) => {
-			if (e.candidate) sendShareSignal(shareId, viewerId, { type: 'candidate', candidate: e.candidate.toJSON() });
-		};
-		pc.onconnectionstatechange = () => {
-			if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-				if (peers.get(viewerId) === pc) {
-					peers.delete(viewerId);
-					pendingCandidates.delete(viewerId);
-					pc.close();
-				}
-			}
-		};
-		return pc;
+	function isPresenting(): boolean {
+		return mode === 'present';
 	}
 
-	async function handleViewerSignal(viewerId: string, data: SignalData) {
-		if (data.type === 'offer') {
-			// A viewer (re)negotiating: replace any dead connection for it.
-			const existing = peers.get(viewerId);
-			if (existing) {
-				if (existing.connectionState === 'connected' || existing.signalingState === 'have-remote-offer') {
-					return; // stale duplicate offer
-				}
-				peers.delete(viewerId);
-				existing.close();
-			}
-			const pc = createPresenterPeer(viewerId);
-			try {
-				await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
-				const answer = await pc.createAnswer();
-				await pc.setLocalDescription(answer);
-				sendShareSignal(shareId, viewerId, { type: 'answer', sdp: pc.localDescription!.sdp! });
-				await flushCandidates(viewerId, pc);
-			} catch {
-				peers.delete(viewerId);
-				pendingCandidates.delete(viewerId);
-				pc.close();
-			}
-		} else if (data.type === 'candidate') {
-			const pc = peers.get(viewerId);
-			if (pc) queueCandidate(viewerId, data.candidate, pc);
+	// Presenter preview: the persistent session owns the stream; the tile
+	// only displays (and re-displays after surface switches or navigation).
+	$effect(() => {
+		if (!isPresenting() || !videoEl) return;
+		const stream = presenterSession.stream;
+		if (stream) {
+			videoEl.srcObject = stream;
+			videoEl.muted = true;
+			void videoEl.play().catch(() => {});
 		}
-	}
+	});
 
 	// ---- Viewer ----
 
@@ -219,15 +117,24 @@
 	// hang forever (observed on Chromium: a fresh pc on a page that closed a
 	// previously connected pc — the promise never settles and never rejects),
 	// and an offer can be lost when it reaches the presenter before their
-	// tile mounted. Every attempt runs on a fresh peer connection under a
+	// session mounted. Every attempt runs on a fresh peer connection under a
 	// deadline; abandonment is visible with a manual retry.
 	const OFFER_STEP_TIMEOUT_MS = 4000;
 	const ATTEMPT_DEADLINE_MS = 12000;
 	const RETRY_BACKOFF_MS = 1200;
 	const MAX_ATTEMPTS = 4;
+	// How long a connected pc may sit in 'disconnected' before it is
+	// recycled (network change, sleep/resume — a fresh connection is the
+	// reliable recovery), and how long the presenter's signaling may be
+	// gone before the share is treated as source-less (bounded by the
+	// server's no-source GC grace).
+	const DISCONNECTED_WATCHDOG_MS = 10_000;
+	const PRESENTER_OFFLINE_GRACE_MS = 30_000;
 
 	let attempt = 0;
 	let attemptToken = 0;
+	let disconnectedWatchdog: number | null = null;
+	let presenterOfflineTimer: number | null = null;
 
 	/** Reject if `step` (createOffer / setLocalDescription) never settles. */
 	function withDeadline<T>(step: Promise<T>, what: string): Promise<T> {
@@ -252,7 +159,6 @@
 		reconnecting = false;
 		endReason = 'error';
 		streamEnded = true;
-		onEnded?.('error');
 	}
 
 	/** Start a negotiation attempt unless one is already in flight or live. */
@@ -266,6 +172,7 @@
 	function startViewerAttempt() {
 		const token = ++attemptToken;
 		attempt += 1;
+		clearWatchdog();
 		teardownViewerPc(); // fresh peer connection every attempt
 		connecting = true;
 		reconnecting = false;
@@ -285,18 +192,27 @@
 			if (e.track.kind === 'video') markLive();
 		};
 		pc.onicecandidate = (e) => {
-			if (e.candidate) sendShareSignal(shareId, presenterUserId, { type: 'candidate', candidate: e.candidate.toJSON() });
+			if (e.candidate && presenterUserId) {
+				sendShareSignal(shareId, presenterUserId, { type: 'candidate', candidate: e.candidate.toJSON() });
+			}
 		};
 		pc.onconnectionstatechange = () => {
 			if (pc !== viewerPc) return;
 			if (pc.connectionState === 'connected') {
 				markLive();
 			} else if (pc.connectionState === 'disconnected') {
+				// Media may resume on its own; if it does not within the
+				// watchdog window, recycle the connection.
 				reconnecting = true;
+				armWatchdog(token);
 			} else if (pc.connectionState === 'failed') {
-				// A dead attempt recycles immediately (fresh pc) instead of
-				// ending the tile; the retry budget bounds it.
-				if (token === attemptToken && !live) retryOrGiveUp(token);
+				// A dead connection recycles immediately (fresh pc) instead
+				// of ending the tile — live or not; the retry budget bounds
+				// it.
+				if (token === attemptToken && !streamEnded) {
+					attempt = live ? 0 : attempt;
+					retryOrGiveUp(token);
+				}
 			}
 		};
 
@@ -314,11 +230,31 @@
 				if (token !== attemptToken || disposed) return;
 				await withDeadline(pc.setLocalDescription(offer), 'setLocalDescription');
 				if (token !== attemptToken || disposed) return;
+				if (!presenterUserId) return;
 				sendShareSignal(shareId, presenterUserId, { type: 'offer', sdp: pc.localDescription!.sdp! });
 			} catch {
 				if (token === attemptToken && !live) retryOrGiveUp(token);
 			}
 		})();
+	}
+
+	function armWatchdog(token: number) {
+		clearWatchdog();
+		disconnectedWatchdog = window.setTimeout(() => {
+			if (token !== attemptToken || disposed || streamEnded || !live) return;
+			if (viewerPc?.connectionState !== 'disconnected') return;
+			// Still limping: replace the connection outright. A live share
+			// keeps its retry budget; a dead one gives up as usual.
+			attempt = 0;
+			startViewerAttempt();
+		}, DISCONNECTED_WATCHDOG_MS);
+	}
+
+	function clearWatchdog() {
+		if (disconnectedWatchdog) {
+			window.clearTimeout(disconnectedWatchdog);
+			disconnectedWatchdog = null;
+		}
 	}
 
 	function retryOrGiveUp(token: number) {
@@ -343,9 +279,18 @@
 	}
 
 	function teardownViewerPc() {
+		clearWatchdog();
 		viewerPc?.close();
 		viewerPc = null;
 		pendingCandidates.delete('viewer');
+	}
+
+	function clearPresenterOffline() {
+		presenterOffline = false;
+		if (presenterOfflineTimer) {
+			window.clearTimeout(presenterOfflineTimer);
+			presenterOfflineTimer = null;
+		}
 	}
 
 	async function handlePresenterSignal(data: SignalData) {
@@ -381,36 +326,21 @@
 		if (disposed) return;
 		disposed = true;
 		attemptToken++; // cancel any in-flight attempt bookkeeping
-		announceSharePresence(shareId, isPresenting() ? 'presenter' : 'viewer', 'leave');
-		window.removeEventListener('beforeunload', handleBeforeUnload);
-		for (const pc of peers.values()) pc.close();
-		peers.clear();
-		pendingCandidates.clear();
-		teardownViewerPc();
+		if (!isPresenting()) {
+			announceSharePresence(shareId, 'viewer', 'leave');
+			clearPresenterOffline();
+			teardownViewerPc();
+		}
 		for (const off of cleanups) off();
 		cleanups.length = 0;
 	}
 
 	onMount(() => {
-		window.addEventListener('beforeunload', handleBeforeUnload);
 		if (isPresenting()) {
-			if (!sourceStream) {
-				presentEnded = true;
-				connecting = false;
-				onEnded?.('error');
-				return;
-			}
-			// Presenter previews locally; muted loopback keeps the room quiet.
-			applyContentHints(sourceStream);
-			videoEl.srcObject = sourceStream;
-			videoEl.muted = true;
-			void videoEl.play().catch(() => {});
-			// The browser ends the captured track itself when the user hits
-			// the native "Stop sharing" bar or closes the shared surface —
-			// treat that exactly like pressing our Stop button.
-			sourceStream.getVideoTracks()[0]?.addEventListener('ended', handleCaptureEnded);
-			announceSharePresence(shareId, 'presenter', 'join');
-			live = true;
+			// Presenter view over the persistent session store; the engine
+			// (capture, peers, signaling) lives there, not in this tile.
+			presentEnded = !presenterSession.active;
+			live = presenterSession.active;
 			connecting = false;
 		} else {
 			announceSharePresence(shareId, 'viewer', 'join');
@@ -420,9 +350,7 @@
 		cleanups.push(
 			onShareSignal((event) => {
 				if (event.share_id !== shareId || presentEnded) return;
-				if (isPresenting()) {
-					if (event.from) void handleViewerSignal(event.from, event.data);
-				} else {
+				if (!isPresenting()) {
 					// Only the share's presenter may answer us. Signals still
 					// apply after a give-up so a manual retry finds a live pc.
 					if (event.from === presenterUserId && !streamEnded) void handlePresenterSignal(event.data);
@@ -433,27 +361,40 @@
 		cleanups.push(
 			onSharePresence((event) => {
 				if (event.share_id !== shareId) return;
+				if (isPresenting()) return;
 				viewerCount = event.viewers;
-				if (!isPresenting() && !event.presenter_online) {
-					// Presenter socket gone: no source exists anymore.
-					attemptToken++;
-					teardownViewerPc();
-					connecting = false;
-					endReason = 'disconnected';
-					streamEnded = true;
-					onEnded?.('disconnected');
-				} else if (!isPresenting() && event.presenter_online && !live) {
-					// The presenter is (back) online — e.g. their tile just
-					// mounted after our first offer was lost in the mount
-					// race, or their page reloaded and re-announced. Revive a
-					// tile that died on the earlier offline transition; an
-					// in-flight attempt keeps running under its own deadline.
-					if (streamEnded) {
-						attempt = 0;
-						streamEnded = false;
-						endReason = null;
+				if (!event.presenter_online) {
+					// The presenter's socket dropped. Media is peer-to-peer
+					// and may still flow; treat the share as gone only after
+					// a grace window (the server's no-source GC runs on the
+					// same clock at 45s).
+					if (streamEnded) return;
+					if (!presenterOffline) {
+						presenterOffline = true;
+						presenterOfflineTimer = window.setTimeout(() => {
+							if (disposed || isPresenting() || streamEnded) return;
+							attemptToken++;
+							teardownViewerPc();
+							connecting = false;
+							endReason = 'disconnected';
+							streamEnded = true;
+						}, PRESENTER_OFFLINE_GRACE_MS);
 					}
-					ensureNegotiating();
+				} else {
+					clearPresenterOffline();
+					if (!live) {
+						// The presenter is (back) online — e.g. their session
+						// just re-announced after a reconnect. Revive a tile
+						// that died on the earlier offline transition; an
+						// in-flight attempt keeps running under its own
+						// deadline.
+						if (streamEnded) {
+							attempt = 0;
+							streamEnded = false;
+							endReason = null;
+						}
+						ensureNegotiating();
+					}
 				}
 			})
 		);
@@ -461,10 +402,11 @@
 		cleanups.push(
 			onWebSocketReconnected(() => {
 				if (disposed || presentEnded) return;
+				if (isPresenting()) return; // the session store re-announces itself
 				// Presence is per-connection: re-announce, then renegotiate
 				// whatever died with the old socket.
-				announceSharePresence(shareId, isPresenting() ? 'presenter' : 'viewer', 'join');
-				if (!isPresenting() && !live) {
+				announceSharePresence(shareId, 'viewer', 'join');
+				if (!live) {
 					// The old socket's in-flight negotiation addressed a
 					// membership that no longer exists; restart it. A socket
 					// drop must not burn the whole retry budget.
@@ -473,115 +415,32 @@
 				}
 			})
 		);
+
+		cleanups.push(
+			onWebSocketDisconnected(() => {
+				if (disposed || isPresenting() || streamEnded) return;
+				// Signaling is down (e.g. a backend restart): surface it; the
+				// reconnect handler above re-establishes everything.
+				reconnecting = true;
+			})
+		);
+
+		// Returning to the tab after sleep/OS suspend: renegotiate anything
+		// that died while hidden.
+		const handleVisibility = () => {
+			if (document.visibilityState !== 'visible' || isPresenting() || streamEnded) return;
+			if (!live || (viewerPc && viewerPc.connectionState !== 'connected')) {
+				attempt = 0;
+				ensureNegotiating(true);
+			}
+		};
+		document.addEventListener('visibilitychange', handleVisibility);
+		cleanups.push(() => document.removeEventListener('visibilitychange', handleVisibility));
 	});
 
 	onDestroy(() => {
 		teardown();
 	});
-
-	// A native 'ended' that lands mid-switch (user hit the stop bar while
-	// the picker was up) must survive the switch: the source is dead.
-	let endAfterSwitch = false;
-
-	function handleCaptureEnded() {
-		// Track endings we caused ourselves (Stop, or swapping the surface)
-		// already run their own teardown. `stopping` is set synchronously so
-		// its own stopped track cannot re-enter.
-		if (stopping || presentEnded || !live) return;
-		if (switching) {
-			endAfterSwitch = true;
-			return;
-		}
-		void stopSharing();
-	}
-
-	/** Re-pick the captured screen/window/tab while staying live. */
-	async function switchSurface() {
-		if (!sourceStream || switching) return;
-		switching = true;
-		endAfterSwitch = false;
-		try {
-			// Chrome capture extensions (selfBrowserSurface etc.) sit beyond
-			// the TS DOM lib's DisplayMediaStreamOptions.
-			const captureOptions = {
-				audio: true,
-				video: { frameRate: 60 },
-				selfBrowserSurface: 'exclude',
-				surfaceSwitching: 'include',
-				systemAudio: 'include'
-			} as unknown as DisplayMediaStreamOptions;
-			const next = await navigator.mediaDevices.getDisplayMedia(captureOptions);
-			const nextVideo = next.getVideoTracks()[0];
-			if (nextVideo) {
-				nextVideo.contentHint = qualityPreference === 'sharp' ? 'detail' : 'motion';
-				nextVideo.addEventListener('ended', handleCaptureEnded);
-			}
-			// Swap the track on every live peer; renegotiation is not needed
-			// for a same-kind replaceTrack. replaceTrack can take a long
-			// time to settle (observed tens of seconds on a Firefox peer) —
-			// the switch must not block on it: fire-and-forget, and a dead
-			// old source is stopped only after the new capture is live.
-			const senders = [...peers.values()].flatMap((pc) => pc.getSenders());
-			for (const sender of senders) {
-				if (sender.track?.kind === 'video' && nextVideo) void sender.replaceTrack(nextVideo).catch(() => {});
-				if (sender.track?.kind === 'audio') {
-					const nextAudio = next.getAudioTracks()[0];
-					if (sender.track || nextAudio) void sender.replaceTrack(nextAudio ?? null).catch(() => {});
-				}
-			}
-			// Retire the previous capture; the new one feeds the preview.
-			sourceStream.getTracks().forEach((t) => t.stop());
-			sourceStream = next;
-			videoEl.srcObject = next;
-			videoEl.muted = true;
-			void videoEl.play().catch(() => {});
-		} catch {
-			// Picker cancelled or capture denied — nothing is being shared
-			// anymore; end the share (the row, viewers, tile) cleanly.
-			await stopSharing();
-		} finally {
-			switching = false;
-			if (endAfterSwitch && !stopping && !presentEnded) {
-				endAfterSwitch = false;
-				void stopSharing();
-			}
-		}
-	}
-
-	async function applyQualityPreference(pref: 'sharp' | 'smooth') {
-		if (pref === qualityPreference || qualityBusy) return;
-		qualityBusy = true;
-		qualityPreference = pref;
-		try {
-			if (sourceStream) applyContentHints(sourceStream);
-			for (const pc of peers.values()) await applySenderQuality(pc);
-		} finally {
-			qualityBusy = false;
-		}
-	}
-
-	async function stopSharing() {
-		if (stopping) return;
-		stopping = true;
-		// End the share server-side BEFORE notifying the wall: onEnded
-		// triggers a shares reload, which must not race ahead of the end
-		// commit and re-render this share as a viewer tile. Every async
-		// step is best-effort — the capture may already be dead when the
-		// browser-native stop fired it.
-		try {
-			await onPresenterStop?.();
-		} catch {
-			// Server-side end failed; lazy GC closes the row.
-		}
-		live = false;
-		presentEnded = true;
-		teardown();
-		onEnded?.('stopped');
-		// Release the browser's capture indicator for any still-live
-		// source tracks (pre-captured or switched).
-		const src = videoEl?.srcObject as MediaStream | null;
-		src?.getTracks().forEach((t) => t.stop());
-	}
 
 	function toggleAudio() {
 		audioMuted = !audioMuted;
@@ -603,10 +462,17 @@
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video class="h-full w-full object-contain" playsinline autoplay bind:this={videoEl}></video>
 
-	{#if connecting && !streamEnded}
+	{#if mode === 'view' && connecting && !streamEnded}
 		<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
 			<Loader2 size={24} class="animate-spin" />
 			<p class="text-sm">{m['shares.connecting_viewer']()}</p>
+		</div>
+	{/if}
+
+	{#if mode === 'view' && presenterOffline && !streamEnded}
+		<div class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black">
+			<Loader2 size={12} class="animate-spin" />
+			{m['shares.presenter_reconnecting']()}
 		</div>
 	{:else if reconnecting && !streamEnded && !presentEnded}
 		<div class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black">
@@ -630,9 +496,9 @@
 			{#if presenterName}
 				<span class="truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
 			{/if}
-			{#if viewerCount > 0}
+			{#if (mode === 'present' ? presenterSession.viewerCount : viewerCount) > 0}
 				<span class="rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
-					{m['shares.viewer_count']({ count: viewerCount })}
+					{m['shares.viewer_count']({ count: mode === 'present' ? presenterSession.viewerCount : viewerCount })}
 				</span>
 			{/if}
 			{#if mode === 'view'}
@@ -652,14 +518,14 @@
 			{#if mode === 'present'}
 				<div class="flex overflow-hidden rounded-md border border-white/20 bg-black/60 text-xs text-white">
 					<button
-						class="px-2.5 py-1 {qualityPreference === 'sharp' ? 'bg-white/20 font-medium' : 'hover:bg-white/10'}"
-						onclick={() => applyQualityPreference('sharp')}
+						class="px-2.5 py-1 {presenterSession.qualityPreference === 'sharp' ? 'bg-white/20 font-medium' : 'hover:bg-white/10'}"
+						onclick={() => void presenterSession.setQuality('sharp')}
 					>
 						{m['shares.quality_sharp']()}
 					</button>
 					<button
-						class="px-2.5 py-1 {qualityPreference === 'smooth' ? 'bg-white/20 font-medium' : 'hover:bg-white/10'}"
-						onclick={() => applyQualityPreference('smooth')}
+						class="px-2.5 py-1 {presenterSession.qualityPreference === 'smooth' ? 'bg-white/20 font-medium' : 'hover:bg-white/10'}"
+						onclick={() => void presenterSession.setQuality('smooth')}
 					>
 						{m['shares.quality_smooth']()}
 					</button>
@@ -680,15 +546,15 @@
 
 		{#if mode === 'present'}
 			<div class="absolute bottom-3 right-3 flex items-center gap-2">
-				<Button variant="secondary" size="sm" class="bg-black/60 text-white hover:bg-black/80" onclick={switchSurface} disabled={switching}>
-					{#if switching}
+				<Button variant="secondary" size="sm" class="bg-black/60 text-white hover:bg-black/80" onclick={() => void presenterSession.switchSurface()} disabled={presenterSession.switching}>
+					{#if presenterSession.switching}
 						<Loader2 size={14} class="animate-spin" />
 					{:else}
 						<RefreshCw size={14} />
 					{/if}
 					{m['shares.switch_surface']()}
 				</Button>
-				<Button variant="destructive" size="sm" onclick={stopSharing}>
+				<Button variant="destructive" size="sm" onclick={() => void presenterSession.stop()}>
 					<MonitorUp size={14} />
 					{m['shares.stop']()}
 				</Button>

@@ -1,10 +1,14 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
- * Presenter leave guard: while a tab is the live source of a share,
- * in-app route changes ask for confirmation (dismiss keeps the share),
- * and document unload (reload/close) raises the native beforeunload
- * prompt. Run via playwright.prod.config.ts against the deployed build.
+ * Presenter session persistence: the share's capture and peer connections
+ * live in a module-level session store, so navigating the app mid-share
+ * (wall → inbox → issue detail → wall) must NOT end the share, prompt, or
+ * reconnect the media — and a Stop control stays reachable from every
+ * page via the sidebar. A document unload (reload/close) still raises the
+ * native beforeunload prompt, and the source-less share is GC'd after the
+ * presenter-contact grace period. Run via playwright.prod.config.ts
+ * against the deployed build.
  */
 
 const BASE = 'https://ku.mariogk.com';
@@ -68,50 +72,87 @@ async function activeShareCount(cookie: string, slug: string) {
 	return list.active.length;
 }
 
-test('presenter is warned before navigating away or unloading mid-share', async ({ playwright, request }) => {
-	test.setTimeout(240_000);
+async function createIssueForNavigation(cookie: string, slug: string) {
+	const teamRes = await fetch(`${BASE}/api/workspaces/${slug}/teams`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', cookie },
+		body: JSON.stringify({ name: 'Persist', key: 'PST' })
+	});
+	if (teamRes.status !== 201) return null;
+	const team = (await teamRes.json()) as { id: string };
+	const issueRes = await fetch(`${BASE}/api/workspaces/${slug}/issues`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', cookie },
+		body: JSON.stringify({ team_id: team.id, title: 'Navigation persistence probe' })
+	});
+	if (issueRes.status !== 201) return null;
+	const issue = (await issueRes.json()) as { identifier: string };
+	return `/${slug}/issue/${issue.identifier}`;
+}
 
-	const user = await newUser(request, 'guard');
+test('share survives navigation to inbox and issues; reload prompts and GCs', async ({ playwright, request }) => {
+	test.setTimeout(300_000);
+
+	const user = await newUser(request, 'persist');
 	const wsRes = await fetch(`${BASE}/api/workspaces`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', cookie: user.cookie },
-		body: JSON.stringify({ name: 'guard', slug: `e2e-${RUN}-guard` })
+		body: JSON.stringify({ name: 'persist', slug: `e2e-${RUN}-persist` })
 	});
 	expect(wsRes.status).toBe(201);
 	const { slug } = (await wsRes.json()) as { slug: string };
+	const issuePath = await createIssueForNavigation(user.cookie, slug);
 
 	const browser = await playwright.chromium.launch();
 	const page = await browser.newPage();
 	await loginCookies(page, user.cookie);
+	let dialogs = 0;
+	page.on('dialog', (d) => {
+		dialogs++;
+		void d.dismiss();
+	});
+
 	await page.goto(`${BASE}/${slug}/shares`);
 	await expect(page.getByText('No one is sharing right now')).toBeVisible();
 
-	await installSyntheticCapture(page, 'guard');
+	await installSyntheticCapture(page, 'persist');
 	await page.getByRole('button', { name: 'Share my screen' }).click();
 	await expect(page.locator('[data-share-id]')).toHaveCount(1, { timeout: 30_000 });
 	await expect
 		.poll(async () => frameCount(page), { timeout: 30_000 })
 		.toBeGreaterThan(20);
 
-	// 1. In-app navigation while sharing: dismiss the confirm → stay.
-	let dialogMessage = '';
-	page.on('dialog', (d) => {
-		dialogMessage = d.message();
-		void d.dismiss();
-	});
+	// 1. In-app navigation while sharing must be silent and non-destructive:
+	// the session store outlives the route component.
 	await page.locator(`a[href="/${slug}/inbox"]`).first().click();
-	await page.waitForTimeout(1_000);
-	expect(page.url(), 'dismissed dialog must keep the route').toContain(`/${slug}/shares`);
-	expect(dialogMessage, 'confirm dialog must appear').toContain('sharing');
+	await expect(page).toHaveURL(new RegExp(`/${slug}/inbox`));
+	expect(dialogs, 'navigation must not prompt while sharing').toBe(0);
+	await expect(page.locator('button[title="Stop sharing"]')).toBeVisible();
+	expect(await activeShareCount(user.cookie, slug)).toBe(1);
+
+	// 2. The literal report: the presenter goes to an issue mid-share.
+	if (issuePath) {
+		await page.goto(`${BASE}${issuePath}`);
+		await expect(page).toHaveURL(new RegExp(issuePath));
+		expect(dialogs).toBe(0);
+		await expect(page.locator('button[title="Stop sharing"]')).toBeVisible();
+		expect(await activeShareCount(user.cookie, slug)).toBe(1);
+	}
+
+	// 3. Back on the wall: the same share is still live — media kept
+	// flowing throughout, no second share was created.
+	await page.locator(`a[href="/${slug}/shares"]`).first().click();
+	await expect(page.locator('[data-share-id]')).toHaveCount(1, { timeout: 15_000 });
 	await expect
-		.poll(async () => frameCount(page), { timeout: 20_000 })
+		.poll(async () => frameCount(page), { timeout: 30_000 })
 		.toBeGreaterThan(20);
 	expect(await activeShareCount(user.cookie, slug)).toBe(1);
 
-	// 2. Document unload while sharing: the native beforeunload prompt
-	// fires; accept it, reload, and the source-less share is GC'd.
-	let sawBeforeUnload = false;
+	// 4. Document unload while sharing: the native beforeunload prompt
+	// fires; accept it, reload, and the source-less share is GC'd after the
+	// presenter-contact grace (45s) on the next list call.
 	page.removeAllListeners('dialog');
+	let sawBeforeUnload = false;
 	page.on('dialog', (d) => {
 		if (d.type() === 'beforeunload') sawBeforeUnload = true;
 		void d.accept();
@@ -120,13 +161,12 @@ test('presenter is warned before navigating away or unloading mid-share', async 
 	await expect(page.locator('[data-share-id]')).toHaveCount(0, { timeout: 15_000 });
 	expect(sawBeforeUnload, 'beforeunload prompt must fire while sharing').toBe(true);
 
-	// No presenter connection exists after the unload; the server's
-	// no-source grace (45s) ends the share on the next list call.
 	await expect
 		.poll(async () => activeShareCount(user.cookie, slug), { timeout: 70_000, intervals: [5_000] })
 		.toBe(0);
 
-	// 3. After the share is gone, navigation must NOT prompt anymore.
+	// 5. With the share gone, nothing prompts and the sidebar Stop control
+	// is gone.
 	let prompts = 0;
 	page.removeAllListeners('dialog');
 	page.on('dialog', (d) => {
@@ -136,6 +176,7 @@ test('presenter is warned before navigating away or unloading mid-share', async 
 	await page.goto(`${BASE}/${slug}/inbox`);
 	await expect(page).toHaveURL(new RegExp(`/${slug}/inbox`));
 	expect(prompts, 'no dialog once nothing is shared').toBe(0);
+	await expect(page.locator('button[title="Stop sharing"]')).toHaveCount(0);
 
 	await browser.close();
 });

@@ -21,9 +21,10 @@ var (
 const recentEndedLimit = 20
 
 // noSourceGraceSeconds is how long a share may stay active without a live
-// presenter connection. The grace covers a presenter's own page reload
-// (their wall re-announces presence within seconds); beyond it, a share
-// with no presenter has no source and is auto-removed.
+// presenter connection. The grace is measured from the LAST presenter
+// contact (a presence announce; persisted in last_presenter_seen_at), so it
+// covers presenter reloads, brief signaling drops, and backend restarts —
+// not just the share's first 45 seconds of life.
 const noSourceGraceSeconds = 45
 
 type ScreenShareService struct {
@@ -90,15 +91,21 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 	for i := range active {
 		share := &active[i]
 		viewers, presenterOnline := s.hub.ShareState(share.ID)
-		if !presenterOnline && time.Since(share.CreatedAt) > noSourceGraceSeconds*time.Second {
-			// No presenter connection has announced this share for longer
-			// than a reload takes; it has no source and must not linger on
-			// the wall. Drop the membership state and close the share.
+		if !presenterOnline && s.presenterUnreachableFor(*share) > noSourceGraceSeconds*time.Second {
+			// The presenter has been unreachable for longer than a reload
+			// or reconnect takes; the share has no source and must not
+			// linger on the wall. Drop the membership state and close the
+			// share.
 			s.hub.ClearShare(share.ID)
 			if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
 				return resp, err
 			}
 			ended = append(ended, share)
+			// Parked viewers (and the presenter's own tile) learn the share
+			// is over instead of waiting for their next list load.
+			s.broadcast(share.WorkspaceID, "share.ended", map[string]string{
+				"id": share.ID.String(),
+			})
 			continue
 		}
 		decorated, err := s.decorate(ctx, *share, viewers)
@@ -128,6 +135,29 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 	}
 
 	return resp, nil
+}
+
+// TouchPresenterSeen records presenter contact for the share (wired to the
+// hub's OnPresenterSeen callback) so the GC grace survives restarts.
+func (s *ScreenShareService) TouchPresenterSeen(ctx context.Context, shareID uuid.UUID) {
+	if share, err := s.shareRepo.GetByID(ctx, shareID); err == nil && share != nil && share.Status == domain.ScreenShareStatusActive {
+		_ = s.shareRepo.TouchPresenterSeen(ctx, shareID)
+	}
+}
+
+// presenterUnreachableFor measures how long the share's presenter has been
+// without contact: the freshest of the persisted timestamp, the hub's
+// in-memory sighting, and the hub process start (a restart grants every
+// live share a fresh grace window to be re-announced).
+func (s *ScreenShareService) presenterUnreachableFor(share domain.ScreenShare) time.Duration {
+	lastSeen := share.LastPresenterSeenAt
+	if t, ok := s.hub.PresenterSeenAt(share.ID); ok && t.After(lastSeen) {
+		lastSeen = t
+	}
+	if start := s.hub.StartedAt(); start.After(lastSeen) {
+		lastSeen = start
+	}
+	return time.Since(lastSeen)
 }
 
 // Get returns a single share for deep links; nil when unknown.

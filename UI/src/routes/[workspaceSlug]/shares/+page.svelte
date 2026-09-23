@@ -2,12 +2,10 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
-	import { createShare } from '$lib/api/shares';
-	import type { ScreenShare } from '$lib/types/share';
+	import { presenterSession } from '$lib/features/shares/presenter.session.svelte';
 	import ShareTile from '$lib/features/shares/ShareTile.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
-	import { appToast } from '$lib/features/toast/toast';
 	import { MonitorUp, MonitorPlay, Loader2 } from 'lucide-svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
@@ -26,15 +24,13 @@
 		return () => mq.removeEventListener('change', update);
 	});
 
-	// The presenter's own share renders in present mode from the create
-	// response with its captured stream; every other active share mounts a
-	// viewer tile that negotiates its own peer connection.
-	let starting = $state(false);
-	let presenterJoin = $state<{ share: ScreenShare; stream: MediaStream } | null>(null);
-
+	// The presenter's share is the persistent session store — it survives
+	// navigation to issues and back; the wall only renders its view. Every
+	// other active share mounts a viewer tile that negotiates its own peer
+	// connection.
 	const tileCount = $derived(
 		activeShares.length +
-			(presenterJoin && !activeShares.some((s) => s.id === presenterJoin!.share.id) ? 1 : 0)
+			(presenterSession.share && !activeShares.some((s) => s.id === presenterSession.share?.id) ? 1 : 0)
 	);
 	const gridCols = $derived.by(() => {
 		if (compact || tileCount <= 1) return 1;
@@ -43,56 +39,8 @@
 	});
 	const gridRows = $derived(Math.ceil(tileCount / gridCols));
 
-	function presenterName(share: ScreenShare): string {
+	function presenterName(share: NonNullable<typeof presenterSession.share>): string {
 		return share.started_by_user?.display_name || share.started_by_user?.name || '';
-	}
-
-	// Capture FIRST, inside the click's user-activation window: Chrome
-	// denies getDisplayMedia (usually silently — no picker at all) once
-	// the gesture has expired behind the share-creation round-trip
-	// (2026-09-17 Chrome-on-Linux report). Only after a surface is chosen
-	// do we create the share.
-	async function startShare() {
-		if (starting) return;
-		starting = true;
-		let stream: MediaStream;
-		try {
-			// Chrome capture extensions (selfBrowserSurface etc.) sit beyond
-			// the TS DOM lib's DisplayMediaStreamOptions.
-			const captureOptions = {
-				audio: true,
-				video: { frameRate: 60 },
-				selfBrowserSurface: 'exclude',
-				surfaceSwitching: 'include',
-				systemAudio: 'include'
-			} as unknown as DisplayMediaStreamOptions;
-			stream = await navigator.mediaDevices.getDisplayMedia(captureOptions);
-		} catch (err) {
-			appToast.apiError(err, m['shares.capture_failed']());
-			return;
-		} finally {
-			starting = false;
-		}
-		try {
-			const joined = await createShare(slug, {});
-			presenterJoin = { share: joined.share, stream };
-			void sharesState.reload();
-		} catch (err) {
-			stream.getTracks().forEach((t) => t.stop());
-			appToast.apiError(err, m['shares.start_failed']());
-		}
-	}
-
-	function handlePresenterEnded() {
-		presenterJoin = null;
-		void sharesState.reload();
-	}
-
-	async function handlePresenterStop() {
-		if (presenterJoin) {
-			const { endShare } = await import('$lib/api/shares');
-			await endShare(slug, presenterJoin.share.id);
-		}
 	}
 
 	onMount(() => {
@@ -110,9 +58,9 @@
 			<MonitorPlay size={18} class="text-[var(--color-text-secondary)]" />
 			<h1 class="text-base font-semibold">{m['shares.title']()}</h1>
 		</div>
-		{#if !presenterJoin}
-			<Button onclick={startShare} disabled={starting}>
-				{#if starting}
+		{#if !presenterSession.share}
+			<Button onclick={() => void presenterSession.start(slug)} disabled={presenterSession.starting}>
+				{#if presenterSession.starting}
 					<Loader2 size={14} class="animate-spin" />
 				{:else}
 					<MonitorUp size={14} />
@@ -123,7 +71,7 @@
 	</header>
 
 	<div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-		{#if activeShares.length === 0 && !presenterJoin}
+		{#if activeShares.length === 0 && !presenterSession.share}
 			<EmptyState
 				title={m['shares.empty_active_title']()}
 				description={m['shares.empty_active_description']()}
@@ -134,21 +82,17 @@
 				style="grid-template-columns: repeat({gridCols}, minmax(0, 1fr)); grid-template-rows: repeat({gridRows}, minmax(0, 1fr));"
 				data-tile-count={tileCount}
 			>
-				{#if presenterJoin}
-					<div class="min-h-0 min-w-0" data-share-id={presenterJoin.share.id}>
+				{#if presenterSession.share}
+					<div class="min-h-0 min-w-0" data-share-id={presenterSession.share.id}>
 						<ShareTile
-							shareId={presenterJoin.share.id}
+							shareId={presenterSession.share.id}
 							mode="present"
-							presenterName={presenterName(presenterJoin.share)}
-							presenterUserId={presenterJoin.share.started_by}
-							sourceStream={presenterJoin.stream}
-							onEnded={handlePresenterEnded}
-							onPresenterStop={handlePresenterStop}
+							presenterName={presenterName(presenterSession.share)}
 						/>
 					</div>
 				{/if}
 				{#each activeShares as share (share.id)}
-					{#if share.id !== presenterJoin?.share.id}
+					{#if share.id !== presenterSession.share?.id}
 						<div class="min-h-0 min-w-0" data-share-id={share.id}>
 							<ShareTile
 								shareId={share.id}

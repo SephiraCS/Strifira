@@ -66,6 +66,16 @@ export function onWebSocketReconnected(handler: () => void): () => void {
 }
 
 /**
+ * Subscribe to WebSocket drops: established P2P media keeps flowing, but
+ * signaling and presence are down until the reconnect event fires.
+ */
+export function onWebSocketDisconnected(handler: () => void): () => void {
+	const listener = () => handler();
+	window.addEventListener('ws:disconnected', listener);
+	return () => window.removeEventListener('ws:disconnected', listener);
+}
+
+/**
  * ICE configuration for direct peer-to-peer connections: public STUN for
  * NAT discovery, deliberately no TURN relay — connections that no path can
  * carry fail visibly instead of transiting a server.

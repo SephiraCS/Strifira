@@ -200,6 +200,58 @@ func TestHub_BroadcastDoesNotBlockOnFullBuffers(t *testing.T) {
 	}
 }
 
+func TestHub_PresenterSeenSurvivesPresenterDisconnect(t *testing.T) {
+	h := NewHub()
+	wsID := uuid.New()
+	shareID := uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+
+	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.Unregister(presenter)
+
+	if _, online := h.ShareState(shareID); online {
+		t.Fatal("presenter must read as gone after disconnect")
+	}
+	seen, ok := h.PresenterSeenAt(shareID)
+	assert.True(t, ok, "presenter sighting must survive the disconnect for the GC clock")
+	assert.WithinDuration(t, time.Now(), seen, 5*time.Second)
+}
+
+func TestHub_PresenterSeenDroppedOnClearShare(t *testing.T) {
+	h := NewHub()
+	wsID := uuid.New()
+	shareID := uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+
+	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.ClearShare(shareID)
+
+	_, ok := h.PresenterSeenAt(shareID)
+	assert.False(t, ok, "an ended share must not keep sighting state")
+}
+
+func TestHub_OnPresenterSeenFiresForPresenterJoinsOnly(t *testing.T) {
+	h := NewHub()
+	wsID := uuid.New()
+	shareID := uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+	viewer := h.Register(nil, wsID, uuid.New())
+
+	var seen []uuid.UUID
+	h.OnPresenterSeen = func(id uuid.UUID) { seen = append(seen, id) }
+
+	h.SharePresence(viewer, shareID, "viewer", "join")
+	assert.Empty(t, seen, "viewer joins must not fire the presenter-seen callback")
+
+	h.SharePresence(presenter, shareID, "presenter", "join")
+	if assert.Len(t, seen, 1) {
+		assert.Equal(t, shareID, seen[0])
+	}
+
+	h.SharePresence(presenter, shareID, "presenter", "leave")
+	assert.Len(t, seen, 1, "leaves must not fire the callback again")
+}
+
 // Regression: broadcasts used to iterate h.clients after releasing the read
 // lock while Unregister mutated the same map (and closed client channels)
 // under the write lock — a concurrent map read/write or send-on-closed-

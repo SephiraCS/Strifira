@@ -18,4 +18,9 @@ type ScreenShare struct {
 	Status      string     `json:"status" db:"status"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	EndedAt     *time.Time `json:"ended_at" db:"ended_at"`
+	// LastPresenterSeenAt is the last presenter contact (share creation or
+	// a presence announce). The no-source GC measures its grace from this
+	// moment, not from CreatedAt, so a long-lived share survives brief
+	// presenter signaling drops and backend restarts.
+	LastPresenterSeenAt time.Time `json:"last_presenter_seen_at" db:"last_presenter_seen_at"`
 }

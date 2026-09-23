@@ -29,6 +29,7 @@ type ScreenShareRepo interface {
 	ListRecentEndedByWorkspace(ctx context.Context, workspaceID uuid.UUID, limit int) ([]domain.ScreenShare, error)
 	GetActiveByPresenter(ctx context.Context, workspaceID, userID uuid.UUID) (*domain.ScreenShare, error)
 	MarkEnded(ctx context.Context, id uuid.UUID) error
+	TouchPresenterSeen(ctx context.Context, id uuid.UUID) error
 }
 
 type RefreshTokenRepo interface {

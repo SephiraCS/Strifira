@@ -27,6 +27,7 @@
 	import type { Project } from '$lib/types/project';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
+	import { presenterSession } from '$lib/features/shares/presenter.session.svelte';
 	import { deleteProject } from '$lib/api/projects';
 	import { deleteView } from '$lib/api/views';
 	import { currentReleaseUrl, currentVersionLabel } from '$lib/release';
@@ -62,7 +63,8 @@
 		Info,
 		CircleQuestionMark,
 		BarChart3,
-		MonitorPlay
+		MonitorPlay,
+		MonitorUp
 	} from 'lucide-svelte';
 
 	let {
@@ -740,22 +742,40 @@
 				</a>
 				{/if}
 				{#if workspace.screen_sharing_enabled}
-				<a
-					href="/{slug}/shares"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/shares`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
-					<MonitorPlay size={16} class="shrink-0" />
-					<span class="truncate">{m['sidebar.screen_shares']()}</span>
-					{#if sharesState.active.length > 0}
-						<span
-							class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+				<div class="flex items-center gap-1">
+					<a
+						href="/{slug}/shares"
+						class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/shares`)
+							? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+							: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+					>
+						<MonitorPlay size={16} class="shrink-0" />
+						<span class="truncate">{m['sidebar.screen_shares']()}</span>
+						{#if presenterSession.active}
+							<span class="ml-auto flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" title={m['shares.sharing_badge']()}></span>
+						{:else if sharesState.active.length > 0}
+							<span
+								class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+							>
+								{sharesState.active.length > 9 ? '9+' : sharesState.active.length}
+							</span>
+						{/if}
+					</a>
+					<!-- The share is persistent across navigation: keep a Stop
+					     control reachable from every page. -->
+					{#if presenterSession.active}
+						<button
+							class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-red-500 hover:bg-[var(--color-bg-hover)]"
+							onclick={(e) => {
+								e.preventDefault();
+								void presenterSession.stop();
+							}}
+							title={m['shares.stop']()}
 						>
-							{sharesState.active.length > 9 ? '9+' : sharesState.active.length}
-						</span>
+							<MonitorUp size={14} />
+						</button>
 					{/if}
-				</a>
+				</div>
 				{/if}
 			</div>
 

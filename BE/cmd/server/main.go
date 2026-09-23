@@ -10,6 +10,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
@@ -151,6 +152,14 @@ func main() {
 	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)
 	shareSvc := service.NewScreenShareService(shareRepo, userRepo, hub)
+	// Persist presenter contact so the no-source GC grace survives restarts.
+	hub.OnPresenterSeen = func(shareID uuid.UUID) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			shareSvc.TouchPresenterSeen(ctx, shareID)
+		}()
+	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
 	store, err := storage.New(cfg.Storage)
 	if err != nil {

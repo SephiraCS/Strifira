@@ -349,15 +349,21 @@
 		return value ? [value] : undefined;
 	}
 
-	// WebSocket connection — reconnects when slug changes
+	// WebSocket connection — reconnects when slug changes. Reconnects use
+	// exponential backoff with jitter so a down backend (restart, proxy
+	// blip) is retried quickly at first and gently later, instead of a
+	// fixed 3s drum; the browser coming back online reconnects immediately.
 	let ws_conn: WebSocket | null = null;
 	let wsSlug = '';
 	let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let wsDestroyed = false;
+	let wsBackoffMs = 1000;
+	const WS_BACKOFF_MAX_MS = 15_000;
 
 	$effect(() => {
 		if (slug && slug !== wsSlug) {
 			wsSlug = slug;
+			wsBackoffMs = 1000;
 			clearWebSocketReconnect();
 			ws_conn?.close();
 			connectWebSocket(slug);
@@ -369,6 +375,7 @@
 		clearWebSocketReconnect();
 		ws_conn?.close();
 		window.removeEventListener('ws:send', handleWSSend as EventListener);
+		window.removeEventListener('online', handleWSOnline);
 	});
 
 	// Allow child components to send WebSocket messages
@@ -378,6 +385,22 @@
 		}
 	}
 	window.addEventListener('ws:send', handleWSSend as EventListener);
+
+	// Network came back (sleep/wake, Wi-Fi roam): reconnect now rather than
+	// waiting out the backoff.
+	function handleWSOnline() {
+		if (wsDestroyed || !wsSlug) return;
+		if (ws_conn && ws_conn.readyState === WebSocket.OPEN) return;
+		clearWebSocketReconnect();
+		connectWebSocket(wsSlug);
+	}
+	window.addEventListener('online', handleWSOnline);
+
+	function scheduleWebSocketReconnect(workspaceSlug: string) {
+		const delay = Math.min(wsBackoffMs, WS_BACKOFF_MAX_MS) * (0.75 + Math.random() * 0.5);
+		wsBackoffMs = Math.min(wsBackoffMs * 2, WS_BACKOFF_MAX_MS);
+		wsReconnectTimer = setTimeout(() => connectWebSocket(workspaceSlug), delay);
+	}
 
 	function connectWebSocket(workspaceSlug: string) {
 		if (wsDestroyed || wsSlug !== workspaceSlug) return;
@@ -399,6 +422,7 @@
 
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
+			wsBackoffMs = 1000;
 			window.dispatchEvent(new CustomEvent('ws:reconnected'));
 			// Share lists drift while disconnected (starts/ends/GC); refetch.
 			if (sharesState.enabled) void sharesState.load(workspaceSlug);
@@ -412,7 +436,8 @@
 			if (socket !== ws_conn) return;
 			// Only reconnect if still on the same workspace
 			if (!wsDestroyed && wsSlug === workspaceSlug) {
-				wsReconnectTimer = setTimeout(() => connectWebSocket(workspaceSlug), 3000);
+				window.dispatchEvent(new CustomEvent('ws:disconnected'));
+				scheduleWebSocketReconnect(workspaceSlug);
 			}
 		};
 	}

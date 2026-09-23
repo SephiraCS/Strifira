@@ -184,6 +184,62 @@ test('start flow posts a titleless share and renders the own tile', async ({ pag
 	await expect(page.getByRole('button', { name: 'Share my screen' })).toHaveCount(0);
 });
 
+test('share survives in-app navigation and stops from the sidebar', async ({ page }) => {
+	await stubCommon(page, true);
+	let createCalls = 0;
+	let endCalls = 0;
+	await page.route('**/api/workspaces/test/shares', async (route) => {
+		if (route.request().method() === 'POST') {
+			createCalls++;
+			return route.fulfill({
+				json: {
+					share: { ...activeShare, started_by: '00000000-0000-0000-0000-000000000001' }
+				}
+			});
+		}
+		return route.fulfill({ json: { active: [], recent: [endedShare] } });
+	});
+	await page.route('**/api/workspaces/test/shares/*/end', (route) => {
+		endCalls++;
+		return route.fulfill({ json: {} });
+	});
+	await page.addInitScript(() => {
+		navigator.mediaDevices.getUserMedia = async () => new MediaStream();
+		(navigator.mediaDevices as any).getDisplayMedia = async () => new MediaStream();
+	});
+
+	let dialogs = 0;
+	page.on('dialog', (d) => {
+		dialogs++;
+		void d.dismiss();
+	});
+
+	await page.goto('/test/shares');
+	await page.getByRole('button', { name: 'Share my screen' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+
+	// Navigate away mid-share: no confirmation, and the sidebar keeps a
+	// live indicator + Stop control on every page.
+	await page.locator('a[href="/test/inbox"]').first().click();
+	await expect(page).toHaveURL(/\/test\/inbox/);
+	expect(dialogs, 'navigation must not prompt while sharing').toBe(0);
+	await expect(page.locator('button[title="Stop sharing"]')).toBeVisible();
+
+	// Return to the wall: the share is still live without a second create.
+	await page.locator('a[href="/test/shares"]').first().click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	expect(createCalls).toBe(1);
+
+	// Stop from the sidebar: the session ends (server notified, wall
+	// reflects it on the next visit).
+	await page.locator('button[title="Stop sharing"]').click();
+	await expect
+		.poll(() => endCalls, { timeout: 10_000 })
+		.toBeGreaterThan(0);
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveCount(0, { timeout: 10_000 });
+	expect(dialogs).toBe(0);
+});
+
 test('share.ended event removes the tile from the wall', async ({ page }) => {
 	await stubCommon(page, true);
 	await page.goto('/test/shares');
