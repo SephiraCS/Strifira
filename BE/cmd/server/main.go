@@ -411,6 +411,8 @@ func main() {
 	ws.GET("/forgejo/repos", forgejoH.ListRepos, mw.RequirePermission("workspace:manage"))
 	ws.POST("/forgejo/repos", forgejoH.LinkRepos, mw.RequirePermission("workspace:manage"))
 	ws.DELETE("/forgejo/repos/:id", forgejoH.UnlinkRepo, mw.RequirePermission("workspace:manage"))
+	ws.GET("/forgejo/user-mappings", forgejoH.ListUserMappings)
+	ws.PUT("/forgejo/user-mappings", forgejoH.UpdateUserMappings, mw.RequirePermission("workspace:manage"))
 	ws.GET("/forgejo/auto-transitions", forgejoH.ListAutoTransitions)
 	ws.PATCH("/forgejo/auto-transitions", forgejoH.UpdateAutoTransitions, mw.RequirePermission("workspace:manage"))
 	ws.GET("/issues/:identifier/forgejo", forgejoH.IssueForgejoActivity)

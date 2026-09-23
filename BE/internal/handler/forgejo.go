@@ -93,6 +93,28 @@ func (h *ForgejoHandler) UnlinkRepo(c echo.Context) error {
 	return response.Success(c, http.StatusOK, map[string]string{"status": "unlinked"})
 }
 
+// ListUserMappings returns the workspace's Forgejo login mappings.
+func (h *ForgejoHandler) ListUserMappings(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	mappings, err := h.fjSvc.ListUserMappings(c.Request().Context(), ws.ID)
+	if err != nil {
+		return response.InternalError(c)
+	}
+	return response.Success(c, http.StatusOK, mappings)
+}
+
+func (h *ForgejoHandler) UpdateUserMappings(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	var req dto.UpdateForgejoUserMappingsRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := h.fjSvc.UpdateUserMappings(c.Request().Context(), ws.ID, req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "updated"})
+}
+
 // ListAutoTransitions returns the auto-transition rules.
 func (h *ForgejoHandler) ListAutoTransitions(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)

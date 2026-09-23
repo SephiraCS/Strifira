@@ -70,10 +70,13 @@ trigger the existing sub-issue/parent auto-close cascades.
 Selecting a workspace member under **Assign to** replaces the issue's current
 assignees when that event fires; **Keep assignee** preserves them. A rule may
 also assign someone without moving the issue by selecting **No transition**.
-**Match Forgejo user** compares the event's Forgejo login with the Ku `name`
-of current workspace members, ignoring case. It assigns only on a unique match;
-an absent or ambiguous match leaves the issue's assignees unchanged. Branch
-creation uses the webhook sender; PR events use the PR author.
+**Match Forgejo user** first resolves the event's Forgejo login through
+**User mappings** in the same settings page. Without a mapping, it compares
+the login with the Ku `name` of current workspace members, ignoring case. It
+assigns only on a unique match; an absent or ambiguous match leaves the issue's
+assignees unchanged. Branch creation uses the webhook sender; PR events use the
+PR author. Mapping rows are tied to workspace membership and disappear when
+that member is removed.
 New `in_progress` rules use this mode by default, and migration `000045`
 enables it for existing `in_progress` rules without a fixed assignee.
 Fixed assignees are checked against current workspace membership when saving
@@ -93,7 +96,7 @@ status remains available for workspaces that already use it.
 
 - REST: `PUT/DELETE /api/workspaces/:slug/forgejo/connection`,
   `GET /forgejo/status|repos`, `POST/DELETE /forgejo/repos[/:id]`,
-  `GET/PATCH /forgejo/auto-transitions`,
+  `GET/PATCH /forgejo/auto-transitions`, `GET/PUT /forgejo/user-mappings`,
   `GET /issues/:identifier/forgejo`, `GET /forgejo/issue-links`; public
   `POST /api/forgejo/webhook`.
 - MCP: `forgejo_status`, `forgejo_link_repos`, `forgejo_unlink_repo`

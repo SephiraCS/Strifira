@@ -17,6 +17,15 @@ type UpdateAutoTransitionsRequest struct {
 	Transitions []AutoTransitionRule `json:"transitions" validate:"required"`
 }
 
+type UpdateForgejoUserMappingsRequest struct {
+	Mappings []ForgejoUserMapping `json:"mappings"`
+}
+
+type ForgejoUserMapping struct {
+	ForgejoLogin string `json:"forgejo_login"`
+	UserID       string `json:"user_id"`
+}
+
 type AutoTransitionRule struct {
 	Event             string  `json:"event" validate:"required"`
 	TargetStatus      string  `json:"target_status"`

@@ -24,6 +24,7 @@ import (
 )
 
 var issueIdentifierRegex = regexp.MustCompile(`(?i)([A-Z][A-Z0-9]+-\d+)`)
+var forgejoLoginRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,99}$`)
 
 // issueKeywordRegex matches closing keywords followed by an issue identifier,
 // e.g. "Fixes KUA-12" or "resolves kua-3 and closes TS-4".
@@ -1300,6 +1301,46 @@ func (s *ForgejoService) GetIssueActivity(ctx context.Context, workspaceID uuid.
 }
 
 // --- Auto Transition Management ---
+
+func (s *ForgejoService) ListUserMappings(ctx context.Context, workspaceID uuid.UUID) ([]dto.ForgejoUserMapping, error) {
+	mappings, err := s.fRepo.ListUserMappings(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dto.ForgejoUserMapping, 0, len(mappings))
+	for _, mapping := range mappings {
+		result = append(result, dto.ForgejoUserMapping{ForgejoLogin: mapping.ForgejoLogin, UserID: mapping.UserID.String()})
+	}
+	return result, nil
+}
+
+func (s *ForgejoService) UpdateUserMappings(ctx context.Context, workspaceID uuid.UUID, req dto.UpdateForgejoUserMappingsRequest) error {
+	if req.Mappings == nil || len(req.Mappings) > 100 {
+		return fmt.Errorf("mappings must be a list of at most 100 entries")
+	}
+	mappings := make([]domain.ForgejoUserMapping, 0, len(req.Mappings))
+	seen := make(map[string]bool, len(req.Mappings))
+	for _, entry := range req.Mappings {
+		login := strings.ToLower(strings.TrimSpace(entry.ForgejoLogin))
+		if !forgejoLoginRegex.MatchString(login) || seen[login] {
+			return fmt.Errorf("invalid or duplicate Forgejo login %q", entry.ForgejoLogin)
+		}
+		seen[login] = true
+		userID, err := uuid.Parse(entry.UserID)
+		if err != nil {
+			return fmt.Errorf("invalid Ku user ID for %q", login)
+		}
+		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, userID)
+		if err != nil {
+			return fmt.Errorf("checking Ku member for %q: %w", login, err)
+		}
+		if !member {
+			return fmt.Errorf("Ku user for %q is not a workspace member", login)
+		}
+		mappings = append(mappings, domain.ForgejoUserMapping{WorkspaceID: workspaceID, ForgejoLogin: login, UserID: userID})
+	}
+	return s.fRepo.ReplaceUserMappings(ctx, workspaceID, mappings)
+}
 
 func (s *ForgejoService) ListAutoTransitions(ctx context.Context, workspaceID uuid.UUID) ([]dto.ForgejoAutoTransitionResponse, error) {
 	// Rules are workspace-level; make sure all four lifecycle events exist so

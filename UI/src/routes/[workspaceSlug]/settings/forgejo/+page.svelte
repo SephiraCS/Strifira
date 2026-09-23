@@ -9,10 +9,12 @@
 		linkForgejoRepos,
 		unlinkForgejoRepo,
 		listAutoTransitions,
-		updateAutoTransitions
+		updateAutoTransitions,
+		listUserMappings,
+		updateUserMappings
 	} from '$lib/api/forgejo';
 	import { forgejoRepositoryHomeUrl } from '$lib/security/forgejo-url';
-	import type { ForgejoStatus, ForgejoAvailableRepo, ForgejoAutoTransition } from '$lib/types/forgejo';
+	import type { ForgejoStatus, ForgejoAvailableRepo, ForgejoAutoTransition, ForgejoUserMapping } from '$lib/types/forgejo';
 	import { listTeams } from '$lib/api/teams';
 	import { listTeamStatuses } from '$lib/api/team-statuses';
 	import { listMembers } from '$lib/api/members';
@@ -44,6 +46,10 @@
 	let connecting = $state(false);
 	let workflowStates = $state<{ value: string; label: string }[]>([]);
 	let members = $state<WorkspaceMember[]>([]);
+	let userMappings = $state<ForgejoUserMapping[]>([]);
+	let mappingLogin = $state('');
+	let mappingUserID = $state('');
+	let savingMappings = $state(false);
 
 	const filteredRepos = $derived(
 		repoSearch
@@ -76,6 +82,7 @@
 			status = await getForgejoStatus(slug);
 			if (status.connected) {
 				transitions = await listAutoTransitions(slug);
+				userMappings = await listUserMappings(slug);
 			}
 		} catch (err: any) {
 			console.error('Forgejo status error:', err);
@@ -116,6 +123,7 @@
 			token = '';
 			status = await getForgejoStatus(slug);
 			transitions = await listAutoTransitions(slug);
+			userMappings = await listUserMappings(slug);
 			appToast.success(m['settings.forgejo.connected_toast']());
 		} catch (err: any) {
 			appToast.apiError(err, m['settings.forgejo.failed_connect']());
@@ -129,6 +137,7 @@
 			await disconnectForgejo(slug);
 			status = await getForgejoStatus(slug);
 			transitions = [];
+			userMappings = [];
 			appToast.success(m['settings.forgejo.disconnected']());
 		} catch {
 			appToast.error(m['settings.forgejo.failed_disconnect']());
@@ -224,6 +233,31 @@
 		} catch {
 			transitions = transitions.map((t) => (t.event === event ? previous : t));
 			appToast.error(m['settings.forgejo.failed_update']());
+		}
+	}
+
+	async function saveMappings(next: ForgejoUserMapping[]): Promise<boolean> {
+		savingMappings = true;
+		try {
+			await updateUserMappings(slug, next);
+			userMappings = await listUserMappings(slug);
+			return true;
+		} catch (err: any) {
+			appToast.apiError(err, m['settings.forgejo.failed_update']());
+			return false;
+		} finally {
+			savingMappings = false;
+		}
+	}
+
+	async function addMapping() {
+		const forgejoLogin = mappingLogin.trim().toLowerCase();
+		if (!forgejoLogin || !mappingUserID) return;
+		const next = [...userMappings.filter((mapping) => mapping.forgejo_login !== forgejoLogin),
+			{ forgejo_login: forgejoLogin, user_id: mappingUserID }];
+		if (await saveMappings(next)) {
+			mappingLogin = '';
+			mappingUserID = '';
 		}
 	}
 </script>
@@ -416,6 +450,46 @@
 						{/each}
 					</div>
 				{/if}
+			</div>
+
+			<div>
+				<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.user_mappings']()}</h3>
+				<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.user_mappings_desc']()}</p>
+				<div class="mt-3 space-y-2">
+					{#each userMappings as mapping (mapping.forgejo_login)}
+						<div class="flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2">
+							<span class="min-w-0 truncate text-sm text-[var(--color-text-primary)]">{mapping.forgejo_login} → {members.find((member) => member.user_id === mapping.user_id)?.name ?? m['settings.forgejo.unavailable_assignee']()}</span>
+							<button
+							aria-label={m['settings.forgejo.remove_mapping']({ login: mapping.forgejo_login })}
+								disabled={savingMappings}
+								onclick={() => saveMappings(userMappings.filter((item) => item.forgejo_login !== mapping.forgejo_login))}
+								class="shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+							><Trash2 size={15} /></button>
+						</div>
+					{/each}
+				</div>
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					<Input
+						aria-label={m['settings.forgejo.forgejo_login']()}
+						placeholder={m['settings.forgejo.forgejo_login']()}
+						bind:value={mappingLogin}
+						class="h-8 min-w-32 flex-1 text-sm"
+						maxlength={100}
+					/>
+					<select
+						aria-label={m['settings.forgejo.ku_member']()}
+						class="h-8 min-w-36 flex-1 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
+						bind:value={mappingUserID}
+					>
+						<option value="">{m['settings.forgejo.ku_member']()}</option>
+						{#each members as member (member.user_id)}
+							<option value={member.user_id}>{member.name || member.email}</option>
+						{/each}
+					</select>
+					<Button size="sm" onclick={addMapping} disabled={savingMappings || !mappingLogin.trim() || !mappingUserID}>
+						<Plus size={14} /> {m['settings.forgejo.add_mapping']()}
+					</Button>
+				</div>
 			</div>
 
 			<!-- Per-event status and assignee rules -->

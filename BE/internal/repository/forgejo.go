@@ -266,17 +266,51 @@ func (r *ForgejoRepository) IsWorkspaceMember(ctx context.Context, workspaceID, 
 	return exists, err
 }
 
-// MatchWorkspaceMemberByName resolves a Forgejo login only when it identifies
-// exactly one Ku username in this workspace. Ambiguity leaves assignment alone.
+// MatchWorkspaceMemberByName uses an explicit mapping first, then an exact Ku
+// username match. Ambiguity in the fallback leaves assignment alone.
 func (r *ForgejoRepository) MatchWorkspaceMemberByName(ctx context.Context, workspaceID uuid.UUID, login string) (*uuid.UUID, error) {
+	var mapped uuid.UUID
+	err := r.db.GetContext(ctx, &mapped, `SELECT user_id FROM forgejo_user_mappings
+		WHERE workspace_id = $1 AND forgejo_login = lower($2)`, workspaceID, login)
+	if err == nil {
+		return &mapped, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
 	var ids []uuid.UUID
-	err := r.db.SelectContext(ctx, &ids, `SELECT wm.user_id FROM workspace_members wm
+	err = r.db.SelectContext(ctx, &ids, `SELECT wm.user_id FROM workspace_members wm
 		JOIN users u ON u.id = wm.user_id
 		WHERE wm.workspace_id = $1 AND lower(u.name) = lower($2) LIMIT 2`, workspaceID, login)
 	if err != nil || len(ids) != 1 {
 		return nil, err
 	}
 	return &ids[0], nil
+}
+
+func (r *ForgejoRepository) ListUserMappings(ctx context.Context, workspaceID uuid.UUID) ([]domain.ForgejoUserMapping, error) {
+	var mappings []domain.ForgejoUserMapping
+	err := r.db.SelectContext(ctx, &mappings, `SELECT workspace_id, forgejo_login, user_id
+		FROM forgejo_user_mappings WHERE workspace_id = $1 ORDER BY forgejo_login`, workspaceID)
+	return mappings, err
+}
+
+func (r *ForgejoRepository) ReplaceUserMappings(ctx context.Context, workspaceID uuid.UUID, mappings []domain.ForgejoUserMapping) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM forgejo_user_mappings WHERE workspace_id = $1`, workspaceID); err != nil {
+		return err
+	}
+	for _, mapping := range mappings {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO forgejo_user_mappings (workspace_id, forgejo_login, user_id)
+			VALUES ($1, $2, $3)`, workspaceID, mapping.ForgejoLogin, mapping.UserID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // ApplyIssueAutomation changes status and, when requested, replaces the full

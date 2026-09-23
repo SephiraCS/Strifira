@@ -27,6 +27,7 @@ type WorkspaceTransferTableSpec struct {
 func WorkspaceTransferTableSpecs() []WorkspaceTransferTableSpec {
 	return []WorkspaceTransferTableSpec{
 		{Name: "workspace_members", SelectSQL: `SELECT to_jsonb(x)::text FROM workspace_members x WHERE workspace_id=$1 ORDER BY created_at,user_id`, UserFields: []string{"user_id"}},
+		{Name: "forgejo_user_mappings", SelectSQL: `SELECT to_jsonb(x)::text FROM forgejo_user_mappings x WHERE workspace_id=$1 ORDER BY forgejo_login`, UserFields: []string{"user_id"}},
 		{Name: "teams", SelectSQL: `SELECT to_jsonb(x)::text FROM teams x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id"},
 		{Name: "team_members", SelectSQL: `SELECT to_jsonb(x)::text FROM team_members x JOIN teams p ON p.id=x.team_id WHERE p.workspace_id=$1 ORDER BY x.created_at,x.team_id,x.user_id`, UserFields: []string{"user_id"}},
 		{Name: "team_statuses", SelectSQL: `SELECT to_jsonb(x)::text FROM team_statuses x JOIN teams p ON p.id=x.team_id WHERE p.workspace_id=$1 ORDER BY x.team_id,x.position,x.id`, IDColumn: "id"},

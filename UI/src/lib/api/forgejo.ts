@@ -3,7 +3,8 @@ import type {
 	ForgejoStatus,
 	ForgejoAvailableRepo,
 	ForgejoIssueActivity,
-	ForgejoAutoTransition
+	ForgejoAutoTransition,
+	ForgejoUserMapping
 } from '$lib/types/forgejo';
 import {
 	safeForgejoBranchUrl,
@@ -69,4 +70,12 @@ export function listAutoTransitions(slug: string): Promise<ForgejoAutoTransition
 
 export function updateAutoTransitions(slug: string, transitions: ForgejoAutoTransition[]): Promise<void> {
 	return api.patch<void>(`/api/workspaces/${slug}/forgejo/auto-transitions`, { transitions });
+}
+
+export function listUserMappings(slug: string): Promise<ForgejoUserMapping[]> {
+	return api.get<ForgejoUserMapping[]>(`/api/workspaces/${slug}/forgejo/user-mappings`);
+}
+
+export function updateUserMappings(slug: string, mappings: ForgejoUserMapping[]): Promise<void> {
+	return api.put<void>(`/api/workspaces/${slug}/forgejo/user-mappings`, { mappings });
 }

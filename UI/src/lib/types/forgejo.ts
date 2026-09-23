@@ -83,3 +83,8 @@ export interface ForgejoAutoTransition {
 	assign_forgejo_user: boolean;
 	is_active: boolean;
 }
+
+export interface ForgejoUserMapping {
+	forgejo_login: string;
+	user_id: string;
+}

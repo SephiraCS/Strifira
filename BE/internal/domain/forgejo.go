@@ -94,3 +94,9 @@ type ForgejoAutoTransition struct {
 	AssignForgejoUser bool       `json:"assign_forgejo_user" db:"assign_forgejo_user"`
 	IsActive          bool       `json:"is_active" db:"is_active"`
 }
+
+type ForgejoUserMapping struct {
+	WorkspaceID  uuid.UUID `json:"-" db:"workspace_id"`
+	ForgejoLogin string    `json:"forgejo_login" db:"forgejo_login"`
+	UserID       uuid.UUID `json:"user_id" db:"user_id"`
+}
