@@ -79,5 +79,6 @@ export interface ForgejoAutoTransition {
 	event: 'branch_created' | 'pr_opened' | 'pr_checks_green' | 'pr_merged';
 	target_status: string;
 	target_status_id: string | null;
+	target_assignee_id: string | null;
 	is_active: boolean;
 }

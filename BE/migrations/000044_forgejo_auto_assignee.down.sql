@@ -1,0 +1,1 @@
+ALTER TABLE forgejo_auto_transitions DROP COLUMN target_assignee_id;

@@ -213,7 +213,6 @@ func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID
 			Category: domain.StatusCategoryStarted, Color: &color, Position: position,
 		})
 	}
-
 }
 
 // webhookTargetURL derives the URL webhook deliveries should be sent to.
@@ -253,6 +252,7 @@ func (s *ForgejoService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (
 				InstanceURL: r.InstanceURL, DefaultBranch: r.DefaultBranch, IsActive: r.IsActive,
 			})
 		}
+
 	}
 	return resp, nil
 }
@@ -1009,33 +1009,71 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 
 	oldStatus := string(issue.Status)
 	newStatus := rule.TargetStatus
-	if oldStatus == newStatus {
+	statusChanged := newStatus != "" && oldStatus != newStatus
+	assigneeChanged := false
+	var currentAssignees []uuid.UUID
+	if rule.TargetAssigneeID != nil {
+		assignees, err := s.issueRepo.GetAssignees(ctx, issue.ID)
+		if err != nil {
+			log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to read issue assignees")
+			return
+		}
+		currentAssignees = assignees
+		assigneeChanged = len(assignees) != 1 || assignees[0] != *rule.TargetAssigneeID ||
+			issue.AssigneeID == nil || *issue.AssigneeID != *rule.TargetAssigneeID
+	}
+	if !statusChanged && !assigneeChanged {
 		return
 	}
 
-	issue.Status = domain.IssueStatus(newStatus)
-	if rule.TargetStatusID != nil {
-		issue.StatusID = rule.TargetStatusID
-	} else {
-		// Resolve the team's custom status ID from the slug
-		ts, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, issue.TeamID, newStatus)
-		if err == nil && ts != nil {
+	// A stale status or former workspace member must not partially apply a rule.
+	if statusChanged {
+		if rule.TargetStatusID != nil {
+			issue.StatusID = rule.TargetStatusID
+		} else {
+			ts, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, issue.TeamID, newStatus)
+			if err != nil || ts == nil {
+				return
+			}
 			issue.StatusID = &ts.ID
 		}
 	}
+	if rule.TargetAssigneeID != nil {
+		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, *rule.TargetAssigneeID)
+		if err != nil || !member {
+			return
+		}
+	}
 
-	if err := s.issueRepo.Update(ctx, issue); err != nil {
+	if statusChanged {
+		issue.Status = domain.IssueStatus(newStatus)
+	}
+	if assigneeChanged {
+		issue.AssigneeID = rule.TargetAssigneeID
+	}
+	if err := s.fRepo.ApplyIssueAutomation(ctx, issue, assigneeChanged); err != nil {
 		log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to auto-transition issue")
 		return
 	}
+	if assigneeChanged {
+		if issue.CreatorID != uuid.Nil {
+			oldValue := uuidListString(currentAssignees)
+			newValue := uuidListString([]uuid.UUID{*rule.TargetAssigneeID})
+			_ = s.historyRepo.Create(ctx, issue.ID, issue.CreatorID, "assignees", &oldValue, &newValue)
+		}
+	}
 
-	s.recordAutomationHistory(ctx, issue, oldStatus, newStatus)
+	if statusChanged {
+		s.recordAutomationHistory(ctx, issue, oldStatus, newStatus)
+	}
 
 	s.broadcastRealtimeEvent(workspaceID, realtime.Event{
 		Type:    "issue.updated",
 		Payload: issue,
 	})
-	s.applyStatusAutomation(ctx, workspaceID, issue, map[uuid.UUID]bool{})
+	if statusChanged {
+		s.applyStatusAutomation(ctx, workspaceID, issue, map[uuid.UUID]bool{})
+	}
 }
 
 // recordAutomationHistory writes the status-change entry attributed to the
@@ -1265,8 +1303,14 @@ func (s *ForgejoService) ListAutoTransitions(ctx context.Context, workspaceID uu
 			id := t.TargetStatusID.String()
 			statusID = &id
 		}
+		var assigneeID *string
+		if t.TargetAssigneeID != nil {
+			id := t.TargetAssigneeID.String()
+			assigneeID = &id
+		}
 		result = append(result, dto.ForgejoAutoTransitionResponse{
-			Event: t.Event, TargetStatus: t.TargetStatus, TargetStatusID: statusID, IsActive: t.IsActive,
+			Event: t.Event, TargetStatus: t.TargetStatus, TargetStatusID: statusID,
+			TargetAssigneeID: assigneeID, IsActive: t.IsActive,
 		})
 	}
 	return result, nil
@@ -1277,8 +1321,8 @@ func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID 
 		if !forgejoLifecycleEvents[rule.Event] {
 			return fmt.Errorf("unknown transition event %q", rule.Event)
 		}
-		if rule.IsActive && strings.TrimSpace(rule.TargetStatus) == "" && rule.TargetStatusID == nil {
-			return fmt.Errorf("event %q needs a target status", rule.Event)
+		if rule.IsActive && strings.TrimSpace(rule.TargetStatus) == "" && rule.TargetStatusID == nil && rule.TargetAssigneeID == nil {
+			return fmt.Errorf("event %q needs a target status or assignee", rule.Event)
 		}
 		var statusID *uuid.UUID
 		if rule.TargetStatusID != nil {
@@ -1288,10 +1332,25 @@ func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID 
 			}
 			statusID = &parsed
 		}
+		var assigneeID *uuid.UUID
+		if rule.TargetAssigneeID != nil {
+			parsed, err := uuid.Parse(*rule.TargetAssigneeID)
+			if err != nil {
+				return fmt.Errorf("invalid target_assignee_id: %w", err)
+			}
+			member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, parsed)
+			if err != nil {
+				return fmt.Errorf("checking target assignee: %w", err)
+			}
+			if !member {
+				return fmt.Errorf("target assignee is not a workspace member")
+			}
+			assigneeID = &parsed
+		}
 		t := &domain.ForgejoAutoTransition{
 			ID: uuid.New(), WorkspaceID: workspaceID,
 			Event: rule.Event, TargetStatus: strings.TrimSpace(rule.TargetStatus),
-			TargetStatusID: statusID, IsActive: rule.IsActive,
+			TargetStatusID: statusID, TargetAssigneeID: assigneeID, IsActive: rule.IsActive,
 		}
 		if err := s.fRepo.UpsertAutoTransition(ctx, t); err != nil {
 			return err

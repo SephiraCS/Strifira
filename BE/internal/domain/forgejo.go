@@ -85,10 +85,11 @@ type ForgejoCommit struct {
 // ForgejoAutoTransition maps a Forgejo lifecycle event to a target issue
 // status. Events: branch_created, pr_opened, pr_checks_green, pr_merged.
 type ForgejoAutoTransition struct {
-	ID             uuid.UUID  `json:"id" db:"id"`
-	WorkspaceID    uuid.UUID  `json:"workspace_id" db:"workspace_id"`
-	Event          string     `json:"event" db:"event"`
-	TargetStatus   string     `json:"target_status" db:"target_status"`
-	TargetStatusID *uuid.UUID `json:"target_status_id" db:"target_status_id"`
-	IsActive       bool       `json:"is_active" db:"is_active"`
+	ID               uuid.UUID  `json:"id" db:"id"`
+	WorkspaceID      uuid.UUID  `json:"workspace_id" db:"workspace_id"`
+	Event            string     `json:"event" db:"event"`
+	TargetStatus     string     `json:"target_status" db:"target_status"`
+	TargetStatusID   *uuid.UUID `json:"target_status_id" db:"target_status_id"`
+	TargetAssigneeID *uuid.UUID `json:"target_assignee_id" db:"target_assignee_id"`
+	IsActive         bool       `json:"is_active" db:"is_active"`
 }

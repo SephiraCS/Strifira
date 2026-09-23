@@ -54,7 +54,7 @@ rule is configured.
 ## Status automation
 
 Per-workspace rules (Settings → Forgejo → Automations, each with a
-configurable target status or "No transition"):
+configurable target status and optional target assignee):
 
 | Event | Fires when | Default target |
 | --- | --- | --- |
@@ -66,6 +66,14 @@ configurable target status or "No transition"):
 Slug targets resolve against each issue's team workflow at fire time, so one
 rule covers teams with custom status sets. Transitions write issue history and
 trigger the existing sub-issue/parent auto-close cascades.
+
+Selecting a workspace member under **Assign to** replaces the issue's current
+assignees when that event fires; **Keep assignee** preserves them. A rule may
+also assign someone without moving the issue by selecting **No transition**.
+The assignee is checked against current workspace membership when saving and
+when the rule fires. To hand an issue to a reviewer after merge, set **Pull
+request merged** to the team's review status and choose that person under
+**Assign to**.
 
 Forgejo 16 does not emit commit-status webhooks, but its Actions run completion
 webhooks carry the original pull request head SHA. Ku checks the aggregate

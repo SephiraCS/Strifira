@@ -15,6 +15,8 @@
 	import type { ForgejoStatus, ForgejoAvailableRepo, ForgejoAutoTransition } from '$lib/types/forgejo';
 	import { listTeams } from '$lib/api/teams';
 	import { listTeamStatuses } from '$lib/api/team-statuses';
+	import { listMembers } from '$lib/api/members';
+	import type { WorkspaceMember } from '$lib/types/workspace';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Switch } from '$lib/components/ui/switch';
@@ -41,6 +43,7 @@
 	let token = $state('');
 	let connecting = $state(false);
 	let workflowStates = $state<{ value: string; label: string }[]>([]);
+	let members = $state<WorkspaceMember[]>([]);
 
 	const filteredRepos = $derived(
 		repoSearch
@@ -68,6 +71,7 @@
 
 	onMount(async () => {
 		loadWorkflowStates();
+		listMembers(slug).then((result) => { members = result; }).catch(() => { members = []; });
 		try {
 			status = await getForgejoStatus(slug);
 			if (status.connected) {
@@ -211,11 +215,14 @@
 	}
 
 	async function patchRule(event: ForgejoAutoTransition['event'], changes: Partial<ForgejoAutoTransition>) {
-		const updated = transitions.map((t) => (t.event === event ? { ...t, ...changes } : t));
-		transitions = updated;
+		const previous = ruleFor(event);
+		if (!previous) return;
+		const updated = { ...previous, ...changes };
+		transitions = transitions.map((t) => (t.event === event ? updated : t));
 		try {
-			await updateAutoTransitions(slug, updated);
+			await updateAutoTransitions(slug, [updated]);
 		} catch {
+			transitions = transitions.map((t) => (t.event === event ? previous : t));
 			appToast.error(m['settings.forgejo.failed_update']());
 		}
 	}
@@ -411,7 +418,7 @@
 				{/if}
 			</div>
 
-			<!-- Auto-transitions: per-event status pickers -->
+			<!-- Per-event status and assignee rules -->
 			<div>
 				<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.automations']()}</h3>
 				<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.automations_desc']()}</p>
@@ -419,12 +426,12 @@
 					{#each TRANSITION_EVENTS as meta}
 						{@const rule = ruleFor(meta.event)}
 						{#if rule}
-							<div class="flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2.5">
+							<div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2.5">
 								<div class="min-w-0">
 									<span class="text-sm text-[var(--color-text-primary)]">{meta.label()}</span>
 									<p class="text-xs text-[var(--color-text-tertiary)]">{meta.description()}</p>
 								</div>
-								<div class="flex shrink-0 items-center gap-2">
+								<div class="flex flex-wrap items-center gap-2">
 									<select
 										aria-label={m['settings.forgejo.target_status']()}
 										class="h-8 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
@@ -438,6 +445,21 @@
 										{#each pickerOptions(rule.target_status) as option}
 											<option value={option.value} selected={rule.target_status === option.value}>{option.label}</option>
 										{/each}
+									</select>
+									<select
+										aria-label={m['settings.forgejo.target_assignee']()}
+										class="h-8 max-w-40 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
+										value={rule.target_assignee_id ?? ''}
+										disabled={!rule.is_active}
+										onchange={(e) => patchRule(meta.event, { target_assignee_id: (e.currentTarget as HTMLSelectElement).value || null })}
+									>
+										<option value="">{m['settings.forgejo.keep_assignee']()}</option>
+										{#each members as member (member.user_id)}
+											<option value={member.user_id}>{member.name || member.email}</option>
+										{/each}
+										{#if rule.target_assignee_id && !members.some((member) => member.user_id === rule.target_assignee_id)}
+											<option value={rule.target_assignee_id}>{m['settings.forgejo.unavailable_assignee']()}</option>
+										{/if}
 									</select>
 									<Switch
 										checked={rule.is_active}

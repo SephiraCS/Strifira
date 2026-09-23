@@ -250,12 +250,44 @@ func (r *ForgejoRepository) UpsertCommit(ctx context.Context, c *domain.ForgejoC
 // --- Auto Transitions ---
 
 func (r *ForgejoRepository) UpsertAutoTransition(ctx context.Context, t *domain.ForgejoAutoTransition) error {
-	query := `INSERT INTO forgejo_auto_transitions (id, workspace_id, event, target_status, target_status_id, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	query := `INSERT INTO forgejo_auto_transitions (id, workspace_id, event, target_status, target_status_id, target_assignee_id, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (workspace_id, event) DO UPDATE SET
-			target_status = EXCLUDED.target_status, target_status_id = EXCLUDED.target_status_id, is_active = EXCLUDED.is_active`
-	_, err := r.db.ExecContext(ctx, query, t.ID, t.WorkspaceID, t.Event, t.TargetStatus, t.TargetStatusID, t.IsActive)
+			target_status = EXCLUDED.target_status, target_status_id = EXCLUDED.target_status_id,
+			target_assignee_id = EXCLUDED.target_assignee_id, is_active = EXCLUDED.is_active`
+	_, err := r.db.ExecContext(ctx, query, t.ID, t.WorkspaceID, t.Event, t.TargetStatus, t.TargetStatusID, t.TargetAssigneeID, t.IsActive)
 	return err
+}
+
+func (r *ForgejoRepository) IsWorkspaceMember(ctx context.Context, workspaceID, userID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2)`, workspaceID, userID)
+	return exists, err
+}
+
+// ApplyIssueAutomation changes status and, when requested, replaces the full
+// assignee set in one transaction so the legacy primary assignee stays in sync.
+func (r *ForgejoRepository) ApplyIssueAutomation(ctx context.Context, issue *domain.Issue, replaceAssignees bool) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := tx.QueryRowContext(ctx, `UPDATE issues SET status = $1, status_id = $2,
+		assignee_id = CASE WHEN $3 THEN $4 ELSE assignee_id END, updated_at = NOW()
+		WHERE id = $5 AND workspace_id = $6 RETURNING updated_at`,
+		issue.Status, issue.StatusID, replaceAssignees, issue.AssigneeID, issue.ID, issue.WorkspaceID).Scan(&issue.UpdatedAt); err != nil {
+		return err
+	}
+	if replaceAssignees {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_assignees WHERE issue_id = $1`, issue.ID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO issue_assignees (issue_id, user_id) VALUES ($1, $2)`, issue.ID, issue.AssigneeID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r *ForgejoRepository) ListAutoTransitions(ctx context.Context, workspaceID uuid.UUID) ([]domain.ForgejoAutoTransition, error) {
