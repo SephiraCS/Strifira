@@ -14,6 +14,17 @@ type ForgejoRepository struct {
 	db *sqlx.DB
 }
 
+func (r *ForgejoRepository) ListActiveReposWithHooks(ctx context.Context) ([]domain.ForgejoRepoModel, error) {
+	var repos []domain.ForgejoRepoModel
+	err := r.db.SelectContext(ctx, &repos, `SELECT * FROM forgejo_repos WHERE is_active = true AND webhook_id IS NOT NULL`)
+	return repos, err
+}
+
+func (r *ForgejoRepository) UpdateWebhookID(ctx context.Context, repoID uuid.UUID, hookID int64) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE forgejo_repos SET webhook_id = $1 WHERE id = $2`, hookID, repoID)
+	return err
+}
+
 func NewForgejoRepository(db *sqlx.DB) *ForgejoRepository {
 	return &ForgejoRepository{db: db}
 }

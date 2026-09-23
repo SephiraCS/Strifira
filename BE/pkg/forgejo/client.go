@@ -45,9 +45,10 @@ type Repository struct {
 }
 
 type Webhook struct {
-	ID   int64  `json:"id"`
-	URL  string `json:"url"`
-	Type string `json:"type"`
+	ID     int64    `json:"id"`
+	URL    string   `json:"url"`
+	Type   string   `json:"type"`
+	Events []string `json:"events"`
 }
 
 type PullRequest struct {
@@ -169,7 +170,7 @@ func (c *Client) GetRepo(owner, name string) (*Repository, error) {
 // deliveries with HMAC-SHA256 (X-Forgejo-Signature).
 func (c *Client) CreateWebhook(owner, name, targetURL, secret string, events []string) (*Webhook, error) {
 	if events == nil {
-		events = []string{"push", "pull_request", "create", "status"}
+		events = []string{"push", "pull_request", "create", "action_run_success", "action_run_failure", "action_run_recover"}
 	}
 	payload := map[string]any{
 		"type":   "forgejo",
@@ -183,6 +184,15 @@ func (c *Client) CreateWebhook(owner, name, targetURL, secret string, events []s
 	}
 	var hook Webhook
 	if err := c.do(http.MethodPost, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name)+"/hooks", payload, &hook); err != nil {
+		return nil, err
+	}
+	return &hook, nil
+}
+
+func (c *Client) GetWebhook(owner, name string, hookID int64) (*Webhook, error) {
+	path := fmt.Sprintf("/repos/%s/%s/hooks/%d", url.PathEscape(owner), url.PathEscape(name), hookID)
+	var hook Webhook
+	if err := c.do(http.MethodGet, path, nil, &hook); err != nil {
 		return nil, err
 	}
 	return &hook, nil

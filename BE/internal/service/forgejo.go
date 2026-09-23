@@ -37,10 +37,6 @@ var forgejoLifecycleEvents = map[string]bool{
 	"pr_merged":       true,
 }
 
-// PRStatusSlug is the workflow status slug seeded for "CI green, ready for
-// PR review" transitions.
-const PRStatusSlug = "pr"
-
 // GlobalForgejoConfig holds env-provided instance credentials (SaaS-style
 // mode). When set, every workspace shares the connection and per-workspace
 // connection rows are not used.
@@ -171,8 +167,7 @@ func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) 
 	return s.fRepo.DeleteConnection(ctx, workspaceID)
 }
 
-// seedDefaultsIfMissing seeds the transition rules and per-team "PR" state
-// exactly once (never overwrites user customizations).
+// seedDefaultsIfMissing seeds transition rules once (never overwrites user customizations).
 func (s *ForgejoService) seedDefaultsIfMissing(ctx context.Context, workspaceID uuid.UUID) {
 	existing, err := s.fRepo.ListAutoTransitions(ctx, workspaceID)
 	if err != nil || len(existing) > 0 {
@@ -181,16 +176,15 @@ func (s *ForgejoService) seedDefaultsIfMissing(ctx context.Context, workspaceID 
 	s.seedDefaults(ctx, workspaceID)
 }
 
-// seedDefaults creates the auto-transition rules (idempotent) and a "PR"
-// workflow status on every team that lacks one.
+// seedDefaults creates the auto-transition rules (idempotent).
 func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID) {
 	defaults := []struct {
 		Event  string
 		Status string
 	}{
 		{"branch_created", "in_progress"},
-		{"pr_opened", "in_review"},
-		{"pr_checks_green", PRStatusSlug},
+		{"pr_opened", "in_progress"},
+		{"pr_checks_green", "in_review"},
 		{"pr_merged", "done"},
 	}
 	for _, d := range defaults {
@@ -200,29 +194,6 @@ func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID
 		})
 	}
 
-	teams, err := s.teamRepo.ListByWorkspace(ctx, workspaceID)
-	if err != nil {
-		return
-	}
-	for i := range teams {
-		s.ensurePRStatus(ctx, teams[i].ID)
-	}
-}
-
-func (s *ForgejoService) ensurePRStatus(ctx context.Context, teamID uuid.UUID) {
-	existing, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, teamID, PRStatusSlug)
-	if err != nil || existing != nil {
-		return
-	}
-	position, err := s.teamStatusRepo.NextPosition(ctx, teamID)
-	if err != nil {
-		return
-	}
-	color := "#8b5cf6"
-	_ = s.teamStatusRepo.Create(ctx, &domain.TeamStatus{
-		ID: uuid.New(), TeamID: teamID, Name: "PR", Slug: PRStatusSlug,
-		Category: domain.StatusCategoryStarted, Color: &color, Position: position,
-	})
 }
 
 // webhookTargetURL derives the URL webhook deliveries should be sent to.
@@ -396,6 +367,12 @@ type forgejoWebhookEnvelope struct {
 		FullName string `json:"full_name"`
 		HTMLURL  string `json:"html_url"`
 	} `json:"repository"`
+	Run struct {
+		Repository struct {
+			FullName string `json:"full_name"`
+			HTMLURL  string `json:"html_url"`
+		} `json:"repository"`
+	} `json:"run"`
 }
 
 func instanceOrigin(rawURL string) string {
@@ -415,6 +392,10 @@ func (s *ForgejoService) VerifyWebhookSignature(ctx context.Context, payload []b
 		return nil, false
 	}
 	origin := instanceOrigin(envelope.Repository.HTMLURL)
+	if origin == "" && envelope.Run.Repository.HTMLURL != "" {
+		envelope.Repository.FullName = envelope.Run.Repository.FullName
+		origin = instanceOrigin(envelope.Run.Repository.HTMLURL)
+	}
 	if origin == "" || envelope.Repository.FullName == "" {
 		return nil, false
 	}
@@ -446,6 +427,8 @@ func (s *ForgejoService) HandleWebhookEvent(ctx context.Context, eventType strin
 		return s.processCreateEvent(ctx, payload, repo)
 	case "status":
 		return s.processStatusEvent(ctx, payload, repo)
+	case "action_run_success", "action_run_failure", "action_run_recover":
+		return s.processActionRunEvent(ctx, payload, repo)
 	default:
 		return nil
 	}
@@ -730,6 +713,52 @@ func (s *ForgejoService) processStatusEvent(ctx context.Context, payload []byte,
 	if sha == "" {
 		return nil
 	}
+	return s.refreshChecksForSHA(ctx, repo, sha)
+}
+
+// An Actions PR run may execute a merge commit, while Forgejo posts its check
+// status on the PR head. Extract that head from the original event payload.
+func actionRunHeadSHA(payload []byte) (string, error) {
+	var event struct {
+		Run struct {
+			CommitSHA    string `json:"commit_sha"`
+			EventPayload string `json:"event_payload"`
+			TriggerEvent string `json:"trigger_event"`
+		} `json:"run"`
+	}
+	if err := json.Unmarshal(payload, &event); err != nil {
+		return "", fmt.Errorf("unmarshaling action run event: %w", err)
+	}
+	if event.Run.TriggerEvent == "pull_request" {
+		var trigger struct {
+			PullRequest struct {
+				Head struct {
+					SHA string `json:"sha"`
+				} `json:"head"`
+			} `json:"pull_request"`
+		}
+		if err := json.Unmarshal([]byte(event.Run.EventPayload), &trigger); err != nil {
+			return "", fmt.Errorf("unmarshaling pull request trigger: %w", err)
+		}
+		return trigger.PullRequest.Head.SHA, nil
+	}
+	return event.Run.CommitSHA, nil
+}
+
+// Always read the combined status from Forgejo; one successful run alone is
+// insufficient to move a linked issue to review.
+func (s *ForgejoService) processActionRunEvent(ctx context.Context, payload []byte, repo *domain.ForgejoRepoModel) error {
+	sha, err := actionRunHeadSHA(payload)
+	if err != nil {
+		return err
+	}
+	if sha == "" {
+		return nil
+	}
+	return s.refreshChecksForSHA(ctx, repo, sha)
+}
+
+func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.ForgejoRepoModel, sha string) error {
 
 	openPRs, err := s.fRepo.ListOpenPRsByHeadSHA(ctx, repo.ID, sha)
 	if err != nil || len(openPRs) == 0 {
@@ -744,7 +773,20 @@ func (s *ForgejoService) processStatusEvent(ctx context.Context, payload []byte,
 	if !ok {
 		return nil
 	}
-	combined, err := conn.client().GetCombinedStatus(owner, name, sha)
+	var combined *fj.CombinedStatus
+	for attempt := 0; attempt < 3; attempt++ {
+		combined, err = conn.client().GetCombinedStatus(owner, name, sha)
+		if err == nil && (combined.AllChecksPassed() || combined.State == "failure" || combined.State == "error") {
+			break
+		}
+		if attempt < 2 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+	}
 	if err != nil {
 		log.WithError(err).WithField("repo", repo.FullName).Warn("failed to fetch combined status")
 		return nil
@@ -770,64 +812,81 @@ func (s *ForgejoService) processStatusEvent(ctx context.Context, payload []byte,
 	return nil
 }
 
-// StartStatusPoller periodically recomputes CI greenness for open PRs.
-// Forgejo 16 has no commit-status webhook event, so the combined status is
-// polled; the (harmless) status webhook path above still reacts instantly on
-// Forgejo versions that do deliver one.
-func (s *ForgejoService) StartStatusPoller(ctx context.Context, interval time.Duration) {
-	if interval <= 0 {
-		interval = time.Minute
-	}
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				s.pollOpenPRChecks(ctx)
-			}
-		}
-	}()
-}
-
-func (s *ForgejoService) pollOpenPRChecks(ctx context.Context) {
-	repos, err := s.fRepo.ListReposWithOpenPRs(ctx)
+// ReconcileWebhookEvents replaces old hooks because Forgejo 16 ignores Actions
+// event names when editing a hook. The signed secret and URL are preserved.
+func (s *ForgejoService) ReconcileWebhookEvents(ctx context.Context) {
+	repos, err := s.fRepo.ListActiveReposWithHooks(ctx)
 	if err != nil {
+		log.WithError(err).Warn("failed to list Forgejo hooks")
 		return
 	}
 	for i := range repos {
 		repo := repos[i]
 		conn, err := s.resolveConnection(ctx, repo.WorkspaceID)
 		if err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to resolve Forgejo connection")
 			continue
 		}
 		owner, name, ok := splitRepoOwnerName(repo.FullName)
-		if !ok {
+		if !ok || repo.WebhookID == nil {
 			continue
 		}
-		prs, err := s.fRepo.ListOpenPRsByRepo(ctx, repo.ID)
+		client := conn.client()
+		hook, err := client.GetWebhook(owner, name, *repo.WebhookID)
+		if err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to inspect Forgejo hook")
+			continue
+		}
+		found := false
+		for _, event := range hook.Events {
+			if event == "action_run_success" {
+				found = true
+			}
+		}
+		if found {
+			continue
+		}
+		secret, err := crypto.Decrypt(repo.WebhookSecret, s.encryptionKey)
+		if err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to decrypt Forgejo hook secret")
+			continue
+		}
+		newHook, err := client.CreateWebhook(owner, name, hook.URL, secret, nil)
+		if err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to create Forgejo Actions hook")
+			continue
+		}
+		if err := s.fRepo.UpdateWebhookID(ctx, repo.ID, newHook.ID); err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to save Forgejo Actions hook")
+			_ = client.DeleteWebhook(owner, name, newHook.ID)
+			continue
+		}
+		if err := client.DeleteWebhook(owner, name, *repo.WebhookID); err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to remove old Forgejo hook")
+		}
+	}
+	// One startup pass covers checks that completed before the new subscriptions.
+	s.syncOpenPRChecks(ctx)
+}
+
+func (s *ForgejoService) syncOpenPRChecks(ctx context.Context) {
+	repos, err := s.fRepo.ListReposWithOpenPRs(ctx)
+	if err != nil {
+		log.WithError(err).Warn("failed to list open Forgejo pull requests")
+		return
+	}
+	for i := range repos {
+		prs, err := s.fRepo.ListOpenPRsByRepo(ctx, repos[i].ID)
 		if err != nil {
 			continue
 		}
-		for j := range prs {
-			pr := prs[j]
-			if pr.HeadSHA == nil || *pr.HeadSHA == "" || pr.ChecksGreen {
+		seen := make(map[string]bool)
+		for _, pr := range prs {
+			if pr.HeadSHA == nil || *pr.HeadSHA == "" || seen[*pr.HeadSHA] {
 				continue
 			}
-			combined, err := conn.client().GetCombinedStatus(owner, name, *pr.HeadSHA)
-			if err != nil || !combined.AllChecksPassed() {
-				continue
-			}
-			if err := s.fRepo.UpdatePullRequestChecks(ctx, repo.ID, pr.Number, true); err != nil {
-				continue
-			}
-			s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr.ID)
-			s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
-				Type:    "forgejo:pr_updated",
-				Payload: map[string]any{"pr_number": pr.Number, "checks_green": true},
-			})
+			seen[*pr.HeadSHA] = true
+			_ = s.refreshChecksForSHA(ctx, &repos[i], *pr.HeadSHA)
 		}
 	}
 }

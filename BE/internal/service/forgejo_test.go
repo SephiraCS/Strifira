@@ -43,9 +43,9 @@ func TestResolveIssuesFromRefsLinksAllReferences(t *testing.T) {
 
 func TestIssueKeywordRegex(t *testing.T) {
 	cases := []struct {
-		name  string
-		text  string
-		want  []string
+		name string
+		text string
+		want []string
 	}{
 		{"fixes", "Fixes KUA-12", []string{"KUA-12"}},
 		{"lowercase keyword and identifier", "this closes kua-3", []string{"kua-3"}},
@@ -139,6 +139,28 @@ func TestForgejoWebhookStatusPayloadParsing(t *testing.T) {
 		require.NoError(t, json.Unmarshal([]byte(raw), &event))
 		assert.Equal(t, "abc123", event.SHA+event.Commit.ID+event.Commit.SHA)
 	}
+}
+
+func TestActionRunHeadSHAUsesPRHead(t *testing.T) {
+	sha, err := actionRunHeadSHA([]byte(`{"run":{"trigger_event":"pull_request","commit_sha":"merge-sha","event_payload":"{\"pull_request\":{\"head\":{\"sha\":\"head-sha\"}}}"}}`))
+	require.NoError(t, err)
+	assert.Equal(t, "head-sha", sha)
+
+	sha, err = actionRunHeadSHA([]byte(`{"run":{"trigger_event":"push","commit_sha":"push-sha"}}`))
+	require.NoError(t, err)
+	assert.Equal(t, "push-sha", sha)
+
+	sha, err = actionRunHeadSHA([]byte(`{"run":{"trigger_event":"pull_request","commit_sha":"merge-sha","event_payload":"{}"}}`))
+	require.NoError(t, err)
+	assert.Empty(t, sha)
+}
+
+func TestActionRunWebhookRepositoryEnvelope(t *testing.T) {
+	var envelope forgejoWebhookEnvelope
+	require.NoError(t, json.Unmarshal([]byte(`{"run":{"repository":{"full_name":"TerraScale/ku","html_url":"https://git.terrascale.tech/TerraScale/ku"}}}`), &envelope))
+	assert.Empty(t, envelope.Repository.FullName)
+	assert.Equal(t, "TerraScale/ku", envelope.Run.Repository.FullName)
+	assert.Equal(t, "https://git.terrascale.tech", instanceOrigin(envelope.Run.Repository.HTMLURL))
 }
 
 func TestWebhookTargetURLDerivation(t *testing.T) {

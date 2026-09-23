@@ -11,14 +11,15 @@ Two configuration modes:
   instance URL and a personal access token. The token is validated against
   `GET /api/v1/user` and stored AES-256-GCM encrypted
   (key derived from `JWT_SECRET + ":forgejo"`). Connecting seeds the default
-  transition rules and the per-team "PR" workflow state exactly once.
+  transition rules exactly once.
 - **Global** (SaaS-style): set `FORGEJO_URL` and `FORGEJO_TOKEN` in the
   environment; every workspace shares the connection and the settings page
   shows it as server-managed.
 
 Linking a repository creates a webhook **on the Forgejo side** via the API
 (`POST /repos/{owner}/{repo}/hooks`, type `forgejo`, events
-`push`, `pull_request`, `create`, `status`) with a per-repository random
+`push`, `pull_request`, `create`, `action_run_success`,
+`action_run_failure`, `action_run_recover`) with a per-repository random
 secret stored encrypted. Unlinking deletes the webhook again. Deliveries are
 authenticated with `X-Forgejo-Signature` (hex HMAC-SHA256 over the raw body);
 the repository `html_url` in the payload pins the instance so `full_name`
@@ -58,13 +59,20 @@ configurable target status or "No transition"):
 | Event | Fires when | Default target |
 | --- | --- | --- |
 | `branch_created` | a branch whose name contains an identifier is pushed | `in_progress` |
-| `pr_opened` | a referencing pull request opens | `in_review` |
-| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo 16 has no commit-status webhook, so ku polls open PRs every minute; a `status` webhook is still accepted from versions that deliver one | `pr` (workflow state "PR", auto-created per team, category started) |
+| `pr_opened` | a referencing pull request opens | `in_progress` |
+| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo Actions completion webhooks trigger a status refresh; a `status` webhook is also accepted from versions that deliver one | `in_review` |
 | `pr_merged` | the pull request merges | `done` |
 
 Slug targets resolve against each issue's team workflow at fire time, so one
 rule covers teams with custom status sets. Transitions write issue history and
 trigger the existing sub-issue/parent auto-close cascades.
+
+Forgejo 16 does not emit commit-status webhooks, but its Actions run completion
+webhooks carry the original pull request head SHA. Ku checks the aggregate
+status after each completion and performs one catch-up pass on startup. Existing
+hooks are recreated once with their current signing secret because Forgejo 16's
+hook edit API ignores Actions event subscriptions. The older per-team "PR"
+status remains available for workspaces that already use it.
 
 ## Surface
 
