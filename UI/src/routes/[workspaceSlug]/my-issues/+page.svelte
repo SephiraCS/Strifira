@@ -14,9 +14,14 @@
 	import IssueListLoadMore from '$lib/features/issues/IssueListLoadMore.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import * as Tabs from '$lib/components/ui/tabs';
+	import CreateIssueDialog from '$lib/features/issues/CreateIssueDialog.svelte';
+	import { showIssueCreatedToast } from '$lib/features/issues/issue-created-toast';
+	import { appToast } from '$lib/features/toast/toast';
+	import { listTeams } from '$lib/api/teams';
 	import { listProjects } from '$lib/api/projects';
 	import { listLabels } from '$lib/api/labels';
 	import { listMembers } from '$lib/api/members';
+	import type { Team } from '$lib/types/team';
 	import type { Project } from '$lib/types/project';
 	import type { Label } from '$lib/types/label';
 	import type { WorkspaceMember } from '$lib/types/workspace';
@@ -59,9 +64,13 @@
 	let filters = $state<ViewFilter>(initialDrillDownFilters);
 	let drillDownMode = $state(Object.keys(initialDrillDownFilters).length > 0);
 	let layout = $state<ViewLayout>(viewLayoutState.layout);
+	let teams = $state<Team[]>([]);
 	let projects = $state<Project[]>([]);
 	let labels = $state<Label[]>([]);
 	let members = $state<WorkspaceMember[]>([]);
+	let showCreateIssue = $state(false);
+	let quickAddStatusId = $state<string | undefined>(undefined);
+	let boardTeamId = $state<string | undefined>(undefined);
 	let collapsedGroups = $state<Set<string>>(new Set());
 	let lastSelectedId = $state<string | null>(null);
 	let relationDialogOpen = $state(false);
@@ -85,11 +94,14 @@
 
 	onMount(() => {
 		void loadIssues();
-		void Promise.all([listProjects(slug), listLabels(slug), listMembers(slug)]).then(([p, l, m]) => {
-			projects = p;
-			labels = l;
-			members = m;
-		});
+		void Promise.all([listTeams(slug), listProjects(slug), listLabels(slug), listMembers(slug)]).then(
+			([t, p, l, m]) => {
+				teams = t;
+				projects = p;
+				labels = l;
+				members = m;
+			}
+		);
 	});
 
 	async function loadIssues() {
@@ -125,6 +137,7 @@
 		// Load team statuses from the first issue's team for status pickers
 		const firstTeamId = issuesState.issues[0]?.team_id;
 		if (firstTeamId) {
+			boardTeamId = firstTeamId;
 			teamStatusesState.load(slug, firstTeamId);
 		}
 	}
@@ -210,7 +223,9 @@
 		<div class="flex-1 overflow-y-auto">
 			{#if !issuesState.loading && issuesState.issues.length === 0}
 				<EmptyState
-					title={activeTab === 'assigned' ? m['my_issues.empty.assigned.title']() : m['my_issues.empty.created.title']()}
+					title={activeTab === 'assigned'
+						? m['my_issues.empty.assigned.title']()
+						: m['my_issues.empty.created.title']()}
 					description={activeTab === 'assigned'
 						? m['my_issues.empty.assigned.description']()
 						: m['my_issues.empty.created.description']()}
@@ -276,6 +291,10 @@
 				{members}
 				{labels}
 				onissueclick={handleIssueClick}
+				onquickadd={(statusId) => {
+					quickAddStatusId = statusId;
+					showCreateIssue = true;
+				}}
 			/>
 		</div>
 	{/if}
@@ -287,4 +306,25 @@
 	identifier={relationIssue?.identifier ?? ''}
 	defaultType={relationDefaultType}
 	oncreated={loadIssues}
+/>
+
+<CreateIssueDialog
+	bind:open={showCreateIssue}
+	{slug}
+	{teams}
+	{projects}
+	{labels}
+	{members}
+	defaultTeamId={boardTeamId}
+	defaultStatusId={quickAddStatusId}
+	onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
+	onsubmit={async (req) => {
+		try {
+			const created = await issuesState.create(slug, req);
+			showIssueCreatedToast(slug, created);
+			void loadIssues();
+		} catch (err: any) {
+			appToast.apiError(err, 'Failed to create issue');
+		}
+	}}
 />
