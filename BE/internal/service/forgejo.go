@@ -176,7 +176,7 @@ func (s *ForgejoService) seedDefaultsIfMissing(ctx context.Context, workspaceID 
 	s.seedDefaults(ctx, workspaceID)
 }
 
-// seedDefaults creates the auto-transition rules (idempotent).
+// seedDefaults creates the auto-transition rules and PR review state.
 func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID) {
 	defaults := []struct {
 		Event  string
@@ -191,6 +191,26 @@ func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID
 		_ = s.fRepo.UpsertAutoTransition(ctx, &domain.ForgejoAutoTransition{
 			ID: uuid.New(), WorkspaceID: workspaceID,
 			Event: d.Event, TargetStatus: d.Status, IsActive: true,
+		})
+	}
+
+	teams, err := s.teamRepo.ListByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return
+	}
+	for i := range teams {
+		existing, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, teams[i].ID, "pr")
+		if err != nil || existing != nil {
+			continue
+		}
+		position, err := s.teamStatusRepo.NextPosition(ctx, teams[i].ID)
+		if err != nil {
+			continue
+		}
+		color := "#8b5cf6"
+		_ = s.teamStatusRepo.Create(ctx, &domain.TeamStatus{
+			ID: uuid.New(), TeamID: teams[i].ID, Name: "PR", Slug: "pr",
+			Category: domain.StatusCategoryStarted, Color: &color, Position: position,
 		})
 	}
 
