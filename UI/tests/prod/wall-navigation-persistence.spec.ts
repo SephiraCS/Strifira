@@ -73,6 +73,9 @@ async function activeShareCount(cookie: string, slug: string) {
 }
 
 async function createIssueForNavigation(cookie: string, slug: string) {
+	const meRes = await fetch(`${BASE}/api/auth/me`, { headers: { cookie } });
+	if (meRes.status !== 200) return null;
+	const me = (await meRes.json()) as { id: string };
 	const teamRes = await fetch(`${BASE}/api/workspaces/${slug}/teams`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', cookie },
@@ -80,10 +83,12 @@ async function createIssueForNavigation(cookie: string, slug: string) {
 	});
 	if (teamRes.status !== 201) return null;
 	const team = (await teamRes.json()) as { id: string };
+	// Assigned to the creator so it shows on My Issues' default
+	// (assigned) tab.
 	const issueRes = await fetch(`${BASE}/api/workspaces/${slug}/issues`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', cookie },
-		body: JSON.stringify({ team_id: team.id, title: 'Navigation persistence probe' })
+		body: JSON.stringify({ team_id: team.id, title: 'Navigation persistence probe', assignee_ids: [me.id] })
 	});
 	if (issueRes.status !== 201) return null;
 	const issue = (await issueRes.json()) as { identifier: string };
@@ -131,9 +136,16 @@ test('share survives navigation to inbox and issues; reload prompts and GCs', as
 	expect(await activeShareCount(user.cookie, slug)).toBe(1);
 
 	// 2. The literal report: the presenter goes to an issue mid-share.
+	// (In-app navigation only — a full page.goto here would hit the native
+	// beforeunload prompt, which is exactly the reload/close case below.
+	// Issue rows navigate via click handlers, not anchors.)
 	if (issuePath) {
-		await page.goto(`${BASE}${issuePath}`);
-		await expect(page).toHaveURL(new RegExp(issuePath));
+		await page.locator(`a[href="/${slug}/my-issues"]`).first().click();
+		await expect(page).toHaveURL(new RegExp(`/${slug}/my-issues`));
+		const issueRow = page.getByText('Navigation persistence probe').first();
+		await expect(issueRow).toBeVisible({ timeout: 15_000 });
+		await issueRow.click();
+		await expect(page).toHaveURL(new RegExp(`/${slug}/issue/`));
 		expect(dialogs).toBe(0);
 		await expect(page.locator('button[title="Stop sharing"]')).toBeVisible();
 		expect(await activeShareCount(user.cookie, slug)).toBe(1);
