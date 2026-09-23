@@ -576,10 +576,10 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 	for _, issue := range linkedIssues {
 		switch {
 		case event.Action == "opened" || event.Action == "ready_for_review":
-			s.applyAutoTransition(ctx, repo.WorkspaceID, "pr_opened", issue, event.PullRequest.User.Login)
+			s.applyAutoTransition(ctx, repo.WorkspaceID, "pr_opened", issue)
 		case event.PullRequest.Merged:
 			if mergeRuleErr == nil && mergeRule != nil {
-				s.applyAutoTransition(ctx, repo.WorkspaceID, "pr_merged", issue, event.PullRequest.User.Login)
+				s.applyAutoTransition(ctx, repo.WorkspaceID, "pr_merged", issue)
 			} else if keywordSet[issue.ID] {
 				// Closing keyword with no configured rule still closes.
 				s.moveIssueToCompleted(ctx, repo.WorkspaceID, issue, map[uuid.UUID]bool{})
@@ -667,9 +667,6 @@ func (s *ForgejoService) processPushEvent(ctx context.Context, payload []byte, r
 type fjWebhookCreate struct {
 	RefType string `json:"ref_type"`
 	Ref     string `json:"ref"`
-	Sender struct {
-		Login string `json:"login"`
-	} `json:"sender"`
 }
 
 func (s *ForgejoService) processCreateEvent(ctx context.Context, payload []byte, repo *domain.ForgejoRepoModel) error {
@@ -700,7 +697,7 @@ func (s *ForgejoService) processCreateEvent(ctx context.Context, payload []byte,
 	}
 
 	if issue != nil {
-		s.applyAutoTransition(ctx, repo.WorkspaceID, "branch_created", issue, event.Sender.Login)
+		s.applyAutoTransition(ctx, repo.WorkspaceID, "branch_created", issue)
 		s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
 			Type:    "forgejo:branch_created",
 			Payload: map[string]any{"issue_id": issue.ID, "branch": event.Ref},
@@ -825,7 +822,7 @@ func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.F
 			continue
 		}
 		if allGreen {
-			s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr.ID, pr.AuthorLogin)
+			s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr.ID)
 		}
 		s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
 			Type:    "forgejo:pr_updated",
@@ -929,13 +926,13 @@ func (s *ForgejoService) syncOpenPRChecks(ctx context.Context) {
 	}
 }
 
-func (s *ForgejoService) applyChecksGreenTransition(ctx context.Context, workspaceID, prID uuid.UUID, authorLogin string) {
+func (s *ForgejoService) applyChecksGreenTransition(ctx context.Context, workspaceID, prID uuid.UUID) {
 	issues, err := s.issuesForPR(ctx, prID)
 	if err != nil {
 		return
 	}
 	for _, issue := range issues {
-		s.applyAutoTransition(ctx, workspaceID, "pr_checks_green", issue, authorLogin)
+		s.applyAutoTransition(ctx, workspaceID, "pr_checks_green", issue)
 	}
 	if len(issues) > 0 {
 		s.broadcastAppRefresh(workspaceID, "issues")
@@ -1019,7 +1016,7 @@ func (s *ForgejoService) resolveKeywordIssues(ctx context.Context, workspaceID u
 
 // --- Auto-Transitions ---
 
-func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uuid.UUID, event string, issue *domain.Issue, forgejoLogin string) {
+func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uuid.UUID, event string, issue *domain.Issue) {
 	rule, err := s.fRepo.GetAutoTransitionByEvent(ctx, workspaceID, event)
 	if err != nil || rule == nil {
 		return
@@ -1028,26 +1025,17 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 	oldStatus := string(issue.Status)
 	newStatus := rule.TargetStatus
 	statusChanged := newStatus != "" && oldStatus != newStatus
-	targetAssigneeID := rule.TargetAssigneeID
-	if rule.AssignForgejoUser && strings.TrimSpace(forgejoLogin) != "" {
-		matched, err := s.fRepo.MatchWorkspaceMemberByName(ctx, workspaceID, strings.TrimSpace(forgejoLogin))
-		if err != nil {
-			log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to match Forgejo user")
-		} else {
-			targetAssigneeID = matched
-		}
-	}
 	assigneeChanged := false
 	var currentAssignees []uuid.UUID
-	if targetAssigneeID != nil {
+	if rule.TargetAssigneeID != nil {
 		assignees, err := s.issueRepo.GetAssignees(ctx, issue.ID)
 		if err != nil {
 			log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to read issue assignees")
 			return
 		}
 		currentAssignees = assignees
-		assigneeChanged = len(assignees) != 1 || assignees[0] != *targetAssigneeID ||
-			issue.AssigneeID == nil || *issue.AssigneeID != *targetAssigneeID
+		assigneeChanged = len(assignees) != 1 || assignees[0] != *rule.TargetAssigneeID ||
+			issue.AssigneeID == nil || *issue.AssigneeID != *rule.TargetAssigneeID
 	}
 	if !statusChanged && !assigneeChanged {
 		return
@@ -1065,8 +1053,8 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 			issue.StatusID = &ts.ID
 		}
 	}
-	if targetAssigneeID != nil {
-		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, *targetAssigneeID)
+	if rule.TargetAssigneeID != nil {
+		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, *rule.TargetAssigneeID)
 		if err != nil || !member {
 			return
 		}
@@ -1076,7 +1064,7 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 		issue.Status = domain.IssueStatus(newStatus)
 	}
 	if assigneeChanged {
-		issue.AssigneeID = targetAssigneeID
+		issue.AssigneeID = rule.TargetAssigneeID
 	}
 	if err := s.fRepo.ApplyIssueAutomation(ctx, issue, assigneeChanged); err != nil {
 		log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to auto-transition issue")
@@ -1085,7 +1073,7 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 	if assigneeChanged {
 		if issue.CreatorID != uuid.Nil {
 			oldValue := uuidListString(currentAssignees)
-			newValue := uuidListString([]uuid.UUID{*targetAssigneeID})
+			newValue := uuidListString([]uuid.UUID{*rule.TargetAssigneeID})
 			_ = s.historyRepo.Create(ctx, issue.ID, issue.CreatorID, "assignees", &oldValue, &newValue)
 		}
 	}
@@ -1337,7 +1325,7 @@ func (s *ForgejoService) ListAutoTransitions(ctx context.Context, workspaceID uu
 		}
 		result = append(result, dto.ForgejoAutoTransitionResponse{
 			Event: t.Event, TargetStatus: t.TargetStatus, TargetStatusID: statusID,
-			TargetAssigneeID: assigneeID, AssignForgejoUser: t.AssignForgejoUser, IsActive: t.IsActive,
+			TargetAssigneeID: assigneeID, IsActive: t.IsActive,
 		})
 	}
 	return result, nil
@@ -1348,10 +1336,7 @@ func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID 
 		if !forgejoLifecycleEvents[rule.Event] {
 			return fmt.Errorf("unknown transition event %q", rule.Event)
 		}
-		if rule.AssignForgejoUser && rule.TargetAssigneeID != nil {
-			return fmt.Errorf("event %q cannot select both a fixed assignee and a Forgejo user", rule.Event)
-		}
-		if rule.IsActive && strings.TrimSpace(rule.TargetStatus) == "" && rule.TargetStatusID == nil && rule.TargetAssigneeID == nil && !rule.AssignForgejoUser {
+		if rule.IsActive && strings.TrimSpace(rule.TargetStatus) == "" && rule.TargetStatusID == nil && rule.TargetAssigneeID == nil {
 			return fmt.Errorf("event %q needs a target status or assignee", rule.Event)
 		}
 		var statusID *uuid.UUID
@@ -1380,8 +1365,7 @@ func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID 
 		t := &domain.ForgejoAutoTransition{
 			ID: uuid.New(), WorkspaceID: workspaceID,
 			Event: rule.Event, TargetStatus: strings.TrimSpace(rule.TargetStatus),
-			TargetStatusID: statusID, TargetAssigneeID: assigneeID,
-			AssignForgejoUser: rule.AssignForgejoUser, IsActive: rule.IsActive,
+			TargetStatusID: statusID, TargetAssigneeID: assigneeID, IsActive: rule.IsActive,
 		}
 		if err := s.fRepo.UpsertAutoTransition(ctx, t); err != nil {
 			return err
