@@ -184,7 +184,7 @@ func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID
 	}{
 		{"branch_created", "in_progress"},
 		{"pr_opened", "in_progress"},
-		{"pr_checks_green", "in_review"},
+		{"pr_checks_green", "pr"},
 		{"pr_merged", "done"},
 	}
 	for _, d := range defaults {

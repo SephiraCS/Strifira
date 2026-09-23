@@ -60,7 +60,7 @@ configurable target status or "No transition"):
 | --- | --- | --- |
 | `branch_created` | a branch whose name contains an identifier is pushed | `in_progress` |
 | `pr_opened` | a referencing pull request opens | `in_progress` |
-| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo Actions completion webhooks trigger a status refresh; a `status` webhook is also accepted from versions that deliver one | `in_review` |
+| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo Actions completion webhooks trigger a status refresh; a `status` webhook is also accepted from versions that deliver one | `pr` (the Pull Request Review state) |
 | `pr_merged` | the pull request merges | `done` |
 
 Slug targets resolve against each issue's team workflow at fire time, so one
