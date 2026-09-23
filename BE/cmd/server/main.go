@@ -187,7 +187,9 @@ func main() {
 	)
 	forgejoH := handler.NewForgejoHandler(forgejoSvc)
 	// Forgejo Actions completion webhooks trigger CI status refreshes.
+	// Reconcile open PRs every five minutes in case a delivery is missed.
 	go forgejoSvc.ReconcileWebhookEvents(context.Background())
+	go forgejoSvc.StartStatusReconciler(context.Background(), 5*time.Minute)
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:      mcpServerVersion(),

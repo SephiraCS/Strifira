@@ -70,6 +70,10 @@ trigger the existing sub-issue/parent auto-close cascades.
 Selecting a workspace member under **Assign to** replaces the issue's current
 assignees when that event fires; **Keep assignee** preserves them. A rule may
 also assign someone without moving the issue by selecting **No transition**.
+**Match Forgejo user** compares the event's Forgejo login with the Ku `name`
+of current workspace members, ignoring case. It assigns only on a unique match;
+an absent or ambiguous match leaves the issue's assignees unchanged. Branch
+creation uses the webhook sender; PR events use the PR author.
 The assignee is checked against current workspace membership when saving and
 when the rule fires. To hand an issue to a reviewer after merge, set **Pull
 request merged** to the team's review status and choose that person under
@@ -77,7 +81,8 @@ request merged** to the team's review status and choose that person under
 
 Forgejo 16 does not emit commit-status webhooks, but its Actions run completion
 webhooks carry the original pull request head SHA. Ku checks the aggregate
-status after each completion and performs one catch-up pass on startup. Existing
+status after each completion, performs a catch-up pass on startup, and
+reconciles open PRs every five minutes if a delivery was missed. Existing
 hooks are recreated once with their current signing secret because Forgejo 16's
 hook edit API ignores Actions event subscriptions. The older per-team "PR"
 status remains available for workspaces that already use it.
