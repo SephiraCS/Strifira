@@ -70,6 +70,7 @@
 	let members = $state<WorkspaceMember[]>([]);
 	let showCreateIssue = $state(false);
 	let quickAddStatusId = $state<string | undefined>(undefined);
+	let quickAddAssigneeIds = $state<string[] | undefined>(undefined);
 	let boardTeamId = $state<string | undefined>(undefined);
 	let collapsedGroups = $state<Set<string>>(new Set());
 	let lastSelectedId = $state<string | null>(null);
@@ -293,6 +294,11 @@
 				onissueclick={handleIssueClick}
 				onquickadd={(statusId) => {
 					quickAddStatusId = statusId;
+					// On the assigned tab an unassigned issue would vanish at
+					// the post-create reload (the tab filters by assignee), so
+					// quick-adds there default to the current user.
+					quickAddAssigneeIds =
+						!drillDownMode && activeTab === 'assigned' && authState.user ? [authState.user.id] : undefined;
 					showCreateIssue = true;
 				}}
 			/>
@@ -317,6 +323,7 @@
 	{members}
 	defaultTeamId={boardTeamId}
 	defaultStatusId={quickAddStatusId}
+	defaultAssigneeIds={quickAddAssigneeIds}
 	onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
 	onsubmit={async (req) => {
 		try {
