@@ -1018,6 +1018,8 @@
 	"settings.forgejo.target_status": "Target status",
 	"settings.forgejo.target_assignee": "Assign to",
 	"settings.forgejo.keep_assignee": "Keep assignee",
+	"settings.forgejo.match_user": "Match Forgejo user",
+	"settings.forgejo.match_user_note": "Matches the Forgejo username to one Ku workspace member's username, ignoring case. If there is no unique match, the assignee stays unchanged.",
 	"settings.forgejo.unavailable_assignee": "Former member",
 	"issue.forgejo.activity": "Code activity",
 	"issue.forgejo.branch_copied": "Branch name copied",

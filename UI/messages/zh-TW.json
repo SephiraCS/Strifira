@@ -1018,6 +1018,8 @@
 	"settings.forgejo.target_status": "目標狀態",
 	"settings.forgejo.target_assignee": "指派給",
 	"settings.forgejo.keep_assignee": "保留目前負責人",
+	"settings.forgejo.match_user": "比對 Forgejo 使用者",
+	"settings.forgejo.match_user_note": "依使用者名稱（不區分大小寫）比對一位 Ku 工作區成員。若無唯一結果，負責人維持不變。",
 	"settings.forgejo.unavailable_assignee": "已離開的成員",
 	"issue.forgejo.activity": "程式碼動態",
 	"issue.forgejo.branch_copied": "分支名已複製",

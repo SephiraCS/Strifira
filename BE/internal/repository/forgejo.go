@@ -250,12 +250,13 @@ func (r *ForgejoRepository) UpsertCommit(ctx context.Context, c *domain.ForgejoC
 // --- Auto Transitions ---
 
 func (r *ForgejoRepository) UpsertAutoTransition(ctx context.Context, t *domain.ForgejoAutoTransition) error {
-	query := `INSERT INTO forgejo_auto_transitions (id, workspace_id, event, target_status, target_status_id, target_assignee_id, is_active)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	query := `INSERT INTO forgejo_auto_transitions (id, workspace_id, event, target_status, target_status_id, target_assignee_id, assign_forgejo_user, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (workspace_id, event) DO UPDATE SET
 			target_status = EXCLUDED.target_status, target_status_id = EXCLUDED.target_status_id,
-			target_assignee_id = EXCLUDED.target_assignee_id, is_active = EXCLUDED.is_active`
-	_, err := r.db.ExecContext(ctx, query, t.ID, t.WorkspaceID, t.Event, t.TargetStatus, t.TargetStatusID, t.TargetAssigneeID, t.IsActive)
+			target_assignee_id = EXCLUDED.target_assignee_id, assign_forgejo_user = EXCLUDED.assign_forgejo_user,
+			is_active = EXCLUDED.is_active`
+	_, err := r.db.ExecContext(ctx, query, t.ID, t.WorkspaceID, t.Event, t.TargetStatus, t.TargetStatusID, t.TargetAssigneeID, t.AssignForgejoUser, t.IsActive)
 	return err
 }
 
@@ -263,6 +264,19 @@ func (r *ForgejoRepository) IsWorkspaceMember(ctx context.Context, workspaceID, 
 	var exists bool
 	err := r.db.GetContext(ctx, &exists, `SELECT EXISTS (SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2)`, workspaceID, userID)
 	return exists, err
+}
+
+// MatchWorkspaceMemberByName resolves a Forgejo login only when it identifies
+// exactly one Ku username in this workspace. Ambiguity leaves assignment alone.
+func (r *ForgejoRepository) MatchWorkspaceMemberByName(ctx context.Context, workspaceID uuid.UUID, login string) (*uuid.UUID, error) {
+	var ids []uuid.UUID
+	err := r.db.SelectContext(ctx, &ids, `SELECT wm.user_id FROM workspace_members wm
+		JOIN users u ON u.id = wm.user_id
+		WHERE wm.workspace_id = $1 AND lower(u.name) = lower($2) LIMIT 2`, workspaceID, login)
+	if err != nil || len(ids) != 1 {
+		return nil, err
+	}
+	return &ids[0], nil
 }
 
 // ApplyIssueAutomation changes status and, when requested, replaces the full

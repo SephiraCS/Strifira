@@ -70,8 +70,14 @@ trigger the existing sub-issue/parent auto-close cascades.
 Selecting a workspace member under **Assign to** replaces the issue's current
 assignees when that event fires; **Keep assignee** preserves them. A rule may
 also assign someone without moving the issue by selecting **No transition**.
-The assignee is checked against current workspace membership when saving and
-when the rule fires. To hand an issue to a reviewer after merge, set **Pull
+**Match Forgejo user** compares the event's Forgejo login with the Ku `name`
+of current workspace members, ignoring case. It assigns only on a unique match;
+an absent or ambiguous match leaves the issue's assignees unchanged. Branch
+creation uses the webhook sender; PR events use the PR author.
+New `in_progress` rules use this mode by default, and migration `000045`
+enables it for existing `in_progress` rules without a fixed assignee.
+Fixed assignees are checked against current workspace membership when saving
+and when the rule fires. To hand an issue to a reviewer after merge, set **Pull
 request merged** to the team's review status and choose that person under
 **Assign to**.
 

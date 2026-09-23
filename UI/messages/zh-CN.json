@@ -1018,6 +1018,8 @@
 	"settings.forgejo.target_status": "目标状态",
 	"settings.forgejo.target_assignee": "分配给",
 	"settings.forgejo.keep_assignee": "保留当前负责人",
+	"settings.forgejo.match_user": "匹配 Forgejo 用户",
+	"settings.forgejo.match_user_note": "按用户名（不区分大小写）匹配一位 Ku 工作区成员。若没有唯一匹配，负责人保持不变。",
 	"settings.forgejo.unavailable_assignee": "已离开的成员",
 	"issue.forgejo.activity": "代码动态",
 	"issue.forgejo.branch_copied": "分支名已复制",

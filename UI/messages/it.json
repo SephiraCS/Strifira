@@ -1018,6 +1018,8 @@
 	"settings.forgejo.target_status": "Stato di destinazione",
 	"settings.forgejo.target_assignee": "Assegna a",
 	"settings.forgejo.keep_assignee": "Mantieni assegnatario",
+	"settings.forgejo.match_user": "Abbina utente Forgejo",
+	"settings.forgejo.match_user_note": "Abbina il nome utente Forgejo a un solo membro dell'area di lavoro Ku, senza distinguere maiuscole e minuscole. Se non c'è una corrispondenza univoca, l'assegnatario non cambia.",
 	"settings.forgejo.unavailable_assignee": "Ex membro",
 	"issue.forgejo.activity": "Attività di codice",
 	"issue.forgejo.branch_copied": "Nome branch copiato",

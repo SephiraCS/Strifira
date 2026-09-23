@@ -449,11 +449,18 @@
 									<select
 										aria-label={m['settings.forgejo.target_assignee']()}
 										class="h-8 max-w-40 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
-										value={rule.target_assignee_id ?? ''}
+										value={rule.assign_forgejo_user ? '__forgejo_user__' : (rule.target_assignee_id ?? '')}
 										disabled={!rule.is_active}
-										onchange={(e) => patchRule(meta.event, { target_assignee_id: (e.currentTarget as HTMLSelectElement).value || null })}
+										onchange={(e) => {
+											const value = (e.currentTarget as HTMLSelectElement).value;
+											patchRule(meta.event, {
+												target_assignee_id: value && value !== '__forgejo_user__' ? value : null,
+												assign_forgejo_user: value === '__forgejo_user__'
+											});
+										}}
 									>
 										<option value="">{m['settings.forgejo.keep_assignee']()}</option>
+										<option value="__forgejo_user__">{m['settings.forgejo.match_user']()}</option>
 										{#each members as member (member.user_id)}
 											<option value={member.user_id}>{member.name || member.email}</option>
 										{/each}
@@ -471,6 +478,7 @@
 					{/each}
 				</div>
 				<p class="mt-2 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.automations_note']()}</p>
+				<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.match_user_note']()}</p>
 			</div>
 		</div>
 	{/if}

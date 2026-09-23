@@ -18,11 +18,12 @@ type UpdateAutoTransitionsRequest struct {
 }
 
 type AutoTransitionRule struct {
-	Event            string  `json:"event" validate:"required"`
-	TargetStatus     string  `json:"target_status"`
-	TargetStatusID   *string `json:"target_status_id"`
-	TargetAssigneeID *string `json:"target_assignee_id"`
-	IsActive         bool    `json:"is_active"`
+	Event             string  `json:"event" validate:"required"`
+	TargetStatus      string  `json:"target_status"`
+	TargetStatusID    *string `json:"target_status_id"`
+	TargetAssigneeID  *string `json:"target_assignee_id"`
+	AssignForgejoUser bool    `json:"assign_forgejo_user"`
+	IsActive          bool    `json:"is_active"`
 }
 
 // --- Responses ---
@@ -105,9 +106,10 @@ type ForgejoIssueActivityResponse struct {
 }
 
 type ForgejoAutoTransitionResponse struct {
-	Event            string  `json:"event"`
-	TargetStatus     string  `json:"target_status"`
-	TargetStatusID   *string `json:"target_status_id"`
-	TargetAssigneeID *string `json:"target_assignee_id"`
-	IsActive         bool    `json:"is_active"`
+	Event             string  `json:"event"`
+	TargetStatus      string  `json:"target_status"`
+	TargetStatusID    *string `json:"target_status_id"`
+	TargetAssigneeID  *string `json:"target_assignee_id"`
+	AssignForgejoUser bool    `json:"assign_forgejo_user"`
+	IsActive          bool    `json:"is_active"`
 }

@@ -141,6 +141,12 @@ func TestForgejoWebhookStatusPayloadParsing(t *testing.T) {
 	}
 }
 
+func TestForgejoBranchCreateSenderParsing(t *testing.T) {
+	var event fjWebhookCreate
+	require.NoError(t, json.Unmarshal([]byte(`{"ref_type":"branch","ref":"refs/heads/KUA-31-work","sender":{"login":"mariogk"}}`), &event))
+	assert.Equal(t, "mariogk", event.Sender.Login)
+}
+
 func TestActionRunHeadSHAUsesPRHead(t *testing.T) {
 	sha, err := actionRunHeadSHA([]byte(`{"run":{"trigger_event":"pull_request","commit_sha":"merge-sha","event_payload":"{\"pull_request\":{\"head\":{\"sha\":\"head-sha\"}}}"}}`))
 	require.NoError(t, err)

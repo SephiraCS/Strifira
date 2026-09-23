@@ -80,5 +80,6 @@ export interface ForgejoAutoTransition {
 	target_status: string;
 	target_status_id: string | null;
 	target_assignee_id: string | null;
+	assign_forgejo_user: boolean;
 	is_active: boolean;
 }
