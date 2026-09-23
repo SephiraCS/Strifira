@@ -18,6 +18,7 @@
 	import { listMembers } from '$lib/api/members';
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import { mentionInteractivity } from '$lib/components/shared/mention/mention-interactivity.action';
+	import { imageViewer } from '$lib/components/shared/image-viewer';
 	import HistoryAssignees from './HistoryAssignees.svelte';
 
 	let {
@@ -160,7 +161,7 @@
 			<h1 class="text-xl font-semibold text-[var(--color-text-primary)]">{issue.title}</h1>
 
 			{#if issue.description}
-				<div class="mt-3 prose prose-invert prose-sm max-w-none text-sm text-[var(--color-text-secondary)]" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
+				<div class="mt-3 prose prose-invert prose-sm max-w-none text-sm text-[var(--color-text-secondary)]" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }} use:imageViewer>
 					{@html sanitizeHtml(issue.description ?? '')}
 				</div>
 			{/if}
@@ -232,7 +233,7 @@
 									>{formatRelativeTime(comment.created_at, getLocale())}</span
 								>
 							</div>
-							<div class="mt-1 prose prose-invert prose-sm max-w-none text-[var(--color-text-secondary)]" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
+							<div class="mt-1 prose prose-invert prose-sm max-w-none text-[var(--color-text-secondary)]" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }} use:imageViewer>
 								{@html sanitizeHtml(comment.body ?? '')}
 							</div>
 						</div>

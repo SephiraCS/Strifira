@@ -35,7 +35,10 @@
 		SquareArrowOutUpRight,
 		Sparkles,
 		ImagePlus,
-		Paperclip
+		Paperclip,
+		Maximize2,
+		Download,
+		Copy
 	} from 'lucide-svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
@@ -50,6 +53,7 @@
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import type { Issue } from '$lib/types/issue';
 	import { Attachment } from './attachment.extension';
+	import { copyImage, downloadImage, openImagePreview } from './image-viewer/image-actions';
 
 	let {
 		content = '',
@@ -821,6 +825,29 @@
 		editor?.chain().focus().updateAttributes('image', { width }).run();
 	}
 
+	function activeImage(): { src: string; alt: string | null } | null {
+		if (!editor || !editor.isActive('image')) return null;
+		const attrs = editor.getAttributes('image');
+		const src = typeof attrs.src === 'string' ? attrs.src : '';
+		if (!src) return null;
+		return { src, alt: typeof attrs.alt === 'string' && attrs.alt ? attrs.alt : null };
+	}
+
+	function viewActiveImage() {
+		const image = activeImage();
+		if (image) openImagePreview(image);
+	}
+
+	function downloadActiveImage() {
+		const image = activeImage();
+		if (image) void downloadImage(image);
+	}
+
+	function copyActiveImage() {
+		const image = activeImage();
+		if (image) void copyImage(image);
+	}
+
 	function createIssueFromSelection() {
 		if (!editor || !oncreateissue) return;
 		const { from, to } = editor.state.selection;
@@ -1048,6 +1075,16 @@
 							</button>
 						{/each}
 						<button type="button" onclick={() => setImageWidth(null)} class={btnClass(!editor?.getAttributes('image').width)} title={m['sharedComponents.rich_editor.use_original_image_size']()}>{m['sharedComponents.rich_editor.auto']()}</button>
+						<div class="bubble-separator"></div>
+						<button type="button" onclick={viewActiveImage} class={btnClass(false)} title={m['imageViewer.view']()} aria-label={m['imageViewer.view']()}>
+							<Maximize2 size={14} />
+						</button>
+						<button type="button" onclick={downloadActiveImage} class={btnClass(false)} title={m['imageViewer.download']()} aria-label={m['imageViewer.download']()}>
+							<Download size={14} />
+						</button>
+						<button type="button" onclick={copyActiveImage} class={btnClass(false)} title={m['imageViewer.copy']()} aria-label={m['imageViewer.copy']()}>
+							<Copy size={14} />
+						</button>
 					{:else}
 					<button type="button" onclick={toggleBold} class={btnClass(editor?.isActive('bold') ?? false)} title={m['sharedComponents.rich_editor.bold']()}>
 						<Bold size={14} />

@@ -802,3 +802,19 @@ html.pointer-cursors [data-slot="switch"] {
 	font-size: 0.65rem;
 	text-transform: uppercase;
 }
+
+/* Images rendered from issue/comment HTML open the full-screen viewer on click. */
+img.image-viewer-trigger {
+	cursor: zoom-in;
+	transition: filter 120ms ease, box-shadow 120ms ease;
+}
+
+img.image-viewer-trigger:hover {
+	filter: brightness(1.06);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 45%, transparent);
+}
+
+img.image-viewer-trigger:focus-visible {
+	outline: 2px solid var(--app-accent);
+	outline-offset: 2px;
+}

@@ -42,6 +42,7 @@
 	import { goto } from '$app/navigation';
 	import { sanitizeHtml } from '$lib/security/sanitize';
 	import { mentionInteractivity } from '$lib/components/shared/mention/mention-interactivity.action';
+	import { imageViewer } from '$lib/components/shared/image-viewer';
 	import { presenceState } from '$lib/features/presence/presence.state.svelte';
 	import CreateIssueDialog from './CreateIssueDialog.svelte';
 	import IssuePickerDialog from './IssuePickerDialog.svelte';
@@ -1133,7 +1134,7 @@
 										{/if}
 									</div>
 								</div>
-								<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
+								<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }} use:imageViewer>
 									{@html sanitizeHtml(comment.body ?? '')}
 								</div>
 							</div>
@@ -1147,7 +1148,7 @@
 										<span class="text-[13px] font-medium text-[var(--color-text-primary)]">{reply.user?.name ?? 'User'}</span>
 											<span class="text-[11px] text-[var(--color-text-tertiary)]">{formatRelativeTime(reply.created_at, getLocale())}</span>
 										</div>
-										<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}>
+										<div class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0" use:mentionInteractivity={{ slug, members, issues: issuesState.issues }} use:imageViewer>
 											{@html sanitizeHtml(reply.body ?? '')}
 										</div>
 									</div>

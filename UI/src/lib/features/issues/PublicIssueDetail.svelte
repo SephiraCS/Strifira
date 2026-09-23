@@ -7,6 +7,7 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { sanitizeHtml } from '$lib/security/sanitize';
+	import { imageViewer } from '$lib/components/shared/image-viewer';
 	import { X, CalendarDays, ChevronUp, ChevronDown } from 'lucide-svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { onMount, onDestroy } from 'svelte';
@@ -202,7 +203,7 @@
 			</div>
 
 			{#if issue.description}
-				<div class="description-content mt-5 max-w-none text-sm text-[var(--color-text-secondary)] leading-relaxed">
+				<div class="description-content mt-5 max-w-none text-sm text-[var(--color-text-secondary)] leading-relaxed" use:imageViewer>
 					{@html sanitizeHtml(issue.description)}
 				</div>
 			{/if}
