@@ -209,6 +209,11 @@
 
 				const image = document.createElement('img');
 				image.draggable = false;
+				image.classList.add('image-viewer-trigger');
+				if (!nodeEditor.isEditable) {
+					image.setAttribute('role', 'button');
+					image.tabIndex = 0;
+				}
 
 				const handle = document.createElement('button');
 				handle.type = 'button';
@@ -240,6 +245,12 @@
 						dom.style.removeProperty('width');
 						image.removeAttribute('width');
 						image.style.width = 'auto';
+					}
+					if (!nodeEditor.isEditable) {
+						const alt = image.alt.trim();
+						image.setAttribute('aria-label', alt
+							? m['imageViewer.view_named']({ name: alt })
+							: m['imageViewer.view']());
 					}
 					handle.setAttribute('aria-valuenow', String(Math.round(currentPercent())));
 				}
@@ -293,6 +304,26 @@
 				function handlePointerCancel() {
 					finishResize(false);
 				}
+
+				function openImage() {
+					const src = currentNode.attrs.src;
+					if (typeof src === 'string' && src) {
+						openImagePreview({ src, alt: image.alt.trim() || null });
+					}
+				}
+
+				image.addEventListener('click', (event) => {
+					if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+					event.preventDefault();
+					event.stopPropagation();
+					openImage();
+				});
+				image.addEventListener('keydown', (event) => {
+					if (event.key !== 'Enter' && event.key !== ' ') return;
+					event.preventDefault();
+					event.stopPropagation();
+					openImage();
+				});
 
 				handle.addEventListener('pointerdown', (event) => {
 					if (event.button !== 0 || !nodeEditor.isEditable) return;
@@ -1393,7 +1424,6 @@
 		display: block;
 		max-width: 100%;
 		margin: 0;
-		pointer-events: none;
 	}
 	:global(.rich-editor .tiptap .resizable-image-wrapper.ProseMirror-selectednode),
 	:global(.rich-editor .tiptap .resizable-image-wrapper.is-resizing) {
