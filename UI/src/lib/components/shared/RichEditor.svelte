@@ -210,8 +210,10 @@
 				const image = document.createElement('img');
 				image.draggable = false;
 				image.classList.add('image-viewer-trigger');
-				image.setAttribute('role', 'button');
-				image.tabIndex = 0;
+				if (!nodeEditor.isEditable) {
+					image.setAttribute('role', 'button');
+					image.tabIndex = 0;
+				}
 
 				const handle = document.createElement('button');
 				handle.type = 'button';
@@ -234,9 +236,6 @@
 						if (value) image.setAttribute(attribute, String(value));
 						else image.removeAttribute(attribute);
 					}
-					image.setAttribute('aria-label', currentNode.attrs.alt
-						? m['imageViewer.view_named']({ name: String(currentNode.attrs.alt) })
-						: m['imageViewer.view']());
 					const width = currentNode.attrs.width ? String(currentNode.attrs.width) : null;
 					if (width) {
 						dom.style.width = width;
@@ -246,6 +245,12 @@
 						dom.style.removeProperty('width');
 						image.removeAttribute('width');
 						image.style.width = 'auto';
+					}
+					if (!nodeEditor.isEditable) {
+						const alt = image.alt.trim();
+						image.setAttribute('aria-label', alt
+							? m['imageViewer.view_named']({ name: alt })
+							: m['imageViewer.view']());
 					}
 					handle.setAttribute('aria-valuenow', String(Math.round(currentPercent())));
 				}
@@ -303,7 +308,7 @@
 				function openImage() {
 					const src = currentNode.attrs.src;
 					if (typeof src === 'string' && src) {
-						openImagePreview({ src, alt: currentNode.attrs.alt || null });
+						openImagePreview({ src, alt: image.alt.trim() || null });
 					}
 				}
 
