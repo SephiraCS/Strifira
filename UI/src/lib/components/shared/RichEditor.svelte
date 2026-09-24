@@ -209,6 +209,9 @@
 
 				const image = document.createElement('img');
 				image.draggable = false;
+				image.classList.add('image-viewer-trigger');
+				image.setAttribute('role', 'button');
+				image.tabIndex = 0;
 
 				const handle = document.createElement('button');
 				handle.type = 'button';
@@ -231,6 +234,9 @@
 						if (value) image.setAttribute(attribute, String(value));
 						else image.removeAttribute(attribute);
 					}
+					image.setAttribute('aria-label', currentNode.attrs.alt
+						? m['imageViewer.view_named']({ name: String(currentNode.attrs.alt) })
+						: m['imageViewer.view']());
 					const width = currentNode.attrs.width ? String(currentNode.attrs.width) : null;
 					if (width) {
 						dom.style.width = width;
@@ -293,6 +299,26 @@
 				function handlePointerCancel() {
 					finishResize(false);
 				}
+
+				function openImage() {
+					const src = currentNode.attrs.src;
+					if (typeof src === 'string' && src) {
+						openImagePreview({ src, alt: currentNode.attrs.alt || null });
+					}
+				}
+
+				image.addEventListener('click', (event) => {
+					if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+					event.preventDefault();
+					event.stopPropagation();
+					openImage();
+				});
+				image.addEventListener('keydown', (event) => {
+					if (event.key !== 'Enter' && event.key !== ' ') return;
+					event.preventDefault();
+					event.stopPropagation();
+					openImage();
+				});
 
 				handle.addEventListener('pointerdown', (event) => {
 					if (event.button !== 0 || !nodeEditor.isEditable) return;
@@ -1393,7 +1419,6 @@
 		display: block;
 		max-width: 100%;
 		margin: 0;
-		pointer-events: none;
 	}
 	:global(.rich-editor .tiptap .resizable-image-wrapper.ProseMirror-selectednode),
 	:global(.rich-editor .tiptap .resizable-image-wrapper.is-resizing) {
