@@ -1,13 +1,13 @@
 # Stage 1: Build UI
-FROM node:22-alpine AS ui-builder
+FROM docker.io/library/node:22-alpine AS ui-builder
 WORKDIR /app
 COPY UI/package*.json ./
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 COPY UI/ .
 RUN npm run build
 
 # Stage 2: Build Caddy from source with patched Go
-FROM golang:1.26.6-alpine AS caddy-builder
+FROM docker.io/library/golang:1.26.6-alpine AS caddy-builder
 RUN apk add --no-cache git
 RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 RUN xcaddy build latest --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
@@ -15,15 +15,15 @@ RUN xcaddy build latest --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
     --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.2
 
 # Stage 3: Build backend
-FROM golang:1.27.1-alpine AS be-builder
+FROM docker.io/library/golang:1.27.1-alpine AS be-builder
 WORKDIR /app
 COPY BE/go.mod BE/go.sum ./
 RUN go mod download
 COPY BE/ .
-RUN CGO_ENABLED=0 go build -o server ./cmd/server
+RUN CGO_ENABLED=0 go build -trimpath -o server ./cmd/server
 
 # Stage 4: Final image
-FROM alpine:3.23
+FROM docker.io/library/alpine:3.23
 RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=caddy-builder /go/caddy /usr/bin/caddy
@@ -49,6 +49,11 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 		reverse_proxy localhost:8080
 	}
 
+	# MCP endpoint (stateless streamable HTTP, API-key auth in the app)
+	handle /mcp* {
+		reverse_proxy localhost:8080
+	}
+
 	handle /uploads/* {
 		reverse_proxy localhost:8080
 	}
@@ -69,12 +74,33 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 }
 EOF
 
-COPY <<'ENTRY' /app/entrypoint.sh
+# Sources an optional mounted env file, applies migrations (retried while the
+# database is still coming up), then runs the API behind Caddy.
+COPY <<'EOF' /app/start.sh
 #!/bin/sh
+set -eu
+
+if [ -f /secrets/ku.env ]; then
+	set -a
+	. /secrets/ku.env
+	set +a
+fi
+
+attempt=1
+until ./server migrate up; do
+	if [ "$attempt" -ge 20 ]; then
+		echo "[ku] migrations failed after $attempt attempts" >&2
+		exit 1
+	fi
+	echo "[ku] migration attempt $attempt failed; retrying in 3s" >&2
+	attempt=$((attempt + 1))
+	sleep 3
+done
+
 ./server &
 exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-ENTRY
-RUN chmod +x /app/entrypoint.sh
+EOF
+RUN chmod +x /app/start.sh
 
 EXPOSE 3000
-CMD ["/app/entrypoint.sh"]
+ENTRYPOINT ["/app/start.sh"]

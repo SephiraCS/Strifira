@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
+
+# Go, Node.js, and the Playwright browsers are baked into the ts-builder job
+# image; dependency caches live on the runner's shared /cache volume.
+#
+# Every push to main deploys to alpha: the image is built and staged in
+# Harbor while the tests run, and the ku instance is rolled once the backend
+# and frontend tests pass. The alpha side is HomeLab ops/ku/deploy.sh.
+jobs:
+  backend-test:
+    name: Backend Tests
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: BE
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      # Runner service containers are not reachable from job containers, so
+      # PostgreSQL and Redis run as podman containers inside the privileged
+      # job. Nested podman needs --cgroups=disabled or conmon cannot create its
+      # sandbox cgroup.
+      - name: Start PostgreSQL and Redis
+        run: |
+          set -euo pipefail
+          # fsync off: this database is throwaway test state and the
+          # overlay-backed volume in the job container makes committed
+          # writes slow enough to overrun test deadlines.
+          podman run --detach --cgroups=disabled --name ku-postgres \
+            --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
+            docker.io/library/postgres:16-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+          podman run --detach --cgroups=disabled --name ku-redis \
+            --publish 127.0.0.1:6379:6379 \
+            docker.io/library/redis:7-alpine
+          for _ in $(seq 1 30); do
+            podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
+            sleep 2
+          done
+          podman exec ku-postgres pg_isready -U ku
+          podman exec ku-redis redis-cli ping
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Apply migrations and run tests with coverage
+        env:
+          DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: test-secret-that-is-at-least-32-characters-long
+        run: |
+          set -euo pipefail
+          go run ./cmd/server migrate up
+          go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
+          go tool cover -func=coverage.out | tail -1
+
+  frontend-check:
+    name: Frontend Checks
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: UI
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Svelte check
+        run: npm run check
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      # Installs only what the job image lacks for this Playwright version
+      # (a no-op once the baked browsers match), then runs the browser tests;
+      # the Playwright web server builds the app first.
+      - name: Dev machine browser tests
+        run: |
+          npx playwright install chromium ffmpeg
+          npm run test:e2e
+
+  web-check:
+    name: Marketing Site Checks
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: WEB
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Svelte check
+        run: npm run check
+
+      - name: Build and SEO validation
+        run: npm run validate
+
+      - name: Responsive layout tests
+        run: npm run test:responsive
+
+  stage-image:
+    name: Stage Image
+    if: forgejo.event_name == 'push'
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Build the image
+        run: podman build --jobs 0 --tag "ku:${{ forgejo.sha }}" .
+
+      - name: Stage the image in Harbor
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          podman save --format docker-archive "ku:${{ forgejo.sha }}" \
+            | scripts/alpha-deploy.sh stage "${{ forgejo.sha }}"
+
+  deploy:
+    name: Deploy to Alpha
+    needs: [backend-test, frontend-check, stage-image]
+    if: forgejo.event_name == 'push'
+    runs-on: terrascale-builder
+    timeout-minutes: 15
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Roll the ku instance
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+        run: scripts/alpha-deploy.sh roll "${{ forgejo.sha }}"

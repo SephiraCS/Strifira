@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
+
 env:
   # Docker references must be lowercase; the Forgejo registry resolves the
   # lowercase owner path to the TerraScale organization.
@@ -25,7 +29,7 @@ jobs:
 
     steps:
       - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           ref: ${{ forgejo.sha }}
@@ -52,9 +56,11 @@ jobs:
               ;;
           esac
 
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "number=$number" >> "$GITHUB_OUTPUT"
-          echo "push=$push" >> "$GITHUB_OUTPUT"
+          {
+            echo "version=$version"
+            echo "number=$number"
+            echo "push=$push"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Bump UI version
         if: forgejo.event_name == 'release'
@@ -104,156 +110,34 @@ jobs:
             git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:main
           fi
 
-      # The builder image ships podman/buildah rather than a Docker CLI, so
-      # image lanes run on whichever engine is usable in the job.
-      - name: Detect the container engine
-        id: engine
-        run: |
-          if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
-            echo "engine=podman" >> "$GITHUB_OUTPUT"
-          elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-            echo "engine=docker" >> "$GITHUB_OUTPUT"
-          else
-            echo "engine=" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Fail fast when no container engine is available on a release
-        if: forgejo.event_name == 'release' && steps.engine.outputs.engine == ''
-        run: |
-          echo "A usable container engine (podman or docker) is required to publish release images." >&2
-          exit 1
-
       # The job environment presets REGISTRY_AUTH_FILE to a read-only,
       # pull-only Harbor authfile. Copy it, add the Forgejo registry
       # credentials, and point podman at the merged copy so base-image pulls
       # keep working through the Harbor mirror while pushes authenticate to
-      # the Forgejo registry. The docker engine ignores this variable.
+      # the Forgejo registry.
       - name: Log in to the Forgejo container registry
         if: forgejo.event_name == 'release'
-        id: auth
         env:
-          ENGINE: ${{ steps.engine.outputs.engine }}
           FORGEJO_TOKEN: ${{ forgejo.token }}
           FORGEJO_ACTOR: ${{ forgejo.actor }}
         run: |
+          set -euo pipefail
           authfile="${RUNNER_TEMP}/ci-registry-auth.json"
           cp "${REGISTRY_AUTH_FILE:-/dev/null}" "$authfile" 2>/dev/null || touch "$authfile"
-          if [ "$ENGINE" = "podman" ]; then
-            printf '%s' "${FORGEJO_TOKEN}" | podman login --authfile "$authfile" "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
-          else
-            printf '%s' "${FORGEJO_TOKEN}" | docker login "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
-          fi
-          echo "authfile=$authfile" >> "$GITHUB_OUTPUT"
-
-      # All-in-one image
-      - name: Build & push all-in-one
-        env:
-          ENGINE: ${{ steps.engine.outputs.engine }}
-          AUTHFILE: ${{ steps.auth.outputs.authfile }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PUSH: ${{ steps.version.outputs.push }}
-        run: |
-          if [ -n "${AUTHFILE:-}" ]; then export REGISTRY_AUTH_FILE="$AUTHFILE"; fi
-          "$ENGINE" build --pull \
-            --tag "${IMAGE_PREFIX}/ku:latest" \
-            --tag "${IMAGE_PREFIX}/ku:${VERSION}" \
-            .
-          if [ "${PUSH}" = "true" ]; then
-            "$ENGINE" push "${IMAGE_PREFIX}/ku:latest"
-            "$ENGINE" push "${IMAGE_PREFIX}/ku:${VERSION}"
-          fi
-
-      # API-only image
-      - name: Build & push API
-        env:
-          ENGINE: ${{ steps.engine.outputs.engine }}
-          AUTHFILE: ${{ steps.auth.outputs.authfile }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PUSH: ${{ steps.version.outputs.push }}
-        run: |
-          if [ -n "${AUTHFILE:-}" ]; then export REGISTRY_AUTH_FILE="$AUTHFILE"; fi
-          "$ENGINE" build --pull \
-            --tag "${IMAGE_PREFIX}/ku-api:latest" \
-            --tag "${IMAGE_PREFIX}/ku-api:${VERSION}" \
-            ./BE
-          if [ "${PUSH}" = "true" ]; then
-            "$ENGINE" push "${IMAGE_PREFIX}/ku-api:latest"
-            "$ENGINE" push "${IMAGE_PREFIX}/ku-api:${VERSION}"
-          fi
-
-      # Web-only image
-      - name: Build & push Web
-        env:
-          ENGINE: ${{ steps.engine.outputs.engine }}
-          AUTHFILE: ${{ steps.auth.outputs.authfile }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PUSH: ${{ steps.version.outputs.push }}
-        run: |
-          if [ -n "${AUTHFILE:-}" ]; then export REGISTRY_AUTH_FILE="$AUTHFILE"; fi
-          "$ENGINE" build --pull \
-            --tag "${IMAGE_PREFIX}/ku-web:latest" \
-            --tag "${IMAGE_PREFIX}/ku-web:${VERSION}" \
-            ./UI
-          if [ "${PUSH}" = "true" ]; then
-            "$ENGINE" push "${IMAGE_PREFIX}/ku-web:latest"
-            "$ENGINE" push "${IMAGE_PREFIX}/ku-web:${VERSION}"
-          fi
-
-  # TEMPORARY: after a release, pulls every published image back from the
-  # Forgejo registry with the job token and records the outcome on the
-  # ci/status branch, so the registry publication is verifiable without web
-  # access. Remove once the release lane is verified.
-  verify-publish:
-    name: Verify published images (temporary)
-    if: always() && forgejo.event_name == 'release'
-    needs: build
-    runs-on: terrascale-builder
-    timeout-minutes: 20
-    permissions:
-      contents: write
-      packages: read
-    steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          persist-credentials: false
-
-      - name: Pull published images from the Forgejo registry
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-          VERSION: ${{ forgejo.event.release.tag_name }}
-          BUILD_RESULT: ${{ needs.build.result }}
-        run: |
-          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          authfile="$(mktemp)"
           printf '%s' "${FORGEJO_TOKEN}" | podman login --authfile "$authfile" "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
+          echo "REGISTRY_AUTH_FILE=$authfile" >> "$GITHUB_ENV"
 
-          {
-            echo "release verify at $(date -u +%Y-%m-%dT%H:%M:%SZ) version=${VERSION}"
-            echo "build job result: ${BUILD_RESULT}"
-            for image in ku ku-api ku-web; do
-              ref="${REGISTRY}/terrascale/${image}:${VERSION}"
-              if podman pull --authfile "$authfile" "$ref" >/dev/null 2>&1; then
-                echo "PULL OK    ${ref}"
-                podman rmi "$ref" >/dev/null 2>&1 || true
-              else
-                echo "PULL FAILED ${ref}"
-              fi
-            done
-          } | tee "release-verify-${stamp}.txt"
-
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          remote_url="https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git"
-          git fetch "$remote_url" ci/status 2>/dev/null
-          git checkout -B ci/status FETCH_HEAD 2>/dev/null || git checkout -B ci/status
-          git add "release-verify-${stamp}.txt"
-          git commit -m "release verify ${stamp}"
-          for _ in 1 2 3 4 5; do
-            if git push "$remote_url" HEAD:ci/status; then break; fi
-            git fetch "$remote_url" ci/status
-            git rebase FETCH_HEAD
-            sleep 3
+      - name: Build and push the images
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PUSH: ${{ steps.version.outputs.push }}
+        run: |
+          set -euo pipefail
+          for pair in ku:. ku-api:./BE ku-web:./UI; do
+            image="${IMAGE_PREFIX}/${pair%%:*}"
+            podman build --pull --tag "${image}:latest" --tag "${image}:${VERSION}" "${pair#*:}"
+            if [ "${PUSH}" = "true" ]; then
+              podman push "${image}:latest"
+              podman push "${image}:${VERSION}"
+            fi
           done
