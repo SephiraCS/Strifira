@@ -11,7 +11,8 @@ Two configuration modes:
   instance URL and a personal access token. The token is validated against
   `GET /api/v1/user` and stored AES-256-GCM encrypted
   (key derived from `JWT_SECRET + ":forgejo"`). Connecting seeds the default
-  transition rules exactly once.
+  transition rules exactly once and adds a `PR` status (started category) to
+  every team that lacks one.
 - **Global** (SaaS-style): set `FORGEJO_URL` and `FORGEJO_TOKEN` in the
   environment; every workspace shares the connection and the settings page
   shows it as server-managed.
@@ -60,7 +61,7 @@ configurable target status and optional target assignee):
 | --- | --- | --- |
 | `branch_created` | a branch whose name contains an identifier is pushed | `in_progress` |
 | `pr_opened` | a referencing pull request opens | `in_progress` |
-| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo Actions completion webhooks trigger a status refresh; a `status` webhook is also accepted from versions that deliver one | `pr` (the Pull Request Review state) |
+| `pr_checks_green` | **all** CI checks on an open PR's head commit succeed (combined status API; at least one check must exist). Forgejo Actions completion webhooks trigger a status refresh; a `status` webhook is also accepted from versions that deliver one | `pr` (the per-team PR state) |
 | `pr_merged` | the pull request merges | `done` |
 
 Slug targets resolve against each issue's team workflow at fire time, so one
@@ -89,8 +90,7 @@ webhooks carry the original pull request head SHA. Ku checks the aggregate
 status after each completion, performs a catch-up pass on startup, and
 reconciles open PRs every five minutes if a delivery was missed. Existing
 hooks are recreated once with their current signing secret because Forgejo 16's
-hook edit API ignores Actions event subscriptions. The older per-team "PR"
-status remains available for workspaces that already use it.
+hook edit API ignores Actions event subscriptions.
 
 ## Surface
 
@@ -105,6 +105,6 @@ status remains available for workspaces that already use it.
   state and a CI-green badge, branches, commits) in the issue view's right
   sidebar; realtime `forgejo:pr_updated|branch_created|commit_pushed`
   WebSocket events.
-- Dev Machines: checkouts clone/push over HTTPS with the workspace Forgejo
-  token (`FORGEJO_TOKEN` in machine containers), pull requests are opened via
-  the API, and URLs are validated against the linked instance.
+- Dev Machines: checkouts clone/push over HTTPS with the workspace (or
+  global) Forgejo token (`FORGEJO_TOKEN` in machine containers), pull requests
+  are opened via the API, and URLs are validated against the linked instance.

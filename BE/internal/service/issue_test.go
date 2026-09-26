@@ -56,6 +56,14 @@ func (m *mockIssueRepo) Update(ctx context.Context, issue *domain.Issue) error {
 	return args.Error(0)
 }
 
+func (m *mockIssueRepo) SetArchived(ctx context.Context, workspaceID, issueID uuid.UUID, archived bool) (*domain.Issue, error) {
+	args := m.Called(ctx, workspaceID, issueID, archived)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Issue), args.Error(1)
+}
+
 func (m *mockIssueRepo) Delete(ctx context.Context, id uuid.UUID) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
@@ -315,6 +323,46 @@ func newTestNotifSvc() *NotificationService {
 }
 
 // --- Tests ---
+
+func TestIssueServiceSetArchived(t *testing.T) {
+	ctx := t.Context()
+	workspaceID := uuid.New()
+	issueID := uuid.New()
+	issue := &domain.Issue{ID: issueID, WorkspaceID: workspaceID, Identifier: "ENG-1", Status: domain.IssueStatusDone}
+	archivedAt := time.Now()
+	archived := *issue
+	archived.ArchivedAt = &archivedAt
+
+	repo := new(mockIssueRepo)
+	repo.On("GetByIdentifier", ctx, workspaceID, "ENG-1").Return(issue, nil).Twice()
+	repo.On("SetArchived", ctx, workspaceID, issueID, true).Return(&archived, nil).Once()
+	repo.On("SetArchived", ctx, workspaceID, issueID, false).Return(issue, nil).Once()
+	svc := NewIssueService(repo, nil, nil, nil, realtime.NewHub(), nil)
+
+	result, err := svc.SetArchived(ctx, workspaceID, "ENG-1", true)
+	assert.NoError(t, err)
+	assert.Equal(t, &archivedAt, result.ArchivedAt)
+
+	result, err = svc.SetArchived(ctx, workspaceID, "ENG-1", false)
+	assert.NoError(t, err)
+	assert.Nil(t, result.ArchivedAt)
+	repo.AssertExpectations(t)
+}
+
+func TestIssueServiceRejectsArchiveOfNonCompletedIssue(t *testing.T) {
+	ctx := t.Context()
+	workspaceID := uuid.New()
+	issue := &domain.Issue{ID: uuid.New(), WorkspaceID: workspaceID, Identifier: "ENG-2", Status: domain.IssueStatusTodo}
+	repo := new(mockIssueRepo)
+	repo.On("GetByIdentifier", ctx, workspaceID, issue.Identifier).Return(issue, nil).Once()
+	repo.On("SetArchived", ctx, workspaceID, issue.ID, true).Return(nil, nil).Once()
+	svc := NewIssueService(repo, nil, nil, nil, realtime.NewHub(), nil)
+
+	result, err := svc.SetArchived(ctx, workspaceID, issue.Identifier, true)
+	assert.Nil(t, result)
+	assert.ErrorContains(t, err, "only Done issues")
+	repo.AssertExpectations(t)
+}
 
 func TestIssueService_GetByIdentifier(t *testing.T) {
 	issueRepo := new(mockIssueRepo)

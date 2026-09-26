@@ -1639,5 +1639,19 @@
 	"settings.general.upload_logo": "Upload image",
 	"settings.general.uploading_logo": "Uploading...",
 	"shares.connect_failed": "Could not connect to this screen share",
-	"shares.retry": "Retry"
+	"shares.retry": "Retry",
+	"issues.archive.title": "Archived issues",
+	"issues.archive.description": "Completed issues removed from active lists. Open an issue or restore it here.",
+	"issues.archive.action": "Archive issue",
+	"issues.archive.restore": "Restore issue",
+	"issues.archive.archived": "Issue archived",
+	"issues.archive.restored": "Issue restored",
+	"issues.archive.failed": "Could not change archive status",
+	"issues.archive.load_failed": "Could not load archived issues",
+	"issues.archive.empty": "No archived issues yet",
+	"issues.archive.load_more": "Load more",
+	"settings.general.auto_archive": "Auto-archive Done issues",
+	"settings.general.auto_archive_desc": "Archive Done issues 30 days after completion.",
+	"settings.general.auto_archive_updated": "Auto-archive setting updated",
+	"settings.general.auto_archive_failed": "Could not update auto-archive setting"
 }

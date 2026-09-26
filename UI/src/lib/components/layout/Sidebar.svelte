@@ -41,6 +41,7 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import {
 		ArrowUpRight,
+		Archive,
 		Bookmark,
 		Copy,
 		Inbox,
@@ -720,6 +721,15 @@
 				>
 					<CircleUser size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.my_issues']()}</span>
+				</a>
+				<a
+					href="/{slug}/archived-issues"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/archived-issues`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<Archive size={16} class="shrink-0" />
+					<span class="truncate">{m['issues.archive.title']()}</span>
 				</a>
 				<a
 					href="/{slug}/insights"

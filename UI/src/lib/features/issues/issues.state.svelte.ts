@@ -274,6 +274,20 @@ class IssuesState {
 		}
 	}
 
+	async setArchived(slug: string, identifier: string, archived: boolean): Promise<Issue> {
+		const updated = await issueApi.setIssueArchived(slug, identifier, archived);
+		const visible = (this.filters.archived === 'true') === archived;
+		if (visible) {
+			this.issues = this.issues.map((issue) => issue.identifier === identifier ? updated : issue);
+		} else {
+			const wasListed = this.issues.some((issue) => issue.identifier === identifier);
+			this.issues = this.issues.filter((issue) => issue.identifier !== identifier);
+			if (wasListed) this.totalCount = Math.max(0, this.totalCount - 1);
+		}
+		if (this.selectedIssue?.identifier === identifier) this.selectedIssue = updated;
+		return updated;
+	}
+
 	setSubscription(identifier: string, isSubscribed: boolean) {
 		const idx = this.issues.findIndex((i) => i.identifier === identifier);
 		if (idx >= 0) {

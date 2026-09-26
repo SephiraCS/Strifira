@@ -225,16 +225,17 @@ func validateLogoURL(rawURL string) error {
 // role (if available) and the workspace owner's profile (best-effort).
 func (h *WorkspaceHandler) toWorkspaceResponse(c echo.Context, ws domain.Workspace) dto.WorkspaceResponse {
 	resp := dto.WorkspaceResponse{
-		ID:                   ws.ID.String(),
-		Name:                 ws.Name,
-		Slug:                 ws.Slug,
-		LogoURL:              ws.LogoURL,
-		OwnerID:              ws.OwnerID.String(),
-		ShareLinkMinRole:     ws.ShareLinkMinRole,
-		CurrentUserRole:      middleware.GetWorkspaceRole(c),
-		ScreenSharingEnabled: true,
-		CreatedAt:            ws.CreatedAt,
-		UpdatedAt:            ws.UpdatedAt,
+		ID:                    ws.ID.String(),
+		Name:                  ws.Name,
+		Slug:                  ws.Slug,
+		LogoURL:               ws.LogoURL,
+		OwnerID:               ws.OwnerID.String(),
+		ShareLinkMinRole:      ws.ShareLinkMinRole,
+		AutoArchiveDoneIssues: ws.AutoArchiveDoneIssues,
+		CurrentUserRole:       middleware.GetWorkspaceRole(c),
+		ScreenSharingEnabled:  true,
+		CreatedAt:             ws.CreatedAt,
+		UpdatedAt:             ws.UpdatedAt,
 	}
 
 	if ws.OwnerID != uuid.Nil {

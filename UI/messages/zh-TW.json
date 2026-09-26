@@ -1611,5 +1611,19 @@
 	"settings.general.upload_logo": "上傳圖片",
 	"settings.general.uploading_logo": "上傳中...",
 	"shares.connect_failed": "無法連結到此螢幕共享",
-	"shares.retry": "重試"
+	"shares.retry": "重試",
+	"issues.archive.title": "已封存議題",
+	"issues.archive.description": "已完成並從使用中清單移除的議題。可在此開啟或還原。",
+	"issues.archive.action": "封存議題",
+	"issues.archive.restore": "還原議題",
+	"issues.archive.archived": "議題已封存",
+	"issues.archive.restored": "議題已還原",
+	"issues.archive.failed": "無法變更封存狀態",
+	"issues.archive.load_failed": "無法載入已封存議題",
+	"issues.archive.empty": "目前沒有已封存議題",
+	"issues.archive.load_more": "載入更多",
+	"settings.general.auto_archive": "自動封存已完成議題",
+	"settings.general.auto_archive_desc": "議題完成 30 天後自動封存。",
+	"settings.general.auto_archive_updated": "自動封存設定已更新",
+	"settings.general.auto_archive_failed": "無法更新自動封存設定"
 }

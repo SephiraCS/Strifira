@@ -34,6 +34,7 @@
 		lastSelectedId = null,
 		onlastselected,
 		onaddrelation,
+		onupdated,
 		singleSelect = false
 	}: {
 		issue: Issue;
@@ -46,6 +47,7 @@
 		lastSelectedId?: string | null;
 		onlastselected?: (id: string) => void;
 		onaddrelation?: (issue: Issue, type: RelationType) => void;
+		onupdated?: () => void | Promise<void>;
 		singleSelect?: boolean;
 	} = $props();
 
@@ -155,7 +157,7 @@
 	}
 </script>
 
-	<IssueContextMenu {issue} {slug} {members} {labels} {projects} {cycles} onaddrelation={(type) => onaddrelation?.(issue, type)}>
+	<IssueContextMenu {issue} {slug} {members} {labels} {projects} {cycles} {onupdated} onaddrelation={(type) => onaddrelation?.(issue, type)}>
 	<button
 		class="group flex min-h-12 w-full items-center gap-2 rounded-none border-b border-[var(--app-border)] px-3 py-2 text-left transition-colors duration-100 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:mx-2 sm:min-h-0 sm:w-[calc(100%-1rem)] sm:rounded-md sm:border-b-0 sm:py-1.5 {isSelected ? 'bg-black/[0.02] dark:bg-white/[0.02]' : ''}"
 		onclick={handleClick}

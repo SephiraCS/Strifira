@@ -93,8 +93,8 @@ func (r *WorkspaceRepository) GetByID(ctx context.Context, id uuid.UUID) (*domai
 }
 
 func (r *WorkspaceRepository) Update(ctx context.Context, ws *domain.Workspace) error {
-	query := `UPDATE workspaces SET name = $1, logo_url = $2, share_link_min_role = $3, updated_at = NOW() WHERE id = $4 RETURNING updated_at`
-	return r.db.QueryRowContext(ctx, query, ws.Name, ws.LogoURL, ws.ShareLinkMinRole, ws.ID).Scan(&ws.UpdatedAt)
+	query := `UPDATE workspaces SET name = $1, logo_url = $2, share_link_min_role = $3, auto_archive_done_issues = $4, updated_at = NOW() WHERE id = $5 RETURNING updated_at`
+	return r.db.QueryRowContext(ctx, query, ws.Name, ws.LogoURL, ws.ShareLinkMinRole, ws.AutoArchiveDoneIssues, ws.ID).Scan(&ws.UpdatedAt)
 }
 
 func (r *WorkspaceRepository) Delete(ctx context.Context, id uuid.UUID) error {

@@ -7,14 +7,15 @@ import (
 )
 
 type Workspace struct {
-	ID               uuid.UUID `json:"id" db:"id"`
-	Name             string    `json:"name" db:"name"`
-	Slug             string    `json:"slug" db:"slug"`
-	LogoURL          *string   `json:"logo_url" db:"logo_url"`
-	OwnerID          uuid.UUID `json:"owner_id" db:"owner_id"`
-	ShareLinkMinRole string    `json:"share_link_min_role" db:"share_link_min_role"`
-	CreatedAt        time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at" db:"updated_at"`
+	ID                    uuid.UUID `json:"id" db:"id"`
+	Name                  string    `json:"name" db:"name"`
+	Slug                  string    `json:"slug" db:"slug"`
+	LogoURL               *string   `json:"logo_url" db:"logo_url"`
+	OwnerID               uuid.UUID `json:"owner_id" db:"owner_id"`
+	ShareLinkMinRole      string    `json:"share_link_min_role" db:"share_link_min_role"`
+	AutoArchiveDoneIssues bool      `json:"auto_archive_done_issues" db:"auto_archive_done_issues"`
+	CreatedAt             time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type WorkspaceMember struct {

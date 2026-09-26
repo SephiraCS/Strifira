@@ -22,6 +22,8 @@
 	import type { Snippet } from 'svelte';
 	import {
 		ArrowUpCircle,
+		Archive,
+		ArchiveRestore,
 		CalendarDays,
 		CircleDot,
 		CircleUser,
@@ -46,6 +48,7 @@
 		projects = [],
 		cycles = [],
 		onaddrelation,
+		onupdated,
 		children
 	}: {
 		issue: Issue;
@@ -55,6 +58,7 @@
 		projects?: Project[];
 		cycles?: Cycle[];
 		onaddrelation?: (type: RelationType) => void;
+		onupdated?: () => void | Promise<void>;
 		children: Snippet;
 	} = $props();
 
@@ -170,6 +174,16 @@
 			appToast.apiError(err, 'Failed to delete issue');
 		}
 		deleteOpen = false;
+	}
+
+	async function handleArchive(archived: boolean) {
+		try {
+			await issuesState.setArchived(slug, issue.identifier, archived);
+			await onupdated?.();
+			appToast.success(archived ? m['issues.archive.archived']() : m['issues.archive.restored']());
+		} catch (err: any) {
+			appToast.apiError(err, m['issues.archive.failed']());
+		}
 	}
 
 	async function handleDuplicate() {
@@ -343,6 +357,12 @@
 		<ContextMenu.Item onclick={() => (convertOpen = true)}><span class={rowClass}><FolderKanban class={iconClass} />{m['common.context_menu.convert_to_project']()}</span></ContextMenu.Item>
 
 		<ContextMenu.Separator />
+
+		{#if issue.archived_at}
+			<ContextMenu.Item onclick={() => handleArchive(false)}><span class={rowClass}><ArchiveRestore class={iconClass} />{m['issues.archive.restore']()}</span></ContextMenu.Item>
+		{:else if issue.status_info ? issue.status_info.category === 'completed' : issue.status === 'done'}
+			<ContextMenu.Item onclick={() => handleArchive(true)}><span class={rowClass}><Archive class={iconClass} />{m['issues.archive.action']()}</span></ContextMenu.Item>
+		{/if}
 
 		<ContextMenu.Item class="text-red-500 focus:text-red-500" onclick={() => (deleteOpen = true)}>
 			<span class="flex w-full items-center justify-between gap-2">

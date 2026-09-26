@@ -292,6 +292,25 @@ func (h *IssueHandler) Update(c echo.Context) error {
 	return response.Success(c, http.StatusOK, resp)
 }
 
+func (h *IssueHandler) Archive(c echo.Context) error {
+	return h.setArchived(c, true)
+}
+
+func (h *IssueHandler) Unarchive(c echo.Context) error {
+	return h.setArchived(c, false)
+}
+
+func (h *IssueHandler) setArchived(c echo.Context, archived bool) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	issue, err := h.issueSvc.SetArchived(c.Request().Context(), ws.ID, c.Param("identifier"), archived)
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	}
+	resp := toIssueResponse(*issue)
+	h.enrichIssueResponse(c.Request().Context(), &resp, *issue)
+	return response.Success(c, http.StatusOK, resp)
+}
+
 func (h *IssueHandler) Subscribe(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	userID := middleware.GetUserID(c)
@@ -934,6 +953,7 @@ func toIssueResponse(issue domain.Issue) dto.IssueResponse {
 		CreatorID:   issue.CreatorID.String(),
 		DueDate:     issue.DueDate,
 		SortOrder:   issue.SortOrder,
+		ArchivedAt:  issue.ArchivedAt,
 		CreatedAt:   issue.CreatedAt,
 		UpdatedAt:   issue.UpdatedAt,
 	}

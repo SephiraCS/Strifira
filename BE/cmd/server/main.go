@@ -200,6 +200,29 @@ func main() {
 	go forgejoSvc.ReconcileWebhookEvents(context.Background())
 	go forgejoSvc.StartStatusReconciler(context.Background(), 5*time.Minute)
 
+	// Archive completed issues once at startup and then hourly.
+	go func() {
+		archive := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			workspaces, err := issueRepo.AutoArchiveCompleted(ctx)
+			if err != nil {
+				log.WithError(err).Warn("failed to auto archive completed issues")
+			} else {
+				for _, workspace := range workspaces {
+					hub.Broadcast(workspace.WorkspaceID, realtime.Event{Type: "issues.bulk_updated", Payload: map[string]int64{"count": workspace.IssueCount}})
+					log.WithFields(log.Fields{"workspace_id": workspace.WorkspaceID, "count": workspace.IssueCount}).Info("completed issues archived")
+				}
+			}
+		}
+		archive()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			archive()
+		}
+	}()
+
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:      mcpServerVersion(),
 		Users:        userRepo,
@@ -334,6 +357,8 @@ func main() {
 	ws.DELETE("/issues/bulk", issueH.BulkDelete, mw.RequirePermission("issue:delete_own"))
 	ws.GET("/issues/:identifier", issueH.Get)
 	ws.PATCH("/issues/:identifier", issueH.Update, mw.RequirePermission("issue:update"))
+	ws.POST("/issues/:identifier/archive", issueH.Archive, mw.RequirePermission("issue:update"))
+	ws.DELETE("/issues/:identifier/archive", issueH.Unarchive, mw.RequirePermission("issue:update"))
 	ws.DELETE("/issues/:identifier", issueH.Delete, mw.RequirePermission("issue:delete_own"))
 	ws.POST("/issues/:identifier/subscribe", issueH.Subscribe)
 	ws.DELETE("/issues/:identifier/subscribe", issueH.Unsubscribe)

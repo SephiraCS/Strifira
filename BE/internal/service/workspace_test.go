@@ -305,6 +305,23 @@ func TestWorkspaceService_Update_Fields(t *testing.T) {
 	assert.Equal(t, "member", result.ShareLinkMinRole)
 }
 
+func TestWorkspaceService_UpdateAutoArchive(t *testing.T) {
+	ctx := t.Context()
+	ownerID := uuid.New()
+	ws := &domain.Workspace{ID: uuid.New(), Name: "Name", Slug: "test", OwnerID: ownerID, AutoArchiveDoneIssues: true}
+	repo := new(mockWorkspaceRepo)
+	repo.On("GetBySlug", ctx, "test").Return(ws, nil)
+	repo.On("Update", ctx, mock.MatchedBy(func(updated *domain.Workspace) bool {
+		return !updated.AutoArchiveDoneIssues && updated.Name == "Name"
+	})).Return(nil)
+	svc := NewWorkspaceService(repo, nil)
+
+	result, err := svc.Update(ctx, "test", ownerID, dto.UpdateWorkspaceRequest{AutoArchiveDoneIssues: new(false)})
+	assert.NoError(t, err)
+	assert.False(t, result.AutoArchiveDoneIssues)
+	repo.AssertExpectations(t)
+}
+
 func TestWorkspaceService_Update_ClearLogoURL(t *testing.T) {
 	wsRepo := new(mockWorkspaceRepo)
 	userRepo := new(mockUserRepo)

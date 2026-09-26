@@ -30,9 +30,10 @@ func (s *OptionalString) UnmarshalJSON(data []byte) error {
 }
 
 type UpdateWorkspaceRequest struct {
-	Name             *string        `json:"name" validate:"omitempty,min=1,max=100"`
-	LogoURL          OptionalString `json:"logo_url"`
-	ShareLinkMinRole *string        `json:"share_link_min_role" validate:"omitempty,oneof=owner admin member"`
+	Name                  *string        `json:"name" validate:"omitempty,min=1,max=100"`
+	LogoURL               OptionalString `json:"logo_url"`
+	ShareLinkMinRole      *string        `json:"share_link_min_role" validate:"omitempty,oneof=owner admin member"`
+	AutoArchiveDoneIssues *bool          `json:"auto_archive_done_issues"`
 }
 
 type WorkspaceOwnerResponse struct {
@@ -43,14 +44,15 @@ type WorkspaceOwnerResponse struct {
 }
 
 type WorkspaceResponse struct {
-	ID               string                  `json:"id"`
-	Name             string                  `json:"name"`
-	Slug             string                  `json:"slug"`
-	LogoURL          *string                 `json:"logo_url"`
-	OwnerID          string                  `json:"owner_id"`
-	Owner            *WorkspaceOwnerResponse `json:"owner,omitempty"`
-	ShareLinkMinRole string                  `json:"share_link_min_role"`
-	CurrentUserRole  string                  `json:"current_user_role"`
+	ID                    string                  `json:"id"`
+	Name                  string                  `json:"name"`
+	Slug                  string                  `json:"slug"`
+	LogoURL               *string                 `json:"logo_url"`
+	OwnerID               string                  `json:"owner_id"`
+	Owner                 *WorkspaceOwnerResponse `json:"owner,omitempty"`
+	ShareLinkMinRole      string                  `json:"share_link_min_role"`
+	AutoArchiveDoneIssues bool                    `json:"auto_archive_done_issues"`
+	CurrentUserRole       string                  `json:"current_user_role"`
 	// ScreenSharingEnabled is always true: screen sharing is built-in
 	// peer-to-peer WebRTC over the workspace WebSocket. The field stays
 	// for API compatibility.

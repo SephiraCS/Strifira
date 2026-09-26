@@ -34,6 +34,7 @@ export async function updateWorkspace(
 		name?: string;
 		logo_url?: string | null;
 		share_link_min_role?: string;
+		auto_archive_done_issues?: boolean;
 	}
 ): Promise<Workspace> {
 	const workspace = await api.patch<Workspace>(`/api/workspaces/${slug}`, data);

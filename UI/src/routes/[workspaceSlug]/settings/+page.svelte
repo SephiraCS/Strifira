@@ -23,6 +23,7 @@
 	let savingName = $state(false);
 	let savingLogo = $state(false);
 	let savingRole = $state(false);
+	let savingAutoArchive = $state(false);
 	let showDelete = $state(false);
 	let deleteConfirm = $state('');
 	let deleting = $state(false);
@@ -143,6 +144,19 @@
 			shareLinkMinRole = workspace.share_link_min_role ?? 'admin';
 		} finally {
 			savingRole = false;
+		}
+	}
+
+	async function handleAutoArchiveChange(enabled: boolean) {
+		if (!workspace || enabled === workspace.auto_archive_done_issues) return;
+		savingAutoArchive = true;
+		try {
+			workspace = await updateWorkspace(slug, { auto_archive_done_issues: enabled });
+			appToast.success(m['settings.general.auto_archive_updated']());
+		} catch (err: any) {
+			appToast.apiError(err, m['settings.general.auto_archive_failed']());
+		} finally {
+			savingAutoArchive = false;
 		}
 	}
 
@@ -279,6 +293,21 @@
 						{/each}
 					</Select.Content>
 				</Select.Root>
+			</div>
+			<div class="border-t border-[var(--app-border)]"></div>
+			<div class="flex items-center justify-between gap-4 px-5 py-4">
+				<div>
+					<p class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.general.auto_archive']()}</p>
+					<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.general.auto_archive_desc']()}</p>
+				</div>
+				<input
+					type="checkbox"
+					checked={workspace.auto_archive_done_issues}
+					onchange={(event) => handleAutoArchiveChange(event.currentTarget.checked)}
+					disabled={!isOwner || savingAutoArchive}
+					class="h-4 w-4 accent-[var(--app-accent)] disabled:opacity-60"
+					aria-label={m['settings.general.auto_archive']()}
+				/>
 			</div>
 		</div>
 

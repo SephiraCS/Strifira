@@ -49,6 +49,7 @@
 		{onclick}
 		onlastselected={onlastselected}
 		onaddrelation={onaddrelation}
+		{onupdated}
 	/>
 	{#if (issue.sub_issue_count ?? 0) > 0}
 		<div class="ml-8 flex">

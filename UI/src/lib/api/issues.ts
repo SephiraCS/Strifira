@@ -71,6 +71,11 @@ export function deleteIssue(slug: string, identifier: string): Promise<void> {
 	return api.delete<void>(`/api/workspaces/${slug}/issues/${identifier}`);
 }
 
+export function setIssueArchived(slug: string, identifier: string, archived: boolean): Promise<Issue> {
+	const path = `/api/workspaces/${slug}/issues/${identifier}/archive`;
+	return archived ? api.post<Issue>(path) : api.delete<Issue>(path);
+}
+
 export function listComments(slug: string, identifier: string): Promise<Comment[]> {
 	return api.get<Comment[]>(`/api/workspaces/${slug}/issues/${identifier}/comments`);
 }

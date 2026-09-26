@@ -13,6 +13,7 @@ export interface Workspace {
 	owner_id: string;
 	owner?: WorkspaceOwner | null;
 	share_link_min_role: string;
+	auto_archive_done_issues: boolean;
 	current_user_role: string;
 	screen_sharing_enabled: boolean;
 	created_at: string;

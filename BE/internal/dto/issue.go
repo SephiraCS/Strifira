@@ -83,6 +83,7 @@ type IssueResponse struct {
 	RelationCounts  *IssueRelationCountsResponse  `json:"relation_counts,omitempty"`
 	RelationSummary *IssueRelationSummaryResponse `json:"relation_summary,omitempty"`
 	IsSubscribed    bool                          `json:"is_subscribed"`
+	ArchivedAt      *time.Time                    `json:"archived_at"`
 	CreatedAt       time.Time                     `json:"created_at"`
 	UpdatedAt       time.Time                     `json:"updated_at"`
 }
@@ -160,6 +161,7 @@ type IssueFilterParams struct {
 	PaginationParams
 	Status     string `query:"status"`
 	StatusType string `query:"status_type"`
+	Archived   string `query:"archived" validate:"omitempty,oneof=true false"`
 	Priority   string `query:"priority"`
 	AssigneeID string `query:"assignee"`
 	CreatorID  string `query:"creator"`

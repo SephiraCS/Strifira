@@ -32,7 +32,7 @@
 		Copy, Link as LinkIcon, GitBranch, SquareMousePointer,
 		CircleDot, ArrowUpCircle, UserCircle, FolderKanban, Pencil, Layers,
 		Tag, RefreshCw, ArrowUp, MoreHorizontal, Check, Bell,
-		Trash2, CornerDownRight, Ban, ArrowRight
+		Trash2, CornerDownRight, Ban, ArrowRight, Archive, ArchiveRestore
 	} from 'lucide-svelte';
 	import { listCycles } from '$lib/api/cycles';
 	import type { Cycle } from '$lib/types/cycle';
@@ -304,6 +304,17 @@
 			await refreshIssue();
 		} catch {
 			appToast.error(m['issue.toast.failed_update_field']({ field }));
+		}
+	}
+
+	async function handleArchive(archived: boolean) {
+		issueActionsOpen = false;
+		try {
+			const updated = await issuesState.setArchived(slug, issue.identifier, archived);
+			onupdated?.(updated);
+			appToast.success(archived ? m['issues.archive.archived']() : m['issues.archive.restored']());
+		} catch (err: any) {
+			appToast.apiError(err, m['issues.archive.failed']());
 		}
 	}
 
@@ -841,6 +852,23 @@
 						<Copy size={14} />
 						{m['issue.duplicate']()}
 					</button>
+					{#if issue.archived_at}
+						<button
+							type="button"
+							onclick={() => handleArchive(false)}
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+						>
+							<ArchiveRestore size={14} />{m['issues.archive.restore']()}
+						</button>
+					{:else if issue.status_info ? issue.status_info.category === 'completed' : issue.status === 'done'}
+						<button
+							type="button"
+							onclick={() => handleArchive(true)}
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+						>
+							<Archive size={14} />{m['issues.archive.action']()}
+						</button>
+					{/if}
 				</Popover.Content>
 			</Popover.Root>
 

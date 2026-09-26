@@ -1639,5 +1639,19 @@
 	"settings.general.upload_logo": "Carica immagine",
 	"settings.general.uploading_logo": "Caricamento...",
 	"shares.connect_failed": "Impossibile connettersi a questa condivisione",
-	"shares.retry": "Riprova"
+	"shares.retry": "Riprova",
+	"issues.archive.title": "Problemi archiviati",
+	"issues.archive.description": "Problemi completati rimossi dagli elenchi attivi. Aprili o ripristinali qui.",
+	"issues.archive.action": "Archivia problema",
+	"issues.archive.restore": "Ripristina problema",
+	"issues.archive.archived": "Problema archiviato",
+	"issues.archive.restored": "Problema ripristinato",
+	"issues.archive.failed": "Impossibile cambiare lo stato di archiviazione",
+	"issues.archive.load_failed": "Impossibile caricare i problemi archiviati",
+	"issues.archive.empty": "Nessun problema archiviato",
+	"issues.archive.load_more": "Carica altri",
+	"settings.general.auto_archive": "Archivia automaticamente i problemi completati",
+	"settings.general.auto_archive_desc": "Archivia i problemi completati dopo 30 giorni.",
+	"settings.general.auto_archive_updated": "Impostazione di archiviazione automatica aggiornata",
+	"settings.general.auto_archive_failed": "Impossibile aggiornare l’archiviazione automatica"
 }

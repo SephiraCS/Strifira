@@ -56,11 +56,12 @@ func (s *WorkspaceService) Create(ctx context.Context, userID uuid.UUID, req dto
 	}
 
 	ws := &domain.Workspace{
-		ID:               uuid.New(),
-		Name:             req.Name,
-		Slug:             req.Slug,
-		OwnerID:          userID,
-		ShareLinkMinRole: domain.RoleAdmin,
+		ID:                    uuid.New(),
+		Name:                  req.Name,
+		Slug:                  req.Slug,
+		OwnerID:               userID,
+		ShareLinkMinRole:      domain.RoleAdmin,
+		AutoArchiveDoneIssues: true,
 	}
 
 	member := &domain.WorkspaceMember{
@@ -131,6 +132,9 @@ func (s *WorkspaceService) Update(ctx context.Context, slug string, userID uuid.
 	}
 	if req.ShareLinkMinRole != nil {
 		ws.ShareLinkMinRole = *req.ShareLinkMinRole
+	}
+	if req.AutoArchiveDoneIssues != nil {
+		ws.AutoArchiveDoneIssues = *req.AutoArchiveDoneIssues
 	}
 
 	if err := s.workspaceRepo.Update(ctx, ws); err != nil {

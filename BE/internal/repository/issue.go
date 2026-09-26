@@ -66,6 +66,11 @@ func (r *IssueRepository) GetByIdentifier(ctx context.Context, workspaceID uuid.
 func (r *IssueRepository) List(ctx context.Context, workspaceID uuid.UUID, params dto.IssueFilterParams) ([]domain.Issue, int, error) {
 	where := []string{"i.workspace_id = :workspace_id"}
 	args := map[string]interface{}{"workspace_id": workspaceID}
+	if params.Archived == "true" {
+		where = append(where, "i.archived_at IS NOT NULL")
+	} else {
+		where = append(where, "i.archived_at IS NULL")
+	}
 
 	// Multi-value status filter (comma-separated) — supports both legacy slugs and status_id UUIDs
 	if params.Status != "" {
@@ -327,18 +332,58 @@ func (r *IssueRepository) Update(ctx context.Context, issue *domain.Issue) error
 			due_date = $9, sort_order = $10, triaged = $11,
 			status_id = $12, updated_at = NOW()
 		WHERE id = $13
-		RETURNING updated_at`
+		RETURNING updated_at, archived_at, completed_at, auto_archive_exempt`
 	return r.db.QueryRowContext(ctx, query,
 		issue.Title, issue.Description, issue.Status, issue.Priority,
 		issue.AssigneeID, issue.ProjectID, issue.CycleID, issue.ParentID,
 		issue.DueDate, issue.SortOrder, issue.Triaged,
 		issue.StatusID, issue.ID,
-	).Scan(&issue.UpdatedAt)
+	).Scan(&issue.UpdatedAt, &issue.ArchivedAt, &issue.CompletedAt, &issue.AutoArchiveExempt)
 }
 
 func (r *IssueRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM issues WHERE id = $1`, id)
 	return err
+}
+
+// SetArchived changes only archive visibility. The database checks the current
+// status so an issue reopened concurrently cannot be archived.
+func (r *IssueRepository) SetArchived(ctx context.Context, workspaceID, issueID uuid.UUID, archived bool) (*domain.Issue, error) {
+	var issue domain.Issue
+	query := fmt.Sprintf(`UPDATE issues i SET archived_at = CASE WHEN $3 THEN COALESCE(i.archived_at, NOW()) ELSE NULL END,
+		auto_archive_exempt = CASE WHEN $3 THEN FALSE WHEN i.archived_at IS NOT NULL THEN TRUE ELSE i.auto_archive_exempt END,
+		updated_at = NOW()
+		WHERE i.workspace_id = $1 AND i.id = $2
+		AND (NOT $3 OR %s = 'completed')
+		RETURNING i.*`, issueStatusCategorySubqueryExpr("i"))
+	err := r.db.GetContext(ctx, &issue, query, workspaceID, issueID, archived)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &issue, err
+}
+
+type ArchivedWorkspaceCount struct {
+	WorkspaceID uuid.UUID `db:"workspace_id"`
+	IssueCount  int64     `db:"issue_count"`
+}
+
+// AutoArchiveCompleted is safe to run in several server instances: each UPDATE
+// checks the current workspace setting, status and completion time atomically.
+func (r *IssueRepository) AutoArchiveCompleted(ctx context.Context) ([]ArchivedWorkspaceCount, error) {
+	query := fmt.Sprintf(`WITH archived AS (
+		UPDATE issues i SET archived_at = NOW(), updated_at = NOW()
+		FROM workspaces w
+		WHERE w.id = i.workspace_id AND w.auto_archive_done_issues
+		AND i.archived_at IS NULL
+		AND NOT i.auto_archive_exempt
+		AND i.completed_at <= NOW() - INTERVAL '30 days'
+		AND %s = 'completed'
+		RETURNING i.workspace_id
+	) SELECT workspace_id, COUNT(*) AS issue_count FROM archived GROUP BY workspace_id`, issueStatusCategorySubqueryExpr("i"))
+	var workspaces []ArchivedWorkspaceCount
+	err := r.db.SelectContext(ctx, &workspaces, query)
+	return workspaces, err
 }
 
 func (r *IssueRepository) SetLabels(ctx context.Context, issueID uuid.UUID, labelIDs []uuid.UUID) error {

@@ -72,6 +72,8 @@ The product is intentionally smaller than broad project-management suites. It co
 | 🎨  | **Rich Text Editor**   | Tiptap-based with code blocks, slash commands, mentions, task lists              |
 | 🚀  | **Release Changelog**  | Multi-release changelog modal with markdown rendering from static manifest       |
 
+Completed issues can be archived from an issue's actions and restored from **Archived issues** in the workspace sidebar. **Settings → General** enables automatic archiving 30 days after completion by default; workspace owners can turn it off. Restored issues are exempt from automatic archiving until their status changes.
+
 ## 🤖 Dev Machines (Agentic Coding)
 
 Dev Machines are an unreleased opt-in multi-container subsystem for self-hosted Ku. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.

@@ -1611,5 +1611,19 @@
 	"settings.general.upload_logo": "上传图片",
 	"settings.general.uploading_logo": "上传中...",
 	"shares.connect_failed": "无法连接到此屏幕共享",
-	"shares.retry": "重试"
+	"shares.retry": "重试",
+	"issues.archive.title": "已归档议题",
+	"issues.archive.description": "已完成并从活动列表移除的议题。可在此打开或恢复。",
+	"issues.archive.action": "归档议题",
+	"issues.archive.restore": "恢复议题",
+	"issues.archive.archived": "议题已归档",
+	"issues.archive.restored": "议题已恢复",
+	"issues.archive.failed": "无法更改归档状态",
+	"issues.archive.load_failed": "无法加载已归档议题",
+	"issues.archive.empty": "暂无已归档议题",
+	"issues.archive.load_more": "加载更多",
+	"settings.general.auto_archive": "自动归档已完成议题",
+	"settings.general.auto_archive_desc": "议题完成 30 天后自动归档。",
+	"settings.general.auto_archive_updated": "自动归档设置已更新",
+	"settings.general.auto_archive_failed": "无法更新自动归档设置"
 }

@@ -66,6 +66,24 @@ func (r *testIssueRepo) Update(_ context.Context, issue *domain.Issue) error {
 	return nil
 }
 
+func (r *testIssueRepo) SetArchived(_ context.Context, workspaceID, issueID uuid.UUID, archived bool) (*domain.Issue, error) {
+	for _, issue := range r.issues {
+		if issue.ID != issueID || issue.WorkspaceID != workspaceID {
+			continue
+		}
+		if archived && issue.Status != domain.IssueStatusDone {
+			return nil, nil
+		}
+		if archived {
+			issue.ArchivedAt = new(time.Now())
+		} else {
+			issue.ArchivedAt = nil
+		}
+		return issue, nil
+	}
+	return nil, nil
+}
+
 func (r *testIssueRepo) Delete(_ context.Context, id uuid.UUID) error {
 	for k, issue := range r.issues {
 		if issue.ID == id {

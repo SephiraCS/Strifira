@@ -353,17 +353,9 @@ Environment deletion is two-phase. The API marks an environment `delete_requeste
 
 Dev Machines use the workspace (or globally configured) Forgejo token for clone, push, and pull-request creation. Generic machines may start without a repository; issue checkouts resolve the linked repository through issue, project, team, then workspace development settings. Once a machine has repository affinity, additional issue worktrees must use the same linked repository.
 
-Forgejo token scopes:
+The token needs repository write scope for push and pull-request creation. Forgejo has no per-repository installation tokens, so the manager reuses the connection token itself: the global `FORGEJO_TOKEN` when configured, otherwise the workspace connection token decrypted at use time (it is stored AES-256-GCM encrypted). The manager only hands it out for repositories linked to the workspace, registers it as a runtime credential for telemetry redaction, and injects it as `FORGEJO_TOKEN` through the tmpfs secret flow into the developer or agent containers that need Git.
 
-| Permission | Level |
-|---|---|
-| metadata | read |
-| contents | read and write |
-| pull requests | read and write |
-
-The manager requests a token restricted to the selected linked repository and required permissions for the machine checkout or agent run. The token is short-lived, never stored in plaintext, and injected only into the developer or agent containers that need Git.
-
-The IDE uses an ephemeral askpass helper for clone. Agent containers install an ephemeral Git credential helper (FORGEJO_TOKEN). Ku resolves the workspace or global Forgejo connection again before creating a pull request after a successful run.
+The developer and agent containers install an ephemeral Git credential helper; issue checkouts additionally use a temporary askpass script. Ku resolves the workspace or global Forgejo connection again before creating a pull request after a successful run.
 
 Branches, commits, and pull requests are persisted in `dev_machine_git_refs` with workspace, machine, run, issue, repository, and URL linkage. Existing Forgejo webhooks continue to populate the issue development timeline.
 
@@ -420,7 +412,7 @@ Migration `000033_dev_machines` creates:
 | `dev_machine_terminal_sessions` | User terminal tabs mapped to runtime tmux sessions and optional checkouts |
 | `dev_machine_runtime_credentials` | Encrypted, expiring runtime-secret registrations used for telemetry redaction |
 
-The migration creates the final scoped-workspace schema directly. Composite foreign keys bind workspace, machine, service, checkout, run, session, and environment tuples so cross-workspace identifiers are rejected by PostgreSQL rather than relying only on application checks. Rolling migration `000033` back is destructive for all Dev Machine control-plane records.
+Migration `000042_forgejo_integration` retargets the repository references in `dev_machines`, `dev_machine_scope_settings`, and `dev_machine_checkouts` from the removed GitHub tables to `forgejo_repos`. Composite foreign keys bind workspace, machine, service, checkout, run, session, and environment tuples so cross-workspace identifiers are rejected by PostgreSQL rather than relying only on application checks. Rolling migration `000033` back is destructive for all Dev Machine control-plane records.
 
 All user-facing repository access is constrained by both `workspace_id` and resource ID. Internal manager lookups are limited to the trusted manager process.
 
@@ -474,6 +466,7 @@ POST   /api/workspaces/:slug/dev-machines/:machineId/agent-runs
 GET    /api/workspaces/:slug/agent-runs
 GET    /api/workspaces/:slug/agent-runs/:agentRunId
 POST   /api/workspaces/:slug/agent-runs/:agentRunId/cancel
+GET    /api/workspaces/:slug/agent-runs/:agentRunId/trace
 ```
 
 Collector-only endpoints use scoped machine tokens:
@@ -483,7 +476,7 @@ POST /api/dev-machine-ingest/events
 POST /api/dev-machine-ingest/logs
 ```
 
-Lifecycle APIs return `202 Accepted` with an operation record. `/teardown` retains history; admin DELETE and `/permanent-delete` routes record a purge request and return `202 Accepted` while the manager performs the safe hard purge. Selected bulk deletion deduplicates machine IDs and returns per-item `accepted`, `not_found`, `conflict`, or `failed` results. Create returns the queued machine. Service launches and terminal sessions may return `ready`, `pending`, or `resuming` with `retry_after_seconds`. Events and logs use `after_id` cursors.
+Lifecycle APIs return `202 Accepted` with an operation record. `/teardown` retains history; admin DELETE and `/permanent-delete` routes record a purge request and return `202 Accepted` while the manager performs the safe hard purge. Selected bulk deletion deduplicates machine IDs and returns per-item `accepted`, `not_found`, `conflict`, or `failed` results. Create returns the queued machine. Service launches and terminal sessions may return `ready`, `pending`, or `resuming` with `retry_after_seconds`. Events and logs use `after_id` cursors; the agent-run trace returns the run, its steps, events, and logs with separate `events_after_id`/`logs_after_id` cursors.
 
 Example create payload:
 
@@ -582,7 +575,7 @@ The self-hosting `dev-machine-images` profile builds the developer, browser, col
 ## Security Limitations
 
 - Docker hardening is not hostile multi-tenant isolation.
-- Pinned Chrome Stable packages for amd64 and arm64 run through KasmVNC in a separately hardened non-root container. The browser's internal sandbox is disabled because Docker namespace restrictions conflict with its setup. The browser must not receive provider or GitHub secrets.
+- Pinned Chrome Stable packages for amd64 and arm64 run through KasmVNC in a separately hardened non-root container. The browser's internal sandbox is disabled because Docker namespace restrictions conflict with its setup. The browser must not receive provider or Forgejo secrets.
 - Domain egress controls cannot prevent exfiltration to an explicitly allowed destination.
 - Command and filesystem collection is best-effort and can be bypassed by trusted workspace code.
 - Provider adapters can construct interactive invocations, but current product dialogs queue autonomous agent runs and no interactive-agent attach endpoint is exposed. Direct interactive use of the built-in CLIs is available through Ku's native xterm terminal; ttyd's web page is not exposed.

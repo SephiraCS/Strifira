@@ -24,6 +24,7 @@ Static marketing/landing site for [Ku](https://kuayle.com), built with SvelteKit
 | `npm run check`      | Run `svelte-check` for type errors                     |
 | `npm run validate-seo` | Run SEO validation on `build/` output               |
 | `npm run validate`   | Build + validate (CI-ready)                            |
+| `npm run test:responsive` | Run Playwright responsive layout tests            |
 
 ## SEO conventions
 
@@ -43,7 +44,7 @@ Static marketing/landing site for [Ku](https://kuayle.com), built with SvelteKit
 - **Standalone pages**: `/open-source`, `/license`, `/security`, `/about`, `/roadmap` — each uses `StandalonePage.svelte` wrapper.
 - **Breadcrumbs**: Every page includes a `<Breadcrumbs>` component with structured data.
 - **CTA**: Every content page ends with a `<CtaSection>`.
-- **Comparisons**: Neutral language, visible last-reviewed date (July 11, 2026), methodology notes.
+- **Comparisons**: Neutral language, visible last-reviewed date (July 23, 2026), methodology notes.
 - **Self-hosting pages**: Aligned with the actual README and `selfhosting/` configs. No secrets exposed.
 
 ## Route map
@@ -76,12 +77,13 @@ All routes prerendered to static HTML in `build/`. The `strict: true` adapter op
 The script at `scripts/validate-seo.mjs` checks:
 
 1. Every route produces an HTML file
-2. `<title>`, `<meta name="description">`, `<link rel="canonical">` on every page
-3. `<h1>` on every page
-4. All indexable routes appear in `sitemap.xml`
-5. JSON-LD blocks are valid JSON
+2. Unique `<title>` and `<meta name="description">`, exact `<link rel="canonical">`, and an index robots directive on every page
+3. Exactly one `<h1>` on every page
+4. `sitemap.xml` lists exactly the indexable routes, without duplicates, and `robots.txt` declares it
+5. JSON-LD blocks are present and valid JSON; article pages match `src/lib/data/content-modified.json` in metadata and `dateModified`
 6. Images have `alt` and intrinsic `width`/`height`
-7. Internal links resolve to existing files
-8. Bare fragment links (`#...`) on non-homepages are flagged
+7. Internal links resolve to existing files and fragment links (`#...`) resolve to an element `id` on the same page
+8. Product-accuracy guards: Dev Machines pages are labeled unreleased and specific overstated claims are rejected
+9. Production CSS keeps the forced-colors fallbacks
 
 The homepage screenshot has responsive 720 px and 1440 px variants. Social metadata uses the dedicated 1200 × 630 `static/social-card.png` asset.

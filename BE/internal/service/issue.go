@@ -426,6 +426,25 @@ func (s *IssueService) List(ctx context.Context, workspaceID uuid.UUID, params d
 	return s.issueRepo.List(ctx, workspaceID, params)
 }
 
+func (s *IssueService) SetArchived(ctx context.Context, workspaceID uuid.UUID, identifier string, archived bool) (*domain.Issue, error) {
+	issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if issue == nil {
+		return nil, fmt.Errorf("issue not found")
+	}
+	updated, err := s.issueRepo.SetArchived(ctx, workspaceID, issue.ID, archived)
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, fmt.Errorf("only Done issues can be archived")
+	}
+	s.hub.Broadcast(workspaceID, realtime.Event{Type: "issue.updated", Payload: updated})
+	return updated, nil
+}
+
 func (s *IssueService) Update(ctx context.Context, workspaceID, userID uuid.UUID, identifier string, req dto.UpdateIssueRequest) (*domain.Issue, error) {
 	issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, identifier)
 	if err != nil || issue == nil {

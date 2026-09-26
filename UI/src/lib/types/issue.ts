@@ -42,6 +42,7 @@ export interface Issue {
 	relation_counts?: IssueRelationCounts;
 	relation_summary?: IssueRelationSummary;
 	is_subscribed?: boolean;
+	archived_at?: string | null;
 	created_at: string;
 	updated_at: string;
 }
