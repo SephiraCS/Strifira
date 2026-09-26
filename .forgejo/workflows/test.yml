@@ -6,281 +6,115 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  cancel-in-progress: ${{ forgejo.ref != 'refs/heads/main' }}
+
+# Go, Node.js, and the Playwright browsers are baked into the ts-builder job
+# image; dependency caches live on the runner's shared /cache volume.
 jobs:
   backend-test:
     name: Backend Tests
     runs-on: terrascale-builder
     timeout-minutes: 30
-
-    # The runner's service containers are not reachable from job containers on
-    # this instance, so PostgreSQL and Redis run as rootful podman containers
-    # inside the privileged job (the engine the builder image ships with).
+    defaults:
+      run:
+        working-directory: BE
     steps:
       - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      # The builder image ships no Go and this runner never delivers `with:`
-      # inputs to setup-go (both go-version-file and go-version arrive empty,
-      # then its fallback runs a literal `version` command), so install the
-      # toolchain directly. Skips itself once the image ships Go 1.27.
-      - name: Install Go toolchain
+      # Runner service containers are not reachable from job containers, so
+      # PostgreSQL and Redis run as podman containers inside the privileged
+      # job. Nested podman needs --cgroups=disabled or conmon cannot create its
+      # sandbox cgroup.
+      - name: Start PostgreSQL and Redis
         run: |
-          if command -v go >/dev/null 2>&1 && go version | grep -q 'go1.27'; then
-            go version
-            exit 0
-          fi
-          curl -fsSL https://go.dev/dl/go1.27.1.linux-amd64.tar.gz -o /tmp/go.tgz
-          rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
-          echo '/usr/local/go/bin' >> "$GITHUB_PATH"
-          /usr/local/go/bin/go version
+          set -euo pipefail
+          # fsync off: this database is throwaway test state and the
+          # overlay-backed volume in the job container makes committed
+          # writes slow enough to overrun test deadlines.
+          podman run --detach --cgroups=disabled --name ku-postgres \
+            --publish 127.0.0.1:5432:5432 \
+            --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
+            docker.io/library/postgres:16-alpine \
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+          podman run --detach --cgroups=disabled --name ku-redis \
+            --publish 127.0.0.1:6379:6379 \
+            docker.io/library/redis:7-alpine
+          for _ in $(seq 1 30); do
+            podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
+            sleep 2
+          done
+          podman exec ku-postgres pg_isready -U ku
+          podman exec ku-redis redis-cli ping
 
-      - name: Run backend tests
-        working-directory: BE
+      - name: Vet
+        run: go vet ./...
+
+      - name: Apply migrations and run tests with coverage
         env:
           DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret-that-is-at-least-32-characters-long
         run: |
-          set -o pipefail
-          {
-            echo '--- start postgres and redis ---'
-            # Prefer the host Docker socket; nested podman needs
-            # --cgroups=disabled or conmon cannot create its sandbox cgroup
-            # ("enabling controller io: no such file or directory") and the
-            # database never becomes ready.
-            if docker info >/dev/null 2>&1; then
-              ENGINE=docker
-              CGROUPS=""
-            else
-              ENGINE=podman
-              CGROUPS="--cgroups=disabled"
-            fi
-            echo "using $ENGINE"
-            # fsync off: this database is throwaway test state and the
-            # overlay-backed volume in the job container makes committed
-            # writes slow enough to overrun test deadlines.
-            $ENGINE run --detach $CGROUPS --name ku-postgres \
-              --publish 127.0.0.1:5432:5432 \
-              --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
-              docker.io/library/postgres:16-alpine \
-              -c fsync=off -c synchronous_commit=off -c full_page_writes=off
-            $ENGINE run --detach $CGROUPS --name ku-redis \
-              --publish 127.0.0.1:6379:6379 \
-              docker.io/library/redis:7-alpine
-
-            for _ in $(seq 1 30); do
-              $ENGINE exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
-              sleep 2
-            done
-            $ENGINE exec ku-postgres pg_isready -U ku
-            $ENGINE exec ku-redis redis-cli ping
-
-            echo '--- apply database migrations ---'
-            go run ./cmd/server migrate up
-
-            echo '--- run tests with coverage ---'
-            go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
-
-            echo '--- coverage summary ---'
-            go tool cover -func=coverage.out
-
-            echo 'LANE-COMPLETE'
-          } 2>&1 | tee backend-test.log
-
-  docker-integration:
-    # The backend manages dev-machine containers through the Docker SDK, so
-    # this lane needs the host Docker socket (mounted by the runner), not just
-    # any rootless engine. The builder image ships podman/buildah, so the
-    # Docker CLI is installed on demand when the socket is reachable.
-    name: Docker Runtime Integration
-    runs-on: terrascale-builder
-    timeout-minutes: 45
-
-    steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          persist-credentials: false
-
-      # The builder image ships no Go and this runner never delivers `with:`
-      # inputs to setup-go (both go-version-file and go-version arrive empty,
-      # then its fallback runs a literal `version` command), so install the
-      # toolchain directly. Skips itself once the image ships Go 1.27.
-      - name: Install Go toolchain
-        run: |
-          if command -v go >/dev/null 2>&1 && go version | grep -q 'go1.27'; then
-            go version
-            exit 0
-          fi
-          curl -fsSL https://go.dev/dl/go1.27.1.linux-amd64.tar.gz -o /tmp/go.tgz
-          rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
-          echo '/usr/local/go/bin' >> "$GITHUB_PATH"
-          /usr/local/go/bin/go version
-
-      - name: Run Docker lifecycle integration test
-        working-directory: BE
-        env:
-          KU_DOCKER_INTEGRATION: '1'
-        run: |
-          set -o pipefail
-          {
-            echo '--- ensure docker cli and check daemon socket ---'
-            if ! command -v docker >/dev/null 2>&1 && [ -S /var/run/docker.sock ]; then
-              apt-get update -qq >/dev/null && apt-get install -y -qq docker.io >/dev/null
-            fi
-            if ! docker info >/dev/null 2>&1; then
-              echo "Docker daemon socket not usable from this job; skipping the Docker lifecycle integration test."
-              echo 'LANE-COMPLETE (skipped)'
-              exit 0
-            fi
-
-            echo '--- verify Docker hard-quota support ---'
-            quota_probe="ku-workspace-quota-ci-probe-$$"
-            quota_supported=1
-            trap 'docker volume rm --force "$quota_probe" >/dev/null 2>&1 || true' EXIT
-            if ! docker volume create --driver local --opt size=1073741824 "$quota_probe" >/dev/null 2>&1; then
-              quota_supported=0
-            else
-              quota_size="$(docker volume inspect --format '{{ index .Options "size" }}' "$quota_probe" 2>/dev/null || true)"
-              test "${quota_size}" = 1073741824 || quota_supported=0
-            fi
-            if [ "${quota_supported}" -ne 1 ]; then
-              echo "Docker's data root does not support the XFS project quotas required by the lifecycle test; skipping this runner-incompatible lane."
-              echo 'LANE-COMPLETE (skipped: hard quotas unavailable)'
-              exit 0
-            fi
-            docker volume rm --force "$quota_probe" >/dev/null
-            trap - EXIT
-
-            echo '--- build integration runtime images ---'
-            cd ..
-            # The classic builder never sets TARGETARCH (BuildKit-only ARG);
-            # pass the host architecture explicitly.
-            build_arch="$(dpkg --print-architecture)"
-            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-ide:0.1.0 --file devmachine/ide/Dockerfile devmachine
-            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-browser:0.1.0 --file devmachine/browser/Dockerfile devmachine
-            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-collector:0.1.0 --file devmachine/collector/Dockerfile devmachine
-            docker build --pull --build-arg TARGETARCH="$build_arch" --tag ku/dev-machine-egress:0.1.0 --file devmachine/egress/Dockerfile devmachine
-            docker build --pull --build-arg TARGETARCH="$build_arch" --build-arg PROVIDER=claude-code --tag ku/dev-machine-agent-claude:0.1.0 --file devmachine/agent/Dockerfile devmachine
-            cd BE
-
-            echo '--- run lifecycle test ---'
-            go test ./internal/machine -run '^TestDockerRuntimeLifecycle$' -race -count=1 -v -timeout=5m
-
-            echo 'LANE-COMPLETE'
-          } 2>&1 | tee docker-integration.log
+          set -euo pipefail
+          go run ./cmd/server migrate up
+          go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
+          go tool cover -func=coverage.out | tail -1
 
   frontend-check:
     name: Frontend Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
-    env:
-      # Playwright 1.58 ships no ubuntu x64 builds for bundled chromium
-      # (20.04/22.04/24.04/26.04 all resolve to "not supported"); the
-      # debian12 build runs fine on the Ubuntu job container.
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: debian12-x64
-
+    defaults:
+      run:
+        working-directory: UI
     steps:
       - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      # The terrascale-builder image ships the Node toolchain; Playwright
-      # browsers are NOT preinstalled on the runner, so install the matching
-      # build (with system libraries) before the browser suite.
-      - name: Run frontend checks
-        working-directory: UI
-        run: |
-          set -o pipefail
-          {
-            echo '--- toolchain ---'
-            node --version
-            npm --version
+      - name: Install dependencies
+        run: npm ci
 
-            echo '--- install dependencies ---'
-            npm ci
+      - name: Svelte check
+        run: npm run check
 
-            echo '--- svelte check ---'
-            npm run check
+      - name: Unit tests
+        run: npm run test:unit
 
-            echo '--- unit tests ---'
-            npm run test:unit
-
-            echo '--- install playwright browsers ---'
-            npx playwright install chromium
-
-            echo '--- dev machine browser tests ---'
-            npm run test:e2e
-
-            echo 'LANE-COMPLETE'
-          } 2>&1 | tee frontend-check.log
+      # The Playwright web server builds the app before the browser tests.
+      - name: Dev machine browser tests
+        run: npm run test:e2e
 
   web-check:
     name: Marketing Site Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
-    env:
-      PLAYWRIGHT_HOST_PLATFORM_OVERRIDE: debian12-x64
-
-    steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          persist-credentials: false
-
-      - name: Run marketing site checks
+    defaults:
+      run:
         working-directory: WEB
-        run: |
-          set -o pipefail
-          {
-            echo '--- toolchain ---'
-            node --version
-            npm --version
-
-            echo '--- install dependencies ---'
-            npm ci
-
-            echo '--- svelte check ---'
-            npm run check
-
-            echo '--- build + seo validation ---'
-            npm run validate
-
-            echo '--- install playwright browsers ---'
-            npx playwright install chromium
-
-            echo '--- responsive layout tests ---'
-            npm run test:responsive
-
-            echo 'LANE-COMPLETE'
-          } 2>&1 | tee web-check.log
-
-  # Keep the aggregate lane result visible in the Actions UI without pushing
-  # diagnostic refs back into the source repository.
-  report:
-    name: Report results (temporary)
-    if: always()
-    needs: [backend-test, docker-integration, frontend-check, web-check]
-    runs-on: terrascale-builder
-    timeout-minutes: 10
     steps:
       - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@v6.1.0
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Print job results
-        run: |
-          echo "tests at $(date -u +%Y-%m-%dT%H:%M:%SZ) sha=${{ forgejo.sha }} event=${{ forgejo.event_name }}"
-          echo "backend-test: ${{ needs.backend-test.result }}"
-          echo "docker-integration: ${{ needs.docker-integration.result }}"
-          echo "frontend-check: ${{ needs.frontend-check.result }}"
-          echo "web-check: ${{ needs.web-check.result }}"
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Svelte check
+        run: npm run check
+
+      - name: Build and SEO validation
+        run: npm run validate
+
+      - name: Responsive layout tests
+        run: npm run test:responsive

@@ -8,6 +8,10 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  cancel-in-progress: ${{ forgejo.ref != 'refs/heads/main' }}
+
 permissions:
   contents: write
 
