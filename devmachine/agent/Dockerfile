@@ -1,6 +1,6 @@
-FROM golang:1.27.1-alpine AS go-stage
+FROM docker.io/library/golang:1.27.1-alpine AS go-stage
 
-FROM node:22.23.1-alpine3.23
+FROM docker.io/library/node:22.23.1-alpine3.23
 
 ARG PROVIDER
 ARG NPM_VERSION=12.0.1

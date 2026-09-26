@@ -1,9 +1,9 @@
-FROM golang:1.27.1-alpine AS build
+FROM docker.io/library/golang:1.27.1-alpine AS build
 WORKDIR /src
 COPY egress/main.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /egress main.go
 
-FROM alpine:3.22
+FROM docker.io/library/alpine:3.22
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates \
     && addgroup -g 1000 ku \
     && adduser -D -u 1000 -G ku ku

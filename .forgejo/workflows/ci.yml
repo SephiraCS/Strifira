@@ -1,4 +1,4 @@
-name: Tests
+name: CI
 
 on:
   push:
@@ -8,10 +8,14 @@ on:
 
 concurrency:
   group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
-  cancel-in-progress: ${{ forgejo.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
 
 # Go, Node.js, and the Playwright browsers are baked into the ts-builder job
 # image; dependency caches live on the runner's shared /cache volume.
+#
+# Every push to main deploys to alpha: the image is built and staged in
+# Harbor while the tests run, and the ku instance is rolled once the backend
+# and frontend tests pass. The alpha side is HomeLab ops/ku/deploy.sh.
 jobs:
   backend-test:
     name: Backend Tests
@@ -89,9 +93,13 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
-      # The Playwright web server builds the app before the browser tests.
+      # Installs only what the job image lacks for this Playwright version
+      # (a no-op once the baked browsers match), then runs the browser tests;
+      # the Playwright web server builds the app first.
       - name: Dev machine browser tests
-        run: npm run test:e2e
+        run: |
+          npx playwright install chromium ffmpeg
+          npm run test:e2e
 
   web-check:
     name: Marketing Site Checks
@@ -118,3 +126,44 @@ jobs:
 
       - name: Responsive layout tests
         run: npm run test:responsive
+
+  stage-image:
+    name: Stage Image
+    if: forgejo.event_name == 'push'
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Build the image
+        run: podman build --jobs 0 --tag "ku:${{ forgejo.sha }}" .
+
+      - name: Stage the image in Harbor
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          podman save --format docker-archive "ku:${{ forgejo.sha }}" \
+            | scripts/alpha-deploy.sh stage "${{ forgejo.sha }}"
+
+  deploy:
+    name: Deploy to Alpha
+    needs: [backend-test, frontend-check, stage-image]
+    if: forgejo.event_name == 'push'
+    runs-on: terrascale-builder
+    timeout-minutes: 15
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Roll the ku instance
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+        run: scripts/alpha-deploy.sh roll "${{ forgejo.sha }}"
