@@ -1,4 +1,8 @@
 {
+	"board.unmapped_status": "无状态",
+	"issue.ai.improve_description": "用 AI 改写",
+	"ai.not_configured": "AI 尚未配置",
+	"ai.not_configured_hint": "请让工作区所有者在 设置 → AI 中配置基础 URL、模型和 API 密钥。",
 	"bulkActions.a11y_description": "搜索并执行选中议题的批量操作。",
 	"bulkActions.actions_button": "操作",
 	"bulkActions.assignee.assign": "指派",
@@ -868,6 +872,7 @@
 	"settings.ai.save_settings": "保存 AI 设置",
 	"settings.ai.title": "AI",
 	"settings.ai.updated": "AI 设置已更新",
+	"settings.ai.owner_only": "你可以查看这些设置，但只有工作区所有者才能编辑。",
 	"settings.api_keys.cancel": "取消",
 	"settings.api_keys.copied": "已复制",
 	"settings.api_keys.copy": "复制",

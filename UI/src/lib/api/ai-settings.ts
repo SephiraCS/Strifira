@@ -12,3 +12,19 @@ export function getIssueCopyPrompt(slug: string): Promise<Pick<AISettings, 'issu
 export function updateAISettings(slug: string, req: UpdateAISettingsRequest): Promise<AISettings> {
 	return api.patch<AISettings>(`/api/workspaces/${slug}/ai-settings`, req);
 }
+
+export function reworkText(
+	slug: string,
+	req: { text: string; context?: string }
+): Promise<{ text: string }> {
+	return api.post<{ text: string }>(`/api/workspaces/${slug}/ai/rework`, req);
+}
+
+/** Detects the backend's AI_NOT_CONFIGURED error code (see client.ts fetch). */
+export function isAINotConfiguredError(err: unknown): boolean {
+	return (
+		!!err &&
+		typeof err === 'object' &&
+		(err as { error?: { code?: string } }).error?.code === 'AI_NOT_CONFIGURED'
+	);
+}

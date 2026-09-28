@@ -33,6 +33,8 @@
 		ImagePlus,
 		Paperclip
 	} from 'lucide-svelte';
+	import { reworkText, isAINotConfiguredError } from '$lib/api/ai-settings';
+	import { appToast } from '$lib/features/toast/toast';
 
 	let {
 		open = $bindable(false),
@@ -423,6 +425,23 @@
 					hideUploadButtons={true}
 					onuploadschange={(pending) => (pendingUploads = pending)}
 					onupdate={(html) => (description = html)}
+					onreworkselection={async (selectedText) => {
+						try {
+							const result = await reworkText(slug, {
+								text: selectedText,
+								context: title.trim() ? `New issue titled: ${title.trim()}` : 'New issue description'
+							});
+							appToast.success(m['issue.toast.selection_reworked']());
+							return result.text;
+						} catch (err: any) {
+							if (isAINotConfiguredError(err)) {
+								appToast.error(m['ai.not_configured'](), { description: m['ai.not_configured_hint']() });
+								return '';
+							}
+							appToast.apiError(err, m['issue.toast.failed_rework']());
+							return '';
+						}
+					}}
 				/>
 				{/key}
 			</div>

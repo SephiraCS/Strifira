@@ -177,6 +177,39 @@ func (s *AISettingsService) ExpandIssueDescription(ctx context.Context, workspac
 	return sanitize.SanitizeEditorContent(content), nil
 }
 
+// ReworkText rewrites an arbitrary editor selection (comment text, new-issue
+// description, ...) with the workspace AI settings. It is the workspace-scoped
+// sibling of ExpandIssueDescription, which keeps issue context.
+func (s *AISettingsService) ReworkText(ctx context.Context, workspaceID uuid.UUID, text string, context *string) (string, error) {
+	settings, err := s.Get(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(settings.BaseURL) == "" || strings.TrimSpace(settings.Model) == "" || settings.APIKeyEncrypted == nil || *settings.APIKeyEncrypted == "" {
+		return "", ErrAISettingsNotConfigured
+	}
+
+	apiKey, err := crypto.Decrypt(*settings.APIKeyEncrypted, s.encryptionKey)
+	if err != nil {
+		return "", ErrAISettingsNotConfigured
+	}
+
+	userPrompt := settings.DescriptionExpandPrompt
+	if context != nil && strings.TrimSpace(*context) != "" {
+		userPrompt += fmt.Sprintf("\n\nContext:\n%s", strings.TrimSpace(*context))
+	}
+	userPrompt += fmt.Sprintf("\n\nText to rewrite. Return only the replacement HTML for this text:\n%s", strings.TrimSpace(text))
+	content, err := s.complete(ctx, settings.BaseURL, settings.Model, apiKey, userPrompt)
+	if err != nil {
+		return "", err
+	}
+	content = strings.TrimSpace(stripCodeFence(content))
+	if content == "" {
+		return "", ErrAIProviderRequestFailed
+	}
+	return sanitize.SanitizeEditorContent(content), nil
+}
+
 func defaultAISettings(workspaceID uuid.UUID) *domain.AISettings {
 	return &domain.AISettings{
 		WorkspaceID:             workspaceID,

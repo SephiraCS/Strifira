@@ -36,3 +36,12 @@ type ExpandIssueDescriptionResponse struct {
 type ExpandIssueDescriptionRequest struct {
 	SelectedText *string `json:"selected_text" validate:"omitempty,max=8000"`
 }
+
+type ReworkTextRequest struct {
+	Text    string  `json:"text" validate:"required,max=8000"`
+	Context *string `json:"context" validate:"omitempty,max=2000"`
+}
+
+type ReworkTextResponse struct {
+	Text string `json:"text"`
+}

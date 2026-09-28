@@ -908,6 +908,26 @@
 		}
 	}
 
+	/**
+	 * Rework the whole document (or the current selection when one exists).
+	 * Exposed so pages can attach a persistent AI button via bind:this.
+	 */
+	export async function reworkWholeDocument() {
+		if (!editor || !onreworkselection || reworkingSelection) return;
+		const { from, to } = editor.state.selection;
+		const hasSelection = to > from;
+		if (!hasSelection) {
+			const text = editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n').trim();
+			if (!text) return;
+			editor.chain().focus().selectAll().run();
+		}
+		await reworkSelection();
+	}
+
+	export function isReworking(): boolean {
+		return reworkingSelection;
+	}
+
 	function handleSlashSelect(item: SlashMenuItem | undefined) {
 		if (!item || !editor || !slashRange) return;
 		// Delete the "/" + query text

@@ -428,9 +428,10 @@ func main() {
 	ws.DELETE("/webhooks/:id", webhookH.Delete, mw.RequirePermission("workspace:manage"))
 
 	// AI settings
-	ws.GET("/ai-settings", aiSettingsH.Get, mw.RequireOwner())
+	ws.GET("/ai-settings", aiSettingsH.Get, mw.RequirePermission("issue:read"))
 	ws.GET("/ai-settings/issue-copy-prompt", aiSettingsH.GetIssueCopyPrompt, mw.RequirePermission("issue:read"))
 	ws.PATCH("/ai-settings", aiSettingsH.Update, mw.RequireOwner())
+	ws.POST("/ai/rework", aiSettingsH.Rework, mw.RequirePermission("issue:update"))
 
 	// Forgejo integration
 	// Public webhook endpoint (no auth, signature-verified internally)

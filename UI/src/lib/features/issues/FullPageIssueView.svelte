@@ -29,11 +29,13 @@
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import {
 		ChevronUp, ChevronDown, ChevronRight, Plus, CalendarDays,
-		Copy, Link as LinkIcon, GitBranch, SquareMousePointer,
+		Copy, Link as LinkIcon, GitBranch, SquareMousePointer, Sparkles,
 		CircleDot, ArrowUpCircle, UserCircle, FolderKanban, Pencil, Layers,
 		Tag, RefreshCw, ArrowUp, MoreHorizontal, Check, Bell,
 		Trash2, CornerDownRight, Ban, ArrowRight, Archive, ArchiveRestore
 	} from 'lucide-svelte';
+	import { reworkText, isAINotConfiguredError } from '$lib/api/ai-settings';
+	import { aiSettingsState } from '$lib/features/ai/ai-settings.state.svelte';
 	import { listCycles } from '$lib/api/cycles';
 	import type { Cycle } from '$lib/types/cycle';
 	import IssueRelations from './IssueRelations.svelte';
@@ -139,6 +141,7 @@
 	onMount(async () => {
 		// Load team statuses (needed on direct navigation / refresh)
 		await teamStatusesState.load(slug, issue.team_id);
+		void aiSettingsState.load(slug);
 
 		const [c, h, m, l, p] = await Promise.all([
 			listComments(slug, issue.identifier),
@@ -292,8 +295,51 @@
 			appToast.success(m['issue.toast.selection_reworked']());
 			return result.description;
 		} catch (err: any) {
+			if (isAINotConfiguredError(err)) {
+				appToast.error(m['ai.not_configured'](), { description: m['ai.not_configured_hint']() });
+				return '';
+			}
 			appToast.apiError(err, m['issue.toast.failed_rework']());
 			return '';
+		}
+	}
+
+	async function reworkCommentSelection(selectedText: string): Promise<string> {
+		try {
+			const result = await reworkText(slug, {
+				text: selectedText,
+				context: `Comment on issue ${issue.identifier}: ${issue.title}`
+			});
+			appToast.success(m['issue.toast.selection_reworked']());
+			return result.text;
+		} catch (err: any) {
+			if (isAINotConfiguredError(err)) {
+				appToast.error(m['ai.not_configured'](), { description: m['ai.not_configured_hint']() });
+				return '';
+			}
+			appToast.apiError(err, m['issue.toast.failed_rework']());
+			return '';
+		}
+	}
+
+	// Persistent AI affordance on the description (the bubble-menu button only
+	// appears on text selection, which made the feature effectively invisible).
+	let descriptionEditor: RichEditor | undefined;
+	let aiDescriptionBusy = $state(false);
+
+	async function improveDescriptionWithAI() {
+		if (!descriptionEditor || aiDescriptionBusy) return;
+		if (!aiSettingsState.isConfigured(slug)) {
+			appToast.error(m['ai.not_configured'](), { description: m['ai.not_configured_hint']() });
+			return;
+		}
+		aiDescriptionBusy = true;
+		try {
+			// Reworks the current selection when one exists, else the whole
+			// description; the editor keeps its own undo history.
+			await descriptionEditor.reworkWholeDocument();
+		} finally {
+			aiDescriptionBusy = false;
 		}
 	}
 
@@ -984,8 +1030,23 @@
 				{/if}
 
 				<!-- Description -->
-				<div class="mt-3">
+				<div class="group/desc relative mt-3">
+					<div class="absolute -top-2 right-0 z-10 opacity-0 transition-opacity focus-within:opacity-100 group-hover/desc:opacity-100">
+						<button
+							type="button"
+							onclick={improveDescriptionWithAI}
+							disabled={aiDescriptionBusy}
+							class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:border-[var(--app-border-hover)] hover:text-[var(--color-text-primary)] disabled:cursor-wait"
+							title={aiSettingsState.isConfigured(slug)
+								? m['issue.ai.improve_description']()
+								: m['ai.not_configured_hint']()}
+						>
+							<Sparkles size={13} class={aiDescriptionBusy ? 'animate-pulse' : ''} />
+							{m['issue.ai.improve_description']()}
+						</button>
+					</div>
 					<RichEditor
+						bind:this={descriptionEditor}
 						content={issue.description ?? ''}
 						workspaceSlug={slug}
 						placeholder={m['issue.add_description']()}
@@ -1190,23 +1251,24 @@
 									<div class="min-w-0 flex-1 flex items-end gap-1.5">
 										<div class="min-w-0 flex-1 my-auto">
 											{#key replyVersions[comment.id] ?? 0}
-												<RichEditor
-													content=""
-													workspaceSlug={slug}
-													placeholder={m['issue.leave_reply']()}
-													minimal={true}
-													borderless={true}
-													bubbleMenu={true}
-													uploadUrl={imageUploadUrl}
-													{members}
-													issues={issuesState.issues}
-													onupdate={(html) => { replyContents[comment.id] = html; replyContents = replyContents; }}
-													onsubmit={() => handleReply(comment.id)}
-													remoteCursors={getRemoteCursors(`reply-${comment.id}`)}
-													onfocus={() => presenceState.sendFocus(issue.id, `reply-${comment.id}`, 0)}
-													onblur={() => presenceState.sendFocusLeave(issue.id)}
-													oncursorchange={(pos, anchor) => presenceState.sendFocus(issue.id, `reply-${comment.id}`, pos, anchor)}
-												/>
+											<RichEditor
+												content=""
+												workspaceSlug={slug}
+												placeholder={m['issue.leave_reply']()}
+												minimal={true}
+												borderless={true}
+												bubbleMenu={true}
+												uploadUrl={imageUploadUrl}
+												{members}
+												issues={issuesState.issues}
+												onupdate={(html) => { replyContents[comment.id] = html; replyContents = replyContents; }}
+												onsubmit={() => handleReply(comment.id)}
+												remoteCursors={getRemoteCursors(`reply-${comment.id}`)}
+												onfocus={() => presenceState.sendFocus(issue.id, `reply-${comment.id}`, 0)}
+												onblur={() => presenceState.sendFocusLeave(issue.id)}
+												oncursorchange={(pos, anchor) => presenceState.sendFocus(issue.id, `reply-${comment.id}`, pos, anchor)}
+												onreworkselection={reworkCommentSelection}
+											/>
 											{/key}
 										</div>
 										<div class="flex shrink-0 items-center gap-1.5">
@@ -1254,6 +1316,7 @@
 								onfocus={() => presenceState.sendFocus(issue.id, 'new-comment', 0)}
 								onblur={() => presenceState.sendFocusLeave(issue.id)}
 								oncursorchange={(pos, anchor) => presenceState.sendFocus(issue.id, 'new-comment', pos, anchor)}
+								onreworkselection={reworkCommentSelection}
 							/>
 							{/key}
 						</div>

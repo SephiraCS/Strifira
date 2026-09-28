@@ -100,3 +100,31 @@ func (h *AISettingsHandler) ExpandIssueDescription(c echo.Context) error {
 	}
 	return response.Success(c, http.StatusOK, dto.ExpandIssueDescriptionResponse{Description: description})
 }
+
+func (h *AISettingsHandler) Rework(c echo.Context) error {
+	var req dto.ReworkTextRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := validate.Struct(&req); err != nil {
+		details := make([]dto.ErrorDetail, 0)
+		for _, e := range validate.FormatErrors(err) {
+			details = append(details, dto.ErrorDetail{Field: e["field"], Message: e["message"]})
+		}
+		return response.ValidationError(c, details)
+	}
+
+	ws := c.Get("workspace").(*domain.Workspace)
+	text, err := h.aiSvc.ReworkText(c.Request().Context(), ws.ID, req.Text, req.Context)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAISettingsNotConfigured):
+			return response.Error(c, http.StatusBadRequest, "AI_NOT_CONFIGURED", "AI settings are incomplete. Configure a base URL, model, and API key first.")
+		case errors.Is(err, service.ErrAIProviderRequestFailed):
+			return response.Error(c, http.StatusBadGateway, "AI_PROVIDER_ERROR", err.Error())
+		default:
+			return response.InternalError(c)
+		}
+	}
+	return response.Success(c, http.StatusOK, dto.ReworkTextResponse{Text: text})
+}

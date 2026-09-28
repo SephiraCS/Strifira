@@ -1,4 +1,8 @@
 {
+	"board.unmapped_status": "No status",
+	"issue.ai.improve_description": "Improve with AI",
+	"ai.not_configured": "AI is not configured",
+	"ai.not_configured_hint": "Ask the workspace owner to configure Settings → AI (base URL, model, and API key).",
 	"bulkActions.a11y_description": "Search and run a bulk action for selected issues.",
 	"bulkActions.actions_button": "Actions",
 	"bulkActions.assignee.assign": "Assign",
@@ -868,6 +872,7 @@
 	"settings.ai.save_settings": "Save AI settings",
 	"settings.ai.title": "AI",
 	"settings.ai.updated": "AI settings updated",
+	"settings.ai.owner_only": "You can view these settings, but only the workspace owner can edit them.",
 	"settings.api_keys.cancel": "Cancel",
 	"settings.api_keys.copied": "Copied",
 	"settings.api_keys.copy": "Copy",

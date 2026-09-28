@@ -1,4 +1,8 @@
 {
+	"board.unmapped_status": "Nessuno stato",
+	"issue.ai.improve_description": "Migliora con l’IA",
+	"ai.not_configured": "IA non configurata",
+	"ai.not_configured_hint": "Chiedi al proprietario dell'area di lavoro di configurare Impostazioni → AI (URL di base, modello e chiave API).",
 	"bulkActions.a11y_description": "Cerca ed esegui un'azione in blocco per le attività selezionate.",
 	"bulkActions.actions_button": "Azioni",
 	"bulkActions.assignee.assign": "Assegna",
@@ -868,6 +872,7 @@
 	"settings.ai.save_settings": "Salva impostazioni AI",
 	"settings.ai.title": "AI",
 	"settings.ai.updated": "Impostazioni AI aggiornate",
+	"settings.ai.owner_only": "Puoi vedere queste impostazioni, ma solo il proprietario dell'area di lavoro può modificarle.",
 	"settings.api_keys.cancel": "Annulla",
 	"settings.api_keys.copied": "Copiato",
 	"settings.api_keys.copy": "Copia",
