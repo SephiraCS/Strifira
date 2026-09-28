@@ -1,0 +1,79 @@
+name: Image Security Scan
+
+# Pull requests build and scan only when an image input changes; source-only
+# changes are covered by ci.yml. Tags and the nightly run always scan, which
+# also catches new advisories against unchanged images.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/Dockerfile*'
+      - 'devmachine/**'
+      - 'BE/go.mod'
+      - 'BE/go.sum'
+      - 'UI/package.json'
+      - 'UI/package-lock.json'
+      - 'UI/Caddyfile'
+      - '.forgejo/workflows/image-security.yml'
+  schedule:
+    - cron: '0 0 * * *'
+
+concurrency:
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
+
+# Trivy and podman are baked into the ts-builder job image; the Trivy
+# vulnerability DB is cached on the runner's shared /cache volume.
+jobs:
+  image-security:
+    name: Image Security Scan (${{ matrix.id }})
+    runs-on: terrascale-builder
+    timeout-minutes: 45
+    # One leg per image so every build and scan runs in parallel. The app
+    # leg builds the root Dockerfile that ci.yml stages and build.yml ships.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: app, context: ., file: ./Dockerfile }
+          - { id: backend, context: ./BE, file: ./BE/Dockerfile }
+          - { id: frontend, context: ./UI, file: ./UI/Dockerfile }
+          - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway }
+          - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager }
+          - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile }
+          - { id: browser, context: ./devmachine, file: ./devmachine/browser/Dockerfile }
+          - { id: collector, context: ./devmachine, file: ./devmachine/collector/Dockerfile }
+          - { id: egress, context: ./devmachine, file: ./devmachine/egress/Dockerfile }
+          - { id: agent-claude, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: claude-code }
+          - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode }
+          - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex }
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Build the image
+        env:
+          PROVIDER: ${{ matrix.provider }}
+        run: |
+          set -euo pipefail
+          podman build --pull ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
+            --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}"
+          podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan"
+
+      # Every leg shares /cache/trivy. The vulnerability DB is opened
+      # read-only, but its refresh and Trivy's BoltDB scan cache take
+      # exclusive locks, so parallel legs failed with "cache may be in use by
+      # another process". One leg at a time refreshes the DB; scans keep
+      # their layer cache in memory.
+      - name: Scan the image
+        run: |
+          set -euo pipefail
+          mkdir -p "${TRIVY_CACHE_DIR}"
+          flock "${TRIVY_CACHE_DIR}/db.lock" trivy image --download-db-only
+          trivy image --cache-backend memory --skip-db-update \
+            --input "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" --severity CRITICAL,HIGH --exit-code 1

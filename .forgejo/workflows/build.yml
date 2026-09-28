@@ -1,15 +1,15 @@
 name: Build & Push
 
+# Pull requests do not build here: image-security.yml builds every Dockerfile
+# (including the root image) when an image input changes.
 on:
   release:
     types: [published]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
   group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
-  cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 env:
   # Docker references must be lowercase; the Forgejo registry resolves the
@@ -43,11 +43,6 @@ jobs:
               version="${{ forgejo.event.release.tag_name }}"
               number="${version#v}"
               push="true"
-              ;;
-            pull_request)
-              version="pr-${{ forgejo.event.number }}"
-              number="0.0.0"
-              push="false"
               ;;
             *)
               version="dev-$(git rev-parse --short HEAD)"
