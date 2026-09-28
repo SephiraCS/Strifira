@@ -65,5 +65,15 @@ jobs:
             --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}"
           podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan"
 
+      # Every leg shares /cache/trivy. The vulnerability DB is opened
+      # read-only, but its refresh and Trivy's BoltDB scan cache take
+      # exclusive locks, so parallel legs failed with "cache may be in use by
+      # another process". One leg at a time refreshes the DB; scans keep
+      # their layer cache in memory.
       - name: Scan the image
-        run: trivy image --input "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" --severity CRITICAL,HIGH --exit-code 1
+        run: |
+          set -euo pipefail
+          mkdir -p "${TRIVY_CACHE_DIR}"
+          flock "${TRIVY_CACHE_DIR}/db.lock" trivy image --download-db-only
+          trivy image --cache-backend memory --skip-db-update \
+            --input "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" --severity CRITICAL,HIGH --exit-code 1
