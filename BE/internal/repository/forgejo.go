@@ -313,26 +313,29 @@ func (r *ForgejoRepository) ReplaceUserMappings(ctx context.Context, workspaceID
 	return tx.Commit()
 }
 
-// ApplyIssueAutomation changes status and, when requested, replaces the full
-// assignee set in one transaction so the legacy primary assignee stays in sync.
-func (r *ForgejoRepository) ApplyIssueAutomation(ctx context.Context, issue *domain.Issue, replaceAssignees bool) error {
+// ApplyIssueAutomation changes status and, when a target user is given, adds
+// them to the assignee set in one transaction so the legacy primary assignee
+// stays in sync. Existing assignees are never removed; the primary is only
+// filled in when unset.
+func (r *ForgejoRepository) ApplyIssueAutomation(ctx context.Context, issue *domain.Issue, addTarget *uuid.UUID) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	if err := tx.QueryRowContext(ctx, `UPDATE issues SET status = $1, status_id = $2,
-		assignee_id = CASE WHEN $3 THEN $4 ELSE assignee_id END, updated_at = NOW()
-		WHERE id = $5 AND workspace_id = $6 RETURNING updated_at`,
-		issue.Status, issue.StatusID, replaceAssignees, issue.AssigneeID, issue.ID, issue.WorkspaceID).Scan(&issue.UpdatedAt); err != nil {
+		assignee_id = CASE WHEN $3::uuid IS NOT NULL THEN COALESCE(assignee_id, $3::uuid) ELSE assignee_id END, updated_at = NOW()
+		WHERE id = $4 AND workspace_id = $5 RETURNING updated_at`,
+		issue.Status, issue.StatusID, addTarget, issue.ID, issue.WorkspaceID).Scan(&issue.UpdatedAt); err != nil {
 		return err
 	}
-	if replaceAssignees {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_assignees WHERE issue_id = $1`, issue.ID); err != nil {
+	if addTarget != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO issue_assignees (issue_id, user_id)
+			VALUES ($1, $2) ON CONFLICT (issue_id, user_id) DO NOTHING`, issue.ID, *addTarget); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO issue_assignees (issue_id, user_id) VALUES ($1, $2)`, issue.ID, issue.AssigneeID); err != nil {
-			return err
+		if issue.AssigneeID == nil {
+			issue.AssigneeID = addTarget
 		}
 	}
 	return tx.Commit()

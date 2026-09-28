@@ -1,0 +1,124 @@
+import { test, expect } from '@playwright/test';
+
+const teamA = '00000000-0000-0000-0000-0000000000a1';
+const teamB = '00000000-0000-0000-0000-0000000000b2';
+const statusA1 = '00000000-0000-0000-0000-0000000001a1';
+const statusA2 = '00000000-0000-0000-0000-0000000002a2';
+const statusB1 = '00000000-0000-0000-0000-0000000001b1';
+// Belongs to no loaded column → must land in the unmapped bucket, not vanish.
+const statusOrphan = '00000000-0000-0000-0000-00000000dead';
+
+function issue(id: string, identifier: string, title: string, teamId: string, statusId: string) {
+	return {
+		id,
+		identifier,
+		title,
+		team_id: teamId,
+		status_id: statusId,
+		priority: 0,
+		labels: [],
+		assignees: [],
+		sort_order: 0,
+		sub_issue_count: 0,
+		created_at: '2026-01-01T00:00:00Z',
+		updated_at: '2026-01-01T00:00:00Z'
+	};
+}
+
+test('my issues board renders one section per team and never hides orphaned statuses', async ({ page }) => {
+	const unhandled: string[] = [];
+	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/**', (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (!path.startsWith('/api/')) return route.continue();
+
+		if (path === '/api/auth/me') {
+			return route.fulfill({ json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User' } });
+		}
+		if (path === '/api/preferences') {
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status',
+					default_view_layout: 'board'
+				}
+			});
+		}
+		if (path === '/api/workspaces') {
+			return route.fulfill({ json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }] });
+		}
+		if (path === '/api/workspaces/test') {
+			return route.fulfill({ json: { id: 'w1', name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
+		}
+		if (path === '/api/workspaces/test/teams') {
+			return route.fulfill({
+				json: [
+					{ id: teamA, name: 'Alpha', key: 'ALP', color: '#6366f1', icon: 'layers' },
+					{ id: teamB, name: 'Beta', key: 'BET', color: '#22c55e', icon: 'layers' }
+				]
+			});
+		}
+		if (path === `/api/workspaces/test/teams/${teamA}/statuses`) {
+			return route.fulfill({
+				json: [
+					{ id: statusA1, team_id: teamA, name: 'Todo', slug: 'todo', category: 'unstarted', color: null, position: 0, is_default: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
+					{ id: statusA2, team_id: teamA, name: 'Done', slug: 'done', category: 'completed', color: null, position: 1, is_default: false, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+				]
+			});
+		}
+		if (path === `/api/workspaces/test/teams/${teamB}/statuses`) {
+			return route.fulfill({
+				json: [
+					{ id: statusB1, team_id: teamB, name: 'In Progress', slug: 'in_progress', category: 'started', color: null, position: 0, is_default: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+				]
+			});
+		}
+		if (['/api/workspaces/test/projects', '/api/workspaces/test/labels', '/api/workspaces/test/members', '/api/workspaces/test/views'].includes(path)) {
+			return route.fulfill({ json: [] });
+		}
+		if (path === '/api/notifications') {
+			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
+		}
+		if (path === '/api/workspaces/test/issues') {
+			return route.fulfill({
+				json: {
+					data: [
+						issue('i1', 'ALP-1', 'Alpha todo issue', teamA, statusA1),
+						issue('i2', 'BET-1', 'Beta in-progress issue', teamB, statusB1),
+						issue('i3', 'ALP-2', 'Orphaned status issue', teamA, statusOrphan)
+					],
+					total_count: 3,
+					page: 1,
+					has_more: false
+				}
+			});
+		}
+
+		unhandled.push(path);
+		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+	});
+
+	await page.goto('/test/my-issues');
+
+	// One board section per team, each issue under its own team's section.
+	const alphaSection = page.locator('section').filter({ hasText: 'Alpha todo issue' });
+	const betaSection = page.locator('section').filter({ hasText: 'Beta in-progress issue' });
+	await expect(alphaSection).toBeVisible();
+	await expect(betaSection).toBeVisible();
+	await expect(alphaSection).not.toContainText('Beta in-progress issue');
+	await expect(page.getByText('Alpha todo issue')).toBeVisible();
+	await expect(page.getByText('Beta in-progress issue')).toBeVisible();
+
+	// An issue whose status key matches no column stays visible in the
+	// trailing bucket instead of disappearing from the board.
+	await expect(page.getByText('Orphaned status issue')).toBeVisible();
+	await expect(page.getByLabel('No status').first()).toBeVisible();
+	expect(unhandled).toEqual([]);
+});

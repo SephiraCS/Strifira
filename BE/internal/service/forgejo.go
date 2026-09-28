@@ -1039,7 +1039,10 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 			targetAssigneeID = matched
 		}
 	}
-	assigneeChanged := false
+	// Assignment is additive: the rule target joins the assignee set; existing
+	// assignees are never removed (replacing them kicked issues out of other
+	// assignees' filtered views, which looked like tickets disappearing).
+	assigneeToAdd := false
 	var currentAssignees []uuid.UUID
 	if targetAssigneeID != nil {
 		assignees, err := s.issueRepo.GetAssignees(ctx, issue.ID)
@@ -1048,14 +1051,19 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 			return
 		}
 		currentAssignees = assignees
-		assigneeChanged = len(assignees) != 1 || assignees[0] != *targetAssigneeID ||
-			issue.AssigneeID == nil || *issue.AssigneeID != *targetAssigneeID
+		alreadyAssigned := issue.AssigneeID != nil && *issue.AssigneeID == *targetAssigneeID
+		for _, a := range assignees {
+			if a == *targetAssigneeID {
+				alreadyAssigned = true
+				break
+			}
+		}
+		assigneeToAdd = !alreadyAssigned
 	}
-	if !statusChanged && !assigneeChanged {
+	if !statusChanged && !assigneeToAdd {
 		return
 	}
 
-	// A stale status or former workspace member must not partially apply a rule.
 	if statusChanged {
 		if rule.TargetStatusID != nil {
 			issue.StatusID = rule.TargetStatusID
@@ -1067,27 +1075,35 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 			issue.StatusID = &ts.ID
 		}
 	}
-	if targetAssigneeID != nil {
+	// A former workspace member must not void the status transition; only the
+	// assignee part of the rule is skipped.
+	if assigneeToAdd {
 		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, *targetAssigneeID)
 		if err != nil || !member {
-			return
+			log.WithField("issue_id", issue.ID).WithField("target_user_id", *targetAssigneeID).
+				Warn("forgejo automation target is not a workspace member; applying status only")
+			assigneeToAdd = false
 		}
 	}
 
 	if statusChanged {
 		issue.Status = domain.IssueStatus(newStatus)
 	}
-	if assigneeChanged {
-		issue.AssigneeID = targetAssigneeID
+	var addTarget *uuid.UUID
+	if assigneeToAdd {
+		addTarget = targetAssigneeID
 	}
-	if err := s.fRepo.ApplyIssueAutomation(ctx, issue, assigneeChanged); err != nil {
+	if err := s.fRepo.ApplyIssueAutomation(ctx, issue, addTarget); err != nil {
 		log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to auto-transition issue")
 		return
 	}
-	if assigneeChanged {
+	if assigneeToAdd {
 		if issue.CreatorID != uuid.Nil {
+			newAssignees := make([]uuid.UUID, 0, len(currentAssignees)+1)
+			newAssignees = append(newAssignees, currentAssignees...)
+			newAssignees = append(newAssignees, *targetAssigneeID)
 			oldValue := uuidListString(currentAssignees)
-			newValue := uuidListString([]uuid.UUID{*targetAssigneeID})
+			newValue := uuidListString(newAssignees)
 			_ = s.historyRepo.Create(ctx, issue.ID, issue.CreatorID, "assignees", &oldValue, &newValue)
 		}
 	}

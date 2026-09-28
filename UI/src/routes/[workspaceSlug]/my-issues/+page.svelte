@@ -143,6 +143,31 @@
 		}
 	}
 
+	// Every team present in the loaded issues gets its own board section, so
+	// cross-team issues render with their own team's columns instead of
+	// silently dropping off the board.
+	const boardTeamIds = $derived([
+		...new Set(issuesState.issues.map((i) => i.team_id).filter(Boolean))
+	]);
+
+	$effect(() => {
+		if (layout !== 'board') return;
+		const slugValue = slug;
+		for (const teamId of boardTeamIds) {
+			void teamStatusesState.loadTeam(slugValue, teamId).catch(() => {});
+		}
+	});
+
+	function issuesByStatusForTeam(teamId: string): Record<string, Issue[]> {
+		const grouped: Record<string, Issue[]> = {};
+		for (const issue of issuesState.issues) {
+			if (issue.team_id !== teamId) continue;
+			const key = issue.status_id ?? issue.status;
+			(grouped[key] ??= []).push(issue);
+		}
+		return grouped;
+	}
+
 	function handleTabChange(tab: string) {
 		activeTab = tab as MyTab;
 		loadIssues();
@@ -163,6 +188,21 @@
 	function handleIssueClick(issue: Issue) {
 		lastSelectedId = issue.id;
 		goto(`/${slug}/issue/${issue.identifier}`);
+	}
+
+	function handleBoardQuickAdd(statusId: string) {
+		quickAddStatusId = statusId;
+		// The create dialog must land on the team that owns the column.
+		const ownerTeamId = boardTeamIds.find((teamId) =>
+			(teamStatusesState.statusesByTeam[teamId] ?? []).some((s) => s.id === statusId)
+		);
+		if (ownerTeamId) boardTeamId = ownerTeamId;
+		// On the assigned tab an unassigned issue would vanish at
+		// the post-create reload (the tab filters by assignee), so
+		// quick-adds there default to the current user.
+		quickAddAssigneeIds =
+			!drillDownMode && activeTab === 'assigned' && authState.user ? [authState.user.id] : undefined;
+		showCreateIssue = true;
 	}
 
 	const keyHandler = createKeyboardHandler([
@@ -285,24 +325,56 @@
 			/>
 		</div>
 	{:else if !issuesState.loading}
-		<div class="flex-1 overflow-hidden">
-			<KanbanBoard
-				issuesByStatus={issuesState.issuesByStatus}
-				{slug}
-				{members}
-				{labels}
-				onissueclick={handleIssueClick}
-				onquickadd={(statusId) => {
-					quickAddStatusId = statusId;
-					// On the assigned tab an unassigned issue would vanish at
-					// the post-create reload (the tab filters by assignee), so
-					// quick-adds there default to the current user.
-					quickAddAssigneeIds =
-						!drillDownMode && activeTab === 'assigned' && authState.user ? [authState.user.id] : undefined;
-					showCreateIssue = true;
-				}}
-			/>
-		</div>
+		{#if issuesState.issues.length === 0}
+			<div class="flex-1 overflow-y-auto">
+				<EmptyState
+					title={activeTab === 'assigned'
+						? m['my_issues.empty.assigned.title']()
+						: m['my_issues.empty.created.title']()}
+					description={activeTab === 'assigned'
+						? m['my_issues.empty.assigned.description']()
+						: m['my_issues.empty.created.description']()}
+				/>
+			</div>
+		{:else if boardTeamIds.length === 1}
+			<div class="flex-1 overflow-hidden">
+				<KanbanBoard
+					issuesByStatus={issuesByStatusForTeam(boardTeamIds[0])}
+					columns={teamStatusesState.statusesByTeam[boardTeamIds[0]] ?? []}
+					{slug}
+					{members}
+					{labels}
+					onissueclick={handleIssueClick}
+					onquickadd={handleBoardQuickAdd}
+				/>
+			</div>
+		{:else}
+			<div class="flex-1 overflow-y-auto">
+				{#each boardTeamIds as teamId (teamId)}
+					{@const teamIssues = issuesByStatusForTeam(teamId)}
+					{@const teamCount = Object.values(teamIssues).reduce((n, list) => n + list.length, 0)}
+					<section>
+						<div class="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--app-border)] bg-[var(--color-bg-primary)] px-6 py-2">
+							<span class="text-xs font-medium tracking-wide uppercase text-[var(--color-text-tertiary)]">
+								{teams.find((t) => t.id === teamId)?.name ?? teamId}
+							</span>
+							<span class="text-xs text-[var(--color-text-tertiary)]">{teamCount}</span>
+						</div>
+						<div class="h-[60vh] min-h-[420px]">
+							<KanbanBoard
+								issuesByStatus={teamIssues}
+								columns={teamStatusesState.statusesByTeam[teamId] ?? []}
+								{slug}
+								{members}
+								{labels}
+								onissueclick={handleIssueClick}
+								onquickadd={handleBoardQuickAdd}
+							/>
+						</div>
+					</section>
+				{/each}
+			</div>
+		{/if}
 	{/if}
 </div>
 

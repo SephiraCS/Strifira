@@ -12,9 +12,12 @@ import (
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // --- Mocks ---
+
+func ptr[T any](v T) *T { return &v }
 
 type mockIssueRepo struct {
 	mock.Mock
@@ -483,7 +486,9 @@ func TestIssueService_Update(t *testing.T) {
 	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
 	issueRepo.On("Update", ctx, mock.AnythingOfType("*domain.Issue")).Return(nil)
 	issueRepo.On("GetAssignees", ctx, issueID).Return([]uuid.UUID{}, nil)
-	teamStatusRepo.On("GetByTeamAndSlug", ctx, issue.TeamID, "todo").Return(nil, nil)
+	todoStatus := &domain.TeamStatus{ID: uuid.New(), TeamID: issue.TeamID, Name: "Todo", Slug: "todo"}
+	teamStatusRepo.On("GetByTeamAndSlug", ctx, issue.TeamID, "todo").Return(todoStatus, nil)
+	teamStatusRepo.On("GetByID", ctx, todoStatus.ID).Return(todoStatus, nil)
 
 	newTitle := "New Title"
 	newStatus := "todo"
@@ -500,6 +505,136 @@ func TestIssueService_Update(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "New Title", result.Title)
 	assert.Equal(t, domain.IssueStatusTodo, result.Status)
+}
+
+func TestIssueService_Update_StatusIDSetsSlugAndStatusID(t *testing.T) {
+	issueRepo := new(mockIssueRepo)
+	teamRepo := new(mockTeamRepo)
+	historyRepo := new(mockIssueHistoryRepo)
+	hub := realtime.NewHub()
+	teamStatusRepo := new(mockTeamStatusRepo)
+	svc := NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, newTestNotifSvc())
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	userID := uuid.New()
+	issueID := uuid.New()
+	issue := &domain.Issue{
+		ID:          issueID,
+		WorkspaceID: wsID,
+		Identifier:  "ENG-1",
+		Title:       "T",
+		Status:      domain.IssueStatusTodo,
+		StatusID:    ptr(uuid.New()),
+		Priority:    domain.PriorityNone,
+	}
+	inProgressID := uuid.New()
+	inProgress := &domain.TeamStatus{ID: inProgressID, TeamID: issue.TeamID, Name: "In Progress", Slug: "in_progress"}
+
+	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
+	teamStatusRepo.On("GetByID", ctx, *issue.StatusID).Return(&domain.TeamStatus{ID: *issue.StatusID, TeamID: issue.TeamID, Name: "Todo", Slug: "todo"}, nil)
+	teamStatusRepo.On("GetByID", ctx, inProgressID).Return(inProgress, nil)
+	newName := "In Progress"
+	historyRepo.On("Create", ctx, issueID, userID, "status", mock.AnythingOfType("*string"), &newName).Return(nil)
+	issueRepo.On("Update", ctx, mock.AnythingOfType("*domain.Issue")).Return(nil)
+	issueRepo.On("GetAssignees", ctx, issueID).Return([]uuid.UUID{}, nil)
+
+	result, err := svc.Update(ctx, wsID, userID, "ENG-1", dto.UpdateIssueRequest{StatusID: ptr(inProgressID.String())})
+
+	assert.NoError(t, err)
+	require.NotNil(t, result.StatusID)
+	assert.Equal(t, inProgressID, *result.StatusID)
+	assert.Equal(t, domain.IssueStatus("in_progress"), result.Status)
+}
+
+func TestIssueService_Update_RejectsUnknownStatusSlug(t *testing.T) {
+	issueRepo := new(mockIssueRepo)
+	teamRepo := new(mockTeamRepo)
+	historyRepo := new(mockIssueHistoryRepo)
+	hub := realtime.NewHub()
+	teamStatusRepo := new(mockTeamStatusRepo)
+	svc := NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, newTestNotifSvc())
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	issueID := uuid.New()
+	issue := &domain.Issue{ID: issueID, WorkspaceID: wsID, Identifier: "ENG-1", Title: "T", Status: domain.IssueStatusTodo}
+
+	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
+	teamStatusRepo.On("GetByTeamAndSlug", ctx, issue.TeamID, "does-not-exist").Return(nil, nil)
+
+	newStatus := "does-not-exist"
+	_, err := svc.Update(ctx, wsID, uuid.New(), "ENG-1", dto.UpdateIssueRequest{Status: &newStatus})
+
+	assert.ErrorIs(t, err, ErrInvalidStatus)
+	issueRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+func TestIssueService_Update_RejectsCrossTeamStatusID(t *testing.T) {
+	issueRepo := new(mockIssueRepo)
+	teamRepo := new(mockTeamRepo)
+	historyRepo := new(mockIssueHistoryRepo)
+	hub := realtime.NewHub()
+	teamStatusRepo := new(mockTeamStatusRepo)
+	svc := NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, newTestNotifSvc())
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	issueID := uuid.New()
+	teamID := uuid.New()
+	issue := &domain.Issue{ID: issueID, WorkspaceID: wsID, TeamID: teamID, Identifier: "ENG-1", Title: "T", Status: domain.IssueStatusTodo}
+	otherTeamStatus := &domain.TeamStatus{ID: uuid.New(), TeamID: uuid.New(), Name: "Foreign", Slug: "foreign"}
+
+	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
+	teamStatusRepo.On("GetByID", ctx, otherTeamStatus.ID).Return(otherTeamStatus, nil)
+
+	_, err := svc.Update(ctx, wsID, uuid.New(), "ENG-1", dto.UpdateIssueRequest{StatusID: ptr(otherTeamStatus.ID.String())})
+
+	assert.ErrorIs(t, err, ErrInvalidStatus)
+	issueRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+func TestIssueService_Update_RejectsUnknownStatusID(t *testing.T) {
+	issueRepo := new(mockIssueRepo)
+	teamRepo := new(mockTeamRepo)
+	historyRepo := new(mockIssueHistoryRepo)
+	hub := realtime.NewHub()
+	teamStatusRepo := new(mockTeamStatusRepo)
+	svc := NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, newTestNotifSvc())
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	issueID := uuid.New()
+	issue := &domain.Issue{ID: issueID, WorkspaceID: wsID, Identifier: "ENG-1", Title: "T", Status: domain.IssueStatusTodo}
+	missing := uuid.New()
+
+	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
+	teamStatusRepo.On("GetByID", ctx, missing).Return(nil, nil)
+
+	_, err := svc.Update(ctx, wsID, uuid.New(), "ENG-1", dto.UpdateIssueRequest{StatusID: ptr(missing.String())})
+
+	assert.ErrorIs(t, err, ErrInvalidStatus)
+	issueRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
+}
+
+func TestIssueService_Update_RejectsMalformedStatusID(t *testing.T) {
+	issueRepo := new(mockIssueRepo)
+	teamRepo := new(mockTeamRepo)
+	historyRepo := new(mockIssueHistoryRepo)
+	hub := realtime.NewHub()
+	teamStatusRepo := new(mockTeamStatusRepo)
+	svc := NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, newTestNotifSvc())
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	issue := &domain.Issue{ID: uuid.New(), WorkspaceID: wsID, Identifier: "ENG-1", Title: "T", Status: domain.IssueStatusTodo}
+
+	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
+
+	_, err := svc.Update(ctx, wsID, uuid.New(), "ENG-1", dto.UpdateIssueRequest{StatusID: ptr("not-a-uuid")})
+
+	assert.ErrorIs(t, err, ErrInvalidStatus)
+	issueRepo.AssertNotCalled(t, "Update", mock.Anything, mock.Anything)
 }
 
 func TestIssueService_Update_NoOpDescriptionDoesNotNotify(t *testing.T) {
@@ -552,7 +687,9 @@ func TestIssueService_Update_ConsolidatesFieldNotifications(t *testing.T) {
 	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issue, nil)
 	issueRepo.On("Update", ctx, mock.AnythingOfType("*domain.Issue")).Return(nil)
 	issueRepo.On("GetAssignees", ctx, issueID).Return([]uuid.UUID{}, nil)
-	teamStatusRepo.On("GetByTeamAndSlug", ctx, issue.TeamID, "todo").Return(nil, nil)
+	todoStatus := &domain.TeamStatus{ID: uuid.New(), TeamID: issue.TeamID, Name: "Todo", Slug: "todo"}
+	teamStatusRepo.On("GetByTeamAndSlug", ctx, issue.TeamID, "todo").Return(todoStatus, nil)
+	teamStatusRepo.On("GetByID", ctx, todoStatus.ID).Return(todoStatus, nil)
 	historyRepo.On("Create", ctx, issueID, userID, "title", mock.AnythingOfType("*string"), &newTitle).Return(nil)
 	historyRepo.On("Create", ctx, issueID, userID, "status", mock.AnythingOfType("*string"), &newStatus).Return(nil)
 	notifRepo.On("CreateOrRefresh", ctx, mock.MatchedBy(func(n *domain.Notification) bool {

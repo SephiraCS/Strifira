@@ -68,20 +68,24 @@ Slug targets resolve against each issue's team workflow at fire time, so one
 rule covers teams with custom status sets. Transitions write issue history and
 trigger the existing sub-issue/parent auto-close cascades.
 
-Selecting a workspace member under **Assign to** replaces the issue's current
-assignees when that event fires; **Keep assignee** preserves them. A rule may
+Selecting a workspace member under **Assign to** adds that person to the
+issue's current assignees when the event fires (existing assignees are never
+removed — replacing the set made issues vanish from other assignees'
+"My Issues" views); **Keep assignee** leaves the set untouched. A rule may
 also assign someone without moving the issue by selecting **No transition**.
 **Match Forgejo user** first resolves the event's Forgejo login through
 **User mappings** in the same settings page. Without a mapping, it compares
 the login with the Ku `name` of current workspace members, ignoring case. It
 assigns only on a unique match; an absent or ambiguous match leaves the issue's
-assignees unchanged. Branch creation uses the webhook sender; PR events use the
+assignees unchanged and still applies the status transition. Branch creation
+uses the webhook sender; PR events use the
 PR author. Mapping rows are tied to workspace membership and disappear when
 that member is removed.
 New `in_progress` rules use this mode by default, and migration `000045`
-enables it for existing `in_progress` rules without a fixed assignee.
-Fixed assignees are checked against current workspace membership when saving
-and when the rule fires. To hand an issue to a reviewer after merge, set **Pull
+enabled it for existing `in_progress` rules without a fixed assignee.
+Assignee targets are checked against current workspace membership when saving
+and when the rule fires; a stale target is skipped (with a warning log) while
+the status transition still applies. To add a reviewer after merge, set **Pull
 request merged** to the team's review status and choose that person under
 **Assign to**.
 

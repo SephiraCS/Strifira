@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -283,6 +284,9 @@ func (h *IssueHandler) Update(c echo.Context) error {
 
 	issue, err := h.issueSvc.Update(c.Request().Context(), ws.ID, userID, identifier, req)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidStatus) {
+			return response.Error(c, http.StatusBadRequest, "INVALID_STATUS", "Status does not exist in the issue's team")
+		}
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	}
 

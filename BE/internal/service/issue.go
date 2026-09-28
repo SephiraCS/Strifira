@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -27,6 +28,10 @@ type IssueService struct {
 }
 
 const issueUpdateNotificationWindow = 5 * time.Minute
+
+// ErrInvalidStatus is returned when a status change references an unknown
+// status, a status of another team, or a slug the issue's team does not have.
+var ErrInvalidStatus = errors.New("invalid status for this issue's team")
 
 type issueChangeSet struct {
 	fields       []string
@@ -503,42 +508,45 @@ func (s *IssueService) Update(ctx context.Context, workspaceID, userID uuid.UUID
 	statusChanged := false
 	if req.StatusID != nil {
 		sid, err := uuid.Parse(*req.StatusID)
-		if err == nil {
-			statusChanged = issue.StatusID == nil || *issue.StatusID != sid
-			if statusChanged {
-				// Look up old and new status names for history
-				var oldName string
-				if issue.StatusID != nil {
-					oldStatus, _ := s.teamStatusRepo.GetByID(ctx, *issue.StatusID)
-					if oldStatus != nil {
-						oldName = oldStatus.Name
-					}
-				}
-				newStatus, _ := s.teamStatusRepo.GetByID(ctx, sid)
-				// Validate that the status belongs to the same team as the issue
-				if newStatus != nil && newStatus.TeamID == issue.TeamID {
-					newName := newStatus.Name
-					issue.StatusID = &sid
-					// Update legacy status field for backward compat
-					issue.Status = domain.IssueStatus(newStatus.Slug)
-					s.recordHistory(ctx, issue.ID, userID, "status", &oldName, &newName)
-					changes.addField("status")
-				} else {
-					statusChanged = false
+		if err != nil {
+			return nil, ErrInvalidStatus
+		}
+		if issue.StatusID == nil || *issue.StatusID != sid {
+			// Look up old and new status names for history
+			var oldName string
+			if issue.StatusID != nil {
+				oldStatus, _ := s.teamStatusRepo.GetByID(ctx, *issue.StatusID)
+				if oldStatus != nil {
+					oldName = oldStatus.Name
 				}
 			}
+			newStatus, _ := s.teamStatusRepo.GetByID(ctx, sid)
+			// The status must exist and belong to the issue's team; silently
+			// ignoring it left the issue in a state boards render nowhere.
+			if newStatus == nil || newStatus.TeamID != issue.TeamID {
+				return nil, ErrInvalidStatus
+			}
+			newName := newStatus.Name
+			issue.StatusID = &sid
+			// Update legacy status field for backward compat
+			issue.Status = domain.IssueStatus(newStatus.Slug)
+			s.recordHistory(ctx, issue.ID, userID, "status", &oldName, &newName)
+			changes.addField("status")
+			statusChanged = true
 		}
 	} else if req.Status != nil && *req.Status != string(issue.Status) {
+		// Resolve the slug first so status and status_id can never end up
+		// half-applied (mismatched pair keys issues out of status boards).
+		ts, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, issue.TeamID, *req.Status)
+		if err != nil || ts == nil {
+			return nil, ErrInvalidStatus
+		}
 		old := string(issue.Status)
 		issue.Status = domain.IssueStatus(*req.Status)
+		issue.StatusID = &ts.ID
 		statusChanged = true
 		s.recordHistory(ctx, issue.ID, userID, "status", &old, req.Status)
 		changes.addField("status")
-		// Also update status_id to match the new legacy status slug
-		ts, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, issue.TeamID, *req.Status)
-		if err == nil && ts != nil {
-			issue.StatusID = &ts.ID
-		}
 	}
 	if req.Priority != nil && domain.IssuePriority(*req.Priority) != issue.Priority {
 		old := fmt.Sprintf("%d", issue.Priority)

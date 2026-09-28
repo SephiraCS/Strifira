@@ -23,6 +23,9 @@ class TeamStatusesState {
 	loading = $state(false);
 	private loadedTeamId = '';
 
+	/** Statuses for many teams at once (cross-team boards like My Issues). */
+	statusesByTeam = $state<Record<string, TeamStatus[]>>({});
+
 	/** Statuses sorted by position. */
 	statusOrder = $derived(
 		[...this.statuses].sort((a, b) => a.position - b.position)
@@ -58,11 +61,21 @@ class TeamStatusesState {
 		try {
 			this.statuses = await listTeamStatuses(slug, teamId);
 			this.loadedTeamId = teamId;
+			this.statusesByTeam[teamId] = [...this.statuses];
 		} catch {
 			this.statuses = [];
 		} finally {
 			this.loading = false;
 		}
+	}
+
+	/** Load one team's statuses into the cross-team cache (My Issues board). */
+	async loadTeam(slug: string, teamId: string): Promise<TeamStatus[]> {
+		const cached = this.statusesByTeam[teamId];
+		if (cached && cached.length > 0) return cached;
+		const statuses = await listTeamStatuses(slug, teamId);
+		this.statusesByTeam[teamId] = statuses;
+		return statuses;
 	}
 
 	/** Force reload (e.g. after creating/deleting a status). */
@@ -139,6 +152,7 @@ class TeamStatusesState {
 	clear() {
 		this.statuses = [];
 		this.loadedTeamId = '';
+		this.statusesByTeam = {};
 	}
 }
 
