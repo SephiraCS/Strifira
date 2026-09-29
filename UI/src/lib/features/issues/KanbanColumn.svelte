@@ -11,8 +11,10 @@
 	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { issuesState } from './issues.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
+	import { COLUMN_SORT_KEYS, type ColumnSortKey } from './column-sort';
 	import { dndzone, dragHandle } from 'svelte-dnd-action';
-	import { Plus, UserCircle } from 'lucide-svelte';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import { Archive, ArrowDownUp, Check, Ellipsis, Plus, UserCircle } from 'lucide-svelte';
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {
@@ -25,7 +27,10 @@
 		onissueclick,
 		onconsider,
 		onfinalize,
-		onquickadd
+		onquickadd,
+		sortKey = null,
+		onsortchange,
+		onarchiveall
 	}: {
 		statusId: string;
 		teamStatus: TeamStatus;
@@ -37,7 +42,15 @@
 		onconsider?: (statusId: string, items: Issue[]) => void;
 		onfinalize?: (statusId: string, items: Issue[]) => void;
 		onquickadd?: (statusId: string) => void;
+		sortKey?: ColumnSortKey | null;
+		onsortchange?: (statusId: string, key: ColumnSortKey | null) => void;
+		onarchiveall?: (statusId: string) => void;
 	} = $props();
+
+	// A sorted column is read-only ordering (like Linear): manual drag & drop
+	// would immediately fight the comparator.
+	const sortingActive = $derived(sortKey !== null);
+	const canArchiveAll = $derived(teamStatus.category === 'completed' && issues.length > 0);
 
 	function handleConsider(e: CustomEvent<{ items: Issue[] }>) {
 		onconsider?.(statusId, e.detail.items);
@@ -45,6 +58,22 @@
 
 	function handleFinalize(e: CustomEvent<{ items: Issue[] }>) {
 		onfinalize?.(statusId, e.detail.items);
+	}
+
+	function sortOptionLabel(key: ColumnSortKey | null): string {
+		if (key === null) return m['board.sort.manual']();
+		switch (key) {
+			case 'priority':
+				return m['common.context_menu.priority']();
+			case 'due_date':
+				return m['common.context_menu.due_date']();
+			case 'updated':
+				return m['board.sort.updated']();
+			case 'created':
+				return m['board.sort.created']();
+			case 'title':
+				return m['board.sort.title']();
+		}
 	}
 
 	function assigneeIds(issue: Issue): string[] {
@@ -102,11 +131,56 @@
 				<Plus size={14} />
 			</button>
 		{/if}
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger
+				class="rounded p-0.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] {sortingActive
+					? 'text-[var(--color-text-primary)]'
+					: ''}"
+				title={m['board.sort.button']()}
+				aria-label={m['board.sort.button']()}
+			>
+				<ArrowDownUp size={14} />
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content align="start" class="w-44">
+				{#each [null, ...COLUMN_SORT_KEYS] as key, i (key ?? 'manual')}
+					{#if i === 1}
+						<DropdownMenu.Separator />
+					{/if}
+					<DropdownMenu.Item onclick={() => onsortchange?.(statusId, key)}>
+						<span class="flex w-full items-center gap-2">
+							<span class="flex h-4 w-4 items-center justify-center">
+								{#if sortKey === key}<Check size={12} />{/if}
+							</span>
+							{sortOptionLabel(key)}
+						</span>
+					</DropdownMenu.Item>
+				{/each}
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
+		{#if canArchiveAll}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class="rounded p-0.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)]"
+					title={m['issues.archive_all.column_action']()}
+					aria-label={m['issues.archive_all.column_action']()}
+				>
+					<Ellipsis size={14} />
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="start" class="w-44">
+					<DropdownMenu.Item onclick={() => onarchiveall?.(statusId)}>
+						<span class="flex items-center gap-2">
+							<Archive size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+							{m['issues.archive_all.column_action']()}
+						</span>
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
 	</div>
 
 	<div
 		class="flex-1 space-y-1.5 overflow-y-auto px-1 pb-4 min-h-[60px]"
-		use:dndzone={{ items: issues, type: 'issue', dropTargetStyle: {} }}
+		use:dndzone={{ items: issues, type: 'issue', dropTargetStyle: {}, dragDisabled: sortingActive, dropFromOthersDisabled: sortingActive }}
 		onconsider={handleConsider}
 		onfinalize={handleFinalize}
 	>

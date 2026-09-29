@@ -4,9 +4,11 @@
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import type { Label } from '$lib/types/label';
 	import KanbanColumn from './KanbanColumn.svelte';
+	import { sortColumnIssues, type ColumnSortKey } from './column-sort';
 	import { dragHandleZone } from 'svelte-dnd-action';
 	import { issuesState } from './issues.state.svelte';
 	import { teamStatusesState } from './team-statuses.state.svelte';
+	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {
@@ -61,10 +63,17 @@
 		columns = [...(columnsProp ?? teamStatusesState.statusOrder)];
 	});
 
+	// Per-column display sorts; a column without an entry keeps the board's
+	// manual (sort_order) arrangement.
+	let columnSorts = $state<Record<string, ColumnSortKey>>({});
+	let archiveInFlight = false;
+
 	$effect(() => {
 		const copy: Record<string, Issue[]> = {};
 		for (const ts of columns) {
-			copy[ts.id] = [...(issuesByStatus[ts.id] ?? [])];
+			// Background refreshes re-copy the server order; re-apply the
+			// column's active sort so it survives every reload.
+			copy[ts.id] = sortColumnIssues([...(issuesByStatus[ts.id] ?? [])], columnSorts[ts.id] ?? null);
 		}
 		const columnIds = new Set(columns.map((ts) => ts.id));
 		const stuck: Issue[] = [];
@@ -74,6 +83,31 @@
 		localByStatus = copy;
 		unmapped = stuck;
 	});
+
+	function handleSortChange(statusId: string, key: ColumnSortKey | null) {
+		if (key === null) {
+			delete columnSorts[statusId];
+			columnSorts = { ...columnSorts };
+			localByStatus[statusId] = [...(issuesByStatus[statusId] ?? [])];
+		} else {
+			columnSorts = { ...columnSorts, [statusId]: key };
+			localByStatus[statusId] = sortColumnIssues(localByStatus[statusId] ?? [], key);
+		}
+	}
+
+	async function handleArchiveAll(statusId: string) {
+		const ids = (localByStatus[statusId] ?? []).map((issue) => issue.id);
+		if (ids.length === 0 || archiveInFlight) return;
+		archiveInFlight = true;
+		try {
+			const archived = await issuesState.bulkArchive(slug, ids);
+			appToast.success(m['issues.archive_all.toast']({ n: archived, s: archived > 1 ? 's' : '' }));
+		} catch (err: any) {
+			appToast.apiError(err, m['issues.archive_all.failed']());
+		} finally {
+			archiveInFlight = false;
+		}
+	}
 
 	function handleColumnConsider(e: CustomEvent<{ items: TeamStatus[] }>) {
 		columns = e.detail.items;
@@ -137,6 +171,9 @@
 			onconsider={handleConsider}
 			onfinalize={handleFinalize}
 			{onquickadd}
+			sortKey={columnSorts[ts.id] ?? null}
+			onsortchange={handleSortChange}
+			onarchiveall={handleArchiveAll}
 		/>
 	{/each}
 	{#if unmapped.length > 0}
@@ -152,6 +189,7 @@
 			{onissueclick}
 			onconsider={handleConsider}
 			onfinalize={handleFinalize}
+			onsortchange={handleSortChange}
 		/>
 	{/if}
 {/snippet}

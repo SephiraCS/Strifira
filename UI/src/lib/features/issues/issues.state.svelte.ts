@@ -332,6 +332,20 @@ class IssuesState {
 		return updated;
 	}
 
+	/** Archive many issues in one request (only completed-category issues
+	 * change server-side) and drop them from the current non-archived view. */
+	async bulkArchive(slug: string, issueIds: string[]): Promise<number> {
+		if (issueIds.length === 0) return 0;
+		const res = await issueApi.bulkUpdateIssues(slug, { issue_ids: issueIds, archived: true });
+		if (this.filters.archived !== 'true') {
+			const archivedIds = new Set(issueIds);
+			const wasListed = this.issues.some((issue) => archivedIds.has(issue.id));
+			this.issues = this.issues.filter((issue) => !archivedIds.has(issue.id));
+			if (wasListed) this.totalCount = Math.max(0, this.totalCount - res.updated);
+		}
+		return res.updated;
+	}
+
 	setSubscription(identifier: string, isSubscribed: boolean) {
 		const idx = this.issues.findIndex((i) => i.identifier === identifier);
 		if (idx >= 0) {

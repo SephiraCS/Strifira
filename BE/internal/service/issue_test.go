@@ -112,8 +112,8 @@ func (m *mockIssueRepo) CycleIsActive(ctx context.Context, cycleID uuid.UUID) (b
 	return args.Bool(0), args.Error(1)
 }
 
-func (m *mockIssueRepo) BulkUpdate(ctx context.Context, workspaceID uuid.UUID, issueIDs []uuid.UUID, status *string, priority *int, assigneeID *uuid.UUID, statusID *uuid.UUID, cycleID *uuid.UUID, cycleSet bool) (int, error) {
-	args := m.Called(ctx, workspaceID, issueIDs, status, priority, assigneeID, statusID, cycleID, cycleSet)
+func (m *mockIssueRepo) BulkUpdate(ctx context.Context, workspaceID uuid.UUID, issueIDs []uuid.UUID, status *string, priority *int, assigneeID *uuid.UUID, statusID *uuid.UUID, cycleID *uuid.UUID, cycleSet bool, archived *bool) (int, error) {
+	args := m.Called(ctx, workspaceID, issueIDs, status, priority, assigneeID, statusID, cycleID, cycleSet, archived)
 	return args.Int(0), args.Error(1)
 }
 
@@ -848,7 +848,7 @@ func TestIssueService_BulkUpdate_SetsCycle(t *testing.T) {
 	cycleIDString := cycleID.String()
 	issue := &domain.Issue{ID: issueID, WorkspaceID: wsID}
 
-	issueRepo.On("BulkUpdate", ctx, wsID, []uuid.UUID{issueID}, (*string)(nil), (*int)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), &cycleID, true).Return(1, nil)
+	issueRepo.On("BulkUpdate", ctx, wsID, []uuid.UUID{issueID}, (*string)(nil), (*int)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), &cycleID, true, (*bool)(nil)).Return(1, nil)
 	issueRepo.On("GetByID", ctx, issueID).Return(issue, nil)
 	issueRepo.On("GetAssignees", ctx, issueID).Return([]uuid.UUID{}, nil)
 
@@ -877,13 +877,41 @@ func TestIssueService_BulkUpdate_ClearsCycle(t *testing.T) {
 	cycleIDString := ""
 	issue := &domain.Issue{ID: issueID, WorkspaceID: wsID}
 
-	issueRepo.On("BulkUpdate", ctx, wsID, []uuid.UUID{issueID}, (*string)(nil), (*int)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), true).Return(1, nil)
+	issueRepo.On("BulkUpdate", ctx, wsID, []uuid.UUID{issueID}, (*string)(nil), (*int)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), true, (*bool)(nil)).Return(1, nil)
 	issueRepo.On("GetByID", ctx, issueID).Return(issue, nil)
 	issueRepo.On("GetAssignees", ctx, issueID).Return([]uuid.UUID{}, nil)
 
 	updated, err := svc.BulkUpdate(ctx, wsID, userID, dto.BulkUpdateIssueRequest{
 		IssueIDs: []string{issueID.String()},
 		CycleID:  &cycleIDString,
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, updated)
+	issueRepo.AssertExpectations(t)
+}
+
+func TestIssueService_BulkUpdate_ArchiveOnlySkipsPerIssueWork(t *testing.T) {
+	issueRepo := new(mockIssueRepo)
+	teamRepo := new(mockTeamRepo)
+	historyRepo := new(mockIssueHistoryRepo)
+	hub := realtime.NewHub()
+	teamStatusRepo := new(mockTeamStatusRepo)
+	svc := NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, newTestNotifSvc())
+
+	ctx := context.Background()
+	wsID := uuid.New()
+	userID := uuid.New()
+	issueID := uuid.New()
+	archived := true
+
+	// The archive-only path must not fan out into per-issue GetByID /
+	// notification queries; only the bulk write is expected.
+	issueRepo.On("BulkUpdate", ctx, wsID, []uuid.UUID{issueID}, (*string)(nil), (*int)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), (*uuid.UUID)(nil), false, &archived).Return(1, nil)
+
+	updated, err := svc.BulkUpdate(ctx, wsID, userID, dto.BulkUpdateIssueRequest{
+		IssueIDs: []string{issueID.String()},
+		Archived: &archived,
 	})
 
 	assert.NoError(t, err)

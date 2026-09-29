@@ -20,6 +20,7 @@ type StoredIssue = {
 	title: string;
 	team_id: string;
 	status_id: string;
+	status_info?: { id: string; name: string; category: string; color: string | null; position: number };
 	priority: number;
 	labels: unknown[];
 	assignees: unknown[];
@@ -27,6 +28,16 @@ type StoredIssue = {
 	sub_issue_count: number;
 	created_at: string;
 	updated_at: string;
+};
+
+// status_info as the real list API returns it; the archive affordances key
+// off its category.
+const STATUS_INFO: Record<string, StoredIssue['status_info']> = {
+	[statusBacklog]: { id: statusBacklog, name: 'Backlog', category: 'backlog', color: null, position: 0 },
+	[statusTodo]: { id: statusTodo, name: 'Todo', category: 'unstarted', color: null, position: 1 },
+	[statusProgress]: { id: statusProgress, name: 'In Progress', category: 'started', color: null, position: 2 },
+	[statusValidation]: { id: statusValidation, name: 'In Validation', category: 'started', color: null, position: 3 },
+	[statusDone]: { id: statusDone, name: 'Done', category: 'completed', color: null, position: 4 }
 };
 
 function issue(
@@ -42,6 +53,7 @@ function issue(
 		title,
 		team_id: teamId,
 		status_id: statusId,
+		status_info: STATUS_INFO[statusId],
 		priority: 0,
 		labels: [],
 		assignees: [],
@@ -91,6 +103,7 @@ async function mockTeamBoard(page: Page) {
 	const store = seedIssues();
 	const issueRequests: string[] = [];
 	const patches: string[] = [];
+	const bulkPatches: string[] = [];
 
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', (route) => {
@@ -181,10 +194,26 @@ async function mockTeamBoard(page: Page) {
 			const found = store.find((it) => it.identifier === identifier);
 			if (found) return route.fulfill({ json: found });
 		}
+		if (path === '/api/workspaces/test/issues/bulk' && route.request().method() === 'PATCH') {
+			bulkPatches.push(route.request().postData() ?? '');
+			const body = JSON.parse(route.request().postData() ?? '{}');
+			let updated = 0;
+			if (body.archived === true) {
+				const ids = new Set<string>(body.issue_ids ?? []);
+				// The real backend archives only completed-category issues.
+				for (let i = store.length - 1; i >= 0; i--) {
+					if (ids.has(store[i].id) && store[i].status_info?.category === 'completed') {
+						store.splice(i, 1);
+						updated++;
+					}
+				}
+			}
+			return route.fulfill({ json: { updated } });
+		}
 
 		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
 	});
-	return { issueRequests, patches };
+	return { issueRequests, patches, bulkPatches, store };
 }
 
 test.use({ viewport: { width: 1920, height: 1080 } });
@@ -250,4 +279,92 @@ test('moving a card to In Progress keeps it visible through the background refre
 	await page.waitForTimeout(500);
 	await expect(page.locator('div[aria-label="In Progress"]')).toContainText(VICTIM_TITLE);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
+});
+test('team header button archives every done issue in one bulk request', async ({ page }) => {
+	const { bulkPatches, store } = await mockTeamBoard(page);
+
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
+
+	const doneIds = store.filter((it) => it.status_info?.category === 'completed').map((it) => it.id);
+	expect(doneIds.length).toBeGreaterThan(30);
+
+	await page.locator('button[title^="Archive all done issues"]').click();
+
+	await expect.poll(() => bulkPatches.length, { timeout: 5_000 }).toBe(1);
+	const body = JSON.parse(bulkPatches[0]);
+	expect(body.archived).toBe(true);
+	expect([...body.issue_ids].sort()).toEqual([...doneIds].sort());
+
+	await expect(page.getByText(/Archived \d+ issues?/)).toBeVisible();
+	// Every done card disappears from the board; other columns keep theirs.
+	await expect(page.locator('div[aria-label="Done"]')).not.toContainText(DEEP_TAIL_TITLE);
+	await expect(page.locator('div[aria-label="Backlog"]')).toContainText(VICTIM_TITLE);
+});
+
+test('done column ... menu archives the whole column', async ({ page }) => {
+	const { bulkPatches, store } = await mockTeamBoard(page);
+
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText(DEEP_TAIL_TITLE)).toBeVisible();
+
+	const doneIds = store.filter((it) => it.status_info?.category === 'completed').map((it) => it.id);
+
+	const doneColumn = page.locator('div[aria-label="Done"]');
+	await doneColumn.locator('button[aria-label="Archive all"]').click();
+	await page.getByRole('menuitem', { name: 'Archive all' }).click();
+
+	await expect.poll(() => bulkPatches.length, { timeout: 5_000 }).toBe(1);
+	const body = JSON.parse(bulkPatches[0]);
+	expect(body.archived).toBe(true);
+	expect([...body.issue_ids].sort()).toEqual([...doneIds].sort());
+
+	await expect(doneColumn).not.toContainText(DEEP_TAIL_TITLE);
+	await expect(page.locator('div[aria-label="Backlog"]')).toContainText(VICTIM_TITLE);
+});
+
+test('column sort button reorders one column display-only', async ({ page }) => {
+	const { store, patches } = await mockTeamBoard(page);
+
+	// Give the Backlog column a non-monotonic priority spread.
+	const priorityByIdentifier: Record<string, number> = {};
+	for (const it of store) {
+		if (it.status_id === statusBacklog) {
+			it.priority = Number(it.id.replace('i-n', '').replace('i-', '')) % 5;
+			if (it.identifier === VICTIM_ID) it.priority = 0;
+			priorityByIdentifier[it.identifier] = it.priority;
+		}
+	}
+
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
+
+	const backlog = page.locator('div[aria-label="Backlog"]');
+	async function backlogIdentifiers(): Promise<string[]> {
+		const texts = await backlog.locator('span.text-xs').allInnerTexts();
+		return texts.filter((t) => /^DSH-/.test(t));
+	}
+
+	const manualOrder = await backlogIdentifiers();
+	const manualPriorities = manualOrder.map((id) => priorityByIdentifier[id]);
+	const isDescending = (values: number[]) => values.every((value, i) => i === 0 || values[i - 1] >= value);
+	// The seeded manual order is not priority-sorted…
+	expect(isDescending(manualPriorities)).toBe(false);
+
+	// …sorting by Priority reorders the column client-side…
+	await backlog.locator('button[aria-label="Sort column"]').click();
+	await page.getByRole('menuitem', { name: 'Priority' }).click();
+	await expect
+		.poll(async () => isDescending((await backlogIdentifiers()).map((id) => priorityByIdentifier[id])), {
+			timeout: 5_000
+		})
+		.toBe(true);
+
+	// …without a single server-side reorder request…
+	expect(patches.length).toBe(0);
+
+	// …and Manual puts the board order back.
+	await backlog.locator('button[aria-label="Sort column"]').click();
+	await page.getByRole('menuitem', { name: 'Manual order' }).click();
+	await expect.poll(async () => await backlogIdentifiers(), { timeout: 5_000 }).toEqual(manualOrder);
 });

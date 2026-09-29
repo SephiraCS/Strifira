@@ -147,6 +147,7 @@ type BulkUpdateIssueRequest struct {
 	LabelIDs   []string `json:"label_ids" validate:"omitempty,dive,uuid"`
 	CycleID    *string  `json:"cycle_id"`
 	ParentID   *string  `json:"parent_id"`
+	Archived   *bool    `json:"archived"`
 }
 
 type BulkDeleteIssueRequest struct {

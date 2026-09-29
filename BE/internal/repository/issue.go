@@ -516,7 +516,7 @@ func (r *IssueRepository) CycleIsActive(ctx context.Context, cycleID uuid.UUID) 
 	return active, err
 }
 
-func (r *IssueRepository) BulkUpdate(ctx context.Context, workspaceID uuid.UUID, issueIDs []uuid.UUID, status *string, priority *int, assigneeID *uuid.UUID, statusID *uuid.UUID, cycleID *uuid.UUID, cycleSet bool) (int, error) {
+func (r *IssueRepository) BulkUpdate(ctx context.Context, workspaceID uuid.UUID, issueIDs []uuid.UUID, status *string, priority *int, assigneeID *uuid.UUID, statusID *uuid.UUID, cycleID *uuid.UUID, cycleSet bool, archived *bool) (int, error) {
 	setClauses := []string{"updated_at = NOW()"}
 	args := []interface{}{workspaceID}
 	argIdx := 2
@@ -550,6 +550,15 @@ func (r *IssueRepository) BulkUpdate(ctx context.Context, workspaceID uuid.UUID,
 		args = append(args, cycleArg)
 		argIdx++
 	}
+	if archived != nil {
+		// Same archive semantics as SetArchived: archiving clears the
+		// auto-archive exemption, unarchiving grants it (a restored issue is
+		// never auto-archived again).
+		setClauses = append(setClauses, fmt.Sprintf("archived_at = CASE WHEN $%d THEN COALESCE(i.archived_at, NOW()) ELSE NULL END", argIdx))
+		setClauses = append(setClauses, fmt.Sprintf("auto_archive_exempt = CASE WHEN $%d THEN FALSE WHEN i.archived_at IS NOT NULL THEN TRUE ELSE i.auto_archive_exempt END", argIdx))
+		args = append(args, *archived)
+		argIdx++
+	}
 
 	if len(setClauses) == 1 {
 		return 0, nil
@@ -563,10 +572,21 @@ func (r *IssueRepository) BulkUpdate(ctx context.Context, workspaceID uuid.UUID,
 		argIdx++
 	}
 
+	// Archiving keeps only completed-category issues (same guard as
+	// SetArchived, so a concurrently reopened issue is skipped); unarchiving
+	// applies to every listed issue.
+	guard := ""
+	if archived != nil && *archived {
+		guard = fmt.Sprintf(" AND (NOT $%d OR %s = 'completed')", argIdx, issueStatusCategorySubqueryExpr("i"))
+		args = append(args, *archived)
+		argIdx++
+	}
+
 	query := fmt.Sprintf(
-		`UPDATE issues SET %s WHERE workspace_id = $1 AND id IN (%s)`,
+		`UPDATE issues i SET %s WHERE i.workspace_id = $1 AND i.id IN (%s)%s`,
 		strings.Join(setClauses, ", "),
 		strings.Join(idPlaceholders, ", "),
+		guard,
 	)
 
 	result, err := r.db.ExecContext(ctx, query, args...)

@@ -922,9 +922,24 @@ func (s *IssueService) BulkUpdate(ctx context.Context, workspaceID, userID uuid.
 		return s.bulkUpdateParent(ctx, workspaceID, userID, issueIDs, *req.ParentID)
 	}
 
-	n, err := s.issueRepo.BulkUpdate(ctx, workspaceID, issueIDs, req.Status, req.Priority, assigneeID, statusID, cycleID, cycleSet)
+	// Archive-only requests skip the per-issue loop below: it exists for
+	// status automation and update notifications, and an archive-all sweep
+	// would turn hundreds of rows into hundreds of GetByID round-trips and
+	// noisy notifications. The bulk broadcast at the end still refreshes
+	// every open board.
+	archiveOnly := req.Archived != nil && req.Status == nil && req.StatusID == nil &&
+		req.Priority == nil && req.AssigneeID == nil && req.CycleID == nil
+
+	n, err := s.issueRepo.BulkUpdate(ctx, workspaceID, issueIDs, req.Status, req.Priority, assigneeID, statusID, cycleID, cycleSet, req.Archived)
 	if err != nil {
 		return 0, err
+	}
+	if archiveOnly {
+		s.hub.Broadcast(workspaceID, realtime.Event{
+			Type:    "issues.bulk_updated",
+			Payload: map[string]interface{}{"count": n},
+		})
+		return n, nil
 	}
 	recipientCounts := make(map[uuid.UUID]int)
 	for _, id := range issueIDs {
@@ -1390,6 +1405,9 @@ func bulkUpdateFields(req dto.BulkUpdateIssueRequest) []string {
 	}
 	if req.LabelIDs != nil {
 		fields = append(fields, "labels")
+	}
+	if req.Archived != nil {
+		fields = append(fields, "archived")
 	}
 	return fields
 }

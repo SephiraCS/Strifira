@@ -31,7 +31,7 @@
 	import type { ViewFilter, ViewLayout } from '$lib/types/view';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Layers, SquareUser, SquaresSubtract, ChevronRight, Share2, Settings2 } from 'lucide-svelte';
+	import { Archive, Layers, SquareUser, SquaresSubtract, ChevronRight, Share2, Settings2 } from 'lucide-svelte';
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
 	import TeamRenameDialog from '$lib/features/teams/TeamRenameDialog.svelte';
 	import { hasPermission } from '$lib/security/permissions';
@@ -375,6 +375,31 @@
 		window.dispatchEvent(new CustomEvent('issues:bulk-delete-request'));
 	}
 
+	// "Done" issues are those a single-issue context menu would offer Archive
+	// on: a completed-category workflow status (legacy: status === 'done').
+	const doneIssueIds = $derived(
+		issuesState.issues
+			.filter((issue) =>
+				issue.status_info ? issue.status_info.category === 'completed' : issue.status === 'done'
+			)
+			.map((issue) => issue.id)
+	);
+
+	let archiveAllInFlight = false;
+
+	async function archiveAllDoneIssues() {
+		if (doneIssueIds.length === 0 || archiveAllInFlight) return;
+		archiveAllInFlight = true;
+		try {
+			const archived = await issuesState.bulkArchive(slug, doneIssueIds);
+			appToast.success(m['issues.archive_all.toast']({ n: archived, s: archived > 1 ? 's' : '' }));
+		} catch (err: any) {
+			appToast.apiError(err, m['issues.archive_all.failed']());
+		} finally {
+			archiveAllInFlight = false;
+		}
+	}
+
 	const keyHandler = createKeyboardHandler([
 		{
 			key: 'x',
@@ -462,6 +487,20 @@
 			{/if}
 		</div>
 		<div class="flex shrink-0 items-center gap-2">
+			{#if doneIssueIds.length > 0}
+				<!-- One click for every Done issue at once; the archived view
+					restores them individually if this catches too much. -->
+				<button
+					onclick={archiveAllDoneIssues}
+					class="flex items-center gap-1 rounded-md border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+					title={m['issues.archive_all.action']({ n: doneIssueIds.length })}
+					aria-label={m['issues.archive_all.action']({ n: doneIssueIds.length })}
+				>
+					<Archive size={12} />
+					<span class="hidden md:inline">{m['issues.archive_all.button']()}</span>
+				</button>
+			{/if}
+
 			<!-- Group by -->
 			{#if layout === 'list'}
 				<Popover.Root bind:open={groupByOpen}>

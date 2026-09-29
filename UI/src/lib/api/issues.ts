@@ -150,6 +150,7 @@ export function bulkUpdateIssues(
 		label_ids?: string[];
 		cycle_id?: string;
 		parent_id?: string;
+		archived?: boolean;
 	}
 ): Promise<{ updated: number }> {
 	return api.patch<{ updated: number }>(`/api/workspaces/${slug}/issues/bulk`, req);
