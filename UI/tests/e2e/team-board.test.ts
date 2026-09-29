@@ -232,6 +232,45 @@ test('team board initial load follows every page of the team issues', async ({ p
 	expect(issueRequests).toContain('3');
 });
 
+test('identical background refreshes cause no DOM churn on the board', async ({ page }) => {
+	const { issueRequests } = await mockTeamBoard(page);
+
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
+
+	// Every WS event, webhook burst, and reconcile tick ends in an
+	// app:refresh here. Identical data must not re-render the board:
+	// svelte-dnd-action re-applies per-item state whenever a column's items
+	// array reference changes, and that per-card churn (771 DOM mutations
+	// per refresh on a 252-issue board) is what made the board flicker.
+	const perRefresh = await page.evaluate(async () => {
+		const board = document.querySelector('main') ?? document.body;
+		const counts: number[] = [];
+		const observer = new MutationObserver((mutations) => {
+			counts[counts.length - 1] += mutations.length;
+		});
+		observer.observe(board, {
+			childList: true,
+			subtree: true,
+			characterData: true,
+			attributes: true
+		});
+		for (let i = 0; i < 3; i++) {
+			counts.push(0);
+			window.dispatchEvent(new CustomEvent('app:refresh', { detail: { resources: ['issues'] } }));
+			await new Promise((resolve) => setTimeout(resolve, 700));
+		}
+		observer.disconnect();
+		return counts;
+	});
+
+	// The refreshes really ran (board fetchAll → one request per page)…
+	const requestsAfter = issueRequests.length;
+	expect(requestsAfter).toBeGreaterThan(3);
+	// …but each identical refresh touched zero DOM nodes.
+	expect(perRefresh).toEqual([0, 0, 0]);
+});
+
 test('moving a card to In Progress keeps it visible through the background refresh', async ({ page }) => {
 	const { issueRequests, patches } = await mockTeamBoard(page);
 

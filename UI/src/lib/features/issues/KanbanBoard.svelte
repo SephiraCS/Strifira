@@ -68,27 +68,79 @@
 	let columnSorts = $state<Record<string, ColumnSortKey>>({});
 	let archiveInFlight = false;
 
+	// Last id/version sequence applied to each column. Background refreshes
+	// replace the issues array wholesale even when nothing changed; without
+	// this memo every one of them hands every column a new array,
+	// svelte-dnd-action re-initializes each zone (hundreds of DOM writes per
+	// refresh), and the whole board flickers.
+	const lastApplied = new Map<string, string[]>();
+
+	// Columns whose zone is mid-drag: svelte-dnd-action owns their order
+	// until finalize, so refreshes must not touch them.
+	const draggingColumns = new Set<string>();
+
+	function handleDragState(statusId: string, dragging: boolean) {
+		if (dragging) draggingColumns.add(statusId);
+		else draggingColumns.delete(statusId);
+	}
+
+	/** A column's canonical order is sort_order (the server's board order),
+	 * not the raw list order: a just-dropped issue gets its re-averaged
+	 * sort_order back from the PATCH response immediately, so the card stays
+	 * where it was dropped instead of flashing back to its old spot until
+	 * the next full refresh. */
+	function canonicalColumn(statusId: string): Issue[] {
+		return [...(issuesByStatus[statusId] ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+	}
+
+	function columnSignature(issues: Issue[]): string[] {
+		// updated_at is the server's per-issue version (every mutation bumps
+		// it), so an unchanged signature means nothing to re-render.
+		return issues.map((issue) => `${issue.id}@${issue.updated_at}`);
+	}
+
+	function sameSignature(a: string[] | undefined, b: string[]): boolean {
+		return (
+			a !== undefined && a.length === b.length && a.every((sig, i) => sig === b[i])
+		);
+	}
+
 	$effect(() => {
-		const copy: Record<string, Issue[]> = {};
+		const columnIds = new Set(columns.map((ts) => ts.id));
 		for (const ts of columns) {
+			if (draggingColumns.has(ts.id)) continue;
 			// Background refreshes re-copy the server order; re-apply the
 			// column's active sort so it survives every reload.
-			copy[ts.id] = sortColumnIssues([...(issuesByStatus[ts.id] ?? [])], columnSorts[ts.id] ?? null);
+			const incoming = sortColumnIssues(canonicalColumn(ts.id), columnSorts[ts.id] ?? null);
+			const signature = columnSignature(incoming);
+			if (sameSignature(lastApplied.get(ts.id), signature)) continue;
+			lastApplied.set(ts.id, signature);
+			localByStatus[ts.id] = incoming;
 		}
-		const columnIds = new Set(columns.map((ts) => ts.id));
+		for (const key of [...lastApplied.keys()]) {
+			if (!columnIds.has(key)) {
+				lastApplied.delete(key);
+				delete localByStatus[key];
+			}
+		}
 		const stuck: Issue[] = [];
 		for (const [key, issues] of Object.entries(issuesByStatus)) {
 			if (!columnIds.has(key)) stuck.push(...issues);
 		}
-		localByStatus = copy;
-		unmapped = stuck;
+		const stuckSignature = columnSignature(stuck);
+		if (!sameSignature(lastUnmapped, stuckSignature)) {
+			lastUnmapped = stuckSignature;
+			unmapped = stuck;
+		}
 	});
+
+	let lastUnmapped: string[] | undefined;
 
 	function handleSortChange(statusId: string, key: ColumnSortKey | null) {
 		if (key === null) {
 			delete columnSorts[statusId];
 			columnSorts = { ...columnSorts };
-			localByStatus[statusId] = [...(issuesByStatus[statusId] ?? [])];
+			localByStatus[statusId] = canonicalColumn(statusId);
 		} else {
 			columnSorts = { ...columnSorts, [statusId]: key };
 			localByStatus[statusId] = sortColumnIssues(localByStatus[statusId] ?? [], key);
@@ -170,28 +222,29 @@
 			{onissueclick}
 			onconsider={handleConsider}
 			onfinalize={handleFinalize}
+			ondragstate={handleDragState}
 			{onquickadd}
 			sortKey={columnSorts[ts.id] ?? null}
 			onsortchange={handleSortChange}
 			onarchiveall={handleArchiveAll}
 		/>
 	{/each}
-	{#if unmapped.length > 0}
-		<!-- Read-only bucket: keeps status-orphaned issues visible (and draggable
-			out into a real column) instead of dropping them from the board. -->
-		<KanbanColumn
-			statusId={unmappedStatus.id}
-			teamStatus={unmappedStatus}
-			issues={unmapped}
-			{slug}
-			{members}
-			{labels}
-			{onissueclick}
-			onconsider={handleConsider}
-			onfinalize={handleFinalize}
-			onsortchange={handleSortChange}
-		/>
-	{/if}
+		{#if unmapped.length > 0}
+			<!-- Read-only bucket: keeps status-orphaned issues visible (and draggable
+				out into a real column) instead of dropping them from the board. -->
+			<KanbanColumn
+				statusId={unmappedStatus.id}
+				teamStatus={unmappedStatus}
+				issues={unmapped}
+				{slug}
+				{members}
+				{labels}
+				{onissueclick}
+				onconsider={handleConsider}
+				onfinalize={handleFinalize}
+				ondragstate={handleDragState}
+			/>
+		{/if}
 {/snippet}
 
 {#if canReorderColumns}

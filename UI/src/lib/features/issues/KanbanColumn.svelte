@@ -30,7 +30,8 @@
 		onquickadd,
 		sortKey = null,
 		onsortchange,
-		onarchiveall
+		onarchiveall,
+		ondragstate
 	}: {
 		statusId: string;
 		teamStatus: TeamStatus;
@@ -45,6 +46,7 @@
 		sortKey?: ColumnSortKey | null;
 		onsortchange?: (statusId: string, key: ColumnSortKey | null) => void;
 		onarchiveall?: (statusId: string) => void;
+		ondragstate?: (statusId: string, dragging: boolean) => void;
 	} = $props();
 
 	// A sorted column is read-only ordering (like Linear): manual drag & drop
@@ -52,11 +54,16 @@
 	const sortingActive = $derived(sortKey !== null);
 	const canArchiveAll = $derived(teamStatus.category === 'completed' && issues.length > 0);
 
-	function handleConsider(e: CustomEvent<{ items: Issue[] }>) {
+	function handleConsider(e: CustomEvent<{ items: Issue[]; info?: { trigger?: string } }>) {
+		// The source zone's first consider event marks the drag start; the
+		// board freezes this column against background refreshes until
+		// finalize (svelte-dnd-action owns the order mid-drag).
+		if (e.detail.info?.trigger === 'dragStarted') ondragstate?.(statusId, true);
 		onconsider?.(statusId, e.detail.items);
 	}
 
 	function handleFinalize(e: CustomEvent<{ items: Issue[] }>) {
+		ondragstate?.(statusId, false);
 		onfinalize?.(statusId, e.detail.items);
 	}
 
@@ -131,32 +138,34 @@
 				<Plus size={14} />
 			</button>
 		{/if}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
-				class="rounded p-0.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] {sortingActive
-					? 'text-[var(--color-text-primary)]'
-					: ''}"
-				title={m['board.sort.button']()}
-				aria-label={m['board.sort.button']()}
-			>
-				<ArrowDownUp size={14} />
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="start" class="w-44">
-				{#each [null, ...COLUMN_SORT_KEYS] as key, i (key ?? 'manual')}
-					{#if i === 1}
-						<DropdownMenu.Separator />
-					{/if}
-					<DropdownMenu.Item onclick={() => onsortchange?.(statusId, key)}>
-						<span class="flex w-full items-center gap-2">
-							<span class="flex h-4 w-4 items-center justify-center">
-								{#if sortKey === key}<Check size={12} />{/if}
+		{#if onsortchange}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class="rounded p-0.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] {sortingActive
+						? 'text-[var(--color-text-primary)]'
+						: ''}"
+					title={m['board.sort.button']()}
+					aria-label={m['board.sort.button']()}
+				>
+						<ArrowDownUp size={14} />
+					</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="start" class="w-44">
+					{#each [null, ...COLUMN_SORT_KEYS] as key, i (key ?? 'manual')}
+						{#if i === 1}
+							<DropdownMenu.Separator />
+						{/if}
+						<DropdownMenu.Item onclick={() => onsortchange?.(statusId, key)}>
+							<span class="flex w-full items-center gap-2">
+								<span class="flex h-4 w-4 items-center justify-center">
+									{#if sortKey === key}<Check size={12} />{/if}
+								</span>
+								{sortOptionLabel(key)}
 							</span>
-							{sortOptionLabel(key)}
-						</span>
-					</DropdownMenu.Item>
-				{/each}
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+						</DropdownMenu.Item>
+					{/each}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/if}
 		{#if canArchiveAll}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
