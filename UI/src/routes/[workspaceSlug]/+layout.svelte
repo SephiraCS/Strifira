@@ -110,6 +110,22 @@
 		}
 	}
 
+	// WebSocket bursts (webhook processing emits issue.updated + app.refresh
+	// together; bulk ops emit one event per issue) must collapse into a single
+	// trailing refetch — one reload per event made the issue boards flicker.
+	let issuesRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	function scheduleIssuesRefresh() {
+		if (issuesRefreshTimer) clearTimeout(issuesRefreshTimer);
+		issuesRefreshTimer = setTimeout(() => {
+			issuesRefreshTimer = null;
+			// Background reload: keep the current list on screen (loading stays
+			// false — boards render nothing while it is true).
+			if (slug && issuesState.issues.length > 0) {
+				void issuesState.load(slug, issuesState.filters, false);
+			}
+		}, 300);
+	}
+
 	function handleAppRefresh(e: Event) {
 		const detail = (e as CustomEvent<{ slug?: string; resources?: string[] }>).detail;
 		if (detail?.slug && detail.slug !== slug) return;
@@ -118,12 +134,12 @@
 		if (!resources || resources.length === 0) {
 			loadWorkspaceData(slug);
 			if (issuesState.issues.length > 0) {
-				issuesState.load(slug, issuesState.filters);
+				scheduleIssuesRefresh();
 			}
 			return;
 		}
 		if (resources.includes('issues') && issuesState.issues.length > 0) {
-			issuesState.load(slug, issuesState.filters);
+			scheduleIssuesRefresh();
 		}
 		if (resources.includes('workspace')) {
 			getWorkspace(slug).then((ws) => { workspace = ws; }).catch(() => {});
@@ -373,6 +389,10 @@
 	onDestroy(() => {
 		wsDestroyed = true;
 		clearWebSocketReconnect();
+		if (issuesRefreshTimer) {
+			clearTimeout(issuesRefreshTimer);
+			issuesRefreshTimer = null;
+		}
 		ws_conn?.close();
 		window.removeEventListener('ws:send', handleWSSend as EventListener);
 		window.removeEventListener('online', handleWSOnline);
@@ -456,16 +476,12 @@
 			case 'issue.triaged':
 			case 'issues.bulk_updated':
 			case 'issues.bulk_deleted': {
-				if (slug && issuesState.issues.length > 0) {
-					issuesState.load(slug, issuesState.filters, false);
-				}
+				scheduleIssuesRefresh();
 				window.dispatchEvent(new CustomEvent('ws:issue-updated', { detail: msg.payload }));
 				break;
 			}
 			case 'issue.deleted': {
-				if (slug && issuesState.issues.length > 0) {
-					issuesState.load(slug, issuesState.filters, false);
-				}
+				scheduleIssuesRefresh();
 				window.dispatchEvent(new CustomEvent('ws:issue-deleted', { detail: msg.payload }));
 				break;
 			}

@@ -611,23 +611,29 @@
 				onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
 			/>
 		</div>
-	{:else if !issuesState.loading}
-		<div class="flex-1 overflow-hidden">
-			<KanbanBoard
-				issuesByStatus={issuesState.issuesByStatus}
-				{slug}
-				{members}
-				{labels}
-				onissueclick={handleIssueClick}
-				onquickadd={(statusId) => {
-					// Board columns always represent statuses, independent of list group-by.
-					quickAddDefaults = { statusId };
-					showCreateIssue = true;
-				}}
-			/>
-		</div>
-	{/if}
-</div>
+		{:else if issuesState.issues.length > 0 || !issuesState.loading}
+			<div class="flex-1 overflow-hidden">
+				<KanbanBoard
+					issuesByStatus={issuesState.issuesByStatus}
+					{slug}
+					{members}
+					{labels}
+					onissueclick={handleIssueClick}
+					onquickadd={(statusId) => {
+						// Board columns always represent statuses, independent of list group-by.
+						quickAddDefaults = { statusId };
+						showCreateIssue = true;
+					}}
+				/>
+			</div>
+		{:else}
+			<!-- First load only; later refetches keep the current board on screen
+				instead of blanking it (the old blank-flash). -->
+			<div class="flex flex-1 items-center justify-center">
+				<div class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-text-tertiary)] border-t-transparent"></div>
+			</div>
+		{/if}
+	</div>
 
 {#if issuesState.selectedIssue}
 	<IssueDetail issue={issuesState.selectedIssue} {slug} onclose={() => issuesState.select(null)} />

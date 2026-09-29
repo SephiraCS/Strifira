@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const teamA = '00000000-0000-0000-0000-0000000000a1';
 const teamB = '00000000-0000-0000-0000-0000000000b2';
@@ -25,7 +25,8 @@ function issue(id: string, identifier: string, title: string, teamId: string, st
 	};
 }
 
-test('my issues board renders one section per team and never hides orphaned statuses', async ({ page }) => {
+async function mockMyIssuesBoard(page: Page) {
+	const issueRequests: string[] = [];
 	const unhandled: string[] = [];
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', (route) => {
@@ -87,6 +88,7 @@ test('my issues board renders one section per team and never hides orphaned stat
 			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		}
 		if (path === '/api/workspaces/test/issues') {
+			issueRequests.push(path);
 			return route.fulfill({
 				json: {
 					data: [
@@ -104,6 +106,11 @@ test('my issues board renders one section per team and never hides orphaned stat
 		unhandled.push(path);
 		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
 	});
+	return { issueRequests, unhandled };
+}
+
+test('my issues board renders one section per team and never hides orphaned statuses', async ({ page }) => {
+	const { unhandled } = await mockMyIssuesBoard(page);
 
 	await page.goto('/test/my-issues');
 
@@ -121,4 +128,39 @@ test('my issues board renders one section per team and never hides orphaned stat
 	await expect(page.getByText('Orphaned status issue')).toBeVisible();
 	await expect(page.getByLabel('No status').first()).toBeVisible();
 	expect(unhandled).toEqual([]);
+});
+
+test('app.refresh bursts coalesce into one background reload and never blank the board', async ({ page }) => {
+	const { issueRequests } = await mockMyIssuesBoard(page);
+
+	await page.goto('/test/my-issues');
+	await expect(page.getByText('Alpha todo issue')).toBeVisible();
+
+	const requestsBefore = issueRequests.length;
+
+	// Burst of refresh events — what webhook processing and the five-minute
+	// Forgejo reconciler deliver (each used to trigger its own immediate
+	// reload with the loading flag up, blanking the whole board).
+	for (let i = 0; i < 3; i++) {
+		await page.evaluate(() => {
+			window.dispatchEvent(new CustomEvent('app:refresh', { detail: { resources: ['issues'] } }));
+		});
+	}
+
+	// The board card must stay attached and visible across the entire
+	// debounce + refetch window (the old code unmounted it while loading).
+	const stayedVisible = await page.evaluate(async () => {
+		const card = [...document.querySelectorAll<HTMLElement>('p')].find((el) => el.textContent === 'Alpha todo issue');
+		if (!card) return false;
+		for (let i = 0; i < 16; i++) {
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			if (!card.isConnected || card.getBoundingClientRect().height === 0) return false;
+		}
+		return true;
+	});
+	expect(stayedVisible).toBe(true);
+
+	// The whole burst produced exactly one trailing refetch.
+	await expect.poll(() => issueRequests.length - requestsBefore, { timeout: 3_000 }).toBe(1);
+	await expect(page.getByText('Alpha todo issue')).toBeVisible();
 });

@@ -371,7 +371,7 @@
 			</div>
 		{:else}
 			<div class="flex-1 min-h-0 px-4 py-3">
-				{#if !issuesState.loading}
+				{#if issuesState.issues.length > 0 || !issuesState.loading}
 					<GanttChart
 						issues={issuesState.issues}
 						{cycles}

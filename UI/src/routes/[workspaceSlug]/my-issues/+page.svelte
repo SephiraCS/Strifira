@@ -324,7 +324,7 @@
 				onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
 			/>
 		</div>
-	{:else if !issuesState.loading}
+		{:else if issuesState.issues.length > 0 || !issuesState.loading}
 		{#if issuesState.issues.length === 0}
 			<div class="flex-1 overflow-y-auto">
 				<EmptyState
@@ -375,6 +375,12 @@
 				{/each}
 			</div>
 		{/if}
+	{:else}
+		<!-- First load only; later refetches keep the current board on screen
+			instead of blanking it (the old blank-flash). -->
+		<div class="flex flex-1 items-center justify-center">
+			<div class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-text-tertiary)] border-t-transparent"></div>
+		</div>
 	{/if}
 </div>
 
