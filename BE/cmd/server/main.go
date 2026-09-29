@@ -17,6 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ku/ku-backend/internal/agent"
+	"github.com/ku/ku-backend/internal/apidocs"
 	"github.com/ku/ku-backend/internal/config"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/handler"
@@ -272,6 +273,11 @@ func main() {
 	// Health
 	e.GET("/health", healthH.Health)
 	e.GET("/ready", healthH.Ready)
+
+	// OpenAPI description (public; the Scalar reference page it feeds is
+	// served by the SPA at /docs, same-origin)
+	e.GET("/api/openapi.json", apidocs.SpecHandler)
+	e.GET("/api/docs", apidocs.DocsRedirect)
 
 	// Auth (public). No rate limiting or login lockout: several users share
 	// one egress IP (office NAT) and jointly exhausted the per-IP auth

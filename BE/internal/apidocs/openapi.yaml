@@ -1,0 +1,4262 @@
+# Ku REST API — OpenAPI 3.1 description.
+#
+# Single source of truth for the HTTP surface registered in
+# cmd/server/main.go. Served same-origin at /api/openapi.json and browsed
+# through the Scalar page at /docs. The parity test in this package fails
+# when a route is registered in main.go without an entry here (or vice
+# versa), so extend this file in the same change as any route addition.
+openapi: 3.1.0
+
+info:
+  title: Ku API
+  version: 0.2.9
+  summary: Issue tracker REST API behind ku.mariogk.com
+  description: |
+    Ku is a Linear-style issue tracker. This document describes the REST API
+    served by the Go backend under `/api` (plus `/health`, `/ready`, `/mcp`,
+    and the public share/avatar paths), as deployed at
+    [ku.mariogk.com](https://ku.mariogk.com/).
+
+    ## Authentication
+
+    Most routes require a JWT. The web UI authenticates with rotating
+    HttpOnly cookies (`access_token`, 15 minutes, and `refresh_token`);
+    programmatic clients send `Authorization: Bearer <access_token>` where
+    the token comes from `POST /api/auth/login`. Refresh-token rotation is
+    race-tolerant (30-second grace window for contexts sharing one cookie
+    jar).
+
+    The MCP endpoint is different: it authenticates with a **personal API
+    key** (`Authorization: Bearer ku_...`) created under
+    Settings → Personal → API Keys.
+
+    ## Authorization
+
+    Routes under `/api/workspaces/{slug}` require membership of that
+    workspace and enforce role permissions per call. Roles: `owner`,
+    `admin`, `member`, `guest` (guests get read-only surfaces). Permission
+    requirements are noted per operation (e.g. `team:manage`).
+
+    ## Conventions
+
+    * Errors use `{"error": {"code": "...", "message": "...", "details": [...]}}`.
+    * Paginated lists return `{data, total_count, page, per_page, has_more}`
+      (up to 100 items per page); other lists return plain arrays.
+    * Issues are referenced by their human identifier (`ENG-12`) or UUID.
+    * Workspace entities (teams, labels, projects, cycles…) are UUID-keyed.
+    * Live updates ride the workspace WebSocket `/api/workspaces/{slug}/ws`.
+  license:
+    name: Fork of carbogninalberto/kuayle
+    url: https://github.com/carbogninalberto/kuayle
+
+# No servers entry: the document is served same-origin, so clients explore
+# against whichever origin they loaded it from.
+
+tags:
+  - name: Auth
+    description: "Registration, login, token refresh, logout, and the current user."
+  - name: Preferences
+    description: "Per-user UI preferences (theme, workflow sort, default view layout)."
+  - name: System
+    description: "Self-update status and trigger (sysadmin)."
+  - name: API Keys
+    description: "Personal API keys used for the MCP endpoint. Keys are shown once at creation."
+  - name: Notifications
+    description: "User-scoped inbox notifications (issue mentions, assignments, ...)."
+  - name: Workspaces
+    description: "Workspace list, creation, and import/export. Workspace-scoped routes live under /api/workspaces/{slug} and require membership."
+  - name: Members
+    description: "Workspace membership: invites, roles, removal."
+  - name: Teams
+    description: "Teams group issues; the team key prefixes issue identifiers (ENG-12)."
+  - name: Team Statuses
+    description: "Per-team workflow states (custom kanban columns), each in a category."
+  - name: Projects
+    description: "Projects optionally attach to a team and roll up issue progress."
+  - name: Cycles
+    description: "Time-boxed iterations per team with burndown and velocity analytics."
+  - name: Issues
+    description: "Issue CRUD, bulk operations, archive, subscribe, duplicate, triage, history."
+  - name: Comments
+    description: "Threaded issue comments with resolve/reopen."
+  - name: Relations
+    description: "Issue relations: related / blocked_by / blocking / duplicate."
+  - name: Issue Templates
+    description: "Recurring issue templates that spawn issues on a schedule."
+  - name: Labels
+    description: "Workspace labels with colors and optional parent hierarchy."
+  - name: Views
+    description: "Saved per-user (or shared) issue filter views."
+  - name: Favorites
+    description: "Sidebar favorites pinning projects, views, teams, cycles, labels."
+  - name: Shared Links
+    description: "Public read-only share links for a scope (workspace/team/project/view)."
+  - name: Public Shares
+    description: "Unauthenticated surfaces consumed by public share pages."
+  - name: Screen Shares
+    description: "P2P WebRTC screen-share sessions signaled over the workspace WebSocket."
+  - name: Analytics
+    description: "Workspace analytics: overview, distribution, insights, burnup."
+  - name: Webhooks
+    description: "Outgoing workspace webhooks (generic events)."
+  - name: AI
+    description: "Workspace AI settings and text rework endpoints (OpenAI-compatible providers)."
+  - name: Forgejo
+    description: "Forgejo integration: connection, repo linking, user mappings, automation rules, and the inbound webhook."
+  - name: Dev Machines
+    description: "Ephemeral development machines (agent/IDE host integration). Guarded by dev_machine:* permissions."
+  - name: Uploads
+    description: "Issue attachment uploads and asset delivery."
+  - name: Avatars
+    description: "Public user and workspace avatar images."
+  - name: Realtime
+    description: "Workspace WebSocket for live updates and screen-share signaling."
+  - name: MCP
+    description: "Model Context Protocol endpoint (44 tools, full UI parity) for agents."
+  - name: Health
+    description: "Liveness and readiness probes."
+
+security:
+  - jwtAuth: []
+
+paths:
+  /health:
+    get:
+      operationId: health
+      tags: [Health]
+      summary: Liveness probe
+      security: []
+      responses:
+        "200":
+          description: Service is up (checks a database round-trip).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /ready:
+    get:
+      operationId: ready
+      tags: [Health]
+      summary: Readiness probe
+      security: []
+      responses:
+        "200":
+          description: Service is ready to serve traffic.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /api/openapi.json:
+    get:
+      operationId: openapiSpec
+      tags: [Health]
+      summary: This OpenAPI document
+      description: The machine-readable description of every route in this file, served same-origin. Browse it through the Scalar page at /docs.
+      security: []
+      responses:
+        "200":
+          description: OpenAPI 3.1 document.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/docs:
+    get:
+      operationId: apiDocsRedirect
+      tags: [Health]
+      summary: Redirect to the API docs page
+      description: Convenience redirect to the Scalar reference page served by the SPA at /docs.
+      security: []
+      responses:
+        "302":
+          description: Redirect to /docs.
+
+  /api/auth/register:
+    post:
+      operationId: register
+      tags: [Auth]
+      summary: Register an account
+      description: |
+        Creates a user and starts a session (sets auth cookies). The first
+        registered account owns the instance; later registrations can be
+        disabled by closing the workspace. Passwords must be 12–128 chars.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Account created; auth cookies set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409":
+          description: Email already registered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/auth/login:
+    post:
+      operationId: login
+      tags: [Auth]
+      summary: Log in
+      description: |
+        Exchange email + password for a 15-minute access token. The response
+        sets `access_token` and rotating `refresh_token` HttpOnly cookies;
+        the same access token is returned in the body for programmatic
+        clients. No rate limiting by operator directive (shared egress IPs).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated; cookies set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/refresh:
+    post:
+      operationId: refresh
+      tags: [Auth]
+      summary: Rotate the session
+      description: |
+        Consumes the `refresh_token` cookie and issues a fresh access token
+        + refresh cookie. Rotation is atomic with a 30-second grace window,
+        so contexts sharing one cookie jar can race safely; replays beyond
+        grace are rejected and clear the cookies.
+      security: []
+      responses:
+        "200":
+          description: New tokens issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/logout:
+    post:
+      operationId: logout
+      tags: [Auth]
+      summary: Log out
+      description: Deletes the refresh token for the presenting cookie jar and clears auth cookies.
+      security: []
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/auth/me:
+    get:
+      operationId: getMe
+      tags: [Auth]
+      summary: Current user
+      responses:
+        "200":
+          description: The authenticated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    patch:
+      operationId: updateProfile
+      tags: [Auth]
+      summary: Update profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProfileRequest" }
+      responses:
+        "200":
+          description: Updated user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  /api/auth/me/avatar:
+    post:
+      operationId: uploadMyAvatar
+      tags: [Avatars, Auth]
+      summary: Upload the current user's avatar
+      description: PNG/JPEG/GIF/WebP/AVIF/BMP/SVG up to 5 MB, magic-byte sniffed.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AvatarUpload"
+      responses:
+        "200":
+          description: Avatar stored; `avatar_url` points at `/api/avatars/{userId}`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    delete:
+      operationId: removeMyAvatar
+      tags: [Avatars, Auth]
+      summary: Remove the current user's avatar
+      responses:
+        "200":
+          description: Avatar removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  /api/preferences:
+    get:
+      operationId: getPreferences
+      tags: [Preferences]
+      summary: Get UI preferences
+      responses:
+        "200":
+          description: Stored preferences (with defaults applied).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPreferences" }
+    patch:
+      operationId: updatePreferences
+      tags: [Preferences]
+      summary: Update UI preferences
+      description: Partial update; omitted keys keep their stored values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdatePreferencesRequest" }
+      responses:
+        "200":
+          description: Updated preferences.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPreferences" }
+
+  /api/system/update-status:
+    get:
+      operationId: systemUpdateStatus
+      tags: [System]
+      summary: Self-update status
+      responses:
+        "200":
+          description: Updater status payload.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/system/update:
+    post:
+      operationId: systemStartUpdate
+      tags: [System]
+      summary: Trigger a self-update
+      description: Sysadmin-only; asks the configured updater service to start.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/workspaces:
+    get:
+      operationId: listWorkspaces
+      tags: [Workspaces]
+      summary: List my workspaces
+      responses:
+        "200":
+          description: Workspaces the caller belongs to.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Workspace" }
+    post:
+      operationId: createWorkspace
+      tags: [Workspaces]
+      summary: Create a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWorkspaceRequest" }
+      responses:
+        "201":
+          description: Created workspace; creator becomes owner.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        "409":
+          description: Slug already taken.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /api/workspaces/import/preview:
+    post:
+      operationId: previewWorkspaceImport
+      tags: [Workspaces]
+      summary: Preview a workspace import
+      description: Parses an export archive and reports what would be imported.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImportUpload"
+      responses:
+        "200":
+          description: Import preview summary.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/import:
+    post:
+      operationId: importWorkspace
+      tags: [Workspaces]
+      summary: Import a workspace
+      description: Imports an export archive as a new workspace.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ImportUpload"
+      responses:
+        "201":
+          description: Import result summary.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: getWorkspace
+      tags: [Workspaces]
+      summary: Get a workspace
+      responses:
+        "200":
+          description: Workspace with the caller's role.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateWorkspace
+      tags: [Workspaces]
+      summary: Update a workspace
+      description: "Requires: owner."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWorkspaceRequest" }
+      responses:
+        "200":
+          description: Updated workspace.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+    delete:
+      operationId: deleteWorkspace
+      tags: [Workspaces]
+      summary: Delete a workspace
+      description: "Requires: owner. Irreversible; deletes all contained data."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/avatar:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: uploadWorkspaceAvatar
+      tags: [Avatars, Workspaces]
+      summary: Upload the workspace logo
+      description: "Requires: owner. Same image rules as user avatars."
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/AvatarUpload"
+      responses:
+        "200":
+          description: Updated workspace.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+    delete:
+      operationId: removeWorkspaceAvatar
+      tags: [Avatars, Workspaces]
+      summary: Remove the workspace logo
+      description: "Requires: owner."
+      responses:
+        "200":
+          description: Updated workspace.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workspace" }
+
+  /api/workspaces/{slug}/export:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: exportWorkspace
+      tags: [Workspaces]
+      summary: Export a workspace
+      description: "Requires: workspace transfer permission. Returns a downloadable export archive."
+      responses:
+        "200":
+          description: Export archive.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  /api/workspaces/{slug}/invite:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: inviteMember
+      tags: [Members]
+      summary: Invite a member
+      description: "Requires: member:invite."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InviteMemberRequest" }
+      responses:
+        "201":
+          description: Membership created (existing user) or invite recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMember" }
+
+  /api/workspaces/{slug}/members:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMembers
+      tags: [Members]
+      summary: List members
+      responses:
+        "200":
+          description: Workspace members.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WorkspaceMember" }
+
+  /api/workspaces/{slug}/members/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/UserId"
+    patch:
+      operationId: updateMemberRole
+      tags: [Members]
+      summary: Change a member's role
+      description: "Requires: member:invite. Only the owner can promote to owner."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:
+                  type: string
+                  enum: [owner, admin, member, guest]
+      responses:
+        "200":
+          description: Updated membership.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorkspaceMember" }
+    delete:
+      operationId: removeMember
+      tags: [Members]
+      summary: Remove a member
+      description: "Requires: member:invite."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/teams:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listTeams
+      tags: [Teams]
+      summary: List teams
+      responses:
+        "200":
+          description: Teams in the workspace.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Team" }
+    post:
+      operationId: createTeam
+      tags: [Teams]
+      summary: Create a team
+      description: "Requires: team:manage. The key (1–10 uppercase letters) prefixes issue identifiers."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamRequest" }
+      responses:
+        "201":
+          description: Created team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+
+  /api/workspaces/{slug}/teams/{teamId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: getTeam
+      tags: [Teams]
+      summary: Get a team
+      responses:
+        "200":
+          description: Team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateTeam
+      tags: [Teams]
+      summary: Update a team (or rename its key)
+      description: |
+        Requires: team:manage. Changing `key` rewrites every issue
+        identifier (ENG-12 → NEW-12) in one transaction; a collision with
+        another team's key rejects with `409 TEAM_KEY_COLLISION` and changes
+        nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTeamRequest" }
+      responses:
+        "200":
+          description: Updated team.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "409":
+          description: TEAM_KEY_COLLISION — another team already issues identifiers under the new key.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    delete:
+      operationId: deleteTeam
+      tags: [Teams]
+      summary: Delete a team
+      description: "Requires: team:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/teams/{teamId}/leave:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+    post:
+      operationId: leaveTeam
+      tags: [Teams]
+      summary: Leave a team
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/teams/{teamId}/statuses:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: listTeamStates
+      tags: [Team Statuses]
+      summary: List workflow states
+      responses:
+        "200":
+          description: Ordered workflow states for the team.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TeamStatus" }
+    post:
+      operationId: createTeamState
+      tags: [Team Statuses]
+      summary: Create a workflow state
+      description: "Requires: team:manage. Category drives kanban grouping."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamStatusRequest" }
+      responses:
+        "201":
+          description: Created state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamStatus" }
+
+  /api/workspaces/{slug}/teams/{teamId}/statuses/{statusId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/StatusId"
+    patch:
+      operationId: updateTeamState
+      tags: [Team Statuses]
+      summary: Update a workflow state
+      description: "Requires: team:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTeamStatusRequest" }
+      responses:
+        "200":
+          description: Updated state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamStatus" }
+    delete:
+      operationId: deleteTeamState
+      tags: [Team Statuses]
+      summary: Delete a workflow state
+      description: "Requires: team:manage. Issues on it move to the default state."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/teams/{teamId}/cycles:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: listCycles
+      tags: [Cycles]
+      summary: List cycles
+      responses:
+        "200":
+          description: Cycles for the team.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Cycle" }
+    post:
+      operationId: createCycle
+      tags: [Cycles]
+      summary: Create a cycle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCycleRequest" }
+      responses:
+        "201":
+          description: Created cycle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cycle" }
+
+  /api/workspaces/{slug}/teams/{teamId}/cycles/velocity:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: cycleVelocity
+      tags: [Cycles]
+      summary: Cycle velocity history
+      responses:
+        "200":
+          description: Completed/cancelled counts per cycle.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/VelocityPoint" }
+
+  /api/workspaces/{slug}/teams/{teamId}/cycles/{cycleId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/CycleId"
+    get:
+      operationId: getCycle
+      tags: [Cycles]
+      summary: Get a cycle
+      responses:
+        "200":
+          description: Cycle with progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cycle" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateCycle
+      tags: [Cycles]
+      summary: Update a cycle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateCycleRequest" }
+      responses:
+        "200":
+          description: Updated cycle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cycle" }
+    delete:
+      operationId: deleteCycle
+      tags: [Cycles]
+      summary: Delete a cycle
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/teams/{teamId}/cycles/{cycleId}/complete:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/CycleId"
+    post:
+      operationId: completeCycle
+      tags: [Cycles]
+      summary: Complete a cycle
+      description: Optionally carries unfinished issues into the next cycle.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompleteCycleRequest" }
+      responses:
+        "200":
+          description: Completed cycle.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Cycle" }
+
+  /api/workspaces/{slug}/teams/{teamId}/cycles/{cycleId}/burndown:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+      - $ref: "#/components/parameters/CycleId"
+    get:
+      operationId: cycleBurndown
+      tags: [Cycles]
+      summary: Cycle burndown series
+      responses:
+        "200":
+          description: Daily scope/started/completed points.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BurndownPoint" }
+
+  /api/workspaces/{slug}/issues:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listIssues
+      tags: [Issues]
+      summary: List issues
+      description: |
+        Paginated (default 50, max 100 per page). Boards that need every
+        issue follow all pages. Filters combine with AND.
+      parameters:
+        - { $ref: "#/components/parameters/Page" }
+        - { $ref: "#/components/parameters/PerPage" }
+        - { name: status, in: query, schema: { type: string }, description: "Default state filter (backlog/todo/in_progress/in_review/done/canceled)." }
+        - { name: status_type, in: query, schema: { type: string }, description: "State category (backlog/unstarted/started/completed/cancelled)." }
+        - { name: status_id, in: query, schema: { type: string, format: uuid }, description: Exact workflow state id." }
+        - { name: archived, in: query, schema: { type: string, enum: ["true", "false"] }, description: "Filter by archived flag." }
+        - { name: priority, in: query, schema: { type: string }, description: "0–4 (none/urgent/high/medium/low)." }
+        - { name: assignee, in: query, schema: { type: string, format: uuid }, description: "Assignee user id." }
+        - { name: creator, in: query, schema: { type: string, format: uuid }, description: "Creator user id." }
+        - { name: team, in: query, schema: { type: string, format: uuid }, description: "Team id." }
+        - { name: project, in: query, schema: { type: string, format: uuid }, description: "Project id." }
+        - { name: cycle, in: query, schema: { type: string, format: uuid }, description: "Cycle id." }
+        - { name: label, in: query, schema: { type: string, format: uuid }, description: "Label id." }
+        - { name: search, in: query, schema: { type: string }, description: "Title/description substring." }
+        - { name: due_before, in: query, schema: { type: string, format: date }, description: "Due date upper bound." }
+        - { name: due_after, in: query, schema: { type: string, format: date }, description: "Due date lower bound." }
+        - { name: triaged, in: query, schema: { type: string }, description: "Triage filter for triage-enabled teams." }
+        - { name: sub_issues, in: query, schema: { type: string }, description: "Sub-issue filter." }
+        - { name: parent_id, in: query, schema: { type: string, format: uuid }, description: "Parent issue id." }
+        - { name: group_by, in: query, schema: { type: string, enum: [status, priority, assignee, project] } }
+        - { name: sort, in: query, schema: { type: string, enum: [created_at, updated_at, priority, sort_order, status, due_date] } }
+        - { name: order, in: query, schema: { type: string, enum: [asc, desc] } }
+      responses:
+        "200":
+          description: Paginated issues.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginationMeta"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items: { $ref: "#/components/schemas/Issue" }
+    post:
+      operationId: createIssue
+      tags: [Issues]
+      summary: Create an issue
+      description: "Requires: issue:create. Status defaults to the team's default state."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateIssueRequest" }
+      responses:
+        "201":
+          description: Created issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+
+  /api/workspaces/{slug}/issues/bulk:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    patch:
+      operationId: bulkUpdateIssues
+      tags: [Issues]
+      summary: Bulk update issues
+      description: |
+        Requires: issue:update. Mirrors single-issue semantics per issue:
+        completed-category guard skips concurrently reopened issues,
+        archiving clears `auto_archive_exempt`. Broadcasts
+        `issues.bulk_updated` over the workspace WebSocket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BulkUpdateIssuesRequest" }
+      responses:
+        "200":
+          description: Update result (updated issue ids and counts).
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    delete:
+      operationId: bulkDeleteIssues
+      tags: [Issues]
+      summary: Bulk delete issues
+      description: "Requires: issue:delete_own."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [issue_ids]
+              properties:
+                issue_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/issues/{identifier}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    get:
+      operationId: getIssue
+      tags: [Issues]
+      summary: Get an issue
+      description: Returns labels, creator, assignees, relation counts, and sub-issue tallies.
+      responses:
+        "200":
+          description: Issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateIssue
+      tags: [Issues]
+      summary: Update an issue
+      description: |
+        Requires: issue:update. Status changes fail closed with
+        `400 INVALID_STATUS` on unknown or cross-team state ids. Send
+        `sort_order` when moving cards to keep ordering stable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateIssueRequest" }
+      responses:
+        "200":
+          description: Updated issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+    delete:
+      operationId: deleteIssue
+      tags: [Issues]
+      summary: Delete an issue
+      description: "Requires: issue:delete_own."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/issues/{identifier}/archive:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: archiveIssue
+      tags: [Issues]
+      summary: Archive an issue
+      description: "Requires: issue:update. Only completed-category issues can be archived; clears `auto_archive_exempt`."
+      responses:
+        "200":
+          description: Archived issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+    delete:
+      operationId: unarchiveIssue
+      tags: [Issues]
+      summary: Unarchive an issue
+      description: "Requires: issue:update."
+      responses:
+        "200":
+          description: Restored issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+
+  /api/workspaces/{slug}/issues/{identifier}/subscribe:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: subscribeIssue
+      tags: [Issues]
+      summary: Subscribe to issue notifications
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    delete:
+      operationId: unsubscribeIssue
+      tags: [Issues]
+      summary: Unsubscribe from issue notifications
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/issues/{identifier}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: duplicateIssue
+      tags: [Issues]
+      summary: Duplicate an issue
+      description: "Requires: issue:create. Optionally includes sub-issues."
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                include_sub_issues: { type: boolean, default: false }
+      responses:
+        "201":
+          description: The new copy.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+
+  /api/workspaces/{slug}/issues/{identifier}/convert-to-project:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: convertIssueToProject
+      tags: [Issues, Projects]
+      summary: Convert an issue into a project
+      description: "Requires: project:manage."
+      responses:
+        "201":
+          description: The created project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+
+  /api/workspaces/{slug}/issues/{identifier}/expand-description:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: expandIssueDescription
+      tags: [AI]
+      summary: AI-expand an issue description
+      description: |
+        Requires: issue:update. Uses the workspace AI settings
+        (OpenAI-compatible provider). Returns a suggestion; it is not saved
+        to the issue. `AI_NOT_CONFIGURED` (400) when the workspace has no
+        AI settings.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                selected_text:
+                  type: string
+                  maxLength: 8000
+                  description: Rework only this selection instead of the whole description.
+      responses:
+        "200":
+          description: Suggested description HTML fragment.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  description: { type: string }
+
+  /api/workspaces/{slug}/issues/{identifier}/comments:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    get:
+      operationId: listComments
+      tags: [Comments]
+      summary: List issue comments (threaded)
+      responses:
+        "200":
+          description: Threaded comments with authors.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Comment" }
+    post:
+      operationId: createComment
+      tags: [Comments]
+      summary: Comment on an issue
+      description: "Requires: issue:create. Set `parent_id` to reply."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCommentRequest" }
+      responses:
+        "201":
+          description: Created comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+
+  /api/workspaces/{slug}/issues/{identifier}/comments/{commentId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+      - $ref: "#/components/parameters/CommentId"
+    post:
+      operationId: resolveComment
+      tags: [Comments]
+      summary: Resolve a comment
+      description: "Requires: issue:update."
+      responses:
+        "200":
+          description: Resolved comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+
+  /api/workspaces/{slug}/issues/{identifier}/comments/{commentId}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+      - $ref: "#/components/parameters/CommentId"
+    post:
+      operationId: reopenComment
+      tags: [Comments]
+      summary: Reopen a resolved comment
+      description: "Requires: issue:update."
+      responses:
+        "200":
+          description: Reopened comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+
+  /api/workspaces/{slug}/issues/{identifier}/sub-issues:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    get:
+      operationId: listSubIssues
+      tags: [Issues]
+      summary: List sub-issues
+      responses:
+        "200":
+          description: Direct children of the issue.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Issue" }
+    post:
+      operationId: createSubIssue
+      tags: [Issues]
+      summary: Create a sub-issue
+      description: "Requires: issue:create. The parent is fixed by the path."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSubIssueRequest" }
+      responses:
+        "201":
+          description: Created sub-issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+
+  /api/workspaces/{slug}/issues/{identifier}/sub-issues/bulk:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: bulkCreateSubIssues
+      tags: [Issues]
+      summary: Create several sub-issues at once
+      description: "Requires: issue:create."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [issues]
+              properties:
+                issues:
+                  type: array
+                  minItems: 1
+                  items: { $ref: "#/components/schemas/CreateSubIssueRequest" }
+      responses:
+        "201":
+          description: Created sub-issues.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Issue" }
+
+  /api/workspaces/{slug}/issues/{identifier}/history:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    get:
+      operationId: listIssueHistory
+      tags: [Issues]
+      summary: Issue change history
+      responses:
+        "200":
+          description: Ordered change entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/issues/{identifier}/triage/accept:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: triageAccept
+      tags: [Issues]
+      summary: Accept a triage issue
+      description: "Requires: issue:update. Moves a triaged intake issue into the team."
+      responses:
+        "200":
+          description: Updated issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+
+  /api/workspaces/{slug}/issues/{identifier}/triage/decline:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: triageDecline
+      tags: [Issues]
+      summary: Decline a triage issue
+      description: "Requires: issue:update."
+      responses:
+        "200":
+          description: Updated issue.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Issue" }
+
+  /api/workspaces/{slug}/issues/{identifier}/relations:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    get:
+      operationId: listRelations
+      tags: [Relations]
+      summary: List issue relations
+      responses:
+        "200":
+          description: Relations with the related issue summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IssueRelation" }
+    post:
+      operationId: createRelation
+      tags: [Relations]
+      summary: Create a relation
+      description: "Requires: issue:update. Type is one of related/blocked_by/blocking/duplicate."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRelationRequest" }
+      responses:
+        "201":
+          description: Created relation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssueRelation" }
+
+  /api/workspaces/{slug}/issues/{identifier}/relations/{relationId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+      - $ref: "#/components/parameters/RelationId"
+    delete:
+      operationId: deleteRelation
+      tags: [Relations]
+      summary: Delete a relation
+      description: "Requires: issue:update."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/issue-templates:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listIssueTemplates
+      tags: [Issue Templates]
+      summary: List issue templates
+      responses:
+        "200":
+          description: Templates (active and inactive).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IssueTemplate" }
+    post:
+      operationId: createIssueTemplate
+      tags: [Issue Templates]
+      summary: Create an issue template
+      description: "Requires: issue:create. `recurrence_rule` is an RRULE-style JSON object."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateIssueTemplateRequest" }
+      responses:
+        "201":
+          description: Created template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssueTemplate" }
+
+  /api/workspaces/{slug}/issue-templates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getIssueTemplate
+      tags: [Issue Templates]
+      summary: Get an issue template
+      responses:
+        "200":
+          description: Template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssueTemplate" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateIssueTemplate
+      tags: [Issue Templates]
+      summary: Update an issue template
+      description: "Requires: issue:create."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateIssueTemplateRequest" }
+      responses:
+        "200":
+          description: Updated template.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IssueTemplate" }
+    delete:
+      operationId: deleteIssueTemplate
+      tags: [Issue Templates]
+      summary: Delete an issue template
+      description: "Requires: issue:create."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/labels:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listLabels
+      tags: [Labels]
+      summary: List labels
+      responses:
+        "200":
+          description: Workspace labels.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Label" }
+    post:
+      operationId: createLabel
+      tags: [Labels]
+      summary: Create a label
+      description: "Requires: label:manage. Color is a hex color."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateLabelRequest" }
+      responses:
+        "201":
+          description: Created label.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Label" }
+
+  /api/workspaces/{slug}/labels/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: updateLabel
+      tags: [Labels]
+      summary: Update a label
+      description: "Requires: label:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateLabelRequest" }
+      responses:
+        "200":
+          description: Updated label.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Label" }
+    delete:
+      operationId: deleteLabel
+      tags: [Labels]
+      summary: Delete a label
+      description: "Requires: label:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/projects:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listProjects
+      tags: [Projects]
+      summary: List projects
+      responses:
+        "200":
+          description: Workspace projects with progress rollups.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Project" }
+    post:
+      operationId: createProject
+      tags: [Projects]
+      summary: Create a project
+      description: "Requires: project:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProjectRequest" }
+      responses:
+        "201":
+          description: Created project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+
+  /api/workspaces/{slug}/projects/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getProject
+      tags: [Projects]
+      summary: Get a project
+      responses:
+        "200":
+          description: Project with progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProject
+      tags: [Projects]
+      summary: Update a project
+      description: "Requires: project:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProjectRequest" }
+      responses:
+        "200":
+          description: Updated project.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+    delete:
+      operationId: deleteProject
+      tags: [Projects]
+      summary: Delete a project
+      description: "Requires: project:manage. Issues survive, detached."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/teams/{teamId}/projects:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/TeamId"
+    get:
+      operationId: listTeamProjects
+      tags: [Projects]
+      summary: List a team's projects
+      responses:
+        "200":
+          description: Projects attached to the team.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Project" }
+
+  /api/workspaces/{slug}/views:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listViews
+      tags: [Views]
+      summary: List saved views
+      responses:
+        "200":
+          description: The caller's views plus shared views.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/View" }
+    post:
+      operationId: createView
+      tags: [Views]
+      summary: Create a saved view
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateViewRequest" }
+      responses:
+        "201":
+          description: Created view.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/View" }
+
+  /api/workspaces/{slug}/views/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getView
+      tags: [Views]
+      summary: Get a saved view
+      responses:
+        "200":
+          description: View.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/View" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateView
+      tags: [Views]
+      summary: Update a saved view
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Updated view.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/View" }
+    delete:
+      operationId: deleteView
+      tags: [Views]
+      summary: Delete a saved view
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/favorites:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listFavorites
+      tags: [Favorites]
+      summary: List sidebar favorites
+      responses:
+        "200":
+          description: Favorites in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Favorite" }
+    post:
+      operationId: createFavorite
+      tags: [Favorites]
+      summary: Favorite an entity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateFavoriteRequest" }
+      responses:
+        "201":
+          description: Created favorite.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Favorite" }
+
+  /api/workspaces/{slug}/favorites/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: deleteFavorite
+      tags: [Favorites]
+      summary: Remove a favorite
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/shared-links:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listSharedLinks
+      tags: [Shared Links]
+      summary: List share links
+      responses:
+        "200":
+          description: Share links for the workspace.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SharedLink" }
+    post:
+      operationId: createSharedLink
+      tags: [Shared Links]
+      summary: Create a share link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSharedLinkRequest" }
+      responses:
+        "201":
+          description: Created share link (includes the public token).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SharedLink" }
+
+  /api/workspaces/{slug}/shared-links/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: updateSharedLink
+      tags: [Shared Links]
+      summary: Update a share link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSharedLinkRequest" }
+      responses:
+        "200":
+          description: Updated share link.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SharedLink" }
+    delete:
+      operationId: deleteSharedLink
+      tags: [Shared Links]
+      summary: Delete a share link
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/public/share/{token}:
+    get:
+      operationId: getPublicShareMeta
+      tags: [Public Shares]
+      summary: Public share metadata
+      description: Unauthenticated scope metadata for a share link (workspace name, statuses, filters).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Share metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicShareMeta" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/public/share/{token}/issues:
+    get:
+      operationId: listPublicShareIssues
+      tags: [Public Shares]
+      summary: Public share issues
+      description: Read-only issue list behind a share link; descriptions included only when the link allows it.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Issues visible through the link.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicIssue" }
+
+  /api/public/assets/{token}:
+    get:
+      operationId: getPublicAsset
+      tags: [Uploads, Public Shares]
+      summary: Public asset by signed token
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ShareToken"
+      responses:
+        "200":
+          description: Asset bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  /api/avatars/{userId}:
+    get:
+      operationId: getUserAvatar
+      tags: [Avatars]
+      summary: User avatar image
+      description: Public so avatars render on share pages; SVG responses carry a restrictive CSP. Supports `?v=` cache busting.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: Image bytes.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+
+  /api/workspace-avatars/{workspaceId}:
+    get:
+      operationId: getWorkspaceAvatar
+      tags: [Avatars]
+      summary: Workspace logo image
+      security: []
+      parameters:
+        - name: workspaceId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Image bytes.
+          content:
+            image/*:
+              schema: { type: string, format: binary }
+
+  /api/workspaces/{slug}/shares:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listScreenShares
+      tags: [Screen Shares]
+      summary: List screen shares
+      description: Active and recent P2P screen-share sessions.
+      responses:
+        "200":
+          description: Active and recent shares.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScreenShare" }
+                  recent:
+                    type: array
+                    items: { $ref: "#/components/schemas/ScreenShare" }
+    post:
+      operationId: createScreenShare
+      tags: [Screen Shares]
+      summary: Start a screen share
+      description: |
+        Requires: share:create. Creates the share session; the presenter's
+        browser then captures screen + tab audio and signals viewers
+        peer-to-peer over the workspace WebSocket (`share.presence` /
+        `share.signal`). Shares are restart-surviving and GC'd only after
+        the presenter stops announcing presence.
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "201":
+          description: Created share.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreenShare" }
+
+  /api/workspaces/{slug}/shares/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    get:
+      operationId: getScreenShare
+      tags: [Screen Shares]
+      summary: Get a screen share
+      responses:
+        "200":
+          description: Share session.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreenShare" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/workspaces/{slug}/shares/{id}/end:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: endScreenShare
+      tags: [Screen Shares]
+      summary: End a screen share
+      description: Broadcasts `share.ended` so parked viewer walls update.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/analytics/overview:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: analyticsOverview
+      tags: [Analytics]
+      summary: Workspace analytics overview
+      responses:
+        "200":
+          description: Headline counts and trends.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/analytics/distribution:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: analyticsDistribution
+      tags: [Analytics]
+      summary: Issue distribution
+      responses:
+        "200":
+          description: Breakdowns by status/priority/assignee/team.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/analytics/insights:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: analyticsInsights
+      tags: [Analytics]
+      summary: Workspace insights
+      responses:
+        "200":
+          description: Derived insights (stale, untouched, overdue…).
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/analytics/burnup:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: analyticsBurnup
+      tags: [Analytics]
+      summary: Workspace burnup series
+      responses:
+        "200":
+          description: Time series of scope vs completion.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/webhooks:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listWebhooks
+      tags: [Webhooks]
+      summary: List webhooks
+      description: "Requires: workspace:manage."
+      responses:
+        "200":
+          description: Registered webhooks.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Webhook" }
+    post:
+      operationId: createWebhook
+      tags: [Webhooks]
+      summary: Create a webhook
+      description: "Requires: workspace:manage. Deliveries are signed with the secret (HMAC)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWebhookRequest" }
+      responses:
+        "201":
+          description: Created webhook.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+
+  /api/workspaces/{slug}/webhooks/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: updateWebhook
+      tags: [Webhooks]
+      summary: Update a webhook
+      description: "Requires: workspace:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWebhookRequest" }
+      responses:
+        "200":
+          description: Updated webhook.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Webhook" }
+    delete:
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      summary: Delete a webhook
+      description: "Requires: workspace:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/ai-settings:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: getAISettings
+      tags: [AI]
+      summary: Get workspace AI settings
+      description: "Readable by members (issue:read); never returns the stored key, only `has_api_key`."
+      responses:
+        "200":
+          description: AI settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AISettings" }
+    patch:
+      operationId: updateAISettings
+      tags: [AI]
+      summary: Update workspace AI settings
+      description: "Requires: owner. The API key is encrypted at rest and never read back."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAISettingsRequest" }
+      responses:
+        "200":
+          description: Updated AI settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AISettings" }
+
+  /api/workspaces/{slug}/ai-settings/issue-copy-prompt:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: getIssueCopyPrompt
+      tags: [AI]
+      summary: Effective issue-copy prompt
+      description: Returns the configured prompt plus the built-in default (issue:read).
+      responses:
+        "200":
+          description: Prompt pair.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issue_copy_prompt: { type: string }
+                  default_issue_copy_prompt: { type: string }
+
+  /api/workspaces/{slug}/ai/rework:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: reworkText
+      tags: [AI]
+      summary: Rework text with AI
+      description: |
+        Requires: issue:update. Workspace-scoped text rework used by
+        comment editors and the create-issue dialog. Returns
+        `AI_NOT_CONFIGURED` (400) when the workspace has no AI settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: { type: string, maxLength: 8000 }
+                context: { type: string, maxLength: 2000 }
+      responses:
+        "200":
+          description: Reworked text.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  text: { type: string }
+
+  /api/forgejo/webhook:
+    post:
+      operationId: forgejoWebhook
+      tags: [Forgejo]
+      summary: Inbound Forgejo webhook
+      description: |
+        Public endpoint called by Forgejo for `push`, `pull_request`,
+        `create`, and Actions run-completion events. Every delivery must
+        carry a valid `X-Forgejo-Signature` (HMAC of the shared secret ku
+        generated when the repo was linked); invalid signatures are
+        dropped.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/workspaces/{slug}/forgejo/status:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: forgejoStatus
+      tags: [Forgejo]
+      summary: Integration status
+      description: Connection state, account, and linked repos.
+      responses:
+        "200":
+          description: Status payload.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgejoStatus" }
+
+  /api/workspaces/{slug}/forgejo/connection:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    put:
+      operationId: forgejoConnect
+      tags: [Forgejo]
+      summary: Connect a Forgejo token
+      description: "Requires: workspace:manage. Per-workspace token connection (global mode preconfigures the instance)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [instance_url, token]
+              properties:
+                instance_url: { type: string, format: uri }
+                token: { type: string, minLength: 20 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+    delete:
+      operationId: forgejoDisconnect
+      tags: [Forgejo]
+      summary: Disconnect Forgejo
+      description: "Requires: workspace:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/forgejo/repos:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: forgejoListRepos
+      tags: [Forgejo]
+      summary: List available and linked repos
+      description: "Requires: workspace:manage."
+      responses:
+        "200":
+          description: Repos visible to the token.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ForgejoRepo" }
+    post:
+      operationId: forgejoLinkRepos
+      tags: [Forgejo]
+      summary: Link repos
+      description: |
+        Requires: workspace:manage. Linking creates ku-generated signed
+        webhooks on each repo (push/pull_request/create + Actions
+        completion).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [forgejo_repo_ids]
+              properties:
+                forgejo_repo_ids:
+                  type: array
+                  minItems: 1
+                  items: { type: integer, format: int64 }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/forgejo/repos/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: forgejoUnlinkRepo
+      tags: [Forgejo]
+      summary: Unlink a repo
+      description: "Requires: workspace:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/forgejo/user-mappings:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: forgejoListUserMappings
+      tags: [Forgejo]
+      summary: List Forgejo → Ku user mappings
+      responses:
+        "200":
+          description: Mappings (unmapped Forgejo logins fall back to unique case-insensitive member-name matches).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ForgejoUserMapping" }
+    put:
+      operationId: forgejoUpdateUserMappings
+      tags: [Forgejo]
+      summary: Replace user mappings
+      description: "Requires: workspace:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mappings:
+                  type: array
+                  items: { $ref: "#/components/schemas/ForgejoUserMapping" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/forgejo/auto-transitions:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: forgejoListAutoTransitions
+      tags: [Forgejo]
+      summary: List automation rules
+      responses:
+        "200":
+          description: Per-event status/assignee transitions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ForgejoAutoTransition" }
+    patch:
+      operationId: forgejoUpdateAutoTransitions
+      tags: [Forgejo]
+      summary: Replace automation rules
+      description: |
+        Requires: workspace:manage. Assignment is additive: a matched
+        Forgejo user (or fixed target) is *added* to the assignee set,
+        never replacing it. Unknown status ids/slugs reject with
+        `400 INVALID_STATUS`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transitions]
+              properties:
+                transitions:
+                  type: array
+                  items: { $ref: "#/components/schemas/ForgejoAutoTransition" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/issues/{identifier}/forgejo:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    get:
+      operationId: issueForgejoActivity
+      tags: [Forgejo, Issues]
+      summary: Issue code activity
+      description: Linked branches, PRs, and commits for the issue's identifier.
+      responses:
+        "200":
+          description: Code-activity entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/forgejo/issue-links:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: identifier
+        in: query
+        schema: { type: string }
+        description: Issue identifier (ENG-12) to look up.
+    get:
+      operationId: forgejoIssueLinks
+      tags: [Forgejo]
+      summary: Issue links (agent helper)
+      responses:
+        "200":
+          description: Matching links for the identifier.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/upload:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: uploadAsset
+      tags: [Uploads]
+      summary: Upload an attachment
+      description: "Requires: issue:create. Returns the asset id used in issue descriptions/comments."
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/FileUpload"
+      responses:
+        "201":
+          description: Uploaded asset metadata.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/assets/{assetId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/AssetId"
+    get:
+      operationId: getAsset
+      tags: [Uploads]
+      summary: Download an asset
+      description: |
+        Authenticated asset delivery. `?download=1` forces a download
+        disposition; non-image content types always download.
+      parameters:
+        - name: download
+          in: query
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: Asset bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+
+  /api/workspaces/{slug}/issues/{identifier}/prompt-assets:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/Identifier"
+    post:
+      operationId: signIssuePromptAssets
+      tags: [Uploads]
+      summary: Sign prompt asset tokens for an issue
+      responses:
+        "200":
+          description: Signed tokens for embedding assets in AI prompts.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/ws:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: workspaceSocket
+      tags: [Realtime]
+      summary: Workspace WebSocket
+      description: |
+        Live event stream (issue updates, board refreshes, comment threads,
+        screen-share signaling `share.presence`/`share.signal`). Server
+        pings every 20s with a 30s pong deadline; clients reconnect with
+        jittered exponential backoff. Authenticate with the access-token
+        cookie or `?token=` query parameter.
+      responses:
+        "101":
+          description: WebSocket upgrade.
+
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      tags: [Notifications]
+      summary: List notifications
+      parameters:
+        - name: tab
+          in: query
+          schema: { type: string, enum: [inbox, snoozed, archive] }
+          description: Inbox view selector.
+      responses:
+        "200":
+          description: Notifications plus unread count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items: { $ref: "#/components/schemas/Notification" }
+                  unread_count: { type: integer }
+
+  /api/notifications/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    patch:
+      operationId: updateNotification
+      tags: [Notifications]
+      summary: Update notification state
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateNotificationRequest" }
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: markNotificationRead
+      tags: [Notifications]
+      summary: Mark read
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/{id}/unread:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: markNotificationUnread
+      tags: [Notifications]
+      summary: Mark unread
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/{id}/snooze:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: snoozeNotification
+      tags: [Notifications]
+      summary: Snooze
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                snoozed_until: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/{id}/unsnooze:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: unsnoozeNotification
+      tags: [Notifications]
+      summary: Un-snooze
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/{id}/archive:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: archiveNotification
+      tags: [Notifications]
+      summary: Archive
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/{id}/unarchive:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      operationId: unarchiveNotification
+      tags: [Notifications]
+      summary: Un-archive
+      responses:
+        "200":
+          description: Updated notification.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Notification" }
+
+  /api/notifications/mark-all-read:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [Notifications]
+      summary: Mark everything read
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/api-keys:
+    get:
+      operationId: listApiKeys
+      tags: [API Keys]
+      summary: List personal API keys
+      responses:
+        "200":
+          description: Key metadata (never the raw token).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/APIKey" }
+    post:
+      operationId: createApiKey
+      tags: [API Keys]
+      summary: Create a personal API key
+      description: |
+        The raw `ku_...` token is returned exactly once, in this response.
+        Optional read-only scope (query MCP tools only) and expiry in days
+        (≤ 3650). Keys work in every workspace the owner belongs to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAPIKeyRequest" }
+      responses:
+        "201":
+          description: Key metadata plus the one-time raw token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { $ref: "#/components/schemas/APIKey" }
+                  token: { type: string }
+
+  /api/api-keys/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    delete:
+      operationId: revokeApiKey
+      tags: [API Keys]
+      summary: Revoke a personal API key
+      description: Revocation takes effect on the next request.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/dev-machine-ingest/events:
+    post:
+      operationId: ingestMachineEvent
+      tags: [Dev Machines]
+      summary: Machine event ingest (internal)
+      description: Called by dev machines with their machine token; rate-limited.
+      security:
+        - machineToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/dev-machine-ingest/logs:
+    post:
+      operationId: ingestMachineLog
+      tags: [Dev Machines]
+      summary: Machine log ingest (internal)
+      description: Called by dev machines with their machine token; rate-limited.
+      security:
+        - machineToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api/workspaces/{slug}/dev-machines:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listDevMachines
+      tags: [Dev Machines]
+      summary: List dev machines
+      description: "Requires: dev_machine:read. Demo-mode restricted when active."
+      responses:
+        "200":
+          description: Machines in the workspace.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+    post:
+      operationId: createDevMachine
+      tags: [Dev Machines]
+      summary: Create a dev machine
+      description: "Requires: dev_machine:create."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Created machine.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machines/bulk:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    delete:
+      operationId: bulkDeleteDevMachines
+      tags: [Dev Machines]
+      summary: Soft-delete machines in bulk
+      description: "Requires: dev_machine:admin."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/bulk/permanent-delete:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: bulkPermanentDeleteDevMachines
+      tags: [Dev Machines]
+      summary: Permanently delete machines in bulk
+      description: "Requires: dev_machine:admin. Irreversible."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machine-names/suggestion:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: suggestMachineName
+      tags: [Dev Machines]
+      summary: Suggest a machine name
+      description: "Requires: dev_machine:create."
+      parameters:
+        - { name: name, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Suggested unique name.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machine-names/availability:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: checkMachineNameAvailability
+      tags: [Dev Machines]
+      summary: Check machine name availability
+      description: "Requires: dev_machine:create."
+      parameters:
+        - { name: name, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Availability verdict.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machine-policy:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: getDevMachinePolicy
+      tags: [Dev Machines]
+      summary: Get the workspace machine policy
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Policy document.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    patch:
+      operationId: updateDevMachinePolicy
+      tags: [Dev Machines]
+      summary: Update the machine policy
+      description: "Requires: dev_machine:admin."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Updated policy.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machine-scope-settings:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMachineScopeSettings
+      tags: [Dev Machines]
+      summary: List scope settings
+      description: "Requires: dev_machine:read."
+      parameters:
+        - { name: scope_type, in: query, schema: { type: string } }
+        - { name: scope_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Scope settings.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/dev-machine-scope-setting:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: getMachineScopeSetting
+      tags: [Dev Machines]
+      summary: Get one scope setting
+      description: "Requires: dev_machine:read."
+      parameters:
+        - { name: scope_type, in: query, required: true, schema: { type: string } }
+        - { name: scope_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Scope setting.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    put:
+      operationId: updateMachineScopeSetting
+      tags: [Dev Machines]
+      summary: Upsert a scope setting
+      description: "Requires: dev_machine:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Stored setting.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    delete:
+      operationId: deleteMachineScopeSetting
+      tags: [Dev Machines]
+      summary: Delete a scope setting
+      description: "Requires: dev_machine:manage."
+      parameters:
+        - { name: scope_type, in: query, required: true, schema: { type: string } }
+        - { name: scope_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machine-environments:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMachineEnvironments
+      tags: [Dev Machines]
+      summary: List environments
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Snapshotted environments.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+    post:
+      operationId: snapshotMachineEnvironment
+      tags: [Dev Machines]
+      summary: Snapshot an environment
+      description: "Requires: dev_machine:admin."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Created snapshot.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machine-environments/{environmentId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/EnvironmentId"
+    get:
+      operationId: getMachineEnvironment
+      tags: [Dev Machines]
+      summary: Get an environment
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Environment.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    delete:
+      operationId: deleteMachineEnvironment
+      tags: [Dev Machines]
+      summary: Delete an environment
+      description: "Requires: dev_machine:admin."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machine-providers:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMachineProviders
+      tags: [Dev Machines]
+      summary: List machine providers
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Providers available in this deployment.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: getDevMachine
+      tags: [Dev Machines]
+      summary: Get a machine
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Machine detail.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateDevMachine
+      tags: [Dev Machines]
+      summary: Update a machine
+      description: "Requires: dev_machine:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: Updated machine.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+    delete:
+      operationId: deleteDevMachine
+      tags: [Dev Machines]
+      summary: Soft-delete a machine
+      description: "Requires: dev_machine:admin."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/permanent-delete:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    post:
+      operationId: permanentDeleteDevMachine
+      tags: [Dev Machines]
+      summary: Permanently delete a machine
+      description: "Requires: dev_machine:admin. Irreversible."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/start:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    post:
+      operationId: startDevMachine
+      tags: [Dev Machines]
+      summary: Start a machine
+      description: "Requires: dev_machine:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/stop:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    post:
+      operationId: stopDevMachine
+      tags: [Dev Machines]
+      summary: Stop a machine
+      description: "Requires: dev_machine:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/pause:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    post:
+      operationId: pauseDevMachine
+      tags: [Dev Machines]
+      summary: Pause a machine
+      description: "Requires: dev_machine:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/teardown:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    post:
+      operationId: teardownDevMachine
+      tags: [Dev Machines]
+      summary: Tear down a machine
+      description: "Requires: dev_machine:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/activity:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    post:
+      operationId: touchMachineActivity
+      tags: [Dev Machines]
+      summary: Record machine activity
+      description: "Requires: dev_machine:read. Heartbeat from an open session."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/checkouts:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineCheckouts
+      tags: [Dev Machines]
+      summary: List issue checkouts on a machine
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Checkouts.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+    post:
+      operationId: checkoutIssueOnMachine
+      tags: [Dev Machines]
+      summary: Check out an issue on a machine
+      description: "Requires: dev_machine:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Created checkout.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/events:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineEvents
+      tags: [Dev Machines]
+      summary: List machine events
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Event history.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/logs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineLogs
+      tags: [Dev Machines]
+      summary: List machine logs
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Ingested log entries.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/services:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineServices
+      tags: [Dev Machines]
+      summary: List machine services
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Services running on the machine.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/providers:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineProviderInstances
+      tags: [Dev Machines]
+      summary: List provider instances on a machine
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Provider instances.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/resource-usage:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: machineResourceUsage
+      tags: [Dev Machines]
+      summary: Machine resource usage
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: CPU/memory/storage usage series.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/services/{service}/launch:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+      - $ref: "#/components/parameters/ServiceName"
+    post:
+      operationId: launchMachineService
+      tags: [Dev Machines]
+      summary: Launch a service on a machine
+      description: "Requires: dev_machine:read (launching is session-scoped)."
+      responses:
+        "200":
+          description: Launch result with the access URL.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/terminal-sessions:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineTerminalSessions
+      tags: [Dev Machines]
+      summary: List terminal sessions
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Open terminal sessions.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+    post:
+      operationId: createMachineTerminalSession
+      tags: [Dev Machines]
+      summary: Open a terminal session
+      description: "Requires: dev_machine:read."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Created session.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/terminal-sessions/{sessionId}/close:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: closeMachineTerminalSession
+      tags: [Dev Machines]
+      summary: Close a terminal session
+      description: "Requires: dev_machine:read."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/dev-machines/{machineId}/agent-runs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/MachineId"
+    get:
+      operationId: listMachineAgentRuns
+      tags: [Dev Machines]
+      summary: List agent runs on a machine
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Agent runs.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+    post:
+      operationId: createMachineAgentRun
+      tags: [Dev Machines]
+      summary: Start an agent run on a machine
+      description: "Requires: dev_machine:manage."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "201":
+          description: Created run.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /api/workspaces/{slug}/agent-runs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listAgentRuns
+      tags: [Dev Machines]
+      summary: List agent runs in the workspace
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Agent runs across machines.
+          content:
+            application/json:
+              schema: { type: array, items: { type: object, additionalProperties: true } }
+
+  /api/workspaces/{slug}/agent-runs/{agentRunId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/AgentRunId"
+    get:
+      operationId: getAgentRun
+      tags: [Dev Machines]
+      summary: Get an agent run
+      description: "Requires: dev_machine:read."
+      responses:
+        "200":
+          description: Agent run detail.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/workspaces/{slug}/agent-runs/{agentRunId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/AgentRunId"
+    post:
+      operationId: cancelAgentRun
+      tags: [Dev Machines]
+      summary: Cancel an agent run
+      description: "Requires: dev_machine:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/agent-runs/{agentRunId}/trace:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/AgentRunId"
+    get:
+      operationId: agentRunTrace
+      tags: [Dev Machines]
+      summary: Agent run trace
+      description: "Requires: dev_machine:read. Full agent transcript/tool calls."
+      responses:
+        "200":
+          description: Trace events.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /mcp:
+    post:
+      operationId: mcp
+      tags: [MCP]
+      summary: MCP endpoint (streamable HTTP, stateless)
+      description: |
+        Model Context Protocol over stateless streamable HTTP. Every POST
+        is a self-contained JSON-RPC 2.0 message (`initialize`,
+        `tools/list`, `tools/call`); `Mcp-Session-Id` is ignored.
+        Authenticate with a personal API key (`Bearer ku_...`); tools run
+        with the key owner's identity and the same workspace RBAC as the
+        UI. Read-only keys are limited to query tools. 44 tools cover the
+        full ticketing surface (workspaces, teams, states, projects,
+        labels, issues, comments, cycles, notifications, analytics,
+        Forgejo). Friendly references everywhere: teams by key/name/id,
+        users by email/name/id, issues by identifier/id.
+      security:
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: JSON-RPC result (or SSE stream for notifications-heavy calls).
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+components:
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Session access token (15-minute JWT). The browser uses the
+        HttpOnly `access_token` cookie; programmatic clients send
+        `Authorization: Bearer <access_token>` with the token from
+        POST /api/auth/login.
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      description: Personal API key (`ku_...`) from Settings → Personal → API Keys. MCP endpoint only.
+    machineToken:
+      type: http
+      scheme: bearer
+      description: Dev-machine ingest token issued when the machine is created. Internal.
+
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Workspace slug.
+      schema: { type: string }
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StatusId:
+      name: statusId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CycleId:
+      name: cycleId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Identifier:
+      name: identifier
+      in: path
+      required: true
+      description: Human issue identifier, e.g. ENG-12.
+      schema: { type: string, pattern: "^[A-Z]+-\\d+$" }
+    CommentId:
+      name: commentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RelationId:
+      name: relationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AssetId:
+      name: assetId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ShareToken:
+      name: token
+      in: path
+      required: true
+      schema: { type: string }
+    MachineId:
+      name: machineId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EnvironmentId:
+      name: environmentId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    AgentRunId:
+      name: agentRunId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ServiceName:
+      name: service
+      in: path
+      required: true
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+
+  responses:
+    Ok:
+      description: Success (opaque payload).
+      content:
+        application/json:
+          schema: { type: object, additionalProperties: true }
+    ValidationError:
+      description: Invalid input (`VALIDATION_ERROR` with field details).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: Missing or invalid credentials (`UNAUTHORIZED`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Authenticated but not permitted (`FORBIDDEN`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Resource does not exist (`NOT_FOUND`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    RateLimited:
+      description: Too many requests (machine ingest limits).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    ErrorDetail:
+      type: object
+      properties:
+        field: { type: string }
+        message: { type: string }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, example: NOT_FOUND }
+            message: { type: string }
+            details:
+              type: array
+              items: { $ref: "#/components/schemas/ErrorDetail" }
+    PaginationMeta:
+      type: object
+      properties:
+        total_count: { type: integer }
+        page: { type: integer }
+        per_page: { type: integer }
+        has_more: { type: boolean }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12 }
+    RegisterRequest:
+      allOf:
+        - $ref: "#/components/schemas/LoginRequest"
+        - type: object
+          required: [name]
+          properties:
+            name: { type: string, minLength: 1, maxLength: 100 }
+    TokenResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        expires_in: { type: integer, description: Seconds until the access token expires (900). }
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        display_name: { type: string, maxLength: 100, nullable: true }
+        avatar_url: { type: string, nullable: true }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        display_name: { type: string, nullable: true }
+        avatar_url: { type: string, nullable: true }
+        is_sysadmin: { type: boolean }
+
+    UserPreferences:
+      type: object
+      properties:
+        font_size: { type: string, enum: [small, default, large] }
+        pointer_cursors: { type: boolean }
+        theme_mode: { type: string, enum: [system, light, dark] }
+        light_theme: { type: string }
+        dark_theme: { type: string }
+        workflow_sort_mode: { type: string, enum: [default, active-first, custom] }
+        workflow_sort_order: { type: array, items: { type: string } }
+        team_workflow_sort_overrides:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              mode: { type: string }
+              workflow_sort_order: { type: array, items: { type: string } }
+        recent_due_dates: { type: array, items: { type: string } }
+        issues_group_by: { type: string, enum: [status, priority, assignee, project, none] }
+        default_view_layout: { type: string, enum: [list, board] }
+    UpdatePreferencesRequest:
+      type: object
+      description: Partial update; send only the keys to change.
+      minProperties: 1
+      additionalProperties: true
+
+    CreateWorkspaceRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        slug: { type: string, minLength: 1, maxLength: 50, pattern: "^[a-z0-9-]+$" }
+    UpdateWorkspaceRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        logo_url: { type: string, nullable: true }
+        share_link_min_role: { type: string, enum: [owner, admin, member] }
+        auto_archive_done_issues: { type: boolean }
+    Workspace:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        logo_url: { type: string, nullable: true }
+        owner_id: { type: string, format: uuid }
+        owner:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string, format: uuid }
+            email: { type: string }
+            name: { type: string }
+            avatar_url: { type: string, nullable: true }
+        share_link_min_role: { type: string }
+        auto_archive_done_issues: { type: boolean }
+        current_user_role: { type: string, enum: [owner, admin, member, guest] }
+        screen_sharing_enabled: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    InviteMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        role: { type: string, enum: [admin, member, guest] }
+    WorkspaceMember:
+      type: object
+      properties:
+        user_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        avatar_url: { type: string, nullable: true }
+        role: { type: string, enum: [owner, admin, member, guest] }
+        created_at: { type: string, format: date-time }
+
+    CreateTeamRequest:
+      type: object
+      required: [name, key]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        key: { type: string, minLength: 1, maxLength: 10, pattern: "^[A-Z]+$" }
+        description: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        icon: { type: string, nullable: true }
+    UpdateTeamRequest:
+      type: object
+      description: Changing `key` rewrites every issue identifier in one transaction.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        key: { type: string, minLength: 1, maxLength: 10, pattern: "^[A-Z]+$" }
+        description: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        icon: { type: string, nullable: true }
+        triage_enabled: { type: boolean }
+        parent_auto_close_enabled: { type: boolean }
+        sub_issue_auto_close_enabled: { type: boolean }
+        issue_copy_prompt: { type: string, maxLength: 8000 }
+    Team:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        key: { type: string }
+        description: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        icon: { type: string, nullable: true }
+        triage_enabled: { type: boolean }
+        parent_auto_close_enabled: { type: boolean }
+        sub_issue_auto_close_enabled: { type: boolean }
+        issue_copy_prompt: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateTeamStatusRequest:
+      type: object
+      required: [name, category]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        category: { type: string, enum: [backlog, unstarted, started, completed, cancelled] }
+        color: { type: string, nullable: true }
+        project_ids: { type: array, items: { type: string, format: uuid } }
+    UpdateTeamStatusRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        color: { type: string, nullable: true }
+        position: { type: integer, minimum: 0 }
+        project_ids: { type: array, items: { type: string, format: uuid } }
+    TeamStatus:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        team_id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        category: { type: string, enum: [backlog, unstarted, started, completed, cancelled] }
+        color: { type: string, nullable: true }
+        position: { type: integer }
+        is_default: { type: boolean }
+        project_ids: { type: array, items: { type: string, format: uuid } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateProjectRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, nullable: true }
+        team_id: { type: string, format: uuid, nullable: true }
+        lead_id: { type: string, format: uuid, nullable: true }
+        start_date: { type: string, nullable: true }
+        target_date: { type: string, nullable: true }
+    UpdateProjectRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [planned, in_progress, completed, cancelled] }
+        team_id: { type: string, format: uuid, nullable: true }
+        lead_id: { type: string, format: uuid, nullable: true }
+        start_date: { type: string, nullable: true }
+        target_date: { type: string, nullable: true }
+        sort_order: { type: number }
+    Project:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [planned, in_progress, completed, cancelled] }
+        team_id: { type: string, format: uuid, nullable: true }
+        lead_id: { type: string, format: uuid, nullable: true }
+        start_date: { type: string, format: date-time, nullable: true }
+        target_date: { type: string, format: date-time, nullable: true }
+        sort_order: { type: number }
+        progress:
+          type: object
+          nullable: true
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            cancelled: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateCycleRequest:
+      type: object
+      required: [name, start_date, end_date]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, nullable: true }
+        goals: { type: string, nullable: true }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+    UpdateCycleRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string, nullable: true }
+        goals: { type: string, nullable: true }
+        retrospective: { type: string, nullable: true }
+        status: { type: string, enum: [upcoming, active, completed] }
+        start_date: { type: string, nullable: true }
+        end_date: { type: string, nullable: true }
+    CompleteCycleRequest:
+      type: object
+      properties:
+        retrospective: { type: string, nullable: true }
+        carry_over: { type: boolean, default: false }
+    Cycle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        team_id: { type: string, format: uuid }
+        name: { type: string }
+        number: { type: integer }
+        status: { type: string, enum: [upcoming, active, completed] }
+        description: { type: string, nullable: true }
+        goals: { type: string, nullable: true }
+        retrospective: { type: string, nullable: true }
+        start_date: { type: string, format: date-time, nullable: true }
+        end_date: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        progress:
+          type: object
+          nullable: true
+          properties:
+            total: { type: integer }
+            completed: { type: integer }
+            cancelled: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    BurndownPoint:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        scope: { type: integer }
+        started: { type: integer }
+        completed: { type: integer }
+    VelocityPoint:
+      type: object
+      properties:
+        cycle_id: { type: string, format: uuid }
+        cycle_name: { type: string }
+        cycle_number: { type: integer }
+        scope: { type: integer }
+        completed: { type: integer }
+        cancelled: { type: integer }
+        start_date: { type: string, format: date-time, nullable: true }
+        end_date: { type: string, format: date-time, nullable: true }
+
+    IssueStatus:
+      type: string
+      description: Default state when no custom status_id is set.
+      enum: [backlog, todo, in_progress, in_review, done, cancelled]
+    CreateIssueRequest:
+      type: object
+      required: [title, team_id]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/IssueStatus" }
+        status_id: { type: string, format: uuid }
+        priority: { type: integer, minimum: 0, maximum: 4 }
+        team_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid, nullable: true }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        assignee_ids: { type: array, items: { type: string, format: uuid } }
+        label_ids: { type: array, items: { type: string, format: uuid } }
+        parent_id: { type: string, format: uuid, nullable: true }
+        due_date: { type: string, nullable: true }
+        cycle_id: { type: string, format: uuid, nullable: true }
+    CreateSubIssueRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/IssueStatus" }
+        status_id: { type: string, format: uuid }
+        priority: { type: integer, minimum: 0, maximum: 4 }
+        project_id: { type: string, format: uuid, nullable: true }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        assignee_ids: { type: array, items: { type: string, format: uuid } }
+        label_ids: { type: array, items: { type: string, format: uuid } }
+        due_date: { type: string, nullable: true }
+        cycle_id: { type: string, format: uuid, nullable: true }
+    UpdateIssueRequest:
+      type: object
+      description: Partial update; `sort_order` matters for board ordering.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/IssueStatus" }
+        status_id: { type: string, format: uuid }
+        priority: { type: integer, minimum: 0, maximum: 4 }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        assignee_ids: { type: array, items: { type: string, format: uuid } }
+        project_id: { type: string, format: uuid, nullable: true }
+        cycle_id: { type: string, format: uuid, nullable: true }
+        label_ids: { type: array, items: { type: string, format: uuid } }
+        parent_id: { type: string, format: uuid, nullable: true }
+        due_date: { type: string, nullable: true }
+        sort_order: { type: number }
+    BulkUpdateIssuesRequest:
+      type: object
+      required: [issue_ids]
+      properties:
+        issue_ids:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/IssueStatus" }
+        status_id: { type: string, format: uuid }
+        priority: { type: integer, minimum: 0, maximum: 4 }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        label_ids: { type: array, items: { type: string, format: uuid } }
+        cycle_id: { type: string, format: uuid, nullable: true }
+        parent_id: { type: string, format: uuid, nullable: true }
+        archived: { type: boolean }
+    StatusInfo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        category: { type: string }
+        color: { type: string, nullable: true }
+        position: { type: integer }
+    IssueSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        identifier: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string }
+        status_id: { type: string, format: uuid }
+        status_info: { $ref: "#/components/schemas/StatusInfo" }
+        priority: { type: integer }
+        assignee: { $ref: "#/components/schemas/User" }
+    Issue:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        identifier: { type: string, example: ENG-12 }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string }
+        status_id: { type: string, format: uuid }
+        status_info: { $ref: "#/components/schemas/StatusInfo" }
+        priority: { type: integer, description: "0 none, 1 urgent, 2 high, 3 medium, 4 low." }
+        team_id: { type: string, format: uuid }
+        project_id: { type: string, format: uuid, nullable: true }
+        cycle_id: { type: string, format: uuid, nullable: true }
+        creator_id: { type: string, format: uuid }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        parent_id: { type: string, format: uuid, nullable: true }
+        due_date: { type: string, format: date-time, nullable: true }
+        sort_order: { type: number }
+        labels: { type: array, items: { $ref: "#/components/schemas/Label" } }
+        creator: { $ref: "#/components/schemas/User" }
+        assignee: { $ref: "#/components/schemas/User" }
+        assignees: { type: array, items: { $ref: "#/components/schemas/User" } }
+        parent: { $ref: "#/components/schemas/IssueSummary" }
+        sub_issue_count: { type: integer }
+        sub_issue_done: { type: integer }
+        relation_counts:
+          type: object
+          properties:
+            related: { type: integer }
+            blocked_by: { type: integer }
+            blocking: { type: integer }
+            duplicate: { type: integer }
+        relation_summary:
+          type: object
+          properties:
+            related: { type: array, items: { $ref: "#/components/schemas/IssueSummary" } }
+            blocked_by: { type: array, items: { $ref: "#/components/schemas/IssueSummary" } }
+            blocking: { type: array, items: { $ref: "#/components/schemas/IssueSummary" } }
+            duplicate: { type: array, items: { $ref: "#/components/schemas/IssueSummary" } }
+        is_subscribed: { type: boolean }
+        archived_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateCommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1 }
+        parent_id: { type: string, format: uuid, nullable: true }
+    Comment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        issue_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        body: { type: string }
+        parent_id: { type: string, format: uuid, nullable: true }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        user: { $ref: "#/components/schemas/User" }
+        replies: { type: array, items: { $ref: "#/components/schemas/Comment" } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateRelationRequest:
+      type: object
+      required: [related_identifier, type]
+      properties:
+        related_identifier: { type: string, example: ENG-14 }
+        type: { type: string, enum: [related, blocked_by, blocking, duplicate] }
+    IssueRelation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        issue_id: { type: string, format: uuid }
+        related_issue_id: { type: string, format: uuid }
+        type: { type: string, enum: [related, blocked_by, blocking, duplicate] }
+        related_issue: { $ref: "#/components/schemas/Issue" }
+        created_at: { type: string, format: date-time }
+
+    CreateIssueTemplateRequest:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 500 }
+        description: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/IssueStatus" }
+        priority: { type: integer, minimum: 0, maximum: 4, nullable: true }
+        team_id: { type: string, format: uuid, nullable: true }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        label_ids: { type: array, items: { type: string, format: uuid } }
+        recurrence_rule:
+          type: object
+          nullable: true
+          description: RRULE-style recurrence (JSON).
+    UpdateIssueTemplateRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreateIssueTemplateRequest"
+        - type: object
+          properties:
+            is_active: { type: boolean }
+    IssueTemplate:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        team_id: { type: string, format: uuid, nullable: true }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        priority: { type: integer, nullable: true }
+        assignee_id: { type: string, format: uuid, nullable: true }
+        label_ids: { type: array, items: { type: string, format: uuid } }
+        recurrence_rule:
+          type: object
+          nullable: true
+        next_run_at: { type: string, format: date-time, nullable: true }
+        is_active: { type: boolean }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateLabelRequest:
+      type: object
+      required: [name, color]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 50 }
+        color: { type: string, example: "#8f5aff" }
+        description: { type: string, nullable: true }
+        parent_id: { type: string, format: uuid, nullable: true }
+    UpdateLabelRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 50 }
+        color: { type: string }
+        description: { type: string, nullable: true }
+    Label:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        color: { type: string }
+        description: { type: string, nullable: true }
+        parent_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateViewRequest:
+      type: object
+      required: [name, filters]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        description: { type: string, nullable: true }
+        filters:
+          type: object
+          description: Issue filter JSON (same shape as listIssues query filters).
+        is_shared: { type: boolean }
+        icon: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+    View:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        filters: { type: object }
+        is_shared: { type: boolean }
+        icon: { type: string, nullable: true }
+        color: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateFavoriteRequest:
+      type: object
+      required: [entity_type, entity_id]
+      properties:
+        entity_type: { type: string, enum: [project, view, team, cycle, label] }
+        entity_id: { type: string, format: uuid }
+    Favorite:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        entity_type: { type: string }
+        entity_id: { type: string, format: uuid }
+        position: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    CreateSharedLinkRequest:
+      type: object
+      required: [scope]
+      properties:
+        scope: { type: string, enum: [workspace, team, project, view] }
+        scope_id: { type: string, format: uuid, nullable: true }
+        filters: { type: object, nullable: true }
+        include_description: { type: boolean, default: false }
+        expires_at: { type: string, nullable: true }
+    UpdateSharedLinkRequest:
+      type: object
+      properties:
+        is_active: { type: boolean }
+        include_description: { type: boolean }
+        expires_at: { type: string, nullable: true }
+    SharedLink:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        token: { type: string }
+        workspace_id: { type: string, format: uuid }
+        created_by: { type: string, format: uuid }
+        scope: { type: string, enum: [workspace, team, project, view] }
+        scope_id: { type: string, format: uuid, nullable: true }
+        filters: { type: object, nullable: true }
+        include_description: { type: boolean }
+        is_active: { type: boolean }
+        expires_at: { type: string, format: date-time, nullable: true }
+        url: { type: string, format: uri }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PublicShareMeta:
+      type: object
+      properties:
+        scope: { type: string }
+        scope_id: { type: string, format: uuid, nullable: true }
+        scope_name: { type: string }
+        workspace_name: { type: string }
+        filters: { type: object, nullable: true }
+        statuses:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              name: { type: string }
+              category: { type: string }
+              color: { type: string, nullable: true }
+              position: { type: integer }
+    PublicIssue:
+      type: object
+      properties:
+        identifier: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string }
+        status_info: { $ref: "#/components/schemas/StatusInfo" }
+        priority: { type: integer }
+        labels: { type: array, items: { $ref: "#/components/schemas/Label" } }
+        assignees:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              display_name: { type: string }
+              avatar_url: { type: string, nullable: true }
+        due_date: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ScreenShare:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        started_by: { type: string, format: uuid }
+        started_by_user:
+          type: object
+          nullable: true
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+            display_name: { type: string }
+            avatar_url: { type: string, nullable: true }
+        status: { type: string }
+        viewer_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time, nullable: true }
+
+    CreateWebhookRequest:
+      type: object
+      required: [url, secret, events]
+      properties:
+        url: { type: string, format: uri }
+        secret: { type: string, minLength: 8 }
+        events: { type: array, minItems: 1, items: { type: string } }
+    UpdateWebhookRequest:
+      type: object
+      properties:
+        url: { type: string, format: uri }
+        events: { type: array, items: { type: string } }
+        is_active: { type: boolean }
+    Webhook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        events: { type: array, items: { type: string } }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AISettings:
+      type: object
+      properties:
+        provider: { type: string, enum: [openai_compatible] }
+        base_url: { type: string, format: uri }
+        model: { type: string }
+        has_api_key: { type: boolean, description: The key itself is never returned. }
+        description_expand_prompt: { type: string }
+        default_prompt: { type: string }
+        issue_copy_prompt: { type: string }
+        default_issue_copy_prompt: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UpdateAISettingsRequest:
+      type: object
+      properties:
+        provider: { type: string, enum: [openai_compatible] }
+        base_url: { type: string, maxLength: 500 }
+        model: { type: string, maxLength: 200 }
+        api_key: { type: string, nullable: true }
+        description_expand_prompt: { type: string, maxLength: 4000 }
+        issue_copy_prompt: { type: string, maxLength: 8000 }
+
+    ForgejoStatus:
+      type: object
+      properties:
+        configured: { type: boolean }
+        connected: { type: boolean }
+        global_config: { type: boolean }
+        instance_url: { type: string }
+        account:
+          type: object
+          nullable: true
+          properties:
+            login: { type: string }
+            avatar_url: { type: string }
+        repos: { type: array, items: { $ref: "#/components/schemas/ForgejoRepo" } }
+    ForgejoRepo:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        forgejo_repo_id: { type: integer, format: int64 }
+        full_name: { type: string }
+        instance_url: { type: string }
+        default_branch: { type: string }
+        is_active: { type: boolean }
+    ForgejoUserMapping:
+      type: object
+      properties:
+        forgejo_login: { type: string }
+        user_id: { type: string, format: uuid }
+    ForgejoAutoTransition:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum: [branch_created, pr_opened, checks_green, pr_merged]
+        target_status: { type: string, description: Status slug; rejected with 400 INVALID_STATUS when unknown. }
+        target_status_id: { type: string, format: uuid, nullable: true }
+        target_assignee_id: { type: string, format: uuid, nullable: true }
+        assign_forgejo_user: { type: boolean, description: Additive — adds the mapped Forgejo user to the assignee set. }
+        is_active: { type: boolean }
+
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        issue_id: { type: string, format: uuid, nullable: true }
+        issue_identifier: { type: string, nullable: true }
+        type: { type: string }
+        title: { type: string }
+        read_at: { type: string, format: date-time, nullable: true }
+        snoozed_until: { type: string, format: date-time, nullable: true }
+        archived_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    UpdateNotificationRequest:
+      type: object
+      properties:
+        read_at: { type: string, format: date-time, nullable: true }
+        snoozed_until: { type: string, format: date-time, nullable: true }
+        archived_at: { type: string, format: date-time, nullable: true }
+
+    CreateAPIKeyRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        read_only: { type: boolean, default: false }
+        expires_in_days: { type: integer, minimum: 1, maximum: 3650, nullable: true }
+    APIKey:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        key_prefix: { type: string, example: ku_9f2A }
+        scopes: { type: array, items: { type: string, enum: [read, write] } }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+
+    AvatarUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: PNG/JPEG/GIF/WebP/AVIF/BMP/SVG, ≤5 MB (magic-byte sniffed).
+    FileUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+    ImportUpload:
+      type: object
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Workspace export archive produced by the export endpoint.
