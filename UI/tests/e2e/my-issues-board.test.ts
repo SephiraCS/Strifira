@@ -30,7 +30,8 @@ async function mockMyIssuesBoard(page: Page) {
 	const unhandled: string[] = [];
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', (route) => {
-		const path = new URL(route.request().url()).pathname;
+		const requestUrl = new URL(route.request().url());
+		const path = requestUrl.pathname;
 		if (!path.startsWith('/api/')) return route.continue();
 
 		if (path === '/api/auth/me') {
@@ -88,16 +89,28 @@ async function mockMyIssuesBoard(page: Page) {
 			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		}
 		if (path === '/api/workspaces/test/issues') {
-			issueRequests.push(path);
+			issueRequests.push(`${requestUrl.searchParams.get('page') ?? '1'}`);
+			// Paginate: the orphaned-status issue only exists on page 2, so it
+			// renders on the board only when the fetch-all paging works.
+			const page = Number(requestUrl.searchParams.get('page') ?? 1);
+			if (page === 1) {
+				return route.fulfill({
+					json: {
+						data: [
+							issue('i1', 'ALP-1', 'Alpha todo issue', teamA, statusA1),
+							issue('i2', 'BET-1', 'Beta in-progress issue', teamB, statusB1)
+						],
+						total_count: 3,
+						page: 1,
+						has_more: true
+					}
+				});
+			}
 			return route.fulfill({
 				json: {
-					data: [
-						issue('i1', 'ALP-1', 'Alpha todo issue', teamA, statusA1),
-						issue('i2', 'BET-1', 'Beta in-progress issue', teamB, statusB1),
-						issue('i3', 'ALP-2', 'Orphaned status issue', teamA, statusOrphan)
-					],
+					data: [issue('i3', 'ALP-2', 'Orphaned status issue', teamA, statusOrphan)],
 					total_count: 3,
-					page: 1,
+					page,
 					has_more: false
 				}
 			});
@@ -110,7 +123,7 @@ async function mockMyIssuesBoard(page: Page) {
 }
 
 test('my issues board renders one section per team and never hides orphaned statuses', async ({ page }) => {
-	const { unhandled } = await mockMyIssuesBoard(page);
+	const { unhandled, issueRequests } = await mockMyIssuesBoard(page);
 
 	await page.goto('/test/my-issues');
 
@@ -124,9 +137,12 @@ test('my issues board renders one section per team and never hides orphaned stat
 	await expect(page.getByText('Beta in-progress issue')).toBeVisible();
 
 	// An issue whose status key matches no column stays visible in the
-	// trailing bucket instead of disappearing from the board.
+	// trailing bucket instead of disappearing from the board — and it lives on
+	// page 2, proving boards follow every page (a move beyond the first page
+	// used to make issues vanish outright).
 	await expect(page.getByText('Orphaned status issue')).toBeVisible();
 	await expect(page.getByLabel('No status').first()).toBeVisible();
+	expect(issueRequests).toContain('2');
 	expect(unhandled).toEqual([]);
 });
 
@@ -160,7 +176,8 @@ test('app.refresh bursts coalesce into one background reload and never blank the
 	});
 	expect(stayedVisible).toBe(true);
 
-	// The whole burst produced exactly one trailing refetch.
-	await expect.poll(() => issueRequests.length - requestsBefore, { timeout: 3_000 }).toBe(1);
+	// The whole burst produced exactly one trailing refetch (two page
+	// requests, since the board follows every page).
+	await expect.poll(() => issueRequests.length - requestsBefore, { timeout: 3_000 }).toBe(2);
 	await expect(page.getByText('Alpha todo issue')).toBeVisible();
 });

@@ -18,6 +18,13 @@ class IssuesState {
 	private currentSlug = '';
 	private currentPage = 1;
 	private loadRequestId = 0;
+	// Board layouts render whole columns and have no "load more": their loads
+	// (and refreshes) must follow every page, or issues beyond the first page
+	// silently vanish whenever a move changes their sort order.
+	private fetchAllPages = false;
+
+	/** Safety bound for fetchAll loads (100/page × 10 = 1000 issues). */
+	static readonly FETCH_ALL_MAX_PAGES = 10;
 
 	/**
 	 * Key identifying the view (filters) the current selection belongs to.
@@ -165,9 +172,10 @@ class IssuesState {
 		this.clearSelection();
 	}
 
-	beginLoad(slug: string, params?: Record<string, string>, showLoading = true) {
+	beginLoad(slug: string, params?: Record<string, string>, showLoading = true, fetchAll = false) {
 		this.loadRequestId++;
 		this.currentSlug = slug;
+		this.fetchAllPages = fetchAll;
 		// If the view changed, drop any selection from the previous view so
 		// bulk operations remain scoped to the current view.
 		const newScope = this.viewKey(slug, params);
@@ -182,21 +190,38 @@ class IssuesState {
 		if (showLoading) this.loading = true;
 	}
 
-	async load(slug: string, params?: Record<string, string>, showLoading = true) {
-		this.beginLoad(slug, params, showLoading);
+	async load(slug: string, params?: Record<string, string>, showLoading = true, fetchAll = false) {
+		this.beginLoad(slug, params, showLoading, fetchAll);
 		const requestId = this.loadRequestId;
 		try {
 			const res = await issueApi.listIssues(slug, params);
 			if (requestId !== this.loadRequestId) return;
-			this.issues = res.data;
+			let data = res.data;
+			let page = res.page;
+			let hasMore = res.has_more;
+			while (fetchAll && hasMore && page < IssuesState.FETCH_ALL_MAX_PAGES) {
+				const next = await issueApi.listIssues(slug, { ...params, page: String(page + 1) });
+				if (requestId !== this.loadRequestId) return;
+				const existing = new Set(data.map((issue) => issue.id));
+				data = [...data, ...next.data.filter((issue) => !existing.has(issue.id))];
+				page = next.page;
+				hasMore = next.has_more;
+			}
+			this.issues = data;
 			this.totalCount = res.total_count;
-			this.currentPage = res.page;
-			this.hasMore = res.has_more;
+			this.currentPage = page;
+			this.hasMore = hasMore;
 		} finally {
 			if (requestId === this.loadRequestId) {
 				this.loading = false;
 			}
 		}
+	}
+
+	/** Re-run the last load with its exact params (incl. board fetchAll). */
+	async refresh(showLoading = false) {
+		if (!this.currentSlug) return;
+		await this.load(this.currentSlug, this.filters, showLoading, this.fetchAllPages);
 	}
 
 	async loadMore() {

@@ -119,9 +119,10 @@
 		issuesRefreshTimer = setTimeout(() => {
 			issuesRefreshTimer = null;
 			// Background reload: keep the current list on screen (loading stays
-			// false — boards render nothing while it is true).
+			// false — boards render nothing while it is true). refresh() reuses
+			// the view's exact params, including board fetch-all paging.
 			if (slug && issuesState.issues.length > 0) {
-				void issuesState.load(slug, issuesState.filters, false);
+				void issuesState.refresh(false);
 			}
 		}, 300);
 	}

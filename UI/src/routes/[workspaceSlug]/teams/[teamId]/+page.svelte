@@ -153,14 +153,17 @@
 		params.sort ??= 'sort_order';
 		params.order ??= 'asc';
 		if (layout === 'board') {
-			params.per_page = '200';
+			params.per_page = '100';
 		}
 		return params;
 	}
 
 	function loadIssues() {
 		const params = getIssueParams();
-		issuesState.load(slug, params);
+		// Boards render whole columns with no "load more": follow every page so
+		// issues beyond the first page don't vanish when a move changes their
+		// sort order (per_page alone cannot cover large teams).
+		issuesState.load(slug, params, true, layout === 'board');
 	}
 
 	function handleFilterChange(f: ViewFilter) {
