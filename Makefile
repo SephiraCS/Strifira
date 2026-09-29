@@ -58,7 +58,8 @@ test-backend:
 	$(DOTENV) cd BE && go test ./...
 
 test-frontend:
-	cd UI && npm run test
+	cd UI && npm run test:unit
+	cd UI && npm run test:e2e
 
 lint:
 	cd BE && golangci-lint run ./...
