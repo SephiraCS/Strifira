@@ -110,7 +110,12 @@
 				}
 				void teamStatusesState.reload(s, t);
 				return Promise.all([
-					issuesState.load(s, getIssueParams()),
+					// Boards render whole columns with no "load more": the mount
+					// load must follow every page like every other board entry
+					// point — a page-1-only mount makes any moved issue vanish
+					// at the next refresh, when its re-averaged sort_order lands
+					// beyond page 1.
+					issuesState.load(s, getIssueParams(), true, layout === 'board'),
 					Promise.all([listTeams(s), listProjects(s), listLabels(s), listMembers(s), listCycles(s, t)]).then(
 						([te, p, l, m, c]) => {
 							if (currentInitialization !== initializationId || s !== slug || t !== teamId) return;
