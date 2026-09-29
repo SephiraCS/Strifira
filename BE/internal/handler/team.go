@@ -8,6 +8,7 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/middleware"
+	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
@@ -78,9 +79,23 @@ func (h *TeamHandler) Update(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
+	if err := validate.Struct(&req); err != nil {
+		details := make([]dto.ErrorDetail, 0)
+		for _, e := range validate.FormatErrors(err) {
+			details = append(details, dto.ErrorDetail{Field: e["field"], Message: e["message"]})
+		}
+		return response.ValidationError(c, details)
+	}
 	team, err := h.teamSvc.Update(c.Request().Context(), teamID, req)
 	if err != nil {
-		return response.InternalError(c)
+		switch {
+		case errors.Is(err, repository.ErrTeamKeyCollision):
+			return response.Error(c, http.StatusConflict, "TEAM_KEY_COLLISION", "Another team already uses identifiers under this key")
+		case errors.Is(err, service.ErrTeamNotFound):
+			return response.NotFound(c, "Team")
+		default:
+			return response.InternalError(c)
+		}
 	}
 	return response.Success(c, http.StatusOK, toTeamResponse(*team))
 }

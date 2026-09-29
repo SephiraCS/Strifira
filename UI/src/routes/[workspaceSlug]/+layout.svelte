@@ -76,6 +76,7 @@
 			const renderRequest = Promise.all([workspaceRequest, teamsRequest]).then(([ws, t]) => {
 				if (loadId !== workspaceLoadId) return;
 				workspace = ws;
+				sidebarState.workspaceRole = ws.current_user_role ?? 'guest';
 				teams = t;
 				sidebarState.teams = t;
 				sharesState.setEnabled(ws.screen_sharing_enabled);
@@ -143,7 +144,7 @@
 			scheduleIssuesRefresh();
 		}
 		if (resources.includes('workspace')) {
-			getWorkspace(slug).then((ws) => { workspace = ws; }).catch(() => {});
+			getWorkspace(slug).then((ws) => { workspace = ws; sidebarState.workspaceRole = ws.current_user_role ?? 'guest'; }).catch(() => {});
 		}
 		if (resources.includes('teams')) {
 			listTeams(slug).then((t) => {
@@ -187,6 +188,7 @@
 		if (authReady && slug && slug !== loadedSlug) {
 			loadedSlug = slug;
 			workspace = null;
+			sidebarState.workspaceRole = 'guest';
 			teams = [];
 			projects = [];
 			labels = [];

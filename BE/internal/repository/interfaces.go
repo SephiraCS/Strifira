@@ -67,6 +67,9 @@ type TeamRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Team, error)
 	ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Team, error)
 	Update(ctx context.Context, team *domain.Team) error
+	// UpdateAndRenameKey changes the team (incl. its key) and rewrites every
+	// issue identifier to the new key atomically; fails on collisions.
+	UpdateAndRenameKey(ctx context.Context, team *domain.Team, newKey string) (renamedIssues int64, err error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	AddMember(ctx context.Context, member *domain.TeamMember) error
 	GetMember(ctx context.Context, teamID, userID uuid.UUID) (*domain.TeamMember, error)

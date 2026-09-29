@@ -31,8 +31,11 @@
 	import type { ViewFilter, ViewLayout } from '$lib/types/view';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Layers, SquareUser, SquaresSubtract, ChevronRight, Share2 } from 'lucide-svelte';
+	import { Layers, SquareUser, SquaresSubtract, ChevronRight, Share2, Settings2 } from 'lucide-svelte';
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
+	import TeamRenameDialog from '$lib/features/teams/TeamRenameDialog.svelte';
+	import { hasPermission } from '$lib/security/permissions';
+	import type { Role } from '$lib/security/roles';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
@@ -53,6 +56,8 @@
 	let labels = $state<Label[]>([]);
 	let members = $state<WorkspaceMember[]>([]);
 	let cycles = $state<Cycle[]>([]);
+	const canManageTeam = $derived(hasPermission(sidebarState.workspaceRole as Role, 'team:manage'));
+	let showRenameTeam = $state(false);
 	let showCreateIssue = $state(false);
 	let showShareLink = $state(false);
 	let quickAddDefaults = $state<{ statusId?: string; priority?: IssuePriority; assigneeIds?: string[] }>({});
@@ -445,6 +450,16 @@
 			>
 				<Share2 size={14} />
 			</button>
+			{#if canManageTeam}
+				<button
+					onclick={() => (showRenameTeam = true)}
+					class="rounded-md p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+					title={m['teams.rename.button']()}
+					aria-label={m['teams.rename.button']()}
+				>
+					<Settings2 size={14} />
+				</button>
+			{/if}
 		</div>
 		<div class="flex shrink-0 items-center gap-2">
 			<!-- Group by -->
@@ -673,6 +688,19 @@
 />
 
 <ShareLinkDialog bind:open={showShareLink} {slug} scope="team" scopeId={teamId} {filters} />
+
+<TeamRenameDialog
+	bind:open={showRenameTeam}
+	{slug}
+	team={sidebarState.getTeam(teamId)}
+	onupdated={(updated) => {
+		// Keep the local filter/sidebar copies fresh; the server broadcast
+		// refreshes issues (new identifiers) everywhere else.
+		teams = teams.map((t) => (t.id === updated.id ? updated : t));
+		sidebarState.teams = sidebarState.teams.map((t) => (t.id === updated.id ? updated : t));
+		loadIssues();
+	}}
+/>
 
 <AddRelationDialog
 	bind:open={relationDialogOpen}

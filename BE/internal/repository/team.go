@@ -43,6 +43,50 @@ func (r *TeamRepository) Update(ctx context.Context, team *domain.Team) error {
 	return r.db.QueryRowContext(ctx, query, team.Name, team.Description, team.Color, team.Icon, team.TriageEnabled, team.ParentAutoCloseEnabled, team.SubIssueAutoCloseEnabled, team.IssueCopyPrompt, team.ID).Scan(&team.UpdatedAt)
 }
 
+// ErrTeamKeyCollision means another team in the workspace already issues
+// identifiers under the requested key, so renaming would create duplicates.
+var ErrTeamKeyCollision = errors.New("another team already uses identifiers under this key")
+
+// UpdateAndRenameKey changes the team row (including its key) and rewrites
+// every issue identifier from oldKey-N to newKey-N in one transaction. The
+// workspace-wide identifier uniqueness is checked first; a collision fails
+// the whole transaction without touching anything.
+func (r *TeamRepository) UpdateAndRenameKey(ctx context.Context, team *domain.Team, newKey string) (int64, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var collision bool
+	err = tx.GetContext(ctx, &collision, `SELECT EXISTS(
+		SELECT 1 FROM issues mine
+		JOIN issues other ON other.workspace_id = mine.workspace_id
+			AND other.team_id <> mine.team_id
+			AND other.identifier_text = $3 || '-' || mine.number
+		WHERE mine.team_id = $1 AND mine.workspace_id = $2)`, team.ID, team.WorkspaceID, newKey)
+	if err != nil {
+		return 0, err
+	}
+	if collision {
+		return 0, ErrTeamKeyCollision
+	}
+
+	if err := tx.QueryRowContext(ctx, `UPDATE teams SET name = $1, key = $2, description = $3, color = $4, icon = $5, triage_enabled = $6, parent_auto_close_enabled = $7, sub_issue_auto_close_enabled = $8, issue_copy_prompt = $9, updated_at = NOW() WHERE id = $10 RETURNING updated_at`,
+		team.Name, newKey, team.Description, team.Color, team.Icon, team.TriageEnabled, team.ParentAutoCloseEnabled, team.SubIssueAutoCloseEnabled, team.IssueCopyPrompt, team.ID).Scan(&team.UpdatedAt); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE issues SET identifier_text = $1 || '-' || number, updated_at = NOW() WHERE team_id = $2 AND workspace_id = $3`, newKey, team.ID, team.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	renamed, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return renamed, tx.Commit()
+}
+
 func (r *TeamRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM teams WHERE id = $1`, id)
 	return err

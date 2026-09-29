@@ -42,6 +42,8 @@ class SidebarState {
 
 	projects = $state<Project[]>([]);
 	teams = $state<Team[]>([]);
+	/** Current user's role in the active workspace (set by the workspace layout). */
+	workspaceRole = $state<string>('guest');
 
 	getTeam(id: string): Team | undefined {
 		return this.teams.find(t => t.id === id);

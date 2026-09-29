@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
 )
 
@@ -20,10 +21,11 @@ var (
 type TeamService struct {
 	teamRepo       repository.TeamRepo
 	teamStatusRepo repository.TeamStatusRepo
+	hub            *realtime.Hub
 }
 
-func NewTeamService(teamRepo repository.TeamRepo, teamStatusRepo repository.TeamStatusRepo) *TeamService {
-	return &TeamService{teamRepo: teamRepo, teamStatusRepo: teamStatusRepo}
+func NewTeamService(teamRepo repository.TeamRepo, teamStatusRepo repository.TeamStatusRepo, hub *realtime.Hub) *TeamService {
+	return &TeamService{teamRepo: teamRepo, teamStatusRepo: teamStatusRepo, hub: hub}
 }
 
 func (s *TeamService) Create(ctx context.Context, workspaceID uuid.UUID, creatorID uuid.UUID, req dto.CreateTeamRequest) (*domain.Team, error) {
@@ -122,8 +124,35 @@ func (s *TeamService) Update(ctx context.Context, id uuid.UUID, req dto.UpdateTe
 		}
 	}
 
-	if err := s.teamRepo.Update(ctx, team); err != nil {
-		return nil, err
+	keyChanged := false
+	if req.Key != nil {
+		newKey := strings.ToUpper(strings.TrimSpace(*req.Key))
+		if newKey != team.Key {
+			keyChanged = true
+			// UpdateAndRenameKey also persists the team fields above and
+			// rewrites every issue identifier in the same transaction.
+			if _, err := s.teamRepo.UpdateAndRenameKey(ctx, team, newKey); err != nil {
+				return nil, err
+			}
+			team.Key = newKey
+		}
+	}
+	if !keyChanged {
+		if err := s.teamRepo.Update(ctx, team); err != nil {
+			return nil, err
+		}
+	}
+
+	if keyChanged && s.hub != nil {
+		// Identifiers of every team issue changed: refresh sidebars, boards,
+		// and lists on all connected clients.
+		s.hub.Broadcast(team.WorkspaceID, realtime.Event{
+			Type: "app.refresh",
+			Payload: map[string]any{
+				"source":    "team",
+				"resources": []string{"teams", "issues"},
+			},
+		})
 	}
 	return team, nil
 }

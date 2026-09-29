@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -209,6 +211,7 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 		Workspace     string  `json:"workspace"`
 		Team          string  `json:"team" jsonschema:"team key, name, or id"`
 		Name          *string `json:"name,omitempty"`
+		Key           *string `json:"key,omitempty" jsonschema:"new team key (1-10 uppercase letters); every issue identifier is rewritten to the new key"`
 		Description   *string `json:"description,omitempty"`
 		TriageEnabled *bool   `json:"triage_enabled,omitempty"`
 	}) (*mcp.CallToolResult, any, error) {
@@ -221,9 +224,12 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 			return nil, nil, err
 		}
 		team, err = deps.TeamSvc.Update(ctx, team.ID, dto.UpdateTeamRequest{
-			Name: in.Name, Description: in.Description, TriageEnabled: in.TriageEnabled,
+			Name: in.Name, Key: in.Key, Description: in.Description, TriageEnabled: in.TriageEnabled,
 		})
 		if err != nil {
+			if errors.Is(err, repository.ErrTeamKeyCollision) {
+				return nil, nil, fmt.Errorf("another team already uses identifiers under key %s; nothing was changed", strings.ToUpper(strings.TrimSpace(*in.Key)))
+			}
 			return nil, nil, fmt.Errorf("failed to update team: %w", err)
 		}
 		return nil, teamOut{ID: team.ID.String(), Key: team.Key, Name: team.Name, Description: team.Description}, nil

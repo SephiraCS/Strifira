@@ -210,6 +210,10 @@ func (r *testTeamRepo) ListByWorkspace(_ context.Context, wsID uuid.UUID) ([]dom
 	return teams, nil
 }
 
+func (r *testTeamRepo) UpdateAndRenameKey(_ context.Context, _ *domain.Team, _ string) (int64, error) {
+	return 0, nil
+}
+
 func (r *testTeamRepo) Update(_ context.Context, team *domain.Team) error {
 	r.teams[team.ID] = team
 	return nil

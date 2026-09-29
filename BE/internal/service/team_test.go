@@ -11,7 +11,7 @@ import (
 
 func TestTeamService_Delete(t *testing.T) {
 	repo := new(mockTeamRepo)
-	svc := NewTeamService(repo, new(mockTeamStatusRepo))
+	svc := NewTeamService(repo, new(mockTeamStatusRepo), nil)
 	ctx := context.Background()
 	workspaceID := uuid.New()
 	teamID := uuid.New()
@@ -27,7 +27,7 @@ func TestTeamService_Delete(t *testing.T) {
 
 func TestTeamService_Delete_NotFoundWhenWorkspaceDiffers(t *testing.T) {
 	repo := new(mockTeamRepo)
-	svc := NewTeamService(repo, new(mockTeamStatusRepo))
+	svc := NewTeamService(repo, new(mockTeamStatusRepo), nil)
 	ctx := context.Background()
 	teamID := uuid.New()
 
@@ -41,7 +41,7 @@ func TestTeamService_Delete_NotFoundWhenWorkspaceDiffers(t *testing.T) {
 
 func TestTeamService_Leave_RemovesMembership(t *testing.T) {
 	repo := new(mockTeamRepo)
-	svc := NewTeamService(repo, new(mockTeamStatusRepo))
+	svc := NewTeamService(repo, new(mockTeamStatusRepo), nil)
 	ctx := context.Background()
 	workspaceID := uuid.New()
 	teamID := uuid.New()
@@ -65,7 +65,7 @@ func TestTeamService_Leave_RemovesMembership(t *testing.T) {
 
 func TestTeamService_Leave_DeletesWhenLastMember(t *testing.T) {
 	repo := new(mockTeamRepo)
-	svc := NewTeamService(repo, new(mockTeamStatusRepo))
+	svc := NewTeamService(repo, new(mockTeamStatusRepo), nil)
 	ctx := context.Background()
 	workspaceID := uuid.New()
 	teamID := uuid.New()
@@ -85,7 +85,7 @@ func TestTeamService_Leave_DeletesWhenLastMember(t *testing.T) {
 
 func TestTeamService_Leave_DeletesWhenWorkspaceOwner(t *testing.T) {
 	repo := new(mockTeamRepo)
-	svc := NewTeamService(repo, new(mockTeamStatusRepo))
+	svc := NewTeamService(repo, new(mockTeamStatusRepo), nil)
 	ctx := context.Background()
 	workspaceID := uuid.New()
 	teamID := uuid.New()
@@ -104,7 +104,7 @@ func TestTeamService_Leave_DeletesWhenWorkspaceOwner(t *testing.T) {
 
 func TestTeamService_Leave_NotMember(t *testing.T) {
 	repo := new(mockTeamRepo)
-	svc := NewTeamService(repo, new(mockTeamStatusRepo))
+	svc := NewTeamService(repo, new(mockTeamStatusRepo), nil)
 	ctx := context.Background()
 	workspaceID := uuid.New()
 	teamID := uuid.New()
