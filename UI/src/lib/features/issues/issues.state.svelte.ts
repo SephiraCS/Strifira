@@ -199,13 +199,32 @@ class IssuesState {
 			let data = res.data;
 			let page = res.page;
 			let hasMore = res.has_more;
-			while (fetchAll && hasMore && page < IssuesState.FETCH_ALL_MAX_PAGES) {
-				const next = await issueApi.listIssues(slug, { ...params, page: String(page + 1) });
+			if (fetchAll && hasMore) {
+				// The first page reveals the total: fan the remaining pages out
+				// in parallel (bounded) and merge in page order, so a board
+				// load costs one round-trip instead of one per page.
+				const perPage = res.per_page && res.per_page > 0 ? res.per_page : Math.max(1, data.length);
+				const lastPage = Math.min(
+					Math.max(1, Math.ceil(res.total_count / perPage)),
+					IssuesState.FETCH_ALL_MAX_PAGES
+				);
+				const rest = await Promise.all(
+					Array.from({ length: Math.max(0, lastPage - page) }, (_, k) =>
+						issueApi.listIssues(slug, { ...params, page: String(page + 1 + k) })
+					)
+				);
 				if (requestId !== this.loadRequestId) return;
 				const existing = new Set(data.map((issue) => issue.id));
-				data = [...data, ...next.data.filter((issue) => !existing.has(issue.id))];
-				page = next.page;
-				hasMore = next.has_more;
+				for (const next of rest) {
+					for (const issue of next.data) {
+						if (!existing.has(issue.id)) {
+							existing.add(issue.id);
+							data.push(issue);
+						}
+					}
+					page = Math.max(page, next.page);
+					hasMore = next.has_more;
+				}
 			}
 			this.issues = data;
 			this.totalCount = res.total_count;
