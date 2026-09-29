@@ -83,6 +83,15 @@ async function mockTeamPage(page: Page, opts: { patchStatus?: number; patchBody?
 				]
 			});
 		}
+		if (path === '/api/workspaces/test/forgejo/status') {
+			return route.fulfill({ json: { connected: false, repos: [] } });
+		}
+		if (path === '/api/workspaces/test/dev-machine-scope-setting') {
+			return route.fulfill({ json: { forgejo_repo_id: null, environment_id: null } });
+		}
+		if (path === '/api/workspaces/test/dev-machine-environments') {
+			return route.fulfill({ json: [] });
+		}
 		if (['/api/workspaces/test/projects', '/api/workspaces/test/labels', '/api/workspaces/test/members', '/api/workspaces/test/views', `/api/workspaces/test/teams/${teamId}/cycles`].includes(path)) {
 			return route.fulfill({ json: [] });
 		}
@@ -144,5 +153,49 @@ test('identifier collision keeps the dialog open with a clear message', async ({
 
 	await expect(dialog.getByText('Another team already uses identifiers under this key.')).toBeVisible();
 	await expect(dialog).toBeVisible();
+	expect(patchBodies).toHaveLength(1);
+});
+
+test('settings team page edit changes the identifier through the same endpoint', async ({ page }) => {
+	const patchBodies = await mockTeamPage(page);
+
+	await page.goto(`/test/settings/teams/${teamId}`);
+	// Read-only General card shows the current identifier.
+	await expect(page.getByText('ENG').first()).toBeVisible();
+
+	await page.getByRole('button', { name: 'Edit' }).click();
+	const keyInput = page.locator('input[placeholder="ENG"]');
+	await expect(keyInput).toBeVisible();
+	await expect(keyInput).toHaveValue('ENG');
+
+	await keyInput.fill('new');
+	// The input uppercases and the hint previews the identifier switch.
+	await expect(keyInput).toHaveValue('NEW');
+	await expect(page.getByText('1–10 uppercase letters')).toContainText('NEW-12');
+
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+	await expect.poll(() => patchBodies.length).toBe(1);
+	expect(JSON.parse(patchBodies[0])).toEqual({ name: 'Engineering', description: null, key: 'NEW' });
+	await expect(page.getByText('Team details updated')).toBeVisible();
+	// The form closes and the read-only card shows the new identifier.
+	await expect(page.locator('input[placeholder="ENG"]')).toBeHidden();
+	await expect(page.getByText('NEW').first()).toBeVisible();
+});
+
+test('settings team page identifier collision keeps the form open', async ({ page }) => {
+	const patchBodies = await mockTeamPage(page, {
+		patchStatus: 409,
+		patchBody: { error: { code: 'TEAM_KEY_COLLISION', message: 'Another team already uses identifiers under this key' } }
+	});
+
+	await page.goto(`/test/settings/teams/${teamId}`);
+	await page.getByRole('button', { name: 'Edit' }).click();
+	const keyInput = page.locator('input[placeholder="ENG"]');
+	await keyInput.fill('oth');
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+	await expect(page.getByText('Another team already uses identifiers under this key.')).toBeVisible();
+	await expect(keyInput).toBeVisible();
 	expect(patchBodies).toHaveLength(1);
 });

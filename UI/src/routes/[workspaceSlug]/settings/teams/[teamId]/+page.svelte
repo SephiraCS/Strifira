@@ -32,6 +32,19 @@
 	let editingDetails = $state(false);
 	let editName = $state('');
 	let editDescription = $state('');
+	let editKey = $state('');
+	let keyCollision = $state(false);
+
+	// Same identifier rules as the team-page rename dialog: 1–10 uppercase
+	// letters; a change rewrites every issue identifier in one transaction.
+	const editKeyValid = $derived(/^[A-Z]{1,10}$/.test(editKey));
+
+	function onKeyInput(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		editKey = input.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 10);
+		input.value = editKey;
+		keyCollision = false;
+	}
 	let issueCopyPrompt = $state('');
 	let savingIssueCopyPrompt = $state(false);
 	let pickerOpen = $state(false);
@@ -275,23 +288,35 @@
 		if (!team) return;
 		editName = team.name;
 		editDescription = team.description ?? '';
+		editKey = team.key;
+		keyCollision = false;
 		editingDetails = true;
 	}
 
 	async function saveDetails() {
 		if (!team || !editName.trim()) return;
+		if (editKey !== team.key && !editKeyValid) return;
 		const previous = team;
+		const keyChanged = editKey !== team.key;
+		const payload: Partial<{ name: string; key: string; description: string | null }> = {
+			name: editName.trim(),
+			description: editDescription.trim() || null
+		};
+		if (keyChanged) payload.key = editKey;
 		team = { ...team, name: editName.trim(), description: editDescription.trim() || null };
 		try {
-			team = await updateTeam(slug, teamId, {
-				name: editName.trim(),
-				description: editDescription.trim() || null
-			});
+			team = await updateTeam(slug, teamId, payload);
 			editingDetails = false;
+			keyCollision = false;
 			appToast.success(m['team_settings.toast.details_updated']());
 		} catch (err: any) {
 			team = previous;
-			appToast.apiError(err, m['team_settings.toast.details_update_failed']());
+			if (keyChanged && err?.error?.code === 'TEAM_KEY_COLLISION') {
+				// Keep the form open so the operator can pick another key.
+				keyCollision = true;
+			} else {
+				appToast.apiError(err, m['team_settings.toast.details_update_failed']());
+			}
 		}
 	}
 
@@ -411,6 +436,24 @@
 						/>
 					</div>
 					<div class="space-y-1.5">
+						<Label class="text-xs text-[var(--color-text-secondary)]">{m['team_settings.identifier']()}</Label>
+						<Input
+							value={editKey}
+							oninput={onKeyInput}
+							placeholder="ENG"
+							class="bg-[var(--color-bg)] border-[var(--app-border)] text-[var(--color-text-primary)] font-mono uppercase"
+						/>
+						<p class="text-xs text-[var(--color-text-tertiary)]">
+							{m['teams.rename.key_hint']({ old: team.key, new: editKey || '…' })}
+						</p>
+						{#if editKey && !editKeyValid}
+							<p class="text-xs text-[var(--color-text-tertiary)]">{m['teams.rename.key_format']()}</p>
+						{/if}
+						{#if keyCollision}
+							<p class="text-xs text-[var(--color-text-primary)]">{m['teams.rename.collision']()}</p>
+						{/if}
+					</div>
+					<div class="space-y-1.5">
 						<Label class="text-xs text-[var(--color-text-secondary)]">{m['team_settings.description_label']()}</Label>
 						<Input
 							bind:value={editDescription}
@@ -420,7 +463,7 @@
 					</div>
 					<div class="flex justify-end gap-2">
 						<Button variant="outline" size="sm" onclick={() => (editingDetails = false)}><X size={14} />{m['team_settings.cancel']()}</Button>
-						<Button size="sm" onclick={saveDetails} disabled={!editName.trim()}><Check size={14} />{m['team_settings.save']()}</Button>
+						<Button size="sm" onclick={saveDetails} disabled={!editName.trim() || (editKey !== team.key && !editKeyValid)}><Check size={14} />{m['team_settings.save']()}</Button>
 					</div>
 				{:else}
 					<div class="grid gap-3 text-sm">
