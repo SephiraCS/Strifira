@@ -86,6 +86,22 @@ jobs:
           PROVIDER: ${{ matrix.provider }}
         run: |
           set -euo pipefail
+          # Reuse deployment caches for the two Caddy builds. Agent images
+          # remove /root/.npm, so their builds must keep a private npm cache.
+          cache_args=()
+          case "${{ matrix.id }}" in
+            app|frontend)
+              : "${GOMODCACHE:?the ts-builder image exports GOMODCACHE}"
+              : "${GOCACHE:?the ts-builder image exports GOCACHE}"
+              : "${NPM_CONFIG_CACHE:?the ts-builder image exports NPM_CONFIG_CACHE}"
+              mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${NPM_CONFIG_CACHE}"
+              cache_args=(
+                --volume "${GOMODCACHE}:/go/pkg/mod"
+                --volume "${GOCACHE}:/root/.cache/go-build"
+                --volume "${NPM_CONFIG_CACHE}:/root/.npm"
+              )
+              ;;
+          esac
           # Forgejo currently starts every matrix leg despite max-parallel.
           # Hold one of three shared slots until build/save finish. Closing
           # FD 9 in children keeps their helper processes from retaining it.
@@ -103,6 +119,7 @@ jobs:
           done
           echo "Acquired image build slot $build_slot"
           podman build --pull --layers=false ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
+            "${cache_args[@]}" \
             --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}" 9>&-
           podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan" 9>&-
 
