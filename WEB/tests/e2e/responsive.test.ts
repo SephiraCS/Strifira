@@ -1,14 +1,21 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
-test('all indexable routes fit a 320px viewport', async ({ page, request }) => {
-	const sitemap = await request.get('/sitemap.xml');
-	expect(sitemap.ok()).toBe(true);
-	const xml = await sitemap.text();
-	const routes = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1]).pathname);
-	expect(routes).toHaveLength(32);
-	const overflowingRoutes: Array<{ route: string; overflow: number; offenders: unknown[] }> = [];
+// One test per indexable route: each gets its own timeout and runs in
+// parallel, so a slow runner cannot fail the whole sweep, and a failure
+// names its route. The list comes from the built sitemap (`npm run build`
+// runs before these tests, and the preview server serves that build).
+const sitemap = readFileSync(new URL('../../build/sitemap.xml', import.meta.url), 'utf8');
+const routes = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1]).pathname);
 
-	for (const route of routes) {
+test.describe.configure({ mode: 'parallel' });
+
+test('the sitemap lists every indexable route', () => {
+	expect(routes).toHaveLength(32);
+});
+
+for (const route of routes) {
+	test(`${route} fits a 320px viewport`, async ({ page }) => {
 		await page.goto(route, { waitUntil: 'networkidle' });
 		const layout = await page.evaluate(() => {
 			const viewportWidth = document.documentElement.clientWidth;
@@ -23,17 +30,9 @@ test('all indexable routes fit a 320px viewport', async ({ page, request }) => {
 					left: Math.round(rect.left),
 					right: Math.round(rect.right)
 				}));
-			return { viewportWidth, scrollWidth, offenders };
+			return { overflow: scrollWidth - viewportWidth, offenders };
 		});
 
-		if (layout.scrollWidth > layout.viewportWidth) {
-			overflowingRoutes.push({
-				route,
-				overflow: layout.scrollWidth - layout.viewportWidth,
-				offenders: layout.offenders
-			});
-		}
-	}
-
-	expect(overflowingRoutes).toEqual([]);
-});
+		expect(layout.overflow, JSON.stringify(layout.offenders)).toBeLessThanOrEqual(0);
+	});
+}
