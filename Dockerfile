@@ -8,6 +8,8 @@ RUN npm run build
 
 # Stage 2: Build Caddy from source with patched Go. Versions are pinned so
 # the build is reproducible and a warm Go build cache makes it a relink.
+# x/crypto and grpc are lifted past their advisories; x/text needs no pin:
+# Caddy v2.11.4 already requires v0.41.0 (a v0.39.0 replace downgraded it).
 FROM docker.io/library/golang:1.27.1-alpine AS caddy-builder
 RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.7
 RUN xcaddy build v2.11.4 \
