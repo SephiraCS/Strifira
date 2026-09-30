@@ -32,10 +32,12 @@ jobs:
     name: Image Security Scan (${{ matrix.id }})
     runs-on: terrascale-builder
     timeout-minutes: 45
-    # One leg per image so every build and scan runs in parallel. The app
-    # leg builds the root Dockerfile that ci.yml stages and build.yml ships.
+    # Keep expensive nested image builds bounded so the shared Docker daemon
+    # can also create and clean up test jobs. Every image still gets scanned.
+    # The app leg builds the root Dockerfile that ci.yml stages and build.yml ships.
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         include:
           - { id: app, context: ., file: ./Dockerfile, inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
