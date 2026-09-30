@@ -6,7 +6,11 @@
 	import { createView } from '$lib/api/views';
 	import type { Team } from '$lib/types/team';
 	import type { ViewFilter, ViewScope } from '$lib/types/view';
-	import { Bookmark, Building2, Check, CircleUser, SquareUser } from 'lucide-svelte';
+	import Bookmark from '@lucide/svelte/icons/bookmark';
+	import Building2 from '@lucide/svelte/icons/building-complex';
+	import Check from '@lucide/svelte/icons/check';
+	import CircleUser from '@lucide/svelte/icons/circle-user';
+	import SquareUser from '@lucide/svelte/icons/square-user';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

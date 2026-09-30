@@ -18,8 +18,10 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import { Check, Search, X } from 'lucide-svelte';
-	import * as LucideIcons from 'lucide-svelte';
+	import Check from '@lucide/svelte/icons/check';
+	import Search from '@lucide/svelte/icons/search';
+	import X from '@lucide/svelte/icons/x';
+	import * as LucideIcons from '@lucide/svelte';
 	import type { Component } from 'svelte';
 	import Database from 'emoji-picker-element/database';
 	import type { Emoji } from 'emoji-picker-element/shared';

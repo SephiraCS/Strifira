@@ -33,7 +33,9 @@
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
 	import { createShortcutEngine, type ShortcutDef } from '$lib/utils/keyboard';
-	import { Menu, Search, SquarePen } from 'lucide-svelte';
+	import Menu from '@lucide/svelte/icons/menu';
+	import Search from '@lucide/svelte/icons/search';
+	import SquarePen from '@lucide/svelte/icons/square-pen';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

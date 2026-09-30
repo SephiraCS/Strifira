@@ -4,7 +4,8 @@
 	import DueDatePickerPanel from './DueDatePickerPanel.svelte';
 	import { CalendarDate } from '@internationalized/date';
 	import type { DateValue } from '@internationalized/date';
-	import { CalendarIcon, X } from 'lucide-svelte';
+	import CalendarIcon from '@lucide/svelte/icons/calendar';
+	import X from '@lucide/svelte/icons/x';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

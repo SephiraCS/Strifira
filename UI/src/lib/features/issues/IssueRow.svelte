@@ -18,7 +18,13 @@
 	import { issuesState } from './issues.state.svelte';
 	import { formatDate, formatIssueListDate, formatIssueListRelativeTime } from '$lib/utils/format';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
-	import { Ban, CalendarDays, CircleUser, Copy, Link, OctagonAlert, RefreshCw } from 'lucide-svelte';
+	import Ban from '@lucide/svelte/icons/ban';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import CircleUser from '@lucide/svelte/icons/circle-user';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Link from '@lucide/svelte/icons/link';
+	import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

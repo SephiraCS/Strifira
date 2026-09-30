@@ -8,7 +8,9 @@
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Bookmark, CircleUser, Trash2 } from 'lucide-svelte';
+	import Bookmark from '@lucide/svelte/icons/bookmark';
+	import CircleUser from '@lucide/svelte/icons/circle-user';
+	import Trash2 from '@lucide/svelte/icons/trash';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

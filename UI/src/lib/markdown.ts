@@ -20,7 +20,7 @@ export function renderMarkdown(source: string, validateLink?: (url: string) => b
 		const allowedLinks: boolean[] = [];
 		for (const child of token.children) {
 			if (child.type === 'link_open') {
-				const allowed = validateLink(child.attrGet('href') ?? '');
+				const allowed = validateLink(String(child.attrGet('href') ?? ''));
 				allowedLinks.push(allowed);
 				if (!allowed) {
 					child.tag = 'span';
@@ -28,7 +28,7 @@ export function renderMarkdown(source: string, validateLink?: (url: string) => b
 				}
 			} else if (child.type === 'link_close' && allowedLinks.pop() === false) {
 				child.tag = 'span';
-			} else if (child.type === 'image' && !validateLink(child.attrGet('src') ?? '')) {
+			} else if (child.type === 'image' && !validateLink(String(child.attrGet('src') ?? ''))) {
 				child.type = 'text';
 				child.tag = '';
 				child.attrs = [];

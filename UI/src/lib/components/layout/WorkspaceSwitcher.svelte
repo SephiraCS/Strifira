@@ -5,7 +5,10 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
-	import { Plus, ChevronsUpDown, Check, Loader2 } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import Check from '@lucide/svelte/icons/check';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 	import { onMount } from 'svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';

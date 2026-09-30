@@ -12,7 +12,11 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { formatRelativeTime } from '$lib/utils/format';
-	import { Plus, Trash2, KeyRound, Copy, Check } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash';
+	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Check from '@lucide/svelte/icons/check';
 
 	let keys = $state<APIKey[]>([]);
 	let loading = $state(true);

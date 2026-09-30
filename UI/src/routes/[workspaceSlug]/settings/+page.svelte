@@ -9,7 +9,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Trash2, Download, Loader2 } from 'lucide-svelte';
+	import Trash2 from '@lucide/svelte/icons/trash';
+	import Download from '@lucide/svelte/icons/download';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 	import AvatarUploader from '$lib/components/shared/AvatarUploader.svelte';
 	import WorkspaceImportDialog from '$lib/features/workspaces/WorkspaceImportDialog.svelte';
 	import { m } from '$lib/paraglide/messages.js';

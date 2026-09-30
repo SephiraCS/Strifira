@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { Plus, Server, GitBranch, Clock3, ChevronLeft, ChevronRight, Trash2 } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Server from '@lucide/svelte/icons/server';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import Clock3 from '@lucide/svelte/icons/clock-3';
+	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Trash2 from '@lucide/svelte/icons/trash';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Card from '$lib/components/ui/card';
 	import { bulkPermanentDeleteDevMachines, listDevMachines } from '$lib/api/dev-machines';

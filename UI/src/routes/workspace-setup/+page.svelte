@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Plus, Loader2 } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 	import { Button } from '$lib/components/ui/button';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import WorkspaceImportDialog from '$lib/features/workspaces/WorkspaceImportDialog.svelte';

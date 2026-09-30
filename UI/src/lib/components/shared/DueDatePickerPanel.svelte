@@ -3,7 +3,8 @@
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
 	import { CalendarDate } from '@internationalized/date';
 	import type { DateValue } from '@internationalized/date';
-	import { CalendarDays, X } from 'lucide-svelte';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import X from '@lucide/svelte/icons/x';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

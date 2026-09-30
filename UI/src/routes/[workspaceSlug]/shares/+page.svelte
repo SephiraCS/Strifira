@@ -6,7 +6,9 @@
 	import ShareTile from '$lib/features/shares/ShareTile.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
-	import { MonitorUp, MonitorPlay, Loader2 } from 'lucide-svelte';
+	import MonitorUp from '@lucide/svelte/icons/monitor-up';
+	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 	import { m } from '$lib/paraglide/messages.js';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');

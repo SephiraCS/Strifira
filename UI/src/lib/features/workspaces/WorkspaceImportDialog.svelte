@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { Upload, Loader2, AlertTriangle } from 'lucide-svelte';
+	import Upload from '@lucide/svelte/icons/upload';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import AlertTriangle from '@lucide/svelte/icons/triangle-alert';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { appToast } from '$lib/features/toast/toast';

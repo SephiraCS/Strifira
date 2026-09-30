@@ -2,22 +2,22 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { cubicOut } from 'svelte/easing';
-	import {
-		ArrowLeft,
-		User,
-		Users,
-		Tag,
-		Webhook,
-		Settings,
-		FileText,
-		Settings2,
-		Sparkles,
-		SlidersHorizontal,
-		CircleDot,
-		ChevronDown,
-		KeyRound,
-		Menu,
-		RefreshCw, GitBranch } from 'lucide-svelte';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import User from '@lucide/svelte/icons/user';
+	import Users from '@lucide/svelte/icons/users';
+	import Tag from '@lucide/svelte/icons/tag';
+	import Webhook from '@lucide/svelte/icons/webhook';
+	import Settings from '@lucide/svelte/icons/settings';
+	import FileText from '@lucide/svelte/icons/file-text';
+	import Settings2 from '@lucide/svelte/icons/settings-2';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+	import CircleDot from '@lucide/svelte/icons/circle-dot';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Menu from '@lucide/svelte/icons/menu';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
 	
 	import type { Snippet } from 'svelte';
 	import type { Team } from '$lib/types/team';

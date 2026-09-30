@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { login } from '$lib/api/auth';
-	import { Loader2 } from 'lucide-svelte';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 	import { Input } from '$lib/components/ui/input';
 	import { Password } from '$lib/components/ui/password';
 	import { authState } from './auth.state.svelte';

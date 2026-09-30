@@ -31,7 +31,13 @@
 	import type { ViewFilter, ViewLayout } from '$lib/types/view';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Archive, Layers, SquareUser, SquaresSubtract, ChevronRight, Share2, Settings2 } from 'lucide-svelte';
+	import Archive from '@lucide/svelte/icons/archive';
+	import Layers from '@lucide/svelte/icons/layers';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import SquaresSubtract from '@lucide/svelte/icons/squares-subtract';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Share2 from '@lucide/svelte/icons/share-2';
+	import Settings2 from '@lucide/svelte/icons/settings-2';
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
 	import TeamRenameDialog from '$lib/features/teams/TeamRenameDialog.svelte';
 	import { hasPermission } from '$lib/security/permissions';

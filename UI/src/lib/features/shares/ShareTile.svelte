@@ -12,17 +12,15 @@
 	} from './signaling';
 	import { presenterSession } from './presenter.session.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import {
-		Maximize2,
-		MonitorUp,
-		RefreshCw,
-		Loader2,
-		SignalHigh,
-		SignalMedium,
-		SignalLow,
-		Volume2,
-		VolumeX
-	} from 'lucide-svelte';
+	import Maximize2 from '@lucide/svelte/icons/maximize-2';
+	import MonitorUp from '@lucide/svelte/icons/monitor-up';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import SignalHigh from '@lucide/svelte/icons/signal-high';
+	import SignalMedium from '@lucide/svelte/icons/signal-medium';
+	import SignalLow from '@lucide/svelte/icons/signal-low';
+	import Volume2 from '@lucide/svelte/icons/volume-2';
+	import VolumeX from '@lucide/svelte/icons/volume-x';
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {

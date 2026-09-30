@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { login, register } from '$lib/api/auth';
-	import { ChevronDown, ChevronUp, Loader2 } from 'lucide-svelte';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
 	import { Input } from '$lib/components/ui/input';
 	import { Password } from '$lib/components/ui/password';
 	import { authState } from '$lib/features/auth/auth.state.svelte';

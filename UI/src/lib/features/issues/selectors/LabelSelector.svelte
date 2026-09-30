@@ -5,7 +5,7 @@
 	import { createLabel } from '$lib/api/labels';
 	import type { Label } from '$lib/types/label';
 	import type { Snippet } from 'svelte';
-	import { Plus } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

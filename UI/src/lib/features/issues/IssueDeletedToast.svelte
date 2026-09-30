@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { Check, Trash2 } from 'lucide-svelte';
+	import Check from '@lucide/svelte/icons/check';
+	import Trash2 from '@lucide/svelte/icons/trash';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 
 	let {

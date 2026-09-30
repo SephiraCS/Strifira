@@ -15,7 +15,14 @@
 	import IssuePriorityIcon from '$lib/features/issues/IssuePriorityIcon.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Popover from '$lib/components/ui/popover';
-	import { Globe, Search, CircleDashed, Signal, Plus, X, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import Globe from '@lucide/svelte/icons/globe';
+	import Search from '@lucide/svelte/icons/search';
+	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
+	import Signal from '@lucide/svelte/icons/signal';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import type { StatusCategory } from '$lib/types/team-status';
 
 	let meta = $state<PublicShareMeta | null>(null);

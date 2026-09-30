@@ -4,7 +4,7 @@
 	import { listIssues } from '$lib/api/issues';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
-	import { LoaderCircle } from 'lucide-svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 
 	let {
 		open = $bindable(false),

@@ -6,7 +6,7 @@
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import AvatarUploader from '$lib/components/shared/AvatarUploader.svelte';
 	import type { User } from '$lib/types/auth';
-	import { Copy } from 'lucide-svelte';
+	import Copy from '@lucide/svelte/icons/copy';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

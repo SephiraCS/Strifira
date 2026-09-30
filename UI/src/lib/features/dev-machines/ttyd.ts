@@ -20,15 +20,15 @@ type TtydServerFrame =
 	| { command: 'preferences'; preferences: Record<string, unknown> }
 	| { command: 'unknown'; code: string; data: Uint8Array | string };
 
-export function encodeInitialTerminalMessage(size: TtydTerminalSize, authToken = ''): Uint8Array {
+export function encodeInitialTerminalMessage(size: TtydTerminalSize, authToken = ''): Uint8Array<ArrayBuffer> {
 	return encoder.encode(JSON.stringify({ AuthToken: authToken, columns: size.columns, rows: size.rows }));
 }
 
-export function encodeInputFrame(data: string | Uint8Array): Uint8Array {
+export function encodeInputFrame(data: string | Uint8Array): Uint8Array<ArrayBuffer> {
 	return encodeCommandFrame(CLIENT_INPUT, data);
 }
 
-export function encodeResizeFrame(size: TtydTerminalSize): Uint8Array {
+export function encodeResizeFrame(size: TtydTerminalSize): Uint8Array<ArrayBuffer> {
 	return encodeCommandFrame(CLIENT_RESIZE, JSON.stringify(size));
 }
 
@@ -46,7 +46,7 @@ export function decodeServerFrame(data: string | ArrayBuffer | Uint8Array): Ttyd
 	}
 }
 
-function encodeCommandFrame(command: string, data: string | Uint8Array): Uint8Array {
+function encodeCommandFrame(command: string, data: string | Uint8Array): Uint8Array<ArrayBuffer> {
 	const payload = typeof data === 'string' ? encoder.encode(data) : data;
 	const frame = new Uint8Array(payload.length + 1);
 	frame[0] = command.charCodeAt(0);

@@ -25,7 +25,12 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { appToast } from '$lib/features/toast/toast';
-	import { ExternalLink, Plus, Loader2, Search, GitBranch, Trash2 } from 'lucide-svelte';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import Search from '@lucide/svelte/icons/search';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import Trash2 from '@lucide/svelte/icons/trash';
 	import { m } from '$lib/paraglide/messages.js';
 
 	const DEFAULT_INSTANCE_URL = 'https://git.terrascale.tech';

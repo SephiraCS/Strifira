@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PanelLeft } from 'lucide-svelte';
+	import PanelLeft from '@lucide/svelte/icons/panel-left';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

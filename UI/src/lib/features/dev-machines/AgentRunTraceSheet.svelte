@@ -9,7 +9,11 @@
 	import { appendRecentTelemetry, DEV_MACHINE_EVENT_RETENTION, DEV_MACHINE_LOG_RETENTION } from './telemetry-retention';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import { Bot, ExternalLink, X, RotateCw, Loader } from 'lucide-svelte';
+	import Bot from '@lucide/svelte/icons/bot';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import X from '@lucide/svelte/icons/x';
+	import RotateCw from '@lucide/svelte/icons/rotate-cw';
+	import Loader from '@lucide/svelte/icons/loader';
 
 	let { open = $bindable(false), slug, runId, machine, checkouts, onclose }: {
 		open: boolean;

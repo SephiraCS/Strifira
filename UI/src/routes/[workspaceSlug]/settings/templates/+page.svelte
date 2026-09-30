@@ -14,7 +14,9 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import { Plus, Trash2, FileText } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash';
+	import FileText from '@lucide/svelte/icons/file-text';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 

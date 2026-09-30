@@ -6,7 +6,11 @@
 	import type { SharedLink, CreateSharedLinkRequest } from '$lib/types/shared-link';
 	import type { ViewFilter } from '$lib/types/view';
 	import { createSharedLink, listSharedLinks, updateSharedLink, deleteSharedLink } from '$lib/api/shared-links';
-	import { Copy, ExternalLink, Trash2, Link, Info } from 'lucide-svelte';
+	import Copy from '@lucide/svelte/icons/copy';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import Trash2 from '@lucide/svelte/icons/trash';
+	import Link from '@lucide/svelte/icons/link';
+	import Info from '@lucide/svelte/icons/info';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

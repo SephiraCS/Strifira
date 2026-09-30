@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { ChevronDown, ChevronUp, SquareTerminal, X } from 'lucide-svelte';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
+	import SquareTerminal from '@lucide/svelte/icons/square-terminal';
+	import X from '@lucide/svelte/icons/x';
 	import { useTerminalDock } from './terminal-dock-context.svelte';
 	import TerminalSession from './TerminalSession.svelte';
 	import { m } from '$lib/paraglide/messages.js';

@@ -5,16 +5,14 @@
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
-	import {
-		GitBranch,
-		GitPullRequest,
-		GitCommitHorizontal,
-		ExternalLink,
-		Copy,
-		Check,
-		ChevronRight,
-		CheckCircle2
-	} from 'lucide-svelte';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import GitPullRequest from '@lucide/svelte/icons/git-pull-request';
+	import GitCommitHorizontal from '@lucide/svelte/icons/git-commit-horizontal';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Check from '@lucide/svelte/icons/check';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
 	import { appToast } from '$lib/features/toast/toast';
 
 	let { slug, identifier }: { slug: string; identifier: string } = $props();

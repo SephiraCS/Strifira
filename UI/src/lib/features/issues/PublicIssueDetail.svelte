@@ -8,7 +8,10 @@
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { sanitizeHtml } from '$lib/security/sanitize';
 	import { imageViewer } from '$lib/components/shared/image-viewer';
-	import { X, CalendarDays, ChevronUp, ChevronDown } from 'lucide-svelte';
+	import X from '@lucide/svelte/icons/x';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { onMount, onDestroy } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';

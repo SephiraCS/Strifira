@@ -1,5 +1,5 @@
 # Stage 1: Build UI
-FROM docker.io/library/node:22-alpine AS ui-builder
+FROM docker.io/library/node:24-alpine AS ui-builder
 WORKDIR /app
 COPY UI/package*.json ./
 RUN npm ci --no-audit --no-fund --prefer-offline
@@ -25,7 +25,7 @@ COPY BE/ .
 RUN CGO_ENABLED=0 go build -trimpath -o server ./cmd/server
 
 # Stage 4: Final image
-FROM docker.io/library/alpine:3.23
+FROM docker.io/library/alpine:3.24
 RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=caddy-builder /go/caddy /usr/bin/caddy

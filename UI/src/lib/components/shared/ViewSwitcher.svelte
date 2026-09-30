@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
-	import { List, LayoutGrid } from 'lucide-svelte';
+	import List from '@lucide/svelte/icons/list';
+	import LayoutGrid from '@lucide/svelte/icons/layout-grid';
 	import type { ViewLayout } from '$lib/types/view';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

@@ -1,7 +1,20 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { tick } from 'svelte';
-	import { ArrowLeft, Bot, Code2, ExternalLink, GitBranch, Pause, Play, Save, Server, ServerOff, Square, SquareTerminal, Trash2, Loader } from 'lucide-svelte';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Bot from '@lucide/svelte/icons/bot';
+	import Code2 from '@lucide/svelte/icons/code-xml';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import Pause from '@lucide/svelte/icons/pause';
+	import Play from '@lucide/svelte/icons/play';
+	import Save from '@lucide/svelte/icons/save';
+	import Server from '@lucide/svelte/icons/server';
+	import ServerOff from '@lucide/svelte/icons/server-off';
+	import Square from '@lucide/svelte/icons/square';
+	import SquareTerminal from '@lucide/svelte/icons/square-terminal';
+	import Trash2 from '@lucide/svelte/icons/trash';
+	import Loader from '@lucide/svelte/icons/loader';
 	import { goto, replaceState } from '$app/navigation';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Card from '$lib/components/ui/card';

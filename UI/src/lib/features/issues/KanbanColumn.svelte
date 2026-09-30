@@ -14,7 +14,12 @@
 	import { COLUMN_SORT_KEYS, type ColumnSortKey } from './column-sort';
 	import { dndzone, dragHandle } from 'svelte-dnd-action';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { Archive, ArrowDownUp, Check, Ellipsis, Plus, UserCircle } from 'lucide-svelte';
+	import Archive from '@lucide/svelte/icons/archive';
+	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
+	import Check from '@lucide/svelte/icons/check';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Plus from '@lucide/svelte/icons/plus';
+	import UserCircle from '@lucide/svelte/icons/circle-user';
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {

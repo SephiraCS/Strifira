@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { Check, Copy, GitBranch, Link as LinkIcon, X } from 'lucide-svelte';
+	import Check from '@lucide/svelte/icons/check';
+	import Copy from '@lucide/svelte/icons/copy';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import X from '@lucide/svelte/icons/x';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 
 	let {

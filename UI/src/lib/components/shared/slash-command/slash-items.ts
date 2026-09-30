@@ -1,19 +1,17 @@
 import type { Editor } from '@tiptap/core';
-import {
-	Heading1,
-	Heading2,
-	Heading3,
-	List,
-	ListOrdered,
-	ListChecks,
-	ImagePlus,
-	Smile,
-	Paperclip,
-	Code2,
-	GitBranch,
-	ChevronsDownUp,
-	Quote
-} from 'lucide-svelte';
+import Heading1 from '@lucide/svelte/icons/heading-1';
+import Heading2 from '@lucide/svelte/icons/heading-2';
+import Heading3 from '@lucide/svelte/icons/heading-3';
+import List from '@lucide/svelte/icons/list';
+import ListOrdered from '@lucide/svelte/icons/list-ordered';
+import ListChecks from '@lucide/svelte/icons/list-checks';
+import ImagePlus from '@lucide/svelte/icons/image-plus';
+import Smile from '@lucide/svelte/icons/face-slightly-smiling';
+import Paperclip from '@lucide/svelte/icons/paperclip';
+import Code2 from '@lucide/svelte/icons/code-xml';
+import GitBranch from '@lucide/svelte/icons/git-branch';
+import ChevronsDownUp from '@lucide/svelte/icons/chevrons-down-up';
+import Quote from '@lucide/svelte/icons/quote';
 import { appToast } from '$lib/features/toast/toast';
 
 export interface SlashMenuItem {

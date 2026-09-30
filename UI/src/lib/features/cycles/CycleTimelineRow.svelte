@@ -4,18 +4,16 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import {
-		CirclePlay,
-		CircleDotDashed,
-		CircleCheckBig,
-		Circle,
-		MoreHorizontal,
-		Pencil,
-		Calendar,
-		Play,
-		CheckCircle2,
-		Trash2
-	} from 'lucide-svelte';
+	import CirclePlay from '@lucide/svelte/icons/circle-play';
+	import CircleDotDashed from '@lucide/svelte/icons/circle-dot-dashed';
+	import CircleCheckBig from '@lucide/svelte/icons/circle-check-big';
+	import Circle from '@lucide/svelte/icons/circle';
+	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Calendar from '@lucide/svelte/icons/calendar';
+	import Play from '@lucide/svelte/icons/play';
+	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
+	import Trash2 from '@lucide/svelte/icons/trash';
 
 	let {
 		cycle,

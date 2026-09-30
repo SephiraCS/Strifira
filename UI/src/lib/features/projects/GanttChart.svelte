@@ -3,7 +3,8 @@
 	import { getStatusLabel } from '$lib/types/issue';
 	import type { Cycle } from '$lib/types/cycle';
 	import * as echarts from 'echarts';
-	import { Filter, X } from 'lucide-svelte';
+	import Filter from '@lucide/svelte/icons/funnel';
+	import X from '@lucide/svelte/icons/x';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

@@ -10,7 +10,10 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Plus, Trash2, Pencil, MoreHorizontal } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	let labels = $state<Label[]>([]);

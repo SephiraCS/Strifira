@@ -2,7 +2,12 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { flip } from 'svelte/animate';
-	import { Monitor, Sun, Moon, ArrowUp, ArrowDown, GripVertical } from 'lucide-svelte';
+	import Monitor from '@lucide/svelte/icons/monitor';
+	import Sun from '@lucide/svelte/icons/sun';
+	import Moon from '@lucide/svelte/icons/moon';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import * as Select from '$lib/components/ui/select';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Checkbox } from '$lib/components/ui/checkbox';
