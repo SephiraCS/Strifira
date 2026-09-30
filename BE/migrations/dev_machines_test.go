@@ -76,7 +76,10 @@ func TestDevMachineMigrationRoundTripAndTenantConstraints(t *testing.T) {
 	})
 	require.NoError(t, migrator.Migrate(32))
 
-	db, err := sql.Open("pgx", testURL)
+	// The round trip drops and recreates the Dev Machine enum types. A
+	// statement prepared on a pooled connection keeps the dropped type OID
+	// ("cache lookup failed for type"), so never cache statements here.
+	db, err := sql.Open("pgx", withQueryParam(t, testURL, "default_query_exec_mode", "exec"))
 	require.NoError(t, err)
 	require.NoError(t, db.PingContext(ctx))
 	t.Cleanup(func() { _ = db.Close() })
@@ -336,6 +339,16 @@ func databaseURLWithName(t *testing.T, databaseURL, databaseName string) string 
 	require.NotEmpty(t, parsed.Scheme)
 	parsed.Path = "/" + databaseName
 	parsed.RawPath = ""
+	return parsed.String()
+}
+
+func withQueryParam(t *testing.T, databaseURL, key, value string) string {
+	t.Helper()
+	parsed, err := url.Parse(databaseURL)
+	require.NoError(t, err)
+	query := parsed.Query()
+	query.Set(key, value)
+	parsed.RawQuery = query.Encode()
 	return parsed.String()
 }
 
