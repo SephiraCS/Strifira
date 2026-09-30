@@ -21,7 +21,7 @@
 	import Check from '@lucide/svelte/icons/check';
 	import Search from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
-	import * as LucideIcons from '@lucide/svelte';
+	import { icons as lucideIcons } from '@lucide/svelte';
 	import type { Component } from 'svelte';
 	import Database from 'emoji-picker-element/database';
 	import type { Emoji } from 'emoji-picker-element/shared';
@@ -74,8 +74,6 @@
 	const PRESET_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'];
 	const ICON_PAGE_SIZE = 96;
 	const EMOJI_PAGE_SIZE = 144;
-	const excludedLucideExports = new Set(['Icon', 'LucideIcon', 'default']);
-	const lucideExports = LucideIcons as unknown as Record<string, Component>;
 	const EMOJI_GROUPS = [
 		{ id: 0, labelKey: 'team_settings.emoji_group.smileys' },
 		{ id: 1, labelKey: 'team_settings.emoji_group.people' },
@@ -93,8 +91,9 @@
 		return name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z])([A-Z][a-z])/g, '$1 $2');
 	}
 
-	const TEAM_ICON_OPTIONS = Object.entries(lucideExports)
-		.filter(([name, value]) => /^[A-Z]/.test(name) && !excludedLucideExports.has(name) && typeof value === 'function')
+	// Canonical icons only: the package root also exports every icon as
+	// Lucide*, *Icon and deprecated aliases, which listed each one up to four times.
+	const TEAM_ICON_OPTIONS = Object.entries(lucideIcons as Record<string, Component>)
 		.map(([name, icon]) => ({ value: name, label: formatIconLabel(name), icon }))
 		.sort((a, b) => a.label.localeCompare(b.label));
 
