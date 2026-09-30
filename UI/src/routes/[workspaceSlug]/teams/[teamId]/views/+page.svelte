@@ -9,7 +9,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { appToast } from '$lib/features/toast/toast';
 	import Bookmark from '@lucide/svelte/icons/bookmark';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import SquareUser from '@lucide/svelte/icons/square-user';
 	import Layers from '@lucide/svelte/icons/layers';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';

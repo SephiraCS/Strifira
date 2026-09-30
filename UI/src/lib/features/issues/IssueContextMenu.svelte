@@ -20,7 +20,6 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import type { Snippet } from 'svelte';
-	import ArrowUpCircle from '@lucide/svelte/icons/circle-arrow-up';
 	import Archive from '@lucide/svelte/icons/archive';
 	import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
@@ -35,7 +34,7 @@
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Tag from '@lucide/svelte/icons/tag';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import X from '@lucide/svelte/icons/x';
 
 	let {

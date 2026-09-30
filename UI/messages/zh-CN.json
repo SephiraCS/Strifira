@@ -1651,5 +1651,6 @@
 	"settings.general.auto_archive": "自动归档已完成议题",
 	"settings.general.auto_archive_desc": "议题完成 30 天后自动归档。",
 	"settings.general.auto_archive_updated": "自动归档设置已更新",
-	"settings.general.auto_archive_failed": "无法更新自动归档设置"
+	"settings.general.auto_archive_failed": "无法更新自动归档设置",
+	"common.toast.failed_load_dialog": "无法加载问题对话框"
 }

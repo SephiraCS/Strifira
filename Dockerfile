@@ -91,6 +91,7 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 	}
 }
 EOF
+RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # Sources an optional mounted env file, applies migrations (retried while the
 # database is still coming up), then runs the API behind Caddy.

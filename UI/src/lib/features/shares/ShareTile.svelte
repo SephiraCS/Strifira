@@ -15,7 +15,7 @@
 	import Maximize2 from '@lucide/svelte/icons/maximize-2';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import SignalHigh from '@lucide/svelte/icons/signal-high';
 	import SignalMedium from '@lucide/svelte/icons/signal-medium';
 	import SignalLow from '@lucide/svelte/icons/signal-low';
@@ -462,19 +462,19 @@
 
 	{#if mode === 'view' && connecting && !streamEnded}
 		<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
-			<Loader2 size={24} class="animate-spin" />
+			<LoaderCircle size={24} class="animate-spin" />
 			<p class="text-sm">{m['shares.connecting_viewer']()}</p>
 		</div>
 	{/if}
 
 	{#if mode === 'view' && presenterOffline && !streamEnded}
 		<div class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black">
-			<Loader2 size={12} class="animate-spin" />
+			<LoaderCircle size={12} class="animate-spin" />
 			{m['shares.presenter_reconnecting']()}
 		</div>
 	{:else if reconnecting && !streamEnded && !presentEnded}
 		<div class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black">
-			<Loader2 size={12} class="animate-spin" />
+			<LoaderCircle size={12} class="animate-spin" />
 			{m['shares.reconnecting']()}
 		</div>
 	{/if}
@@ -546,7 +546,7 @@
 			<div class="absolute bottom-3 right-3 flex items-center gap-2">
 				<Button variant="secondary" size="sm" class="bg-black/60 text-white hover:bg-black/80" onclick={() => void presenterSession.switchSurface()} disabled={presenterSession.switching}>
 					{#if presenterSession.switching}
-						<Loader2 size={14} class="animate-spin" />
+						<LoaderCircle size={14} class="animate-spin" />
 					{:else}
 						<RefreshCw size={14} />
 					{/if}

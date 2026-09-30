@@ -10,7 +10,7 @@ on:
     branches: [main]
     paths:
       - '**/Dockerfile*'
-      - '.dockerignore'
+      - '**/.dockerignore'
       - 'devmachine/**'
       - 'BE/go.mod'
       - 'BE/go.sum'
@@ -40,7 +40,7 @@ jobs:
         include:
           - { id: app, context: ., file: ./Dockerfile, inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
           - { id: backend, context: ./BE, file: ./BE/Dockerfile, inputs: 'BE/Dockerfile BE/go.mod BE/go.sum' }
-          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/Caddyfile UI/package.json UI/package-lock.json' }
+          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/.dockerignore UI/Caddyfile UI/package.json UI/package-lock.json' }
           - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway, inputs: 'BE/Dockerfile.machine-gateway BE/go.mod BE/go.sum' }
           - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager, inputs: 'BE/Dockerfile.machine-manager BE/go.mod BE/go.sum' }
           - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile, inputs: devmachine }

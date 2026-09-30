@@ -16,7 +16,7 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { formatRelativeTime } from '$lib/utils/format';
 	import Plus from '@lucide/svelte/icons/plus';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');

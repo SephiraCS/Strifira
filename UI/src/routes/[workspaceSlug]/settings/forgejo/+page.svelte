@@ -27,10 +27,10 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Plus from '@lucide/svelte/icons/plus';
-	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Search from '@lucide/svelte/icons/search';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { m } from '$lib/paraglide/messages.js';
 
 	const DEFAULT_INSTANCE_URL = 'https://git.terrascale.tech';
@@ -277,7 +277,7 @@
 
 	{#if loading}
 		<div class="flex items-center justify-center py-12">
-			<Loader2 size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
+			<LoaderCircle size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
 		</div>
 	{:else if !status?.connected}
 		<!-- State 1: not connected — token form -->
@@ -317,7 +317,7 @@
 				<div class="flex justify-end">
 					<Button size="sm" onclick={handleConnect} disabled={connecting || token.trim().length < 20 || !instanceUrl.trim()}>
 						{#if connecting}
-							<Loader2 size={14} class="animate-spin" />
+							<LoaderCircle size={14} class="animate-spin" />
 						{/if}
 						{m['settings.forgejo.connect']()}
 					</Button>
@@ -377,7 +377,7 @@
 					<div class="mt-3 rounded-lg border border-[var(--app-border)] p-3">
 						{#if loadingRepos}
 							<div class="flex items-center justify-center py-8">
-								<Loader2 size={18} class="animate-spin text-[var(--color-text-tertiary)]" />
+								<LoaderCircle size={18} class="animate-spin text-[var(--color-text-tertiary)]" />
 							</div>
 						{:else}
 							<div class="relative">
@@ -426,7 +426,7 @@
 									<Button variant="outline" size="sm" onclick={() => { showRepoSelector = false; repoSearch = ''; }}>{m['settings.cancel']()}</Button>
 									<Button size="sm" onclick={saveRepoSelection} disabled={savingRepos}>
 										{#if savingRepos}
-											<Loader2 size={14} class="animate-spin" />
+											<LoaderCircle size={14} class="animate-spin" />
 										{/if}
 										{m['settings.forgejo.save']()}
 									</Button>

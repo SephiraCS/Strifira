@@ -1679,5 +1679,6 @@
 	"settings.general.auto_archive": "Archivia automaticamente i problemi completati",
 	"settings.general.auto_archive_desc": "Archivia i problemi completati dopo 30 giorni.",
 	"settings.general.auto_archive_updated": "Impostazione di archiviazione automatica aggiornata",
-	"settings.general.auto_archive_failed": "Impossibile aggiornare l’archiviazione automatica"
+	"settings.general.auto_archive_failed": "Impossibile aggiornare l’archiviazione automatica",
+	"common.toast.failed_load_dialog": "Impossibile caricare la finestra della segnalazione"
 }

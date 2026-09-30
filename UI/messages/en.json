@@ -1679,5 +1679,6 @@
 	"settings.general.auto_archive": "Auto-archive Done issues",
 	"settings.general.auto_archive_desc": "Archive Done issues 30 days after completion.",
 	"settings.general.auto_archive_updated": "Auto-archive setting updated",
-	"settings.general.auto_archive_failed": "Could not update auto-archive setting"
+	"settings.general.auto_archive_failed": "Could not update auto-archive setting",
+	"common.toast.failed_load_dialog": "Failed to load the issue dialog"
 }

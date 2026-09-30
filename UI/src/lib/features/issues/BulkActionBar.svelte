@@ -21,7 +21,7 @@
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Search from '@lucide/svelte/icons/search';
 	import Tag from '@lucide/svelte/icons/tag';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Users from '@lucide/svelte/icons/users';
 	import X from '@lucide/svelte/icons/x';
 	import * as issueApi from '$lib/api/issues';

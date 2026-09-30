@@ -5,6 +5,8 @@
 	import { listTeams, updateTeam } from '$lib/api/teams';
 	import { getWorkspace } from '$lib/api/workspaces';
 	import TeamIcon from '$lib/components/shared/TeamIcon.svelte';
+	import { LEGACY_ICON_NAMES } from '$lib/components/shared/lucide-library.svelte';
+	import * as lucideExports from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
@@ -109,17 +111,11 @@
 	const visibleEmojis = $derived(emojiResults.slice(0, visibleEmojiCount));
 	const selectedEmoji = $derived(team?.icon?.startsWith('emoji:') ? team.icon.slice(6) : '');
 	const selectedColor = $derived(team?.color ?? PRESET_COLORS[5]);
-	const LEGACY_ICON_NAMES: Record<string, string> = {
-		box: 'Box',
-		'circle-dot': 'CircleDot',
-		layers: 'Layers',
-		settings: 'Settings',
-		shield: 'ShieldCheck',
-		'square-user': 'SquareUser',
-		users: 'Users'
-	};
 	const selectedIconName = $derived(
 		team?.icon && !team.icon.startsWith('emoji:') ? (LEGACY_ICON_NAMES[team.icon] ?? team.icon) : 'SquareUser'
+	);
+	const selectedIcon = $derived(
+		(lucideExports as unknown as Record<string, Component>)[selectedIconName] ?? lucideIcons.SquareUser
 	);
 
 	function selectIcon(icon: string) {
@@ -567,8 +563,7 @@
 											<button
 												type="button"
 												onclick={() => selectIcon(option.value)}
-												class="flex h-7 items-center justify-center rounded border transition-colors {selectedIconName ===
-												option.value
+												class="flex h-7 items-center justify-center rounded border transition-colors {selectedIcon === option.icon
 													? 'border-[var(--app-accent)] bg-[var(--app-accent)]/10'
 													: 'border-transparent hover:border-[var(--app-border)] hover:bg-[var(--color-bg-hover)]'}"
 												aria-label={m['team_settings.use_icon_aria']({ label: option.label })}

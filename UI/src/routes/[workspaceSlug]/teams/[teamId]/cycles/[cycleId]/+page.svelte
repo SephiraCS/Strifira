@@ -28,8 +28,8 @@
 	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
 	import Play from '@lucide/svelte/icons/play';
 	import Clock from '@lucide/svelte/icons/clock';
-	import Trash2 from '@lucide/svelte/icons/trash';
-	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Search from '@lucide/svelte/icons/search';
 	import Plus from '@lucide/svelte/icons/plus';
 	import SquareUser from '@lucide/svelte/icons/square-user';
@@ -251,7 +251,7 @@
 				<Popover.Root bind:open={actionsOpen}>
 					<Popover.Trigger>
 						<Button variant="ghost" size="icon-sm">
-							<MoreHorizontal size={14} />
+							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-40 p-1" align="end">

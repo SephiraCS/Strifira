@@ -46,10 +46,10 @@
 	import Tag from '@lucide/svelte/icons/tag';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
-	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Check from '@lucide/svelte/icons/check';
 	import Bell from '@lucide/svelte/icons/bell';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import CornerDownRight from '@lucide/svelte/icons/corner-down-right';
 	import Ban from '@lucide/svelte/icons/ban';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
@@ -872,7 +872,7 @@
 						class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
 						title={m['issue.issue_actions']()}
 					>
-						<MoreHorizontal size={14} />
+						<Ellipsis size={14} />
 					</button>
 				</Popover.Trigger>
 				<Popover.Content class="w-64 max-w-[calc(100vw-1rem)] p-1" align="end">

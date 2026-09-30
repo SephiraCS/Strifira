@@ -19,8 +19,6 @@
 	import Search from '@lucide/svelte/icons/search';
 	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 	import Signal from '@lucide/svelte/icons/signal';
-	import Plus from '@lucide/svelte/icons/plus';
-	import X from '@lucide/svelte/icons/x';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import type { StatusCategory } from '$lib/types/team-status';

@@ -13,7 +13,7 @@
 	import ServerOff from '@lucide/svelte/icons/server-off';
 	import Square from '@lucide/svelte/icons/square';
 	import SquareTerminal from '@lucide/svelte/icons/square-terminal';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Loader from '@lucide/svelte/icons/loader';
 	import { goto, replaceState } from '$app/navigation';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';

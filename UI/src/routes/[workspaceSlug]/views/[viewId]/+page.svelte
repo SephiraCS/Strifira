@@ -27,8 +27,8 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Pencil from '@lucide/svelte/icons/pencil';
-	import Trash2 from '@lucide/svelte/icons/trash';
-	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Check from '@lucide/svelte/icons/check';
 	import X from '@lucide/svelte/icons/x';
 	import Share2 from '@lucide/svelte/icons/share-2';
@@ -244,7 +244,7 @@
 				<Popover.Root bind:open={actionsOpen}>
 					<Popover.Trigger>
 						<Button variant="ghost" size="icon-sm">
-							<MoreHorizontal size={14} />
+							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-40 p-1" align="end">

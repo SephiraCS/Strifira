@@ -8,7 +8,7 @@
 	import { createSharedLink, listSharedLinks, updateSharedLink, deleteSharedLink } from '$lib/api/shared-links';
 	import Copy from '@lucide/svelte/icons/copy';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Link from '@lucide/svelte/icons/link';
 	import Info from '@lucide/svelte/icons/info';
 	import { appToast } from '$lib/features/toast/toast';
