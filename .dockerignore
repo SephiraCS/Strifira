@@ -1,0 +1,12 @@
+# The root image builds only from BE/ and UI/ (see Dockerfile).
+*
+!BE
+!UI
+BE/coverage.out
+BE/uploads
+UI/node_modules
+UI/.svelte-kit
+UI/build
+UI/src/lib/paraglide
+UI/playwright-report
+UI/test-results

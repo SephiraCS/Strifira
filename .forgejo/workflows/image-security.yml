@@ -56,12 +56,15 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
+      # Intermediate layers are never reused here, and committing one per
+      # instruction is what pushed parallel legs past the runner's Docker
+      # timeouts; the final image content is the same either way.
       - name: Build the image
         env:
           PROVIDER: ${{ matrix.provider }}
         run: |
           set -euo pipefail
-          podman build --pull ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
+          podman build --pull --layers=false ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
             --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}"
           podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan"
 

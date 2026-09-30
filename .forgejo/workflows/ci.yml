@@ -34,7 +34,8 @@ jobs:
       # Runner service containers are not reachable from job containers, so
       # PostgreSQL and Redis run as podman containers inside the privileged
       # job. Nested podman needs --cgroups=disabled or conmon cannot create its
-      # sandbox cgroup.
+      # sandbox cgroup. Both images pull in parallel, and readiness is awaited
+      # only after vet so the database initializes in the meantime.
       - name: Start PostgreSQL and Redis
         run: |
           set -euo pipefail
@@ -45,19 +46,27 @@ jobs:
             --publish 127.0.0.1:5432:5432 \
             --env POSTGRES_USER=ku --env POSTGRES_PASSWORD=ku --env POSTGRES_DB=ku_test \
             docker.io/library/postgres:16-alpine \
-            -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+            -c fsync=off -c synchronous_commit=off -c full_page_writes=off &
+          postgres=$!
           podman run --detach --cgroups=disabled --name ku-redis \
             --publish 127.0.0.1:6379:6379 \
-            docker.io/library/redis:7-alpine
+            docker.io/library/redis:7-alpine &
+          redis=$!
+          wait "$postgres"
+          wait "$redis"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Wait for PostgreSQL and Redis
+        run: |
+          set -euo pipefail
           for _ in $(seq 1 30); do
             podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
             sleep 2
           done
           podman exec ku-postgres pg_isready -U ku
           podman exec ku-redis redis-cli ping
-
-      - name: Vet
-        run: go vet ./...
 
       - name: Apply migrations and run tests with coverage
         env:
@@ -93,10 +102,29 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+  # A job of its own so the production build and browser run overlap the
+  # type check instead of queueing behind it.
+  frontend-e2e:
+    name: Frontend Browser Tests
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: UI
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Install dependencies
+        run: npm ci
+
       # Installs only what the job image lacks for this Playwright version
       # (a no-op once the baked browsers match), then runs the browser tests;
       # the Playwright web server builds the app first.
-      - name: Dev machine browser tests
+      - name: Browser tests
         run: |
           npx playwright install chromium ffmpeg
           npm run test:e2e
@@ -139,8 +167,23 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
+      # Every RUN sees the runner's shared Go and npm caches, so module and
+      # package downloads and unchanged Go packages (Caddy included) are
+      # reused. Nested podman keeps no layers between jobs, so intermediate
+      # layers are not committed at all. The runner prunes /cache when it
+      # outgrows its budget, and a missing volume source fails the build.
       - name: Build the image
-        run: podman build --jobs 0 --tag "ku:${{ forgejo.sha }}" .
+        run: |
+          set -euo pipefail
+          : "${GOMODCACHE:?the ts-builder image exports GOMODCACHE}"
+          : "${GOCACHE:?the ts-builder image exports GOCACHE}"
+          : "${NPM_CONFIG_CACHE:?the ts-builder image exports NPM_CONFIG_CACHE}"
+          mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${NPM_CONFIG_CACHE}"
+          podman build --jobs 0 --layers=false \
+            --volume "${GOMODCACHE}:/go/pkg/mod" \
+            --volume "${GOCACHE}:/root/.cache/go-build" \
+            --volume "${NPM_CONFIG_CACHE}:/root/.npm" \
+            --tag "ku:${{ forgejo.sha }}" .
 
       - name: Stage the image in Harbor
         env:
@@ -152,7 +195,7 @@ jobs:
 
   deploy:
     name: Deploy to Alpha
-    needs: [backend-test, frontend-check, stage-image]
+    needs: [backend-test, frontend-check, frontend-e2e, stage-image]
     if: forgejo.event_name == 'push'
     runs-on: terrascale-builder
     timeout-minutes: 15
