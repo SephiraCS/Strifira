@@ -131,7 +131,7 @@ jobs:
       - name: Browser tests
         run: |
           npx playwright install chromium ffmpeg
-          npm run test:e2e
+          npm run test:e2e -- --workers=2
 
   web-check:
     name: Marketing Site Checks

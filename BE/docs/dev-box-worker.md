@@ -24,6 +24,61 @@ unset worker_token
 chmod 600 "$HOME/.config/ku-worker/worker.token"
 ```
 
+An authenticated MCP client can also use `register_dev_box` with
+`{"workspace":"your-workspace","name":"ku-dev"}`. The client authenticates
+to `/mcp` with the owner's personal `ku_` API key; registration requires its
+`write` scope and the `dev_machine:create` workspace permission. The response
+contains `box`, a once-returned dedicated `token`, and a protection notice.
+Capture that response privately, then deliver only the new `kub_` token to the
+worker through a protected file or your scoped secret manager. Do not log the
+response or repeat the token in chat, command arguments or provider prompts.
+The personal API key stays with the MCP client and cannot authenticate the
+worker protocol.
+
+`list_dev_boxes` returns the caller's own boxes and provider inventory without
+credentials. `update_dev_box` accepts `box_id` plus `name` and/or `enabled`;
+`rotate_dev_box_token` returns a replacement token once and invalidates the
+previous token. `revoke_dev_box` revokes the registration without stopping or
+deleting the VM. Each mutation requires `write` scope and `dev_machine:manage`.
+Box and job IDs are canonical nonzero UUIDs. Workspace administrators do not
+gain access to another member's registrations or jobs.
+
+After the configured worker has advertised its providers, queue work with
+`create_dev_box_job`:
+
+```json
+{
+  "workspace": "your-workspace",
+  "box_id": "BOX_UUID_FROM_REGISTER_OR_LIST",
+  "issue": "ENG-42",
+  "repository_full_name": "owner/repo",
+  "base_branch": "main",
+  "provider": "claude-code",
+  "prompt": "Implement the issue's acceptance criteria.",
+  "test_command": ["make", "test"],
+  "acceptance_criteria": ["The repository's independent tests pass."],
+  "max_runtime_seconds": 300
+}
+```
+
+The issue accepts its identifier or UUID. Repository and base branch are
+required for this MCP operation; the service validates an active repository
+linked to the same workspace, provider availability and development policy.
+Selection applies to that job without changing workspace, team, project or
+issue development defaults. The configured local repository and origin must
+still match. Choose the repository's actual test argv; the example is not a
+universal test command.
+
+`list_dev_box_jobs` accepts optional `box_id` and `issue` filters, `page`
+(default 1) and `per_page` (default 50, maximum 100). `get_dev_box_job` accepts
+`job_id` and returns status and the completed result. `get_dev_box_job_logs`
+accepts `job_id`, `after_id` (default 0) and `limit` (default 100, maximum 500);
+use its `next_after_id` to continue reading. These reads require API key `read`
+scope and `dev_machine:read`, and work with read-only personal keys. `cancel_dev_box_job`
+requires `write` scope and `dev_machine:manage`. All tools resolve current
+membership and use the same creator and demo restrictions as the UI. Worker
+lease hashes and registration token hashes are never returned.
+
 The token must be a regular file owned by the worker user, with mode `0600` or `0400`. Final symlinks, other permissions, and personal keys are rejected. Revoking or rotating the box token stops further execution; a lost lease stops the whole process group.
 
 Authenticate installed Claude Code, Codex, or OpenCode locally using their normal login commands. Provider login files stay on the development box. Clone authorized repositories locally using your own origin-specific Git credentials. The worker does not fetch, clone, or accept server-supplied credentials; refresh the configured checkout before requesting work when needed.

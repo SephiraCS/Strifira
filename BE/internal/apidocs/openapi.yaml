@@ -5193,6 +5193,14 @@ components:
       - provider
       properties:
         issue_id: {type: string, format: uuid}
+        repository_full_name:
+          type: string
+          maxLength: 500
+          description: Optional active linked repository in this workspace, in owner/name form. Overrides saved development defaults for this job only. No repository URL or credentials are accepted.
+        base_branch:
+          type: string
+          maxLength: 255
+          description: Optional Git branch for this job. Requires repository_full_name. When selecting a repository without a branch, its linked default branch is used. Omitting both selection fields uses saved development defaults.
         provider:
           type: string
           enum:

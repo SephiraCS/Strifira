@@ -23,6 +23,8 @@ type DevBoxTokenResponse struct {
 type CreateDevBoxJobRequest struct {
 	IssueID            string   `json:"issue_id" validate:"required,uuid"`
 	Provider           string   `json:"provider" validate:"required,oneof=claude-code codex opencode"`
+	RepositoryFullName string   `json:"repository_full_name,omitempty" validate:"omitempty,max=500"`
+	BaseBranch         string   `json:"base_branch,omitempty" validate:"omitempty,max=255"`
 	Prompt             string   `json:"prompt" validate:"max=50000"`
 	TestCommand        []string `json:"test_command" validate:"max=32,dive,required,max=4096"`
 	AcceptanceCriteria []string `json:"acceptance_criteria" validate:"max=50,dive,max=2000"`

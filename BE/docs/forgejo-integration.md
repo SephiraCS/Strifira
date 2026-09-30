@@ -205,7 +205,7 @@ hook edit API ignores Actions event subscriptions.
   `GET/POST /forgejo/repos/:repoId/actions/...` (see Actions above),
   `GET /issues/:identifier/forgejo`, `GET /forgejo/issue-links`; public
   `POST /api/forgejo/webhook`.
-- MCP: `forgejo_status`, `forgejo_link_repos`, `forgejo_unlink_repo`
+- MCP: `forgejo_status`, `forgejo_link_repos`, `forgejo_unlink_repo`, and scoped [Actions tools](forgejo-actions-mcp.md) for runs, jobs, attempts, logs and cancellation.
   (write tools require the `workspace:manage` permission).
 - UI: Settings → Forgejo; per-issue code activity (pull requests with live
   state and a CI-green badge, branches, commits) in the issue view's right

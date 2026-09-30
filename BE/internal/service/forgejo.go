@@ -260,6 +260,26 @@ func (s *ForgejoService) webhookTargetURL() string {
 	return strings.TrimRight(base, "/") + "/api/forgejo/webhook"
 }
 
+// ListLinkedRepos reads active workspace links without resolving credentials,
+// contacting Forgejo, or initializing integration defaults.
+func (s *ForgejoService) ListLinkedRepos(ctx context.Context, workspaceID uuid.UUID) ([]dto.ForgejoRepoResponse, error) {
+	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dto.ForgejoRepoResponse, 0, len(repos))
+	for _, repo := range repos {
+		if !repo.IsActive || repo.WorkspaceID != workspaceID {
+			continue
+		}
+		result = append(result, dto.ForgejoRepoResponse{
+			ID: repo.ID.String(), ForgejoRepoID: repo.ForgejoRepoID, FullName: repo.FullName,
+			InstanceURL: repo.InstanceURL, DefaultBranch: repo.DefaultBranch, IsActive: repo.IsActive,
+		})
+	}
+	return result, nil
+}
+
 // GetStatus returns the integration status for a workspace.
 func (s *ForgejoService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (*dto.ForgejoStatusResponse, error) {
 	resp := &dto.ForgejoStatusResponse{Repos: []dto.ForgejoRepoResponse{}}

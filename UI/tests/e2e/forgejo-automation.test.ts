@@ -262,6 +262,7 @@ test('shows invalid saved targets and lets the owner disable the rule', async ({
 	const rule = page.locator('[data-forgejo-rule="pr_merged"]');
 	await expect(rule).toContainText('This status is no longer available. Choose a team workflow status.');
 	await rule.getByRole('switch').click();
+	await expect.poll(() => calls.updates).toHaveLength(1);
 	await expect(rule.getByRole('switch')).not.toBeChecked();
 	expect(calls.updates[0]).toMatchObject({ event: 'pr_merged', target_status: 'removed-status', is_active: false });
 });

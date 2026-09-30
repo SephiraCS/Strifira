@@ -193,6 +193,10 @@ func validateDevBoxJob(req dto.CreateDevBoxJobRequest) error {
 		len(req.TestCommand) > 32 || len(req.AcceptanceCriteria) > 50 || (req.MaxRuntimeSeconds != 0 && (req.MaxRuntimeSeconds < 30 || req.MaxRuntimeSeconds > 86400)) {
 		return ErrInvalidDevBoxInput
 	}
+	if (req.RepositoryFullName != "" && (len(req.RepositoryFullName) > 500 || !validDevBoxRepositoryName(req.RepositoryFullName))) ||
+		(req.BaseBranch != "" && (req.RepositoryFullName == "" || !validDevBoxBaseBranch(req.BaseBranch))) {
+		return ErrInvalidDevBoxInput
+	}
 	for _, arg := range req.TestCommand {
 		if arg == "" || len(arg) > 4096 || !utf8.ValidString(arg) || strings.ContainsRune(arg, '\x00') {
 			return ErrInvalidDevBoxInput
@@ -234,18 +238,29 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 	if issue == nil {
 		return nil, fmt.Errorf("%w: issue is not in this workspace", ErrInvalidDevBoxInput)
 	}
-	setting, err := s.development.resolveDevelopmentSetting(ctx, workspaceID, issue, nil)
+	var linked *domain.ForgejoRepoModel
+	var configuredBranch *string
+	if req.RepositoryFullName != "" {
+		linked, err = s.development.store.GetLinkedRepositoryByFullName(ctx, workspaceID, req.RepositoryFullName)
+		if req.BaseBranch != "" {
+			configuredBranch = new(req.BaseBranch)
+		}
+	} else {
+		setting, resolveErr := s.development.resolveDevelopmentSetting(ctx, workspaceID, issue, nil)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		if setting.ForgejoRepoID == nil {
+			return nil, fmt.Errorf("%w: issue has no development repository", ErrInvalidDevBoxInput)
+		}
+		linked, err = s.development.store.GetLinkedRepository(ctx, workspaceID, *setting.ForgejoRepoID)
+		configuredBranch = setting.BaseBranch
+	}
 	if err != nil {
 		return nil, err
 	}
-	if setting.ForgejoRepoID == nil {
-		return nil, fmt.Errorf("%w: issue has no development repository", ErrInvalidDevBoxInput)
-	}
-	linked, err := s.development.store.GetLinkedRepository(ctx, workspaceID, *setting.ForgejoRepoID)
-	if err != nil {
-		return nil, err
-	}
-	if linked == nil || !linked.IsActive {
+	if linked == nil || !linked.IsActive || linked.WorkspaceID != workspaceID ||
+		(req.RepositoryFullName != "" && !strings.EqualFold(linked.FullName, req.RepositoryFullName)) {
 		return nil, fmt.Errorf("%w: development repository is not linked", ErrInvalidDevBoxInput)
 	}
 	origin, err := forgejoclient.NormalizeInstanceURL(linked.InstanceURL)
@@ -253,10 +268,10 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 		return nil, fmt.Errorf("%w: invalid development repository", ErrInvalidDevBoxInput)
 	}
 	baseBranch := linked.DefaultBranch
-	if setting.BaseBranch != nil {
-		baseBranch = *setting.BaseBranch
+	if configuredBranch != nil {
+		baseBranch = *configuredBranch
 	}
-	if !validGitRef(baseBranch) {
+	if !validDevBoxBaseBranch(baseBranch) {
 		return nil, fmt.Errorf("%w: invalid repository base branch", ErrInvalidDevBoxInput)
 	}
 	maxRuntime := req.MaxRuntimeSeconds
@@ -310,6 +325,11 @@ func issueDescription(issue *domain.Issue) string {
 func validDevBoxRepositoryName(value string) bool {
 	owner, repo, ok := strings.Cut(value, "/")
 	return ok && !strings.ContainsRune(repo, '/') && validRepositorySegment(owner) && validRepositorySegment(repo)
+}
+
+func validDevBoxBaseBranch(value string) bool {
+	return len(value) <= 255 && utf8.ValidString(value) && value != "@" && !strings.Contains(value, "/.") &&
+		!strings.ContainsFunc(value, unicode.IsControl) && validGitRef(value)
 }
 
 func (s *DevBoxService) ListJobs(ctx context.Context, workspaceID, userID uuid.UUID, params dto.DevBoxJobListParams) ([]domain.DevBoxJob, int, error) {
