@@ -1,8 +1,8 @@
 name: Image Security Scan
 
-# Pull requests build and scan only when an image input changes; source-only
-# changes are covered by ci.yml. Tags and the nightly run always scan, which
-# also catches new advisories against unchanged images.
+# Pull requests build and scan only the images whose inputs they change;
+# source-only changes are covered by ci.yml. Tags and the nightly run always
+# scan every image, which also catches new advisories against unchanged ones.
 on:
   push:
     tags: ['v*']
@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - '**/Dockerfile*'
+      - '.dockerignore'
       - 'devmachine/**'
       - 'BE/go.mod'
       - 'BE/go.sum'
@@ -37,29 +38,49 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: app, context: ., file: ./Dockerfile }
-          - { id: backend, context: ./BE, file: ./BE/Dockerfile }
-          - { id: frontend, context: ./UI, file: ./UI/Dockerfile }
-          - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway }
-          - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager }
-          - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile }
-          - { id: browser, context: ./devmachine, file: ./devmachine/browser/Dockerfile }
-          - { id: collector, context: ./devmachine, file: ./devmachine/collector/Dockerfile }
-          - { id: egress, context: ./devmachine, file: ./devmachine/egress/Dockerfile }
-          - { id: agent-claude, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: claude-code }
-          - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode }
-          - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex }
+          - { id: app, context: ., file: ./Dockerfile, inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
+          - { id: backend, context: ./BE, file: ./BE/Dockerfile, inputs: 'BE/Dockerfile BE/go.mod BE/go.sum' }
+          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/Caddyfile UI/package.json UI/package-lock.json' }
+          - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway, inputs: 'BE/Dockerfile.machine-gateway BE/go.mod BE/go.sum' }
+          - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager, inputs: 'BE/Dockerfile.machine-manager BE/go.mod BE/go.sum' }
+          - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile, inputs: devmachine }
+          - { id: browser, context: ./devmachine, file: ./devmachine/browser/Dockerfile, inputs: devmachine }
+          - { id: collector, context: ./devmachine, file: ./devmachine/collector/Dockerfile, inputs: devmachine }
+          - { id: egress, context: ./devmachine, file: ./devmachine/egress/Dockerfile, inputs: devmachine }
+          - { id: agent-claude, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: claude-code, inputs: devmachine }
+          - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode, inputs: devmachine }
+          - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex, inputs: devmachine }
     steps:
       - name: Check out the source revision
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
+          # Pull requests need the merge base to tell what they change.
+          fetch-depth: ${{ forgejo.event_name == 'pull_request' && '0' || '1' }}
+
+      # Every deploying change bumps UI/package.json, which used to rebuild
+      # all twelve images on the shared runner. A leg whose inputs the pull
+      # request leaves alone skips its build; if the diff itself fails, the
+      # leg builds and scans anyway.
+      - name: Check whether this pull request changes the image
+        id: inputs
+        if: forgejo.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ forgejo.event.pull_request.base.sha }}
+          INPUTS: ${{ matrix.inputs }}
+        run: |
+          # shellcheck disable=SC2086 # INPUTS is a space-separated path list
+          if git diff --quiet "${BASE_SHA}...HEAD" -- $INPUTS .forgejo/workflows/image-security.yml; then
+            echo "This pull request does not change the ${{ matrix.id }} image; skipping it."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
 
       # Intermediate layers are never reused here, and committing one per
       # instruction is what pushed parallel legs past the runner's Docker
       # timeouts; the final image content is the same either way.
       - name: Build the image
+        if: steps.inputs.outputs.skip != 'true'
         env:
           PROVIDER: ${{ matrix.provider }}
         run: |
@@ -74,6 +95,7 @@ jobs:
       # another process". One leg at a time refreshes the DB; scans keep
       # their layer cache in memory.
       - name: Scan the image
+        if: steps.inputs.outputs.skip != 'true'
         run: |
           set -euo pipefail
           mkdir -p "${TRIVY_CACHE_DIR}"
