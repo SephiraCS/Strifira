@@ -10,7 +10,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Plus, SquareUser, Box, ChevronRight } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import Box from '@lucide/svelte/icons/box';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

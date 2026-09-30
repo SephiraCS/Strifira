@@ -5,7 +5,7 @@ RUN go mod download
 COPY . ./
 RUN CGO_ENABLED=0 go build -o /out/ku-updater ./cmd/updater
 
-FROM docker.io/library/alpine:3.21
+FROM docker.io/library/alpine:3.24
 RUN apk add --no-cache bash ca-certificates docker-cli docker-cli-compose git openssh-client
 WORKDIR /repo
 COPY --from=builder /out/ku-updater /usr/local/bin/ku-updater

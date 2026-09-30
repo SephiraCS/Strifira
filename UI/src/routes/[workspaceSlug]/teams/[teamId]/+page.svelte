@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { issuesState } from '$lib/features/issues/issues.state.svelte';
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
+	import { placementSortOrders } from '$lib/features/issues/sort-order';
 	import type { GroupByField } from '$lib/features/issues/issues.state.svelte';
 	import IssueRow from '$lib/features/issues/IssueRow.svelte';
 	import IssueDetail from '$lib/features/issues/IssueDetail.svelte';
@@ -14,7 +15,7 @@
 	import FilterBuilder from '$lib/components/shared/FilterBuilder.svelte';
 	import ViewSwitcher from '$lib/components/shared/ViewSwitcher.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
-	import CreateIssueDialog from '$lib/features/issues/CreateIssueDialog.svelte';
+	import CreateIssueDialog from '$lib/features/issues/LazyCreateIssueDialog.svelte';
 	import { showIssueCreatedToast } from '$lib/features/issues/issue-created-toast';
 	import SaveViewDialog from '$lib/components/shared/SaveViewDialog.svelte';
 	import * as Popover from '$lib/components/ui/popover';
@@ -31,7 +32,13 @@
 	import type { ViewFilter, ViewLayout } from '$lib/types/view';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { appToast } from '$lib/features/toast/toast';
-	import { Archive, Layers, SquareUser, SquaresSubtract, ChevronRight, Share2, Settings2 } from 'lucide-svelte';
+	import Archive from '@lucide/svelte/icons/archive';
+	import Layers from '@lucide/svelte/icons/layers';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import SquaresSubtract from '@lucide/svelte/icons/squares-subtract';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Share2 from '@lucide/svelte/icons/share-2';
+	import Settings2 from '@lucide/svelte/icons/settings-2';
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
 	import TeamRenameDialog from '$lib/features/teams/TeamRenameDialog.svelte';
 	import { hasPermission } from '$lib/security/permissions';
@@ -214,15 +221,6 @@
 		}
 	}
 
-	function calculateSortOrder(items: Issue[], index: number): number {
-		const prev = index > 0 ? items[index - 1].sort_order : undefined;
-		const next = index < items.length - 1 ? items[index + 1].sort_order : undefined;
-		if (prev !== undefined && next !== undefined) return (prev + next) / 2;
-		if (prev !== undefined) return prev + 1000;
-		if (next !== undefined) return next - 1000;
-		return 0;
-	}
-
 	function hasSameIssueOrder(a: Issue[], b: Issue[]) {
 		return a.length === b.length && a.every((issue, index) => issue.id === b[index]?.id);
 	}
@@ -252,7 +250,7 @@
 
 		const sourceGroupKey = getIssueGroupKey(sourceIssue, gb);
 		const isSameGroup = sourceGroupKey === groupKey;
-		let sortOrder: number | undefined;
+		let sortOrders: Map<string, number> | undefined;
 		let reorderedGroup: Issue[] | null = null;
 
 		if (targetIssueId) {
@@ -266,12 +264,12 @@
 				reorderedGroup.splice(insertIndex, 0, sourceIssue);
 
 				if (!isSameGroup || !hasSameIssueOrder(group?.issues ?? [], reorderedGroup)) {
-					sortOrder = calculateSortOrder(reorderedGroup, insertIndex);
+					sortOrders = placementSortOrders(reorderedGroup, insertIndex);
 				}
 			}
 		}
 
-		if (isSameGroup && sortOrder === undefined) return;
+		if (isSameGroup && sortOrders === undefined) return;
 
 		const fieldMap: Record<string, string> = {
 			status: 'status_id',
@@ -290,12 +288,28 @@
 			if (gb === 'priority') value = Number(groupKey);
 			req[field] = value;
 		}
+		const sortOrder = sortOrders?.get(sourceIssue.id);
 		if (sortOrder !== undefined) {
 			req.sort_order = sortOrder;
 		}
 
 		try {
 			const updatedIssue = await issuesState.update(slug, issueIdentifier, req);
+			// Neighbours only change when the drop landed between equal
+			// sort_orders and the group was renumbered.
+			const results = await Promise.allSettled(
+				[...(sortOrders ?? [])]
+					.filter(([id]) => id !== sourceIssue.id)
+					.map(([id, order]) => {
+						const neighbour = reorderedGroup!.find((issue) => issue.id === id)!;
+						return issuesState.update(slug, neighbour.identifier, { sort_order: order });
+					})
+			);
+			if (results.some((result) => result.status === 'rejected')) {
+				appToast.error(m['common.toast.failed_move_issue']());
+				await issuesState.refresh();
+				return;
+			}
 			if (isSameGroup && reorderedGroup) {
 				applyLocalGroupOrder(reorderedGroup.map((issue) => (issue.id === updatedIssue.id ? updatedIssue : issue)));
 			}

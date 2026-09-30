@@ -4,7 +4,7 @@
 	import type { Issue } from '$lib/types/issue';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
-	import { ArchiveRestore } from 'lucide-svelte';
+	import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	let issues = $state<Issue[]>([]);

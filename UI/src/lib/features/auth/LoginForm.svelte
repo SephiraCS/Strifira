@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { login } from '$lib/api/auth';
-	import { Loader2 } from 'lucide-svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { Input } from '$lib/components/ui/input';
 	import { Password } from '$lib/components/ui/password';
 	import { authState } from './auth.state.svelte';
@@ -47,6 +47,6 @@
 		disabled={loading}
 		class="w-full rounded bg-[var(--app-accent)] py-2 text-sm text-[var(--app-accent-foreground)] disabled:opacity-50"
 	>
-		{#if loading}<Loader2 size={14} class="animate-spin" />{:else}Sign in{/if}
+		{#if loading}<LoaderCircle size={14} class="animate-spin" />{:else}Sign in{/if}
 	</button>
 </form>

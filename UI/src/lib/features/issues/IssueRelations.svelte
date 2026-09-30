@@ -5,7 +5,13 @@
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import AddRelationDialog from './AddRelationDialog.svelte';
 	import * as Collapsible from '$lib/components/ui/collapsible';
-	import { Link, X, Plus, Ban, Copy, ArrowRight, ChevronRight } from 'lucide-svelte';
+	import Link from '@lucide/svelte/icons/link';
+	import X from '@lucide/svelte/icons/x';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Ban from '@lucide/svelte/icons/ban';
+	import Copy from '@lucide/svelte/icons/copy';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { appToast } from '$lib/features/toast/toast';
 
 	let {

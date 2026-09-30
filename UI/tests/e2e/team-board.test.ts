@@ -74,7 +74,15 @@ function issue(
 const NEGATIVE_FILLERS = 212;
 const POSITIVE_DONE = 34;
 
-function seedIssues(): StoredIssue[] {
+// The list API's ORDER BY for the board: sort_order ASC, then created_at
+// DESC, then id DESC (BE/internal/repository/issue.go).
+function serverOrder(a: StoredIssue, b: StoredIssue): number {
+	if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order;
+	if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1;
+	return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+}
+
+function seedIssues(progressSorts = [0, 2000, 3500, 5000]): StoredIssue[] {
 	const store: StoredIssue[] = [
 		issue('i-victim', VICTIM_ID, VICTIM_TITLE, statusBacklog, -254500),
 		issue('i-tail', 'DSH-9252', DEEP_TAIL_TITLE, statusDone, 15500)
@@ -87,7 +95,6 @@ function seedIssues(): StoredIssue[] {
 		);
 	}
 	// In Progress: a handful of items at the top of the positive range.
-	const progressSorts = [0, 2000, 3500, 5000];
 	progressSorts.forEach((sortOrder, i) => {
 		store.push(issue(`i-p${i}`, `DSH-${2000 + i}`, `Progress issue ${i}`, statusProgress, sortOrder));
 	});
@@ -95,14 +102,15 @@ function seedIssues(): StoredIssue[] {
 	for (let i = 0; i < POSITIVE_DONE; i++) {
 		store.push(issue(`i-d${i}`, `DSH-${3000 + i}`, `Done issue ${i}`, statusDone, 1000 + i * 450));
 	}
-	store.sort((a, b) => a.sort_order - b.sort_order);
+	store.sort(serverOrder);
 	return store;
 }
 
-async function mockTeamBoard(page: Page) {
-	const store = seedIssues();
+async function mockTeamBoard(page: Page, options: { progressSorts?: number[] } = {}) {
+	const store = seedIssues(options.progressSorts);
 	const issueRequests: string[] = [];
 	const patches: string[] = [];
+	const allPatches: { identifier: string; body: { status_id?: string; sort_order?: number } }[] = [];
 	const bulkPatches: string[] = [];
 
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
@@ -177,17 +185,22 @@ async function mockTeamBoard(page: Page) {
 				}
 			});
 		}
-		if (path === `/api/workspaces/test/issues/${VICTIM_ID}` && route.request().method() === 'PATCH') {
-			patches.push(route.request().postData() ?? '');
+		const patched = /^\/api\/workspaces\/test\/issues\/([^/]+)$/.exec(path);
+		if (patched && patched[1] !== 'bulk' && route.request().method() === 'PATCH') {
+			const identifier = patched[1];
 			const body = JSON.parse(route.request().postData() ?? '{}');
-			const victim = store.find((it) => it.identifier === VICTIM_ID)!;
-			if (body.status_id) victim.status_id = body.status_id;
-			// Server-side truth: the re-averaged sort lands deep past page 1
-			// (production verified the moved issue at rank 216 of 252).
-			victim.sort_order = typeof body.sort_order === 'number' ? body.sort_order : 600000;
-			victim.updated_at = '2026-09-29T15:45:35Z';
-			store.sort((a, b) => a.sort_order - b.sort_order);
-			return route.fulfill({ json: victim });
+			allPatches.push({ identifier, body });
+			if (identifier === VICTIM_ID) patches.push(route.request().postData() ?? '');
+			const target = store.find((it) => it.identifier === identifier);
+			if (!target) return route.fulfill({ status: 404, json: { error: { message: 'not found' } } });
+			if (body.status_id) {
+				target.status_id = body.status_id;
+				target.status_info = STATUS_INFO[body.status_id];
+			}
+			if (typeof body.sort_order === 'number') target.sort_order = body.sort_order;
+			target.updated_at = new Date(Date.parse(target.updated_at) + 1000).toISOString();
+			store.sort(serverOrder);
+			return route.fulfill({ json: target });
 		}
 		if (new RegExp(`^/api/workspaces/test/issues/[^/]+$`).test(path) && route.request().method() === 'GET') {
 			const identifier = path.split('/').pop()!;
@@ -213,7 +226,7 @@ async function mockTeamBoard(page: Page) {
 
 		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
 	});
-	return { issueRequests, patches, bulkPatches, store };
+	return { issueRequests, patches, allPatches, bulkPatches, store };
 }
 
 test.use({ viewport: { width: 1920, height: 1080 } });
@@ -319,6 +332,136 @@ test('moving a card to In Progress keeps it visible through the background refre
 	await expect(page.locator('div[aria-label="In Progress"]')).toContainText(VICTIM_TITLE);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 });
+/** Drags a card by its title and drops it where `target`'s center is:
+ * svelte-dnd-action inserts the dragged card at the index of the card under
+ * the dragged element's center, so dropping onto a card places it before
+ * that card. */
+async function dragCard(page: Page, title: string, target: { x: number; y: number }) {
+	const card = page.locator('button', { hasText: title }).first();
+	const from = await card.boundingBox();
+	if (!from) throw new Error(`missing card ${title}`);
+	const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+	await page.mouse.move(start.x, start.y);
+	await page.mouse.down();
+	const steps = 15;
+	for (let i = 1; i <= steps; i++) {
+		await page.mouse.move(start.x + (target.x - start.x) * (i / steps), start.y + (target.y - start.y) * (i / steps));
+	}
+	await page.waitForTimeout(150);
+	await page.mouse.up();
+}
+
+async function cardCenter(page: Page, title: string) {
+	const box = await page.locator('button', { hasText: title }).first().boundingBox();
+	if (!box) throw new Error(`missing card ${title}`);
+	return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+function columnTitles(page: Page, column: string) {
+	return page.locator(`div[aria-label="${column}"] p.line-clamp-2`).allTextContents();
+}
+
+/** DOM mutations on the board caused by one background refresh. */
+async function refreshMutations(page: Page): Promise<number> {
+	return page.evaluate(async () => {
+		let count = 0;
+		const observer = new MutationObserver((mutations) => (count += mutations.length));
+		observer.observe(document.querySelector('main') ?? document.body, {
+			childList: true,
+			subtree: true,
+			characterData: true,
+			attributes: true
+		});
+		window.dispatchEvent(new CustomEvent('app:refresh', { detail: { resources: ['issues'] } }));
+		await new Promise((resolve) => setTimeout(resolve, 700));
+		observer.disconnect();
+		return count;
+	});
+}
+
+/** Refetches the board through the same path as a WebSocket issue event
+ * and waits for it to land. */
+async function refreshBoard(page: Page, issueRequests: string[]) {
+	const before = issueRequests.length;
+	await page.evaluate(() => {
+		window.dispatchEvent(new CustomEvent('app:refresh', { detail: { resources: ['issues'] } }));
+	});
+	await expect.poll(() => issueRequests.length - before, { timeout: 5_000 }).toBeGreaterThan(0);
+	await page.waitForTimeout(500);
+}
+
+test('a cross-column drop saves only the dropped card and keeps its place after a refresh', async ({ page }) => {
+	// A Done card sorting after every In Progress card: the old finalize
+	// loop re-saved each card below the drop point, averaging the first one
+	// with the dropped card's stale sort_order and sending it to the bottom.
+	const MOVED = 'Done issue 20';
+	const { issueRequests, allPatches, store } = await mockTeamBoard(page);
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText('Progress issue 1')).toBeVisible();
+	await page.locator('button', { hasText: MOVED }).first().scrollIntoViewIfNeeded();
+
+	await dragCard(page, MOVED, await cardCenter(page, 'Progress issue 1'));
+	await expect(page.locator('div[aria-label="In Progress"]')).toContainText(MOVED);
+	const dropped = await columnTitles(page, 'In Progress');
+
+	// Only the dragged card changed; every other card keeps its sort_order.
+	await page.waitForTimeout(1_000);
+	expect(allPatches.map((patch) => patch.identifier)).toEqual(['DSH-3020']);
+	expect(allPatches[0].body.status_id).toBe(statusProgress);
+
+	// Its new sort_order sits strictly between its neighbours on the board.
+	const sortOf = (title: string) => store.find((it) => it.title === title)!.sort_order;
+	const index = dropped.indexOf(MOVED);
+	if (index > 0) expect(sortOf(MOVED)).toBeGreaterThan(sortOf(dropped[index - 1]));
+	if (index < dropped.length - 1) expect(sortOf(MOVED)).toBeLessThan(sortOf(dropped[index + 1]));
+
+	// The drop settled in one render: the refresh its save triggers brings
+	// identical data and must not touch the board.
+	expect(await refreshMutations(page)).toBe(0);
+
+	await refreshBoard(page, issueRequests);
+	expect(await columnTitles(page, 'In Progress')).toEqual(dropped);
+});
+
+test('reordering inside a column saves only the moved card', async ({ page }) => {
+	const { issueRequests, allPatches } = await mockTeamBoard(page);
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText('Progress issue 3')).toBeVisible();
+
+	await dragCard(page, 'Progress issue 3', await cardCenter(page, 'Progress issue 0'));
+	await expect.poll(() => columnTitles(page, 'In Progress')).not.toEqual([
+		'Progress issue 0',
+		'Progress issue 1',
+		'Progress issue 2',
+		'Progress issue 3'
+	]);
+	const dropped = await columnTitles(page, 'In Progress');
+
+	await page.waitForTimeout(1_000);
+	expect(allPatches.map((patch) => patch.identifier)).toEqual(['DSH-2003']);
+
+	await refreshBoard(page, issueRequests);
+	expect(await columnTitles(page, 'In Progress')).toEqual(dropped);
+});
+
+test('a drop between cards that share a sort_order keeps its place after a refresh', async ({ page }) => {
+	// Legacy boards carry runs of equal sort_order; averaging two equal
+	// neighbours gives the dropped card the same value, and the server's
+	// tie-break (created_at, id) then moves it after the next refresh.
+	const { issueRequests } = await mockTeamBoard(page, { progressSorts: [1000, 1000, 1000, 1000] });
+	await page.goto(`/test/teams/${teamId}`);
+	await expect(page.getByText('Progress issue 2')).toBeVisible();
+
+	await dragCard(page, VICTIM_TITLE, await cardCenter(page, 'Progress issue 2'));
+	await expect(page.locator('div[aria-label="In Progress"]')).toContainText(VICTIM_TITLE);
+	const dropped = await columnTitles(page, 'In Progress');
+	expect(dropped.indexOf(VICTIM_TITLE)).toBeGreaterThan(0);
+
+	await page.waitForTimeout(1_000);
+	await refreshBoard(page, issueRequests);
+	expect(await columnTitles(page, 'In Progress')).toEqual(dropped);
+});
+
 test('team header button archives every done issue in one bulk request', async ({ page }) => {
 	const { bulkPatches, store } = await mockTeamBoard(page);
 

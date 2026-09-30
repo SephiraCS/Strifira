@@ -1,5 +1,5 @@
 # Stage 1: Build UI
-FROM docker.io/library/node:22-alpine AS ui-builder
+FROM docker.io/library/node:24-alpine AS ui-builder
 WORKDIR /app
 COPY UI/package*.json ./
 RUN npm ci --no-audit --no-fund --prefer-offline
@@ -25,7 +25,7 @@ COPY BE/ .
 RUN CGO_ENABLED=0 go build -trimpath -o server ./cmd/server
 
 # Stage 4: Final image
-FROM docker.io/library/alpine:3.23
+FROM docker.io/library/alpine:3.24
 RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=caddy-builder /go/caddy /usr/bin/caddy
@@ -68,13 +68,30 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 		reverse_proxy localhost:8080
 	}
 
+	# Hashed build assets never change, so browsers keep them for a year. A
+	# missing one (a tab still on a previous deploy) is a real 404, not the
+	# SPA shell, so the client can tell and reload.
+	handle /_app/immutable/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable" {
+			match {
+				status 2xx
+			}
+		}
+		file_server
+	}
+
+	# Everything else (the SPA shell, version.json, the service worker)
+	# revalidates on every load so a deploy shows up immediately.
 	handle {
 		root * /srv
+		header Cache-Control no-cache
 		try_files {path} /index.html
 		file_server
 	}
 }
 EOF
+RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # Sources an optional mounted env file, applies migrations (retried while the
 # database is still coming up), then runs the API behind Caddy.

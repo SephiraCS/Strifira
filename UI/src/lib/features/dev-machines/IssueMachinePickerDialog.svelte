@@ -3,7 +3,11 @@
 </script>
 
 <script lang="ts">
-	import { ExternalLink, LoaderCircle, Plus, Settings2, SquareTerminal } from 'lucide-svelte';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Settings2 from '@lucide/svelte/icons/settings-2';
+	import SquareTerminal from '@lucide/svelte/icons/square-terminal';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import {

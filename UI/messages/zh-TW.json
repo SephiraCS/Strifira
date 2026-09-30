@@ -1651,5 +1651,6 @@
 	"settings.general.auto_archive": "自動封存已完成議題",
 	"settings.general.auto_archive_desc": "議題完成 30 天後自動封存。",
 	"settings.general.auto_archive_updated": "自動封存設定已更新",
-	"settings.general.auto_archive_failed": "無法更新自動封存設定"
+	"settings.general.auto_archive_failed": "無法更新自動封存設定",
+	"common.toast.failed_load_dialog": "無法載入問題對話框"
 }

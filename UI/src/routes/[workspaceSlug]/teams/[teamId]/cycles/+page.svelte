@@ -20,7 +20,11 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import { Plus, SquareUser, RefreshCcwDot, ChevronRight, Clock } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import RefreshCcwDot from '@lucide/svelte/icons/refresh-ccw-dot';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Clock from '@lucide/svelte/icons/clock';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { cubicOut } from 'svelte/easing';

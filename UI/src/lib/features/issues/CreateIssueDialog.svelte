@@ -25,14 +25,12 @@
 	import { listTemplates } from '$lib/api/issue-templates';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import {
-		User,
-		Tag,
-		FolderKanban,
-		FileText,
-		ImagePlus,
-		Paperclip
-	} from 'lucide-svelte';
+	import User from '@lucide/svelte/icons/user';
+	import Tag from '@lucide/svelte/icons/tag';
+	import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+	import FileText from '@lucide/svelte/icons/file-text';
+	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import Paperclip from '@lucide/svelte/icons/paperclip';
 	import { reworkText, isAINotConfiguredError } from '$lib/api/ai-settings';
 	import { appToast } from '$lib/features/toast/toast';
 

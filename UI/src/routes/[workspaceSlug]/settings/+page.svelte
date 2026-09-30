@@ -9,7 +9,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
-	import { Trash2, Download, Loader2 } from 'lucide-svelte';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Download from '@lucide/svelte/icons/download';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import AvatarUploader from '$lib/components/shared/AvatarUploader.svelte';
 	import WorkspaceImportDialog from '$lib/features/workspaces/WorkspaceImportDialog.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -328,7 +330,7 @@
 							<p class="text-xs text-[var(--color-text-tertiary)]">{m['workspace_transfer.export_description']()}</p>
 						</div>
 						<Button variant="outline" onclick={handleExport} disabled={exporting}>
-							{#if exporting}<Loader2 size={14} class="animate-spin" />{:else}<Download size={14} />{/if}
+							{#if exporting}<LoaderCircle size={14} class="animate-spin" />{:else}<Download size={14} />{/if}
 							{exporting ? m['workspace_transfer.exporting']() : m['workspace_transfer.export_button']()}
 						</Button>
 					</div>

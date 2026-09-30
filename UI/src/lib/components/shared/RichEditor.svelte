@@ -16,30 +16,28 @@
 	import { common, createLowlight } from 'lowlight';
 	import { Button } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
-	import {
-		Bold,
-		Italic,
-		Strikethrough,
-		Underline as UnderlineIcon,
-		Code,
-		Heading1,
-		Heading2,
-		List,
-		ListOrdered,
-		ListChecks,
-		Link as LinkIcon,
-		Quote,
-		Code2,
-		Undo2,
-		Redo2,
-		SquareArrowOutUpRight,
-		Sparkles,
-		ImagePlus,
-		Paperclip,
-		Maximize2,
-		Download,
-		Copy
-	} from 'lucide-svelte';
+	import Bold from '@lucide/svelte/icons/bold';
+	import Italic from '@lucide/svelte/icons/italic';
+	import Strikethrough from '@lucide/svelte/icons/strikethrough';
+	import UnderlineIcon from '@lucide/svelte/icons/underline';
+	import Code from '@lucide/svelte/icons/code';
+	import Heading1 from '@lucide/svelte/icons/heading-1';
+	import Heading2 from '@lucide/svelte/icons/heading-2';
+	import List from '@lucide/svelte/icons/list';
+	import ListOrdered from '@lucide/svelte/icons/list-ordered';
+	import ListChecks from '@lucide/svelte/icons/list-checks';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import Quote from '@lucide/svelte/icons/quote';
+	import Code2 from '@lucide/svelte/icons/code-xml';
+	import Undo2 from '@lucide/svelte/icons/undo-2';
+	import Redo2 from '@lucide/svelte/icons/redo-2';
+	import SquareArrowOutUpRight from '@lucide/svelte/icons/square-arrow-out-up-right';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
+	import ImagePlus from '@lucide/svelte/icons/image-plus';
+	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import Maximize2 from '@lucide/svelte/icons/maximize-2';
+	import Download from '@lucide/svelte/icons/download';
+	import Copy from '@lucide/svelte/icons/copy';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';

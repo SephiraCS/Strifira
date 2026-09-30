@@ -5,7 +5,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /machine-manager ./cmd/machine-manager
 
-FROM docker.io/library/alpine:3.22
+FROM docker.io/library/alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -g 1000 ku \
     && adduser -D -u 1000 -G ku ku

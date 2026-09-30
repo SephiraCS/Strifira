@@ -11,7 +11,9 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import * as Collapsible from '$lib/components/ui/collapsible';
 	import { appToast } from '$lib/features/toast/toast';
-	import { ChevronRight, Plus, UserCircle } from 'lucide-svelte';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Plus from '@lucide/svelte/icons/plus';
+	import UserCircle from '@lucide/svelte/icons/circle-user';
 
 	let {
 		slug,

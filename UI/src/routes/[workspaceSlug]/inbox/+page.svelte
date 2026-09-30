@@ -25,23 +25,21 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import { Badge } from '$lib/components/ui/badge';
 	import { appToast } from '$lib/features/toast/toast';
-	import {
-		Inbox,
-		Clock,
-		Archive,
-		AlarmClock,
-		ArrowRightLeft,
-		UserCheck,
-		MessageSquare,
-		AtSign,
-		Signal,
-		CirclePlus,
-		Pencil,
-		CalendarDays,
-		Eye,
-		Tag,
-		RefreshCw
-	} from 'lucide-svelte';
+	import Inbox from '@lucide/svelte/icons/inbox';
+	import Clock from '@lucide/svelte/icons/clock';
+	import Archive from '@lucide/svelte/icons/archive';
+	import AlarmClock from '@lucide/svelte/icons/alarm-clock';
+	import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left';
+	import UserCheck from '@lucide/svelte/icons/user-check';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import AtSign from '@lucide/svelte/icons/at-sign';
+	import Signal from '@lucide/svelte/icons/signal';
+	import CirclePlus from '@lucide/svelte/icons/circle-plus';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import Eye from '@lucide/svelte/icons/eye';
+	import Tag from '@lucide/svelte/icons/tag';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 

@@ -3,22 +3,20 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import * as echarts from 'echarts';
-	import {
-		CircleDashed,
-		Flag,
-		FolderKanban,
-		Gauge,
-		GitBranch,
-		Hash,
-		Hourglass,
-		Inbox,
-		Layers3,
-		RefreshCcw,
-		Tag,
-		Timer,
-		User,
-		Users
-	} from 'lucide-svelte';
+	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
+	import Flag from '@lucide/svelte/icons/flag';
+	import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+	import Gauge from '@lucide/svelte/icons/gauge';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import Hash from '@lucide/svelte/icons/hash';
+	import Hourglass from '@lucide/svelte/icons/hourglass';
+	import Inbox from '@lucide/svelte/icons/inbox';
+	import Layers3 from '@lucide/svelte/icons/layers-3';
+	import RefreshCcw from '@lucide/svelte/icons/refresh-ccw';
+	import Tag from '@lucide/svelte/icons/tag';
+	import Timer from '@lucide/svelte/icons/timer';
+	import User from '@lucide/svelte/icons/user';
+	import Users from '@lucide/svelte/icons/users';
 	import * as Select from '$lib/components/ui/select';
 	import {
 		getAnalyticsInsights,

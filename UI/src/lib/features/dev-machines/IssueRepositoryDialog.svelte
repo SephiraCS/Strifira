@@ -5,7 +5,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import ComboboxPopover from '$lib/components/shared/ComboboxPopover.svelte';
-	import { ChevronsUpDown, GitBranch } from 'lucide-svelte';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import { getForgejoStatus } from '$lib/api/forgejo';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
 	import type { ForgejoRepo } from '$lib/types/forgejo';

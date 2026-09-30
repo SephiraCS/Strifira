@@ -1,11 +1,13 @@
 <script lang="ts">
-	import type { Issue } from '$lib/types/issue';
+	import type { Issue, UpdateIssueRequest } from '$lib/types/issue';
 	import type { TeamStatus } from '$lib/types/team-status';
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import type { Label } from '$lib/types/label';
 	import KanbanColumn from './KanbanColumn.svelte';
 	import { sortColumnIssues, type ColumnSortKey } from './column-sort';
-	import { dragHandleZone } from 'svelte-dnd-action';
+	import { compareBoardOrder, placementSortOrders } from './sort-order';
+	import { dragHandleZone, TRIGGERS, type DndEventInfo } from 'svelte-dnd-action';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { issuesState } from './issues.state.svelte';
 	import { teamStatusesState } from './team-statuses.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
@@ -75,9 +77,10 @@
 	// refresh), and the whole board flickers.
 	const lastApplied = new Map<string, string[]>();
 
-	// Columns whose zone is mid-drag: svelte-dnd-action owns their order
-	// until finalize, so refreshes must not touch them.
-	const draggingColumns = new Set<string>();
+	// Columns a drag is in progress over: svelte-dnd-action owns their order
+	// until the drop, so refreshes must not touch them. Reactive, so a
+	// refresh skipped meanwhile applies as soon as the drag lets go.
+	const draggingColumns = new SvelteSet<string>();
 
 	function handleDragState(statusId: string, dragging: boolean) {
 		if (dragging) draggingColumns.add(statusId);
@@ -85,12 +88,11 @@
 	}
 
 	/** A column's canonical order is sort_order (the server's board order),
-	 * not the raw list order: a just-dropped issue gets its re-averaged
-	 * sort_order back from the PATCH response immediately, so the card stays
-	 * where it was dropped instead of flashing back to its old spot until
-	 * the next full refresh. */
+	 * not the raw list order: a just-dropped issue takes its new sort_order
+	 * optimistically, so the card stays where it was dropped instead of
+	 * flashing back to its old spot until the next full refresh. */
 	function canonicalColumn(statusId: string): Issue[] {
-		return [...(issuesByStatus[statusId] ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+		return [...(issuesByStatus[statusId] ?? [])].sort(compareBoardOrder);
 	}
 
 	function columnSignature(issues: Issue[]): string[] {
@@ -174,39 +176,34 @@
 		localByStatus[statusId] = items;
 	}
 
-	function handleFinalize(statusId: string, items: Issue[]) {
+	function handleFinalize(statusId: string, items: Issue[], info: DndEventInfo) {
 		localByStatus[statusId] = items;
-		// The unmapped bucket has no real status behind it; issues only ever
-		// leave it (by dropping into a real column), never enter it.
-		if (statusId === unmappedStatus.id) return;
+		// Only the column the card was dropped into saves anything, and only
+		// for that card: the source of a cross-column move just lost it, and
+		// every other card keeps its sort_order. The unmapped bucket has no
+		// real status behind it, so dropping inside it saves nothing.
+		if (info.trigger !== TRIGGERS.DROPPED_INTO_ZONE || statusId === unmappedStatus.id) return;
+		const index = items.findIndex((issue) => issue.id === info.id);
+		if (index === -1) return;
 
-		// Detect moved issues and update
-		for (let i = 0; i < items.length; i++) {
-			const issue = items[i];
-			const originalStatusId = issue.status_id ?? issue.status;
-			if (originalStatusId !== statusId) {
-				// Cross-column move: update status_id
-				const sortOrder = calculateSortOrder(items, i);
-				issuesState.update(slug, issue.identifier, { status_id: statusId, sort_order: sortOrder });
-			} else {
-				// Same column reorder: check if position changed
-				const originalItems = issuesByStatus[statusId] ?? [];
-				const originalIdx = originalItems.findIndex((it) => it.id === issue.id);
-				if (originalIdx !== i) {
-					const sortOrder = calculateSortOrder(items, i);
-					issuesState.update(slug, issue.identifier, { sort_order: sortOrder });
-				}
+		const dropped = items[index];
+		const changedColumn = (dropped.status_id ?? dropped.status) !== statusId;
+		const unchangedOrder = (a: Issue[], b: Issue[]) =>
+			a.length === b.length && a.every((issue, i) => issue.id === b[i].id);
+		if (!changedColumn && unchangedOrder(items, canonicalColumn(statusId))) return;
+
+		const saves = [...placementSortOrders(items, index)].map(([id, sortOrder]) => {
+			const issue = items.find((it) => it.id === id)!;
+			const req: UpdateIssueRequest = { sort_order: sortOrder };
+			if (issue === dropped && changedColumn) req.status_id = statusId;
+			return issuesState.update(slug, issue.identifier, req);
+		});
+		// A failed save rolls its card back; report the drop once.
+		void Promise.allSettled(saves).then((results) => {
+			if (results.some((result) => result.status === 'rejected')) {
+				appToast.error(m['common.toast.failed_move_issue']());
 			}
-		}
-	}
-
-	function calculateSortOrder(items: Issue[], index: number): number {
-		const prev = index > 0 ? items[index - 1].sort_order : undefined;
-		const next = index < items.length - 1 ? items[index + 1].sort_order : undefined;
-		if (prev !== undefined && next !== undefined) return (prev + next) / 2;
-		if (prev !== undefined) return prev + 1000;
-		if (next !== undefined) return next - 1000;
-		return 0;
+		});
 	}
 </script>
 

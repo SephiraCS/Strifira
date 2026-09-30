@@ -1,16 +1,14 @@
 <script lang="ts">
-	import {
-		Copy,
-		Download,
-		ExternalLink,
-		ImageOff,
-		Link2,
-		LoaderCircle,
-		RotateCcw,
-		X,
-		ZoomIn,
-		ZoomOut
-	} from 'lucide-svelte';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Download from '@lucide/svelte/icons/download';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import ImageOff from '@lucide/svelte/icons/image-off';
+	import Link2 from '@lucide/svelte/icons/link-2';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import X from '@lucide/svelte/icons/x';
+	import ZoomIn from '@lucide/svelte/icons/zoom-in';
+	import ZoomOut from '@lucide/svelte/icons/zoom-out';
 	import { m } from '$lib/paraglide/messages.js';
 	import { imageViewerState } from './image-viewer.state.svelte';
 	import {

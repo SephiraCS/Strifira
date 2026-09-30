@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Plus, Loader2 } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { Button } from '$lib/components/ui/button';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import WorkspaceImportDialog from '$lib/features/workspaces/WorkspaceImportDialog.svelte';
@@ -76,7 +77,7 @@
 							<input bind:value={slug} oninput={() => (slugTouched = true)} maxlength="50" class="mt-1 w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-3 py-2 font-mono text-[var(--color-text-primary)] outline-none focus:border-[var(--app-accent)]" />
 						</label>
 						<Button class="w-full" onclick={create} disabled={creating || !name.trim() || !slug.trim()}>
-							{#if creating}<Loader2 size={14} class="animate-spin" />{/if}
+							{#if creating}<LoaderCircle size={14} class="animate-spin" />{/if}
 							{m['workspace_setup.create_button']()}
 						</Button>
 					</div>
@@ -90,6 +91,6 @@
 			</div>
 		</div>
 	{:else}
-		<Loader2 size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
+		<LoaderCircle size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
 	{/if}
 </div>

@@ -39,34 +39,32 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import {
-		ArrowUpRight,
-		Archive,
-		Bookmark,
-		Copy,
-		Inbox,
-		CircleUser,
-		Settings,
-		LogOut,
-		SquareUser,
-		Box,
-		Plus,
-		Layers,
-		RefreshCcwDot,
-		ShieldCheck,
-		Star,
-		ChevronDown,
-		SquaresSubtract,
-		SquarePen,
-		Search,
-		Ellipsis,
-		Trash2,
-		Info,
-		CircleQuestionMark,
-		BarChart3,
-		MonitorPlay,
-		MonitorUp
-	} from 'lucide-svelte';
+	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
+	import Archive from '@lucide/svelte/icons/archive';
+	import Bookmark from '@lucide/svelte/icons/bookmark';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Inbox from '@lucide/svelte/icons/inbox';
+	import CircleUser from '@lucide/svelte/icons/circle-user';
+	import Settings from '@lucide/svelte/icons/settings';
+	import LogOut from '@lucide/svelte/icons/log-out';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import Box from '@lucide/svelte/icons/box';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Layers from '@lucide/svelte/icons/layers';
+	import RefreshCcwDot from '@lucide/svelte/icons/refresh-ccw-dot';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import Star from '@lucide/svelte/icons/star';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import SquaresSubtract from '@lucide/svelte/icons/squares-subtract';
+	import SquarePen from '@lucide/svelte/icons/square-pen';
+	import Search from '@lucide/svelte/icons/search';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Info from '@lucide/svelte/icons/info';
+	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
+	import BarChart3 from '@lucide/svelte/icons/chart-column';
+	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
+	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 
 	let {
 		workspace,

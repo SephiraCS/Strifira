@@ -1,16 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import {
-		Activity,
-		BarChart3,
-		Building2,
-		ChartNoAxesCombined,
-		LayoutDashboard,
-		SlidersHorizontal,
-		TrendingUp,
-		UsersRound
-	} from 'lucide-svelte';
+	import Activity from '@lucide/svelte/icons/activity';
+	import BarChart3 from '@lucide/svelte/icons/chart-column';
+	import Building2 from '@lucide/svelte/icons/building-complex';
+	import ChartNoAxesCombined from '@lucide/svelte/icons/chart-no-axes-combined';
+	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+	import TrendingUp from '@lucide/svelte/icons/trending-up';
+	import UsersRound from '@lucide/svelte/icons/users-round';
 	import * as Select from '$lib/components/ui/select';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';

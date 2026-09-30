@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { login, register } from '$lib/api/auth';
-	import { ChevronDown, ChevronUp, Loader2 } from 'lucide-svelte';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { Input } from '$lib/components/ui/input';
 	import { Password } from '$lib/components/ui/password';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
@@ -87,7 +89,7 @@
 				disabled={loading}
 				class="w-full rounded-md bg-[var(--app-accent)] px-4 py-2 text-sm font-medium text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-50"
 			>
-				{#if loading}<Loader2 size={14} class="animate-spin" />{:else}{mode === 'login'
+				{#if loading}<LoaderCircle size={14} class="animate-spin" />{:else}{mode === 'login'
 						? m['login.button.signin']()
 						: m['login.button.create_account']()}{/if}
 			</button>

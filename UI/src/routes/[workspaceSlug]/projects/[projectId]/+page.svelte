@@ -32,21 +32,19 @@
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import {
-		Trash2,
-		MoreHorizontal,
-		Circle,
-		Play,
-		CheckCircle2,
-		XCircle,
-		Calendar,
-		List,
-		BarChart3,
-		ChevronRight,
-		SquareUser,
-		Box,
-		Settings2
-	} from 'lucide-svelte';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Circle from '@lucide/svelte/icons/circle';
+	import Play from '@lucide/svelte/icons/play';
+	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
+	import XCircle from '@lucide/svelte/icons/circle-x';
+	import Calendar from '@lucide/svelte/icons/calendar';
+	import List from '@lucide/svelte/icons/list';
+	import BarChart3 from '@lucide/svelte/icons/chart-column';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import Box from '@lucide/svelte/icons/box';
+	import Settings2 from '@lucide/svelte/icons/settings-2';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 
@@ -304,7 +302,7 @@
 				<Popover.Root bind:open={actionsOpen}>
 					<Popover.Trigger>
 						<Button variant="ghost" size="icon-sm">
-							<MoreHorizontal size={14} />
+							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-40 p-1" align="end">

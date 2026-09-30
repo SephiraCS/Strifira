@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { onDestroy, tick } from 'svelte';
-	import { LoaderCircle, RefreshCw } from 'lucide-svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -260,7 +261,7 @@
 		statusMessage = message;
 	}
 
-	function sendFrame(frame: Uint8Array) {
+	function sendFrame(frame: Uint8Array<ArrayBuffer>) {
 		const activeSocket = socketConnection?.socket;
 		if (activeSocket?.readyState === WebSocket.OPEN) activeSocket.send(frame);
 	}

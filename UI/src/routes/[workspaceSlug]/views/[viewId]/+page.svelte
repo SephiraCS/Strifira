@@ -25,7 +25,13 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { appToast } from '$lib/features/toast/toast';
-	import { ArrowLeft, Pencil, Trash2, MoreHorizontal, Check, X, Share2 } from 'lucide-svelte';
+	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Check from '@lucide/svelte/icons/check';
+	import X from '@lucide/svelte/icons/x';
+	import Share2 from '@lucide/svelte/icons/share-2';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import FilterBuilder from '$lib/components/shared/FilterBuilder.svelte';
@@ -238,7 +244,7 @@
 				<Popover.Root bind:open={actionsOpen}>
 					<Popover.Trigger>
 						<Button variant="ghost" size="icon-sm">
-							<MoreHorizontal size={14} />
+							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-40 p-1" align="end">

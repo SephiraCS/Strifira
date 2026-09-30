@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { AlertTriangle, Check, Info, X, XCircle } from 'lucide-svelte';
+	import AlertTriangle from '@lucide/svelte/icons/triangle-alert';
+	import Check from '@lucide/svelte/icons/check';
+	import Info from '@lucide/svelte/icons/info';
+	import X from '@lucide/svelte/icons/x';
+	import XCircle from '@lucide/svelte/icons/circle-x';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

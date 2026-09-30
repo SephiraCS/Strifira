@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Re-runs the pipeline when a runner hiccup fails a good build; on main
+  # that includes the deploy: `fj actions dispatch ci.yml main`.
+  workflow_dispatch:
 
 concurrency:
   group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
@@ -157,7 +160,7 @@ jobs:
 
   stage-image:
     name: Stage Image
-    if: forgejo.event_name == 'push'
+    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder
     timeout-minutes: 30
     steps:
@@ -196,7 +199,7 @@ jobs:
   deploy:
     name: Deploy to Alpha
     needs: [backend-test, frontend-check, frontend-e2e, stage-image]
-    if: forgejo.event_name == 'push'
+    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder
     timeout-minutes: 15
     steps:

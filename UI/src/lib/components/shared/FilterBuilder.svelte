@@ -14,7 +14,15 @@
 	import IssueStatusIcon from '$lib/features/issues/IssueStatusIcon.svelte';
 	import IssuePriorityIcon from '$lib/features/issues/IssuePriorityIcon.svelte';
 	import Avatar from '$lib/components/shared/Avatar.svelte';
-	import { Plus, X, Search, CircleDashed, Signal, User, FolderKanban, Tag, CornerDownRight } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import X from '@lucide/svelte/icons/x';
+	import Search from '@lucide/svelte/icons/search';
+	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
+	import Signal from '@lucide/svelte/icons/signal';
+	import User from '@lucide/svelte/icons/user';
+	import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+	import Tag from '@lucide/svelte/icons/tag';
+	import CornerDownRight from '@lucide/svelte/icons/corner-down-right';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 

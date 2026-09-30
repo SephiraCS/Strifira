@@ -15,7 +15,9 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { formatRelativeTime } from '$lib/utils/format';
-	import { Plus, Trash2, ExternalLink } from 'lucide-svelte';
+	import Plus from '@lucide/svelte/icons/plus';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	let webhooks = $state<Webhook[]>([]);

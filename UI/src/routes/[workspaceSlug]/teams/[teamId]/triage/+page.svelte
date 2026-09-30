@@ -14,7 +14,11 @@
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import { CheckCircle2, XCircle, SquareUser, ShieldCheck, ChevronRight } from 'lucide-svelte';
+	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
+	import XCircle from '@lucide/svelte/icons/circle-x';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 

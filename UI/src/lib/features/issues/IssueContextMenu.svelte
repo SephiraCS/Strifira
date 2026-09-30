@@ -20,25 +20,22 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import type { Snippet } from 'svelte';
-	import {
-		ArrowUpCircle,
-		Archive,
-		ArchiveRestore,
-		CalendarDays,
-		CircleDot,
-		CircleUser,
-		Copy,
-		CopyPlus,
-		CornerDownRight,
-		ExternalLink,
-		FolderKanban,
-		GitBranch,
-		Link as LinkIcon,
-		RefreshCw,
-		Tag,
-		Trash2,
-		X
-	} from 'lucide-svelte';
+	import Archive from '@lucide/svelte/icons/archive';
+	import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import CircleDot from '@lucide/svelte/icons/circle-dot';
+	import CircleUser from '@lucide/svelte/icons/circle-user';
+	import Copy from '@lucide/svelte/icons/copy';
+	import CopyPlus from '@lucide/svelte/icons/copy-plus';
+	import CornerDownRight from '@lucide/svelte/icons/corner-down-right';
+	import ExternalLink from '@lucide/svelte/icons/external-link';
+	import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import Tag from '@lucide/svelte/icons/tag';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import X from '@lucide/svelte/icons/x';
 
 	let {
 		issue,

@@ -5,7 +5,11 @@
 	import { listIssues } from '$lib/api/issues';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
-	import { Ban, Copy, Link, LoaderCircle, OctagonAlert } from 'lucide-svelte';
+	import Ban from '@lucide/svelte/icons/ban';
+	import Copy from '@lucide/svelte/icons/copy';
+	import Link from '@lucide/svelte/icons/link';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
 	import { appToast } from '$lib/features/toast/toast';
 
 	let {

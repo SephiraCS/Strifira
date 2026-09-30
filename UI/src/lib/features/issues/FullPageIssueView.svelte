@@ -27,13 +27,34 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { StatusSelector, PrioritySelector, AssigneeSelector, LabelSelector, ProjectSelector, CycleSelector } from './selectors';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
-	import {
-		ChevronUp, ChevronDown, ChevronRight, Plus, CalendarDays,
-		Copy, Link as LinkIcon, GitBranch, SquareMousePointer, Sparkles,
-		CircleDot, ArrowUpCircle, UserCircle, FolderKanban, Pencil, Layers,
-		Tag, RefreshCw, ArrowUp, MoreHorizontal, Check, Bell,
-		Trash2, CornerDownRight, Ban, ArrowRight, Archive, ArchiveRestore
-	} from 'lucide-svelte';
+	import ChevronUp from '@lucide/svelte/icons/chevron-up';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import Plus from '@lucide/svelte/icons/plus';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
+	import Copy from '@lucide/svelte/icons/copy';
+	import LinkIcon from '@lucide/svelte/icons/link';
+	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import SquareMousePointer from '@lucide/svelte/icons/square-mouse-pointer';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
+	import CircleDot from '@lucide/svelte/icons/circle-dot';
+	import ArrowUpCircle from '@lucide/svelte/icons/circle-arrow-up';
+	import UserCircle from '@lucide/svelte/icons/circle-user';
+	import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Layers from '@lucide/svelte/icons/layers';
+	import Tag from '@lucide/svelte/icons/tag';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Check from '@lucide/svelte/icons/check';
+	import Bell from '@lucide/svelte/icons/bell';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import CornerDownRight from '@lucide/svelte/icons/corner-down-right';
+	import Ban from '@lucide/svelte/icons/ban';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Archive from '@lucide/svelte/icons/archive';
+	import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
 	import { reworkText, isAINotConfiguredError } from '$lib/api/ai-settings';
 	import { aiSettingsState } from '$lib/features/ai/ai-settings.state.svelte';
 	import { listCycles } from '$lib/api/cycles';
@@ -851,7 +872,7 @@
 						class="rounded p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
 						title={m['issue.issue_actions']()}
 					>
-						<MoreHorizontal size={14} />
+						<Ellipsis size={14} />
 					</button>
 				</Popover.Trigger>
 				<Popover.Content class="w-64 max-w-[calc(100vw-1rem)] p-1" align="end">

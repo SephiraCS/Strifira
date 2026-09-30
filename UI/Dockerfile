@@ -1,6 +1,5 @@
-FROM docker.io/library/alpine:3.23 AS builder
+FROM docker.io/library/node:24-alpine AS builder
 WORKDIR /app
-RUN apk add --no-cache nodejs npm
 COPY package*.json ./
 RUN npm ci
 COPY . .
@@ -17,10 +16,11 @@ RUN xcaddy build v2.11.4 \
     --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
     --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.2
 
-FROM docker.io/library/alpine:3.23
+FROM docker.io/library/alpine:3.24
 RUN apk update && apk upgrade --no-cache
 COPY --from=caddy-builder /go/caddy /usr/bin/caddy
 COPY --from=builder /app/build /srv
 COPY Caddyfile /etc/caddy/Caddyfile
+RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 EXPOSE 3000
 CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

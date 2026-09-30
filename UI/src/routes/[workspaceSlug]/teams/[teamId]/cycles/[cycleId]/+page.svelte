@@ -25,7 +25,16 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { formatRelativeTime } from '$lib/utils/format';
-	import { CheckCircle2, Play, Clock, Trash2, MoreHorizontal, Search, Plus, SquareUser, RefreshCcwDot, ChevronRight } from 'lucide-svelte';
+	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
+	import Play from '@lucide/svelte/icons/play';
+	import Clock from '@lucide/svelte/icons/clock';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
+	import Search from '@lucide/svelte/icons/search';
+	import Plus from '@lucide/svelte/icons/plus';
+	import SquareUser from '@lucide/svelte/icons/square-user';
+	import RefreshCcwDot from '@lucide/svelte/icons/refresh-ccw-dot';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
@@ -242,7 +251,7 @@
 				<Popover.Root bind:open={actionsOpen}>
 					<Popover.Trigger>
 						<Button variant="ghost" size="icon-sm">
-							<MoreHorizontal size={14} />
+							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-40 p-1" align="end">

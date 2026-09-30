@@ -7,7 +7,10 @@
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import type { GroupByField } from './issues.state.svelte';
-	import { ChevronDown, ChevronRight, User, Plus } from 'lucide-svelte';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
+	import User from '@lucide/svelte/icons/user';
+	import Plus from '@lucide/svelte/icons/plus';
 
 	let {
 		groupKey,

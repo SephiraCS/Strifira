@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { IssueStatus } from '$lib/types/issue';
 	import type { StatusCategory } from '$lib/types/team-status';
-	import { Circle, CircleDashed, Contrast, ClockFading, CheckCircle2, XCircle } from 'lucide-svelte';
+	import Circle from '@lucide/svelte/icons/circle';
+	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
+	import Contrast from '@lucide/svelte/icons/contrast';
+	import ClockFading from '@lucide/svelte/icons/clock-fading';
+	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
+	import XCircle from '@lucide/svelte/icons/circle-x';
 
 	let {
 		status,
