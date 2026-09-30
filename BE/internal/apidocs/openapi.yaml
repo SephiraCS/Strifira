@@ -9,7 +9,7 @@ openapi: 3.1.0
 
 info:
   title: Ku API
-  version: 0.2.10
+  version: 0.2.11
   summary: Issue tracker REST API behind ku.mariogk.com
   description: |
     Ku is a Linear-style issue tracker. This document describes the REST API

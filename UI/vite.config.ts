@@ -10,7 +10,11 @@ export default defineConfig({
 		paraglideVitePlugin({
 			project: './project.inlang',
 			outdir: './src/lib/paraglide',
-			strategy: ['localStorage', 'cookie', 'baseLocale']
+			strategy: ['localStorage', 'cookie', 'baseLocale'],
+			// One module per locale instead of ~1,700 per-message modules:
+			// fewer modules to bundle, and every page ships nearly all
+			// messages anyway.
+			outputStructure: 'locale-modules'
 		}),
 		sveltekit()
 	],
