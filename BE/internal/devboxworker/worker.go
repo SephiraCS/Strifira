@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"runtime"
 	"slices"
@@ -113,6 +114,47 @@ func fatalHTTP(err error) bool {
 	return ok && (value.Status == 401 || value.Status == 403)
 }
 
+func retryableCompletion(err error) bool {
+	if value, ok := errors.AsType[*HTTPError](err); ok {
+		return value.Status == http.StatusRequestTimeout || value.Status == http.StatusTooManyRequests || (value.Status >= 500 && value.Status <= 599)
+	}
+	_, ok := errors.AsType[*transportError](err)
+	return ok
+}
+
+func (w *Worker) completeResult(ctx, shutdown context.Context, lease Lease, result Result) error {
+	var err error
+	for attempt := range 3 {
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
+		attemptLimit := 10 * time.Second
+		if shutdown.Err() != nil {
+			attemptLimit = 3 * time.Second
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptLimit)
+		err = w.API.Complete(attemptCtx, lease.Job.ID, lease.Token, result)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
+		if !retryableCompletion(err) || attempt == 2 {
+			return err
+		}
+		// Replay the immutable result and lease, never rerun the executor. The
+		// authenticated completion endpoint also accepts an already committed result.
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-time.After(time.Duration(1<<attempt) * 250 * time.Millisecond):
+		}
+	}
+	return err
+}
+
 func leaseDuration(state LeaseState) (time.Duration, error) {
 	if state.ServerTime.IsZero() || state.ExpiresAt.IsZero() {
 		return 0, errors.New("lease response omitted server time or deadline")
@@ -133,6 +175,25 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 	}
 	ctx, cancel := context.WithCancelCause(parent)
 	defer cancel(nil)
+	// Delivery survives execution cancellation but stays within the service's
+	// shutdown window. Start its shutdown budget before subprocess cleanup so a
+	// parent cancellation during execution or reporting cannot extend that window.
+	deliveryCtx, stopDelivery := context.WithCancelCause(context.Background())
+	defer stopDelivery(nil)
+	stopShutdown := context.AfterFunc(parent, func() {
+		timer := time.NewTimer(12 * time.Second)
+		defer timer.Stop()
+		select {
+		case <-deliveryCtx.Done():
+		case <-timer.C:
+			stopDelivery(context.DeadlineExceeded)
+		}
+	})
+	defer stopShutdown()
+	stopLease := func() {
+		stopDelivery(ErrLeaseLost)
+		cancel(ErrLeaseLost)
+	}
 	startRequestedAt := time.Now()
 	state, err := w.API.Start(ctx, lease.Job.ID, lease.Token)
 	startElapsed := time.Since(startRequestedAt)
@@ -159,7 +220,7 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 	}
 	runtimeTimer := time.AfterFunc(max(runtimeLimit, time.Nanosecond), func() { cancel(ErrRuntimeExceeded) })
 	defer runtimeTimer.Stop()
-	leaseTimer := time.AfterFunc(duration, func() { cancel(ErrLeaseLost) })
+	leaseTimer := time.AfterFunc(duration, stopLease)
 	defer leaseTimer.Stop()
 	interval := time.Duration(lease.HeartbeatIntervalSeconds) * time.Second
 	if interval <= 0 {
@@ -180,7 +241,9 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 				next, err := w.API.Renew(ctx, lease.Job.ID, lease.Token)
 				renewElapsed := time.Since(renewRequestedAt)
 				if err != nil {
-					cancel(ErrLeaseLost)
+					if ctx.Err() == nil {
+						stopLease()
+					}
 					return
 				}
 				if next.CancelRequested {
@@ -188,22 +251,24 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 					return
 				}
 				if next.Status != "running" {
-					cancel(ErrLeaseLost)
+					stopLease()
 					return
 				}
 				lifetime, err := leaseDuration(next)
 				if err != nil {
-					cancel(ErrLeaseLost)
+					stopLease()
 					return
 				}
 				lifetime -= renewElapsed
 				if lifetime <= 0 {
-					cancel(ErrLeaseLost)
+					stopLease()
 					return
 				}
 				leaseTimer.Reset(lifetime)
 				if err := w.API.Heartbeat(ctx, w.Heartbeat); err != nil {
-					cancel(ErrLeaseLost)
+					if ctx.Err() == nil {
+						stopLease()
+					}
 					return
 				}
 			}
@@ -226,7 +291,9 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 					response, err = w.API.Log(ctx, lease.Job.ID, entry)
 				}
 				if err != nil {
-					cancel(ErrLeaseLost)
+					if ctx.Err() == nil {
+						stopLease()
+					}
 					return
 				}
 			}
@@ -267,10 +334,11 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 			result.Status = "timeout"
 		}
 	}
-	// Use a separate short context to record cancellation/shutdown after all subprocesses stop.
-	completeCtx, completeCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer completeCancel()
-	err = w.API.Complete(completeCtx, lease.Job.ID, lease.Token, result)
+	// Three bounded attempts fit within this separate delivery budget, including
+	// backoff, while cancellation/shutdown can still be recorded after processes stop.
+	completeCtx, budgetCancel := context.WithTimeout(deliveryCtx, 35*time.Second)
+	defer budgetCancel()
+	err = w.completeResult(completeCtx, parent, lease, result)
 	cancel(nil)
 	wg.Wait()
 	return err

@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -99,6 +101,36 @@ type HTTPError struct{ Status int }
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("worker API returned HTTP %d", e.Status) }
 
+// transportError distinguishes retryable network failures from request, TLS,
+// protocol, and redirect errors, which another identical request cannot fix.
+type transportError struct{ err error }
+
+func (e *transportError) Error() string { return e.err.Error() }
+func (e *transportError) Unwrap() error { return e.err }
+
+func networkFailure(err error) bool {
+	if value, ok := errors.AsType[*url.Error](err); ok {
+		err = value.Err
+	}
+	if errors.Is(err, context.Canceled) {
+		return false
+	}
+	if _, ok := errors.AsType[*net.AddrError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[net.InvalidAddrError](err); ok {
+		return false
+	}
+	if _, ok := errors.AsType[*net.InvalidAddrError](err); ok {
+		return false
+	}
+	if value, ok := errors.AsType[*net.DNSError](err); ok {
+		return !value.IsNotFound && (value.IsTimeout || value.IsTemporary)
+	}
+	_, network := errors.AsType[net.Error](err)
+	return network || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
 func NewClient(config Config, token string) *Client {
 	return &Client{baseURL: strings.TrimRight(config.ServerURL, "/") + "/api/dev-box-worker", token: token, http: &http.Client{
 		Timeout:       10 * time.Second,
@@ -121,6 +153,9 @@ func (c *Client) call(ctx context.Context, path string, body, response any) (boo
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if resp == nil && networkFailure(err) {
+			err = &transportError{err: err}
+		}
 		return false, fmt.Errorf("request worker API: %w", err)
 	}
 	defer resp.Body.Close()

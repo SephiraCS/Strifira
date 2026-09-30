@@ -62,6 +62,43 @@ func TestLocalExecutorProducesReviewPatchAndRunsTestsSeparately(t *testing.T) {
 	require.Equal(t, "base\n", string(readme))
 }
 
+func TestLocalExecutorServicePromptIncludesAcceptanceCriteriaOnce(t *testing.T) {
+	for _, count := range []int{2, 50} {
+		t.Run(fmt.Sprintf("%d criteria", count), func(t *testing.T) {
+			config := fixtureRepository(t)
+			job := fixtureJob(config)
+			var prompt strings.Builder
+			fmt.Fprintf(&prompt, "Implement the issue\n\nDescription\n\nRequested change\n\nKu issue execution contract:\nIssue: TS-279\nRepository: owner/repo\nBase branch: main\nWorking branch: %s\nWork only in the isolated job worktree. Do not push or open a pull request. Never print or persist credentials.\n", job.WorkingBranch)
+			for i := range count {
+				criterion := fmt.Sprintf("Criterion %02d: ", i)
+				criterion += strings.Repeat("a", 1400-len(criterion))
+				job.AcceptanceCriteria = append(job.AcceptanceCriteria, criterion)
+				fmt.Fprintf(&prompt, "Acceptance criterion: %s\n", criterion)
+			}
+			prompt.WriteString("Finish with the implemented changes, test outcomes, and remaining risks.\n")
+			job.Prompt = prompt.String()
+			require.LessOrEqual(t, len(job.Prompt), 100000, "service-shaped prompt meets the composed context limit")
+			capture := filepath.Join(t.TempDir(), "prompt.txt")
+			provider := config.Providers["claude-code"]
+			script, err := os.ReadFile(provider)
+			require.NoError(t, err)
+			captureCommand := "for argument do prompt=$argument; done\nprintf '%s' \"$prompt\" > '" + strings.ReplaceAll(capture, "'", "'\\''") + "'\n"
+			require.NoError(t, os.WriteFile(provider, []byte(strings.Replace(string(script), "#!/bin/sh\n", "#!/bin/sh\n"+captureCommand, 1)), 0700))
+			result := (&LocalExecutor{Config: config}).Execute(t.Context(), job, func(string, string) {})
+			require.Equal(t, "succeeded", result.Status, result.Summary)
+			require.Equal(t, 0, result.ExitCode, "large valid prompt must start the actual fake-provider process")
+			actual, err := os.ReadFile(capture)
+			require.NoError(t, err)
+			for _, criterion := range job.AcceptanceCriteria {
+				require.Equal(t, 1, strings.Count(string(actual), criterion))
+			}
+			require.True(t, strings.HasPrefix(string(actual), job.Prompt))
+			require.Contains(t, string(actual), "Work only in this task worktree. Do not push, create pull requests, or publish changes.")
+			require.Less(t, len(actual)+1, 128*1024, "prompt and terminating NUL stay below the Linux single-argument limit")
+		})
+	}
+}
+
 func TestIndependentFailureOverridesSuccessfulProvider(t *testing.T) {
 	config := fixtureRepository(t)
 	job := fixtureJob(config)

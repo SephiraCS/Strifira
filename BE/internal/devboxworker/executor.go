@@ -186,9 +186,6 @@ func (e *LocalExecutor) Execute(ctx context.Context, job Job, log func(string, s
 		return fail(err)
 	}
 	prompt := job.Prompt
-	if len(job.AcceptanceCriteria) > 0 {
-		prompt += "\n\nAcceptance criteria:\n- " + strings.Join(job.AcceptanceCriteria, "\n- ")
-	}
 	prompt += "\n\nWork only in this task worktree. Do not push, create pull requests, or publish changes. Leave changes available for review; the worker will run configured tests independently."
 	argv, err := localInvocation(provider, providerPath, worktree, prompt)
 	if err != nil {
