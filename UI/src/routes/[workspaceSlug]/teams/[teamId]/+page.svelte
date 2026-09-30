@@ -14,7 +14,7 @@
 	import FilterBuilder from '$lib/components/shared/FilterBuilder.svelte';
 	import ViewSwitcher from '$lib/components/shared/ViewSwitcher.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
-	import CreateIssueDialog from '$lib/features/issues/CreateIssueDialog.svelte';
+	import CreateIssueDialog from '$lib/features/issues/LazyCreateIssueDialog.svelte';
 	import { showIssueCreatedToast } from '$lib/features/issues/issue-created-toast';
 	import SaveViewDialog from '$lib/components/shared/SaveViewDialog.svelte';
 	import * as Popover from '$lib/components/ui/popover';

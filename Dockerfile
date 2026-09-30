@@ -68,8 +68,24 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 		reverse_proxy localhost:8080
 	}
 
+	# Hashed build assets never change, so browsers keep them for a year. A
+	# missing one (a tab still on a previous deploy) is a real 404, not the
+	# SPA shell, so the client can tell and reload.
+	handle /_app/immutable/* {
+		root * /srv
+		header Cache-Control "public, max-age=31536000, immutable" {
+			match {
+				status 2xx
+			}
+		}
+		file_server
+	}
+
+	# Everything else (the SPA shell, version.json, the service worker)
+	# revalidates on every load so a deploy shows up immediately.
 	handle {
 		root * /srv
+		header Cache-Control no-cache
 		try_files {path} /index.html
 		file_server
 	}

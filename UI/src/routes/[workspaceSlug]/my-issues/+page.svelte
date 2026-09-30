@@ -14,7 +14,7 @@
 	import IssueListLoadMore from '$lib/features/issues/IssueListLoadMore.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import CreateIssueDialog from '$lib/features/issues/CreateIssueDialog.svelte';
+	import CreateIssueDialog from '$lib/features/issues/LazyCreateIssueDialog.svelte';
 	import { showIssueCreatedToast } from '$lib/features/issues/issue-created-toast';
 	import { appToast } from '$lib/features/toast/toast';
 	import { listTeams } from '$lib/api/teams';

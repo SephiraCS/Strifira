@@ -19,7 +19,7 @@
 	import type { IssuePriority } from '$lib/types/issue';
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import CommandPalette from '$lib/components/layout/CommandPalette.svelte';
-	import CreateIssueDialog from '$lib/features/issues/CreateIssueDialog.svelte';
+	import CreateIssueDialog from '$lib/features/issues/LazyCreateIssueDialog.svelte';
 	import CreateTeamDialog from '$lib/features/teams/CreateTeamDialog.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import ShortcutHelp from '$lib/components/shared/ShortcutHelp.svelte';
@@ -37,6 +37,7 @@
 	import Search from '@lucide/svelte/icons/search';
 	import SquarePen from '@lucide/svelte/icons/square-pen';
 	import { appToast } from '$lib/features/toast/toast';
+	import { loadLucideLibrary } from '$lib/components/shared/lucide-library.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import TerminalDock from '$lib/features/dev-machines/TerminalDock.svelte';
@@ -75,6 +76,8 @@
 		try {
 			const workspaceRequest = getWorkspace(workspaceSlug);
 			const teamsRequest = listTeams(workspaceSlug);
+			// Team icons need the icon set; fetch it alongside the teams.
+			loadLucideLibrary();
 			const renderRequest = Promise.all([workspaceRequest, teamsRequest]).then(([ws, t]) => {
 				if (loadId !== workspaceLoadId) return;
 				workspace = ws;
