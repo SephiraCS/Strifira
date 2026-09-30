@@ -12,7 +12,7 @@
 	import { issuesState } from './issues.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { COLUMN_SORT_KEYS, type ColumnSortKey } from './column-sort';
-	import { dndzone, dragHandle } from 'svelte-dnd-action';
+	import { dndzone, dragHandle, TRIGGERS, type DndEvent, type DndEventInfo } from 'svelte-dnd-action';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Archive from '@lucide/svelte/icons/archive';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
@@ -46,7 +46,7 @@
 		labels?: Label[];
 		onissueclick: (issue: Issue) => void;
 		onconsider?: (statusId: string, items: Issue[]) => void;
-		onfinalize?: (statusId: string, items: Issue[]) => void;
+		onfinalize?: (statusId: string, items: Issue[], info: DndEventInfo) => void;
 		onquickadd?: (statusId: string) => void;
 		sortKey?: ColumnSortKey | null;
 		onsortchange?: (statusId: string, key: ColumnSortKey | null) => void;
@@ -59,17 +59,29 @@
 	const sortingActive = $derived(sortKey !== null);
 	const canArchiveAll = $derived(teamStatus.category === 'completed' && issues.length > 0);
 
-	function handleConsider(e: CustomEvent<{ items: Issue[]; info?: { trigger?: string } }>) {
-		// The source zone's first consider event marks the drag start; the
-		// board freezes this column against background refreshes until
-		// finalize (svelte-dnd-action owns the order mid-drag).
-		if (e.detail.info?.trigger === 'dragStarted') ondragstate?.(statusId, true);
+	// svelte-dnd-action owns a column's order while a drag involves it: the
+	// source from the first move until the drop, any other column while the
+	// dragged card is over it. The board keeps background refreshes out of
+	// those columns meanwhile.
+	let dragSource = false;
+
+	function handleConsider(e: CustomEvent<DndEvent<Issue>>) {
+		const { trigger } = e.detail.info;
+		if (trigger === TRIGGERS.DRAG_STARTED) {
+			dragSource = true;
+			ondragstate?.(statusId, true);
+		} else if (trigger === TRIGGERS.DRAGGED_ENTERED) {
+			ondragstate?.(statusId, true);
+		} else if (trigger === TRIGGERS.DRAGGED_LEFT && !dragSource) {
+			ondragstate?.(statusId, false);
+		}
 		onconsider?.(statusId, e.detail.items);
 	}
 
-	function handleFinalize(e: CustomEvent<{ items: Issue[] }>) {
+	function handleFinalize(e: CustomEvent<DndEvent<Issue>>) {
+		dragSource = false;
 		ondragstate?.(statusId, false);
-		onfinalize?.(statusId, e.detail.items);
+		onfinalize?.(statusId, e.detail.items, e.detail.info);
 	}
 
 	function sortOptionLabel(key: ColumnSortKey | null): string {

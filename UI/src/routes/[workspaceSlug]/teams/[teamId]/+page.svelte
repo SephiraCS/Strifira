@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { issuesState } from '$lib/features/issues/issues.state.svelte';
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
+	import { placementSortOrders } from '$lib/features/issues/sort-order';
 	import type { GroupByField } from '$lib/features/issues/issues.state.svelte';
 	import IssueRow from '$lib/features/issues/IssueRow.svelte';
 	import IssueDetail from '$lib/features/issues/IssueDetail.svelte';
@@ -220,15 +221,6 @@
 		}
 	}
 
-	function calculateSortOrder(items: Issue[], index: number): number {
-		const prev = index > 0 ? items[index - 1].sort_order : undefined;
-		const next = index < items.length - 1 ? items[index + 1].sort_order : undefined;
-		if (prev !== undefined && next !== undefined) return (prev + next) / 2;
-		if (prev !== undefined) return prev + 1000;
-		if (next !== undefined) return next - 1000;
-		return 0;
-	}
-
 	function hasSameIssueOrder(a: Issue[], b: Issue[]) {
 		return a.length === b.length && a.every((issue, index) => issue.id === b[index]?.id);
 	}
@@ -258,7 +250,7 @@
 
 		const sourceGroupKey = getIssueGroupKey(sourceIssue, gb);
 		const isSameGroup = sourceGroupKey === groupKey;
-		let sortOrder: number | undefined;
+		let sortOrders: Map<string, number> | undefined;
 		let reorderedGroup: Issue[] | null = null;
 
 		if (targetIssueId) {
@@ -272,12 +264,12 @@
 				reorderedGroup.splice(insertIndex, 0, sourceIssue);
 
 				if (!isSameGroup || !hasSameIssueOrder(group?.issues ?? [], reorderedGroup)) {
-					sortOrder = calculateSortOrder(reorderedGroup, insertIndex);
+					sortOrders = placementSortOrders(reorderedGroup, insertIndex);
 				}
 			}
 		}
 
-		if (isSameGroup && sortOrder === undefined) return;
+		if (isSameGroup && sortOrders === undefined) return;
 
 		const fieldMap: Record<string, string> = {
 			status: 'status_id',
@@ -296,12 +288,23 @@
 			if (gb === 'priority') value = Number(groupKey);
 			req[field] = value;
 		}
+		const sortOrder = sortOrders?.get(sourceIssue.id);
 		if (sortOrder !== undefined) {
 			req.sort_order = sortOrder;
 		}
 
 		try {
 			const updatedIssue = await issuesState.update(slug, issueIdentifier, req);
+			// Neighbours only change when the drop landed between equal
+			// sort_orders and the group was renumbered.
+			await Promise.all(
+				[...(sortOrders ?? [])]
+					.filter(([id]) => id !== sourceIssue.id)
+					.map(([id, order]) => {
+						const neighbour = reorderedGroup!.find((issue) => issue.id === id)!;
+						return issuesState.update(slug, neighbour.identifier, { sort_order: order });
+					})
+			);
 			if (isSameGroup && reorderedGroup) {
 				applyLocalGroupOrder(reorderedGroup.map((issue) => (issue.id === updatedIssue.id ? updatedIssue : issue)));
 			}
