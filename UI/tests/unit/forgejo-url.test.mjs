@@ -6,7 +6,8 @@ import {
 	safeForgejoPullRequestUrl,
 	safeForgejoBranchUrl,
 	safeForgejoCommitUrl,
-	forgejoRepositoryHomeUrl
+	forgejoRepositoryHomeUrl,
+	safeForgejoActionsUrl
 } from '../../src/lib/security/forgejo-url.ts';
 
 const INSTANCE = 'https://git.terrascale.tech';
@@ -24,16 +25,16 @@ test('safeForgejoRepositoryUrl accepts only the linked instance', () => {
 	assert.equal(safeForgejoRepositoryUrl(`${INSTANCE}/${REPO}`, REPO, INSTANCE), `${INSTANCE}/${REPO}`);
 	assert.equal(safeForgejoRepositoryUrl(`${INSTANCE}/${REPO}/src`, REPO, INSTANCE), `${INSTANCE}/${REPO}/src`);
 	assert.equal(safeForgejoRepositoryUrl(`https://github.com/${REPO}`, REPO, INSTANCE), null);
-	assert.equal(
-		safeForgejoRepositoryUrl(`https://git.terrascale.tech.example.com/${REPO}`, REPO, INSTANCE),
-		null
-	);
+	assert.equal(safeForgejoRepositoryUrl(`https://git.terrascale.tech.example.com/${REPO}`, REPO, INSTANCE), null);
 	assert.equal(safeForgejoRepositoryUrl(`javascript:alert(1)`, REPO, INSTANCE), null);
 });
 
 test('safeForgejoPullRequestUrl validates pull paths', () => {
 	assert.equal(safeForgejoPullRequestUrl(`${INSTANCE}/${REPO}/pull/12`, REPO, INSTANCE), `${INSTANCE}/${REPO}/pull/12`);
-	assert.equal(safeForgejoPullRequestUrl(`${INSTANCE}/${REPO}/pulls/12`, REPO, INSTANCE), `${INSTANCE}/${REPO}/pulls/12`);
+	assert.equal(
+		safeForgejoPullRequestUrl(`${INSTANCE}/${REPO}/pulls/12`, REPO, INSTANCE),
+		`${INSTANCE}/${REPO}/pulls/12`
+	);
 	assert.equal(safeForgejoPullRequestUrl(`${INSTANCE}/${REPO}/pull/12/files`, REPO, INSTANCE), null);
 	assert.equal(safeForgejoPullRequestUrl(`${INSTANCE}/${REPO}/pull/zero`, REPO, INSTANCE), null);
 	assert.equal(safeForgejoPullRequestUrl(`${INSTANCE}/${REPO}/issues/12`, REPO, INSTANCE), null);
@@ -66,4 +67,25 @@ test('safeForgejoCommitUrl validates commit shas', () => {
 test('forgejoRepositoryHomeUrl builds a safe link', () => {
 	assert.equal(forgejoRepositoryHomeUrl(REPO, INSTANCE), `${INSTANCE}/${REPO}`);
 	assert.equal(forgejoRepositoryHomeUrl(REPO, ''), null);
+});
+
+test('safeForgejoActionsUrl accepts only a run on the linked repository', () => {
+	assert.equal(
+		safeForgejoActionsUrl(`${INSTANCE}/${REPO}/actions/42`, REPO, INSTANCE),
+		`${INSTANCE}/${REPO}/actions/42`
+	);
+	for (const url of [
+		`https://example.com/${REPO}/actions/42`,
+		`${INSTANCE}/someone/else/actions/42`,
+		`${INSTANCE}/${REPO}/actions/42?token=secret`,
+		`${INSTANCE}/${REPO}/actions/0`,
+		`${INSTANCE}/${REPO}/actions/42/jobs/2`,
+		`${INSTANCE}/${REPO}/actions/%ZZ`
+	]) {
+		assert.equal(safeForgejoActionsUrl(url, REPO, INSTANCE), null);
+	}
+});
+
+test('malformed encoded Forgejo paths are rejected without throwing', () => {
+	assert.equal(safeForgejoRepositoryUrl(`${INSTANCE}/${REPO}/src/%ZZ`, REPO, INSTANCE), null);
 });

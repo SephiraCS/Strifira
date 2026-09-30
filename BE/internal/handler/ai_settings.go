@@ -71,6 +71,26 @@ func (h *AISettingsHandler) Update(c echo.Context) error {
 	return response.Success(c, http.StatusOK, service.ToAISettingsResponse(settings))
 }
 
+func (h *AISettingsHandler) TestConnection(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	result, err := h.aiSvc.TestConnection(c.Request().Context(), ws.ID, middleware.GetUserID(c))
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrNotWorkspaceOwner):
+			return response.Error(c, http.StatusForbidden, "FORBIDDEN", "Only the workspace owner can test AI settings")
+		case errors.Is(err, service.ErrWorkspaceNotFound):
+			return response.NotFound(c, "Workspace")
+		case errors.Is(err, service.ErrAISettingsNotConfigured):
+			return response.Error(c, http.StatusBadRequest, "AI_NOT_CONFIGURED", "AI settings are incomplete. Save a base URL, model, and API key first.")
+		case errors.Is(err, service.ErrAIProviderRequestFailed):
+			return response.Error(c, http.StatusBadGateway, "AI_PROVIDER_ERROR", err.Error())
+		default:
+			return response.InternalError(c)
+		}
+	}
+	return response.Success(c, http.StatusOK, result)
+}
+
 func (h *AISettingsHandler) ExpandIssueDescription(c echo.Context) error {
 	var req dto.ExpandIssueDescriptionRequest
 	if err := c.Bind(&req); err != nil {
@@ -118,6 +138,8 @@ func (h *AISettingsHandler) Rework(c echo.Context) error {
 	text, err := h.aiSvc.ReworkText(c.Request().Context(), ws.ID, req.Text, req.Context)
 	if err != nil {
 		switch {
+		case errors.Is(err, service.ErrAIInvalidText):
+			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		case errors.Is(err, service.ErrAISettingsNotConfigured):
 			return response.Error(c, http.StatusBadRequest, "AI_NOT_CONFIGURED", "AI settings are incomplete. Configure a base URL, model, and API key first.")
 		case errors.Is(err, service.ErrAIProviderRequestFailed):

@@ -19,6 +19,7 @@ import (
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
 	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
+	forgejoclient "github.com/ku/ku-backend/pkg/forgejo"
 )
 
 var (
@@ -172,6 +173,21 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		}
 	}
 	if repositoryModel != nil {
+		repoOwner, repoName := splitRepositoryFullName(repositoryModel.FullName)
+		if !validRepositorySegment(repoOwner) || !validRepositorySegment(repoName) {
+			return nil, nil, fmt.Errorf("%w: linked repository has an invalid full name", ErrInvalidMachineInput)
+		}
+		instanceURL, err := forgejoclient.NormalizeInstanceURL(repositoryModel.InstanceURL)
+		if err != nil || !strings.HasPrefix(instanceURL, "https://") {
+			return nil, nil, fmt.Errorf("%w: linked repository requires a valid HTTPS Forgejo instance", ErrInvalidMachineInput)
+		}
+		if req.Repo != nil {
+			requestedURL, _ := url.Parse(req.Repo.URL)
+			requestedInstance, err := forgejoclient.NormalizeInstanceURL(requestedURL.Scheme + "://" + requestedURL.Host)
+			if err != nil || requestedInstance != instanceURL {
+				return nil, nil, fmt.Errorf("%w: repository URL must match the linked Forgejo instance", ErrInvalidMachineInput)
+			}
+		}
 		if !repositoryAllowed(policy.AllowedRepositories, repositoryModel.FullName) {
 			return nil, nil, fmt.Errorf("%w: %s", ErrRepositoryNotAllowed, repositoryModel.FullName)
 		}
@@ -211,9 +227,10 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 	}
 	if repositoryModel != nil {
 		machine.RepositoryAffinityID = &repositoryModel.ID
-		machine.RepoProvider = "github"
+		machine.RepoProvider = "forgejo"
 		machine.RepoOwner, machine.RepoName = splitRepositoryFullName(repositoryModel.FullName)
-		machine.RepoURL = "https://github.com/" + repositoryModel.FullName
+		instanceURL, _ := forgejoclient.NormalizeInstanceURL(repositoryModel.InstanceURL)
+		machine.RepoURL = instanceURL + "/" + repositoryModel.FullName
 	}
 
 	providers, err := s.buildProviders(machineID, policy, req.Agents)
@@ -466,7 +483,7 @@ func newService(workspaceID, machineID uuid.UUID, serviceType, key, name, image,
 func (s *DevMachineService) buildEnvVars(machineID uuid.UUID, inputs []dto.DevMachineEnvVarInput) ([]domain.DevMachineEnvVar, error) {
 	envVars := make([]domain.DevMachineEnvVar, 0, len(inputs))
 	for _, input := range inputs {
-		if input.Name == "GITHUB_TOKEN" || strings.HasPrefix(input.Name, "KU_") {
+		if input.Name == "GITHUB_TOKEN" || input.Name == "FORGEJO_TOKEN" || strings.HasPrefix(input.Name, "KU_") {
 			return nil, fmt.Errorf("%w: environment variable %s is reserved", ErrInvalidMachineInput, input.Name)
 		}
 		if !validEnvName(input.Name) {
@@ -1143,6 +1160,14 @@ func (s *DevMachineService) ConfiguredProviders(ctx context.Context, workspaceID
 		var requiredSecrets, supportedModes []string
 		_ = json.Unmarshal(provider.RequiredSecrets, &requiredSecrets)
 		_ = json.Unmarshal(provider.SupportedModes, &supportedModes)
+		if adapter, ok := s.agents.Get(provider.ProviderID); ok && !provider.IsCustom {
+			metadata := adapter.Metadata()
+			requiredSecrets = metadata.RequiredSecrets
+			supportedModes = make([]string, len(metadata.SupportedModes))
+			for i, mode := range metadata.SupportedModes {
+				supportedModes[i] = string(mode)
+			}
+		}
 		responses = append(responses, dto.AgentProviderResponse{
 			ID: provider.ProviderID, DisplayName: provider.DisplayName, DefaultImage: provider.ImageRef,
 			RequiredSecrets: requiredSecrets, SupportedModes: supportedModes, Custom: provider.IsCustom,
@@ -1251,13 +1276,16 @@ func (s *DevMachineService) CreateAgentRun(ctx context.Context, workspaceID, mac
 		if !validEnvName(name) {
 			return nil, fmt.Errorf("%w: invalid secret name %q", ErrInvalidMachineInput, name)
 		}
-		if name == "GITHUB_TOKEN" || strings.HasPrefix(name, "KU_") {
+		if name == "GITHUB_TOKEN" || name == "FORGEJO_TOKEN" || strings.HasPrefix(name, "KU_") {
 			return nil, fmt.Errorf("%w: secret %s is managed by Ku and cannot be selected", ErrInvalidMachineInput, name)
 		}
 		allowedSecretSet[name] = true
 	}
 	var requiredSecrets []string
 	_ = json.Unmarshal(registered.RequiredSecrets, &requiredSecrets)
+	if !registered.IsCustom {
+		requiredSecrets = provider.Metadata().RequiredSecrets
+	}
 	for _, required := range requiredSecrets {
 		if !allowedSecretSet[required] {
 			return nil, fmt.Errorf("%w: provider %s requires secret %s to be selected", ErrInvalidMachineInput, req.Provider, required)
@@ -1991,10 +2019,10 @@ func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineChe
 	fmt.Fprintf(&builder, "- Repository: %s\n- Base branch: %s\n- Working branch: %s\n", repository, baseBranch, workingBranch)
 	fmt.Fprintf(&builder, "- Work only inside %s. Never print or persist credentials.\n", workspacePath)
 	if len(request.ForbiddenPaths) > 0 {
-		fmt.Fprintf(&builder, "- Forbidden paths: %s\n", strings.Join(request.ForbiddenPaths, ", "))
+		fmt.Fprintf(&builder, "- Do not change these paths (Ku verifies before publication): %s\n", strings.Join(request.ForbiddenPaths, ", "))
 	}
 	if len(request.AllowedCommands) > 0 {
-		fmt.Fprintf(&builder, "- Allowed commands: %s\n", strings.Join(request.AllowedCommands, ", "))
+		fmt.Fprintf(&builder, "- Requested command restrictions (advisory, not an OS sandbox): %s\n", strings.Join(request.AllowedCommands, ", "))
 	}
 	if len(request.AcceptanceCriteria) > 0 {
 		builder.WriteString("- Acceptance criteria:\n")
@@ -2006,42 +2034,33 @@ func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineChe
 		fmt.Fprintf(&builder, "- Run this exact test argv: %q\n", request.TestCommand)
 	}
 	if !request.UseRootWorkspace && (request.PushBranch == nil || *request.PushBranch) {
-		builder.WriteString("- Commit the completed changes and push the working branch using the provided GitHub App credential.\n")
+		builder.WriteString("- Leave the completed changes on the working branch. Ku independently runs the required tests, checks forbidden paths, and commits and publishes the branch after verification. Do not push or open a pull request yourself.\n")
 	}
 	builder.WriteString("- Finish with a concise summary, changed files, commits, tests, and risks.\n")
 	return builder.String()
 }
 
 func validateRepository(input dto.DevMachineRepoInput) error {
+	if input.Provider != "forgejo" {
+		return errors.New("repository provider must be forgejo")
+	}
 	repositoryURL, err := url.Parse(input.URL)
-	if err != nil || repositoryURL.Scheme != "https" || !strings.EqualFold(repositoryURL.Hostname(), "github.com") || repositoryURL.Port() != "" || repositoryURL.User != nil || repositoryURL.RawQuery != "" || repositoryURL.Fragment != "" {
-		return fmt.Errorf("repository URL must be an HTTPS github.com URL without credentials, query, or fragment")
+	if err != nil || repositoryURL.Scheme != "https" || repositoryURL.Hostname() == "" || repositoryURL.User != nil || repositoryURL.RawQuery != "" || repositoryURL.ForceQuery || repositoryURL.Fragment != "" {
+		return errors.New("repository URL must use HTTPS without credentials, query, or fragment")
 	}
 	path := strings.TrimSuffix(strings.Trim(repositoryURL.EscapedPath(), "/"), ".git")
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	if len(parts) != 2 || !strings.EqualFold(parts[0], input.Owner) || !strings.EqualFold(parts[1], input.Name) {
 		return fmt.Errorf("repository URL must match repo owner and name")
 	}
-	if !validGitHubOwner(input.Owner) || !validGitHubRepository(input.Name) {
-		return fmt.Errorf("invalid GitHub repository owner or name")
+	if !validRepositorySegment(input.Owner) || !validRepositorySegment(input.Name) {
+		return errors.New("invalid repository owner or name")
 	}
 	return nil
 }
 
-func validGitHubOwner(value string) bool {
-	if value == "" || len(value) > 100 || value[0] == '-' || strings.HasSuffix(value, "-") {
-		return false
-	}
-	for _, character := range value {
-		if (character < 'A' || character > 'Z') && (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' {
-			return false
-		}
-	}
-	return true
-}
-
-func validGitHubRepository(value string) bool {
-	if value == "" || len(value) > 100 || value == "." || value == ".." || strings.HasSuffix(value, ".") {
+func validRepositorySegment(value string) bool {
+	if value == "" || len(value) > 255 || value == "." || value == ".." {
 		return false
 	}
 	for _, character := range value {

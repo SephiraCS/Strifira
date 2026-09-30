@@ -29,12 +29,27 @@ case "${1:-get}" in
   store|erase ) exit 0 ;;
   * ) exit 0 ;;
 esac
-if [ -z "${GITHUB_TOKEN:-}" ]; then
-  echo "missing active GitHub token" >&2
-  exit 1
+protocol=
+host=
+path=
+while IFS= read -r line && [ -n "$line" ]; do
+  case "$line" in
+    protocol=*) protocol=${line#protocol=} ;;
+    host=*) host=${line#host=} ;;
+    path=*) path=${line#path=} ;;
+  esac
+done
+[ "$protocol" = https ] || exit 0
+path=${path%.git}
+if [ -n "${FORGEJO_TOKEN:-}" ] && [ -n "${KU_FORGEJO_HOST:-}" ] && [ -n "${KU_GIT_REPOSITORY:-}" ] \
+    && [ "$host" = "$KU_FORGEJO_HOST" ] && [ "$path" = "$KU_GIT_REPOSITORY" ]; then
+  printf '%s\n' username=oauth2
+  printf '%s\n' "password=$FORGEJO_TOKEN"
+elif [ "$host" = github.com ] && [ -n "${GITHUB_TOKEN:-}" ] \
+    && { [ -z "${KU_GIT_REPOSITORY:-}" ] || [ "$path" = "$KU_GIT_REPOSITORY" ]; }; then
+  printf '%s\n' username=x-access-token
+  printf '%s\n' "password=$GITHUB_TOKEN"
 fi
-printf '%s\n' username=x-access-token
-printf '%s\n' "password=$GITHUB_TOKEN"
 SCRIPT
   chmod 0700 "$credential_helper"
   umask "$old_umask"
@@ -56,6 +71,7 @@ install_git_credential_helper
 git config --global --unset-all core.askPass >/dev/null 2>&1 || true
 git config --global --unset-all credential.helper >/dev/null 2>&1 || true
 git config --global credential.helper "$credential_helper"
+git config --global credential.useHttpPath true
 export GIT_TERMINAL_PROMPT=0
 
 if [ ! -d /workspace/.git ] && [ -n "${KU_REPO_URL:-}" ]; then

@@ -1,0 +1,400 @@
+import { expect, test, type Page, type Route } from '@playwright/test';
+
+const engineeringId = '00000000-0000-0000-0000-000000000010';
+const operationsId = '00000000-0000-0000-0000-000000000011';
+type Rule = {
+	event: string;
+	target_status: string;
+	target_status_id: string | null;
+	target_assignee_id: string | null;
+	assign_forgejo_user: boolean;
+	is_active: boolean;
+};
+
+function issueStatusButton(page: Page, name: string) {
+	return page.getByRole('button', { name, exact: true }).and(page.locator('button:not([data-popover-trigger])'));
+}
+
+async function mockForgejo(
+	page: Page,
+	options: {
+		role?: string;
+		statusErrorOnce?: boolean;
+		rulesErrorOnce?: boolean;
+		initialRules?: Partial<Rule>[];
+		updateRule?: (route: Route, rule: Rule) => Promise<void>;
+	} = {}
+) {
+	const rules: Rule[] = ['branch_created', 'pr_opened', 'pr_checks_green', 'pr_merged'].map((event) => ({
+		event,
+		target_status: '',
+		target_status_id: null,
+		target_assignee_id: null,
+		assign_forgejo_user: false,
+		is_active: false,
+		...options.initialRules?.find((rule) => rule.event === event)
+	}));
+	const teams = [
+		{ id: engineeringId, name: 'Engineering', key: 'ENG', icon: 'layers', color: '#6366f1' },
+		{ id: operationsId, name: 'Operations', key: 'OPS', icon: 'layers', color: '#888888' }
+	];
+	const statuses = (teamId: string) => [
+		{
+			id: `${teamId}-todo`,
+			team_id: teamId,
+			name: 'Todo',
+			slug: 'todo',
+			category: 'unstarted',
+			position: 0,
+			color: '#888888',
+			is_default: true
+		},
+		{
+			id: `${teamId}-review`,
+			team_id: teamId,
+			name: teamId === engineeringId ? 'Code review' : 'Awaiting review',
+			slug: 'review',
+			category: 'started',
+			position: 1,
+			color: '#8b5cf6',
+			is_default: false
+		},
+		...(teamId === engineeringId
+			? [
+					{
+						id: `${teamId}-testing`,
+						team_id: teamId,
+						name: 'Integration testing',
+						slug: 'integration-testing',
+						category: 'started',
+						position: 2,
+						color: '#6366f1',
+						is_default: false
+					}
+				]
+			: [])
+	];
+	const currentIssue = {
+		id: 'issue-one',
+		team_id: engineeringId,
+		identifier: 'ENG-1',
+		title: 'Forgejo linked issue',
+		description: '<p>Keep this description</p>',
+		status: 'todo',
+		status_id: `${engineeringId}-todo`,
+		priority: 0,
+		labels: [],
+		assignees: [],
+		created_at: '2026-09-30T00:00:00Z',
+		updated_at: '2026-09-30T00:00:00Z'
+	};
+	const calls = { updates: [] as Rule[], status: 0, rules: 0, issueReads: 0, issueWrites: 0 };
+	let seeded = false;
+	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('**/api/**', async (route) => {
+		const url = new URL(route.request().url());
+		const path = url.pathname;
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: { id: 'user-one', name: 'Test User', display_name: 'Test User', email: 'test@example.com' }
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {}
+				}
+			});
+		const workspace = {
+			id: 'workspace-one',
+			name: 'Test Workspace',
+			slug: 'test',
+			current_user_role: options.role ?? 'owner',
+			screen_sharing_enabled: false
+		};
+		if (path === '/api/workspaces') return route.fulfill({ json: [workspace] });
+		if (path === '/api/workspaces/test') return route.fulfill({ json: workspace });
+		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
+		if (path === '/api/workspaces/test/teams') return route.fulfill({ json: teams });
+		if (path === '/api/workspaces/test/members')
+			return route.fulfill({
+				json: [{ user_id: 'user-one', name: 'Test User', email: 'test@example.com', role: 'owner' }]
+			});
+		if (path.endsWith('/statuses')) {
+			const teamId = path.split('/').at(-2)!;
+			return route.fulfill({ json: seeded ? statuses(teamId) : statuses(teamId).slice(0, 1) });
+		}
+		if (path === '/api/workspaces/test/forgejo/status') {
+			calls.status++;
+			if (options.statusErrorOnce && calls.status === 1)
+				return route.fulfill({ status: 503, json: { error: { message: 'Forgejo connection could not be checked' } } });
+			seeded = true;
+			return route.fulfill({
+				json: {
+					configured: true,
+					connected: true,
+					global_config: true,
+					instance_url: 'https://git.example.com',
+					account: { login: 'mario' },
+					repos: []
+				}
+			});
+		}
+		if (path === '/api/workspaces/test/forgejo/auto-transitions') {
+			if (route.request().method() === 'PATCH') {
+				const rule = route.request().postDataJSON().transitions[0] as Rule;
+				calls.updates.push(rule);
+				if (options.updateRule) return options.updateRule(route, rule);
+				Object.assign(
+					rules.find((item) => item.event === rule.event)!,
+					rule
+				);
+				return route.fulfill({ json: { status: 'updated' } });
+			}
+			calls.rules++;
+			if (options.rulesErrorOnce && calls.rules === 1)
+				return route.fulfill({ status: 503, json: { error: { message: 'Automation rules could not be loaded' } } });
+			return route.fulfill({ json: rules });
+		}
+		if (path === '/api/workspaces/test/forgejo/user-mappings') return route.fulfill({ json: [] });
+		if (path === '/api/workspaces/test/issues/ENG-1' || path === '/api/workspaces/test/issues/LEG-1') {
+			if (route.request().method() === 'PATCH') {
+				calls.issueWrites++;
+				Object.assign(currentIssue, route.request().postDataJSON());
+			} else calls.issueReads++;
+			return route.fulfill({
+				json: {
+					...currentIssue,
+					status_info: statuses(engineeringId).find((status) => status.slug === currentIssue.status)
+				}
+			});
+		}
+		if (path === '/api/workspaces/test/issues')
+			return route.fulfill({ json: { data: [currentIssue], total_count: 1, page: 1, has_more: false } });
+		if (path === '/api/workspaces/test/issues/ENG-1/forgejo')
+			return route.fulfill({ json: { pull_requests: [], branches: [], commits: [] } });
+		return route.fulfill({ json: [] });
+	});
+	return { rules, currentIssue, calls };
+}
+
+test('configures an inactive blank rule before enabling it and resolves shared custom status slugs', async ({
+	page
+}) => {
+	const { calls } = await mockForgejo(page);
+	await page.goto('/test/settings/forgejo');
+	const rule = page.locator('[data-forgejo-rule="pr_opened"]');
+	await expect(rule.getByRole('switch')).toBeDisabled();
+	await expect(rule.getByLabel('Target status', { exact: true })).toBeEnabled();
+	await rule.getByLabel('Target status', { exact: true }).selectOption('review');
+	await expect(rule.getByRole('switch')).toBeEnabled();
+	await expect(rule).toContainText('Status changes apply to: Engineering, Operations.');
+	expect(calls.updates[0]).toMatchObject({
+		event: 'pr_opened',
+		target_status: 'review',
+		target_status_id: null,
+		is_active: false
+	});
+	await rule.getByRole('switch').click();
+	await expect(rule.getByRole('switch')).toBeChecked();
+	await expect(rule.getByLabel('Target status', { exact: true })).toBeEnabled();
+	expect(calls.updates[1]).toMatchObject({
+		event: 'pr_opened',
+		target_status: 'review',
+		target_status_id: null,
+		is_active: true
+	});
+	await rule.getByLabel('Target status', { exact: true }).selectOption('integration-testing');
+	await expect(rule).toContainText('Status changes apply to: Engineering.');
+	await expect(rule).toContainText(
+		'These teams do not have this status and will keep their current status: Operations.'
+	);
+});
+
+test('serializes edits to one rule and keeps rejected changes visible and retryable', async ({ page }) => {
+	let release!: () => void;
+	const released = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let request = 0;
+	const { calls } = await mockForgejo(page, {
+		updateRule: async (route) => {
+			request++;
+			if (request === 1) {
+				await released;
+				return route.fulfill({
+					status: 400,
+					json: { error: { message: 'The selected workflow status is unavailable' } }
+				});
+			}
+			return route.fulfill({ json: { status: 'updated' } });
+		}
+	});
+	await page.goto('/test/settings/forgejo');
+	const rule = page.locator('[data-forgejo-rule="branch_created"]');
+	await rule.getByLabel('Target status', { exact: true }).selectOption('review');
+	await expect(rule.getByLabel('Target status', { exact: true })).toBeDisabled();
+	await expect(rule.getByLabel('Assign to', { exact: true })).toBeDisabled();
+	await expect(rule.getByRole('switch')).toBeDisabled();
+	await expect(rule).toContainText('Saving rule…');
+	expect(calls.updates).toHaveLength(1);
+	release();
+	await expect(rule.getByRole('alert')).toHaveText('The selected workflow status is unavailable');
+	await expect(rule.getByLabel('Target status', { exact: true })).toHaveValue('');
+	await expect(rule.getByLabel('Target status', { exact: true })).toBeEnabled();
+	await rule.getByLabel('Target status', { exact: true }).selectOption('review');
+	await expect(rule.getByRole('alert')).toHaveCount(0);
+	await expect(rule.getByRole('switch')).toBeEnabled();
+	expect(calls.updates).toHaveLength(2);
+});
+
+test('shows invalid saved targets and lets the owner disable the rule', async ({ page }) => {
+	const { calls } = await mockForgejo(page, {
+		initialRules: [{ event: 'pr_merged', target_status: 'removed-status', is_active: true }]
+	});
+	await page.goto('/test/settings/forgejo');
+	const rule = page.locator('[data-forgejo-rule="pr_merged"]');
+	await expect(rule).toContainText('This status is no longer available. Choose a team workflow status.');
+	await rule.getByRole('switch').click();
+	await expect(rule.getByRole('switch')).not.toBeChecked();
+	expect(calls.updates[0]).toMatchObject({ event: 'pr_merged', target_status: 'removed-status', is_active: false });
+});
+
+for (const role of ['admin', 'member', 'guest']) {
+	test(`shows automation settings to ${role} without exposing unavailable write controls`, async ({ page }) => {
+		const { calls } = await mockForgejo(page, {
+			role,
+			initialRules: [{ event: 'pr_opened', target_status: 'review', is_active: true }]
+		});
+		await page.goto('/test/settings/forgejo');
+		const rule = page.locator('[data-forgejo-rule="pr_opened"]');
+		await expect(rule.getByLabel('Target status', { exact: true })).toBeDisabled();
+		await expect(rule.getByRole('switch')).toBeDisabled();
+		await expect(
+			page.getByText('You can view this integration, but only the workspace owner can change it.', { exact: true })
+		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Manage', exact: true })).toHaveCount(0);
+		expect(calls.updates).toEqual([]);
+	});
+}
+
+test('retries status and automation load errors without displaying a false disconnected form', async ({ page }) => {
+	await mockForgejo(page, { statusErrorOnce: true, rulesErrorOnce: true });
+	await page.goto('/test/settings/forgejo');
+	await expect(page.getByText('Forgejo connection could not be checked', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0);
+	await page.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(page.getByText('Automation rules could not be loaded', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(page.locator('[data-forgejo-rule="pr_opened"]')).toBeVisible();
+});
+
+test('refreshes an automation status update received immediately after a local title save', async ({ page }) => {
+	const { currentIssue, calls } = await mockForgejo(page);
+	await page.goto('/test/issue/ENG-1');
+	await expect(issueStatusButton(page, 'Todo')).toBeVisible();
+	await page.clock.install();
+	await page.getByRole('button', { name: 'Forgejo linked issue', exact: true }).click();
+	const title = page.locator('input[autofocus]');
+	await title.fill('Locally updated title');
+	await title.press('Tab');
+	await expect(page.getByRole('button', { name: 'Locally updated title', exact: true })).toBeVisible();
+	expect(calls.issueWrites).toBe(1);
+	const initialReads = calls.issueReads;
+	currentIssue.status = 'review';
+	currentIssue.status_id = `${engineeringId}-review`;
+	await page.evaluate(() =>
+		window.dispatchEvent(
+			new CustomEvent('ws:issue-updated', { detail: { id: 'issue-one', identifier: 'ENG-1', status: 'review' } })
+		)
+	);
+	await page.clock.fastForward(500);
+	expect(calls.issueReads).toBe(initialReads);
+	await page.clock.fastForward(2200);
+	await expect(issueStatusButton(page, 'Code review')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Locally updated title', exact: true })).toBeVisible();
+	await expect(page.locator('.rich-editor .tiptap').first()).toHaveText('Keep this description');
+	expect(calls.issueReads).toBe(initialReads + 1);
+});
+
+test('refreshes the current issue after reconnecting and explains unmatched code activity', async ({ page }) => {
+	const { currentIssue, calls } = await mockForgejo(page);
+	await page.goto('/test/issue/ENG-1');
+	await expect(issueStatusButton(page, 'Todo')).toBeVisible();
+	await expect(
+		page.getByText(
+			'No linked code activity yet. Include ENG-1 in a branch name, pull request title or description, or commit message in a linked repository.',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Refresh code activity', exact: true })).toBeVisible();
+	await page.clock.install();
+	const initialReads = calls.issueReads;
+	currentIssue.status = 'review';
+	currentIssue.status_id = `${engineeringId}-review`;
+	await page.evaluate(() =>
+		window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug: 'other-workspace' } }))
+	);
+	await page.clock.fastForward(250);
+	expect(calls.issueReads).toBe(initialReads);
+	await page.evaluate(() =>
+		window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug: 'test' } }))
+	);
+	await page.clock.fastForward(250);
+	await expect(issueStatusButton(page, 'Code review')).toBeVisible();
+	expect(calls.issueReads).toBe(initialReads + 1);
+});
+
+test('uses stable issue identity when an old URL returns its canonical identifier', async ({ page }) => {
+	const { currentIssue, calls } = await mockForgejo(page);
+	await page.goto('/test/issue/LEG-1');
+	await expect(page.getByRole('button', { name: 'Forgejo linked issue', exact: true })).toBeVisible();
+	await expect(issueStatusButton(page, 'Todo')).toBeVisible();
+	await expect(
+		page.getByText(
+			'No linked code activity yet. Include ENG-1 in a branch name, pull request title or description, or commit message in a linked repository.',
+			{ exact: true }
+		)
+	).toBeVisible();
+	await page.clock.install();
+	const initialReads = calls.issueReads;
+	await page.clock.fastForward(30000);
+	expect(calls.issueReads).toBe(initialReads);
+	currentIssue.status = 'review';
+	currentIssue.status_id = `${engineeringId}-review`;
+	await page.evaluate(() =>
+		window.dispatchEvent(
+			new CustomEvent('ws:issue-updated', { detail: { id: 'issue-one', identifier: 'ENG-1', status: 'review' } })
+		)
+	);
+	await page.clock.fastForward(250);
+	await expect(issueStatusButton(page, 'Code review')).toBeVisible();
+	expect(calls.issueReads).toBe(initialReads + 1);
+	await expect(page).toHaveURL(/\/test\/issue\/LEG-1$/);
+});
+
+test('offers the built-in PR status for every team and explains its automatic creation', async ({ page }) => {
+	const { calls } = await mockForgejo(page);
+	await page.goto('/test/settings/forgejo');
+	const rule = page.locator('[data-forgejo-rule="pr_opened"]');
+	await rule.getByLabel('Target status', { exact: true }).selectOption('pr');
+	await expect(rule.getByRole('switch')).toBeEnabled();
+	await expect(rule).toContainText('Status changes apply to: Engineering, Operations.');
+	await expect(rule).toContainText('The PR status is created automatically in teams that need it.');
+	await expect(rule).not.toContainText('These teams do not have this status');
+	await expect(rule).not.toContainText('This status is no longer available');
+	await rule.getByRole('switch').click();
+	await expect(rule.getByRole('switch')).toBeChecked();
+	expect(calls.updates[1]).toMatchObject({
+		event: 'pr_opened',
+		target_status: 'pr',
+		target_status_id: null,
+		is_active: true
+	});
+});

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import {
 		getForgejoStatus,
@@ -14,7 +14,12 @@
 		updateUserMappings
 	} from '$lib/api/forgejo';
 	import { forgejoRepositoryHomeUrl } from '$lib/security/forgejo-url';
-	import type { ForgejoStatus, ForgejoAvailableRepo, ForgejoAutoTransition, ForgejoUserMapping } from '$lib/types/forgejo';
+	import type {
+		ForgejoStatus,
+		ForgejoAvailableRepo,
+		ForgejoAutoTransition,
+		ForgejoUserMapping
+	} from '$lib/types/forgejo';
 	import { listTeams } from '$lib/api/teams';
 	import { listTeamStatuses } from '$lib/api/team-statuses';
 	import { listMembers } from '$lib/api/members';
@@ -32,11 +37,23 @@
 	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import Trash2 from '@lucide/svelte/icons/trash';
 	import { m } from '$lib/paraglide/messages.js';
+	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
+	import ErrorState from '$lib/components/shared/ErrorState.svelte';
 
 	const DEFAULT_INSTANCE_URL = 'https://git.terrascale.tech';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	let status = $state<ForgejoStatus | null>(null);
+	let mounted = $state(false);
+	let generation = 0;
+	let loadError = $state('');
+	let reposError = $state('');
+	let automationsError = $state('');
+	let mappingsError = $state('');
+	let workflowLoadFailed = $state(false);
+	let savingEvents = $state<Set<string>>(new Set());
+	let ruleErrors = $state<Record<string, string>>({});
+	const canManage = $derived(sidebarState.workspaceRole === 'owner');
 	let loading = $state(true);
 	let availableRepos = $state<ForgejoAvailableRepo[]>([]);
 	let loadingRepos = $state(false);
@@ -49,7 +66,7 @@
 	let instanceUrl = $state(DEFAULT_INSTANCE_URL);
 	let token = $state('');
 	let connecting = $state(false);
-	let workflowStates = $state<{ value: string; label: string }[]>([]);
+	let workflowStates = $state<{ value: string; label: string; teams: string[]; missingTeams: string[] }[]>([]);
 	let members = $state<WorkspaceMember[]>([]);
 	let userMappings = $state<ForgejoUserMapping[]>([]);
 	let mappingLogin = $state('');
@@ -80,144 +97,267 @@
 		selectedRepoIds = next;
 	}
 
-	onMount(async () => {
-		loadWorkflowStates();
-		listMembers(slug).then((result) => { members = result; }).catch(() => { members = []; });
-		try {
-			status = await getForgejoStatus(slug);
-			if (status.connected) {
-				transitions = await listAutoTransitions(slug);
-				userMappings = await listUserMappings(slug);
-			}
-		} catch (err: any) {
-			console.error('Forgejo status error:', err);
-		} finally {
-			loading = false;
-		}
+	onMount(() => {
+		mounted = true;
+		return () => {
+			mounted = false;
+			generation++;
+		};
 	});
 
-	// Automation targets are workspace-level but resolve against each team's
-	// own workflow at fire time — offer the union of the states actually
-	// configured on the workspace's teams, deduped by slug. Teams that lack
-	// the selected state simply stay unchanged.
-	async function loadWorkflowStates() {
+	$effect(() => {
+		const workspaceSlug = slug;
+		if (mounted && workspaceSlug) untrack(() => void load(workspaceSlug));
+	});
+
+	function errorMessage(error: unknown, fallback: string): string {
+		const value = error as { error?: { message?: unknown }; message?: unknown } | null;
+		if (typeof value?.error?.message === 'string' && value.error.message) return value.error.message;
+		if (typeof value?.message === 'string' && value.message) return value.message;
+		return fallback;
+	}
+
+	function isCurrent(workspaceSlug: string, requestGeneration: number): boolean {
+		return mounted && slug === workspaceSlug && generation === requestGeneration;
+	}
+
+	async function load(workspaceSlug: string) {
+		const requestGeneration = ++generation;
+		loading = true;
+		loadError = '';
+		status = null;
+		transitions = [];
+		userMappings = [];
+		members = [];
+		workflowStates = [];
+		workflowLoadFailed = false;
+		connecting = false;
+		savingMappings = false;
+		savingRepos = false;
+		loadingRepos = false;
+		automationsError = '';
+		mappingsError = '';
+		instanceUrl = DEFAULT_INSTANCE_URL;
+		savingEvents = new Set();
+		ruleErrors = {};
+		reposError = '';
+		showRepoSelector = false;
+		token = '';
 		try {
-			const teams = await listTeams(slug);
-			const perTeam = await Promise.all(
-				teams.map((team) => listTeamStatuses(slug, team.id).catch(() => []))
+			const connection = await getForgejoStatus(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			status = connection;
+			if (connection.instance_url) instanceUrl = connection.instance_url;
+			if (connection.connected) await loadConfiguration(workspaceSlug, requestGeneration);
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration))
+				loadError = errorMessage(error, m['settings.forgejo.failed_status']());
+		} finally {
+			if (isCurrent(workspaceSlug, requestGeneration)) loading = false;
+		}
+	}
+
+	async function loadConfiguration(workspaceSlug: string, requestGeneration: number) {
+		automationsError = '';
+		mappingsError = '';
+		const [rules, mappings, workspaceMembers] = await Promise.allSettled([
+			listAutoTransitions(workspaceSlug),
+			listUserMappings(workspaceSlug),
+			listMembers(workspaceSlug),
+			loadWorkflowStates(workspaceSlug, requestGeneration)
+		]);
+		if (!isCurrent(workspaceSlug, requestGeneration)) return;
+		if (rules.status === 'fulfilled') transitions = rules.value;
+		else automationsError = errorMessage(rules.reason, m['settings.forgejo.failed_load_automations']());
+		if (mappings.status === 'fulfilled') userMappings = mappings.value;
+		else mappingsError = errorMessage(mappings.reason, m['settings.forgejo.failed_load_mappings']());
+		if (workspaceMembers.status === 'fulfilled') members = workspaceMembers.value;
+		else mappingsError ||= errorMessage(workspaceMembers.reason, m['settings.forgejo.failed_load_mappings']());
+	}
+
+	// A workspace rule uses a slug resolved against each issue's own team.
+	async function loadWorkflowStates(workspaceSlug: string, requestGeneration: number) {
+		try {
+			const teams = await listTeams(workspaceSlug);
+			const perTeam = await Promise.all(teams.map((team) => listTeamStatuses(workspaceSlug, team.id)));
+			const bySlug = new Map<string, { names: Set<string>; teamIds: Set<string>; position: number }>();
+			perTeam.forEach((states, index) =>
+				states.forEach((state) => {
+					const entry = bySlug.get(state.slug) ?? {
+						names: new Set<string>(),
+						teamIds: new Set<string>(),
+						position: state.position
+					};
+					entry.names.add(state.name);
+					entry.teamIds.add(teams[index].id);
+					entry.position = Math.min(entry.position, state.position);
+					bySlug.set(state.slug, entry);
+				})
 			);
-			const bySlug = new Map<string, { names: Set<string>; position: number }>();
-			perTeam.flat().forEach((state) => {
-				const entry = bySlug.get(state.slug) ?? { names: new Set<string>(), position: state.position };
-				entry.names.add(state.name);
-				entry.position = Math.min(entry.position, state.position);
-				bySlug.set(state.slug, entry);
-			});
+			if (!bySlug.has('pr')) {
+				bySlug.set('pr', { names: new Set(['PR']), teamIds: new Set(), position: Number.MAX_SAFE_INTEGER });
+			}
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
 			workflowStates = [...bySlug.entries()]
-				.map(([slug, entry]) => ({ value: slug, label: [...entry.names].sort().join(' / ') }))
-				.sort((a, b) => a.label.localeCompare(b.label));
+				.sort((a, b) => a[1].position - b[1].position)
+				.map(([value, entry]) => ({
+					value,
+					label: [...entry.names].sort().join(' / '),
+					teams: teams.filter((team) => value === 'pr' || entry.teamIds.has(team.id)).map((team) => team.name),
+					missingTeams:
+						value === 'pr' ? [] : teams.filter((team) => !entry.teamIds.has(team.id)).map((team) => team.name)
+				}));
+			workflowLoadFailed = false;
 		} catch {
-			workflowStates = [];
+			if (isCurrent(workspaceSlug, requestGeneration)) workflowLoadFailed = true;
 		}
 	}
 
 	async function handleConnect() {
+		if (!canManage || connecting) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
 		connecting = true;
 		try {
-			await connectForgejo(slug, instanceUrl, token);
+			await connectForgejo(workspaceSlug, instanceUrl.trim(), token.trim());
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
 			token = '';
-			status = await getForgejoStatus(slug);
-			transitions = await listAutoTransitions(slug);
-			userMappings = await listUserMappings(slug);
+			const connection = await getForgejoStatus(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			status = connection;
+			await loadConfiguration(workspaceSlug, requestGeneration);
 			appToast.success(m['settings.forgejo.connected_toast']());
-		} catch (err: any) {
-			appToast.apiError(err, m['settings.forgejo.failed_connect']());
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration)) appToast.apiError(error, m['settings.forgejo.failed_connect']());
 		} finally {
-			connecting = false;
+			if (isCurrent(workspaceSlug, requestGeneration)) connecting = false;
 		}
 	}
 
 	async function handleDisconnect() {
+		if (!canManage) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
 		try {
-			await disconnectForgejo(slug);
-			status = await getForgejoStatus(slug);
+			await disconnectForgejo(workspaceSlug);
+			const connection = await getForgejoStatus(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			status = connection;
 			transitions = [];
 			userMappings = [];
 			appToast.success(m['settings.forgejo.disconnected']());
-		} catch {
-			appToast.error(m['settings.forgejo.failed_disconnect']());
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration))
+				appToast.apiError(error, m['settings.forgejo.failed_disconnect']());
 		}
 	}
 
 	async function loadAvailableRepos() {
+		if (!canManage || savingRepos) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
 		loadingRepos = true;
 		showRepoSelector = true;
+		reposError = '';
 		repoSearch = '';
 		try {
-			availableRepos = await listForgejoRepos(slug);
-			selectedRepoIds = new Set(availableRepos.filter((r) => r.linked).map((r) => r.forgejo_repo_id));
-		} catch {
-			appToast.error(m['settings.forgejo.failed_load_repos']());
+			const repositories = await listForgejoRepos(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			availableRepos = repositories;
+			selectedRepoIds = new Set(repositories.filter((repo) => repo.linked).map((repo) => repo.forgejo_repo_id));
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration))
+				reposError = errorMessage(error, m['settings.forgejo.failed_load_repos']());
 		} finally {
-			loadingRepos = false;
+			if (isCurrent(workspaceSlug, requestGeneration)) loadingRepos = false;
 		}
 	}
 
 	function toggleRepo(repoId: number) {
+		if (savingRepos) return;
 		const next = new Set(selectedRepoIds);
-		if (next.has(repoId)) {
-			next.delete(repoId);
-		} else {
-			next.add(repoId);
-		}
+		if (next.has(repoId)) next.delete(repoId);
+		else next.add(repoId);
 		selectedRepoIds = next;
 	}
 
 	async function saveRepoSelection() {
+		if (!canManage || savingRepos || loadingRepos) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
+		const desiredIds = new Set(selectedRepoIds);
 		savingRepos = true;
+		reposError = '';
+		let failed = false;
+		const removals = availableRepos
+			.filter((repo) => repo.linked && !desiredIds.has(repo.forgejo_repo_id))
+			.flatMap((repo) => {
+				const linked = status?.repos.find((item) => item.forgejo_repo_id === repo.forgejo_repo_id);
+				return linked ? [linked.id] : [];
+			});
 		try {
-			const newIds = [...selectedRepoIds].filter(
-				(id) => !availableRepos.find((r) => r.forgejo_repo_id === id && r.linked)
+			const newIds = [...desiredIds].filter(
+				(id) => !availableRepos.some((repo) => repo.forgejo_repo_id === id && repo.linked)
 			);
-			if (newIds.length > 0) {
-				try {
-					await linkForgejoRepos(slug, newIds);
-					appToast.success(m['settings.forgejo.repos_linked']());
-				} catch {
-					appToast.error(m['settings.forgejo.failed_link_repos']());
-				}
+			if (newIds.length) await linkForgejoRepos(workspaceSlug, newIds);
+			for (const id of removals) await unlinkForgejoRepo(workspaceSlug, id);
+		} catch (error) {
+			failed = true;
+			if (isCurrent(workspaceSlug, requestGeneration))
+				reposError = errorMessage(error, m['settings.forgejo.failed_save_repos']());
+		}
+		try {
+			const connection = await getForgejoStatus(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			status = connection;
+			availableRepos = availableRepos.map((repo) => ({
+				...repo,
+				linked: connection.repos.some((linked) => linked.forgejo_repo_id === repo.forgejo_repo_id)
+			}));
+			if (!failed) {
+				showRepoSelector = false;
+				repoSearch = '';
+				appToast.success(m['settings.forgejo.repos_saved']());
 			}
-			for (const repo of availableRepos.filter((r) => r.linked)) {
-				if (!selectedRepoIds.has(repo.forgejo_repo_id)) {
-					const linked = status?.repos.find((r) => r.forgejo_repo_id === repo.forgejo_repo_id);
-					if (linked) {
-						try {
-							await unlinkForgejoRepo(slug, linked.id);
-						} catch {
-							/* ignore */
-						}
-					}
-				}
-			}
-			status = await getForgejoStatus(slug);
-			showRepoSelector = false;
-			repoSearch = '';
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration))
+				reposError ||= errorMessage(error, m['settings.forgejo.failed_status']());
 		} finally {
-			savingRepos = false;
+			if (isCurrent(workspaceSlug, requestGeneration)) savingRepos = false;
 		}
 	}
 
-	const TRANSITION_EVENTS: { event: ForgejoAutoTransition['event']; label: () => string; description: () => string }[] = $derived([
-		{ event: 'branch_created', label: () => m['settings.forgejo.branch_created'](), description: () => m['settings.forgejo.branch_created_desc']() },
-		{ event: 'pr_opened', label: () => m['settings.forgejo.pr_opened'](), description: () => m['settings.forgejo.pr_opened_desc']() },
-		{ event: 'pr_checks_green', label: () => m['settings.forgejo.pr_checks_green'](), description: () => m['settings.forgejo.pr_checks_green_desc']() },
-		{ event: 'pr_merged', label: () => m['settings.forgejo.pr_merged'](), description: () => m['settings.forgejo.pr_merged_desc']() }
-	]);
+	const TRANSITION_EVENTS: { event: ForgejoAutoTransition['event']; label: () => string; description: () => string }[] =
+		$derived([
+			{
+				event: 'branch_created',
+				label: () => m['settings.forgejo.branch_created'](),
+				description: () => m['settings.forgejo.branch_created_desc']()
+			},
+			{
+				event: 'pr_opened',
+				label: () => m['settings.forgejo.pr_opened'](),
+				description: () => m['settings.forgejo.pr_opened_desc']()
+			},
+			{
+				event: 'pr_checks_green',
+				label: () => m['settings.forgejo.pr_checks_green'](),
+				description: () => m['settings.forgejo.pr_checks_green_desc']()
+			},
+			{
+				event: 'pr_merged',
+				label: () => m['settings.forgejo.pr_merged'](),
+				description: () => m['settings.forgejo.pr_merged_desc']()
+			}
+		]);
 
 	// The configured states, plus the rule's current slug when it no longer
 	// exists on any team (so a stale selection stays visible and changeable).
 	function pickerOptions(currentSlug: string): { value: string; label: string }[] {
-		const options = [{ value: '', label: m['settings.forgejo.no_transition']() }, ...workflowStates];
+		const options: { value: string; label: string }[] = [
+			{ value: '', label: m['settings.forgejo.no_transition']() },
+			...workflowStates
+		];
 		if (currentSlug && !workflowStates.some((o) => o.value === currentSlug)) {
 			options.push({ value: currentSlug, label: currentSlug });
 		}
@@ -228,38 +368,62 @@
 		return transitions.find((t) => t.event === event);
 	}
 
+	function canEnable(rule: ForgejoAutoTransition): boolean {
+		return !!(rule.target_status || rule.target_status_id || rule.target_assignee_id || rule.assign_forgejo_user);
+	}
+
 	async function patchRule(event: ForgejoAutoTransition['event'], changes: Partial<ForgejoAutoTransition>) {
+		if (!canManage || savingEvents.has(event)) return;
 		const previous = ruleFor(event);
 		if (!previous) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
 		const updated = { ...previous, ...changes };
-		transitions = transitions.map((t) => (t.event === event ? updated : t));
+		if (updated.is_active && !canEnable(updated)) {
+			ruleErrors = { ...ruleErrors, [event]: m['settings.forgejo.choose_target']() };
+			return;
+		}
+		savingEvents = new Set([...savingEvents, event]);
+		ruleErrors = { ...ruleErrors, [event]: '' };
+		transitions = transitions.map((rule) => (rule.event === event ? updated : rule));
 		try {
-			await updateAutoTransitions(slug, [updated]);
-		} catch {
-			transitions = transitions.map((t) => (t.event === event ? previous : t));
-			appToast.error(m['settings.forgejo.failed_update']());
+			await updateAutoTransitions(workspaceSlug, [updated]);
+		} catch (error) {
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			transitions = transitions.map((rule) => (rule.event === event ? previous : rule));
+			ruleErrors = { ...ruleErrors, [event]: errorMessage(error, m['settings.forgejo.failed_update']()) };
+		} finally {
+			if (isCurrent(workspaceSlug, requestGeneration))
+				savingEvents = new Set([...savingEvents].filter((value) => value !== event));
 		}
 	}
 
 	async function saveMappings(next: ForgejoUserMapping[]): Promise<boolean> {
+		if (!canManage || savingMappings) return false;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
 		savingMappings = true;
 		try {
-			await updateUserMappings(slug, next);
-			userMappings = await listUserMappings(slug);
+			await updateUserMappings(workspaceSlug, next);
+			const mappings = await listUserMappings(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return false;
+			userMappings = mappings;
 			return true;
 		} catch (err: any) {
-			appToast.apiError(err, m['settings.forgejo.failed_update']());
+			if (isCurrent(workspaceSlug, requestGeneration)) appToast.apiError(err, m['settings.forgejo.failed_update']());
 			return false;
 		} finally {
-			savingMappings = false;
+			if (isCurrent(workspaceSlug, requestGeneration)) savingMappings = false;
 		}
 	}
 
 	async function addMapping() {
 		const forgejoLogin = mappingLogin.trim().toLowerCase();
 		if (!forgejoLogin || !mappingUserID) return;
-		const next = [...userMappings.filter((mapping) => mapping.forgejo_login !== forgejoLogin),
-			{ forgejo_login: forgejoLogin, user_id: mappingUserID }];
+		const next = [
+			...userMappings.filter((mapping) => mapping.forgejo_login !== forgejoLogin),
+			{ forgejo_login: forgejoLogin, user_id: mappingUserID }
+		];
 		if (await saveMappings(next)) {
 			mappingLogin = '';
 			mappingUserID = '';
@@ -273,13 +437,21 @@
 		<p class="mt-1 text-sm text-[var(--color-text-tertiary)]">
 			{m['settings.forgejo.desc']()}
 		</p>
+		{#if status?.connected && status.repos.length > 0}
+			<Button variant="outline" size="sm" href="/{slug}/actions" class="mt-3">{m['forgejo_actions.title']()}</Button>
+		{/if}
 	</div>
 
 	{#if loading}
 		<div class="flex items-center justify-center py-12">
 			<Loader2 size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
 		</div>
+	{:else if loadError}
+		<ErrorState message={loadError} onretry={() => load(slug)} />
+	{:else if !status?.connected && status?.global_config}
+		<ErrorState message={m['settings.forgejo.global_unavailable']()} onretry={() => load(slug)} />
 	{:else if !status?.connected}
+		{#if !canManage}<p class="text-sm text-[var(--color-text-tertiary)]">{m['settings.forgejo.owner_only']()}</p>{/if}
 		<!-- State 1: not connected — token form -->
 		<div class="rounded-lg border border-[var(--app-border)] p-6">
 			<div class="flex items-center gap-3">
@@ -297,7 +469,14 @@
 					<label for="forgejo-instance" class="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">
 						{m['settings.forgejo.instance_url']()}
 					</label>
-					<Input id="forgejo-instance" type="url" bind:value={instanceUrl} placeholder={DEFAULT_INSTANCE_URL} class="h-9 text-sm" />
+					<Input
+						id="forgejo-instance"
+						type="url"
+						bind:value={instanceUrl}
+						placeholder={DEFAULT_INSTANCE_URL}
+						disabled={!canManage || connecting}
+						class="h-9 text-sm"
+					/>
 					<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.instance_url_desc']()}</p>
 				</div>
 				<div>
@@ -306,6 +485,7 @@
 					</label>
 					<Input
 						id="forgejo-token"
+						disabled={!canManage || connecting}
 						type="password"
 						autocomplete="off"
 						bind:value={token}
@@ -315,7 +495,11 @@
 					<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.token_desc']()}</p>
 				</div>
 				<div class="flex justify-end">
-					<Button size="sm" onclick={handleConnect} disabled={connecting || token.trim().length < 20 || !instanceUrl.trim()}>
+					<Button
+						size="sm"
+						onclick={handleConnect}
+						disabled={!canManage || connecting || token.trim().length < 20 || !instanceUrl.trim()}
+					>
 						{#if connecting}
 							<Loader2 size={14} class="animate-spin" />
 						{/if}
@@ -331,6 +515,7 @@
 			</p>
 		</div>
 	{:else}
+		{#if !canManage}<p class="text-sm text-[var(--color-text-tertiary)]">{m['settings.forgejo.owner_only']()}</p>{/if}
 		<!-- State 2: connected -->
 		<div class="space-y-6">
 			<!-- Connection info -->
@@ -350,7 +535,7 @@
 							<p class="text-xs text-[var(--color-text-tertiary)]">{status.instance_url}</p>
 						</div>
 					</div>
-					{#if !status.global_config}
+					{#if !status.global_config && canManage}
 						<Button variant="destructive" size="sm" onclick={handleDisconnect}>
 							{m['settings.forgejo.disconnect']()}
 						</Button>
@@ -362,7 +547,7 @@
 			<div>
 				<div class="flex items-center justify-between">
 					<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.linked_repos']()}</h3>
-					{#if !showRepoSelector}
+					{#if !showRepoSelector && canManage}
 						<button
 							onclick={loadAvailableRepos}
 							class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
@@ -379,9 +564,15 @@
 							<div class="flex items-center justify-center py-8">
 								<Loader2 size={18} class="animate-spin text-[var(--color-text-tertiary)]" />
 							</div>
+						{:else if reposError && availableRepos.length === 0}
+							<ErrorState message={reposError} onretry={loadAvailableRepos} />
 						{:else}
+							{#if reposError}<p role="alert" class="mb-3 text-xs text-red-500">{reposError}</p>{/if}
 							<div class="relative">
-								<Search size={14} class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+								<Search
+									size={14}
+									class="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]"
+								/>
 								<Input
 									type="text"
 									placeholder={m['settings.forgejo.search_repos']()}
@@ -392,23 +583,39 @@
 
 							<button
 								onclick={toggleSelectAll}
+								disabled={savingRepos}
 								class="mt-2 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
 							>
-								<Checkbox checked={allFilteredSelected} indeterminate={someFilteredSelected} class="pointer-events-none" />
-								<span class="text-xs">{repoSearch ? m['settings.forgejo.select_all_filtered']({ n: filteredRepos.length }) : m['settings.forgejo.select_all']()} ({filteredRepos.length})</span>
+								<Checkbox
+									checked={allFilteredSelected}
+									indeterminate={someFilteredSelected}
+									class="pointer-events-none"
+								/>
+								<span class="text-xs"
+									>{repoSearch
+										? m['settings.forgejo.select_all_filtered']({ n: filteredRepos.length })
+										: m['settings.forgejo.select_all']()} ({filteredRepos.length})</span
+								>
 							</button>
 
 							<div class="mt-1 max-h-64 space-y-0.5 overflow-y-auto">
 								{#each filteredRepos as repo}
 									<button
 										onclick={() => toggleRepo(repo.forgejo_repo_id)}
-										class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-bg-hover)] {selectedRepoIds.has(repo.forgejo_repo_id) ? 'bg-[var(--color-bg-hover)]/50' : ''}"
+										disabled={savingRepos}
+										class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-bg-hover)] {selectedRepoIds.has(
+											repo.forgejo_repo_id
+										)
+											? 'bg-[var(--color-bg-hover)]/50'
+											: ''}"
 									>
 										<Checkbox checked={selectedRepoIds.has(repo.forgejo_repo_id)} class="pointer-events-none" />
 										<GitBranch size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
 										<span class="truncate text-[var(--color-text-primary)]">{repo.full_name}</span>
 										{#if repo.private}
-											<Badge variant="outline" class="ml-auto shrink-0 text-[9px]">{m['settings.forgejo.private']()}</Badge>
+											<Badge variant="outline" class="ml-auto shrink-0 text-[9px]"
+												>{m['settings.forgejo.private']()}</Badge
+											>
 										{/if}
 									</button>
 								{:else}
@@ -423,7 +630,14 @@
 									{m['settings.forgejo.n_selected']({ n: selectedRepoIds.size })}
 								</span>
 								<div class="flex gap-2">
-									<Button variant="outline" size="sm" onclick={() => { showRepoSelector = false; repoSearch = ''; }}>{m['settings.cancel']()}</Button>
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => {
+											showRepoSelector = false;
+											repoSearch = '';
+										}}>{m['settings.cancel']()}</Button
+									>
 									<Button size="sm" onclick={saveRepoSelection} disabled={savingRepos}>
 										{#if savingRepos}
 											<Loader2 size={14} class="animate-spin" />
@@ -439,7 +653,10 @@
 				{:else}
 					<div class="mt-3 space-y-1">
 						{#each status.repos as repo}
-							{@const repositoryUrl = forgejoRepositoryHomeUrl(repo.full_name, repo.instance_url || status.instance_url || '')}
+							{@const repositoryUrl = forgejoRepositoryHomeUrl(
+								repo.full_name,
+								repo.instance_url || status.instance_url || ''
+							)}
 							<div class="flex items-center justify-between rounded-md border border-[var(--app-border)] px-3 py-2">
 								<div class="flex items-center gap-2">
 									<GitBranch size={14} class="text-[var(--color-text-tertiary)]" />
@@ -447,7 +664,12 @@
 									<span class="text-xs text-[var(--color-text-tertiary)]">{repo.default_branch}</span>
 								</div>
 								{#if repositoryUrl}
-									<a href={repositoryUrl} target="_blank" rel="noopener noreferrer" class="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+									<a
+										href={repositoryUrl}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
+									>
 										<ExternalLink size={14} />
 									</a>
 								{/if}
@@ -460,16 +682,22 @@
 			<div>
 				<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.user_mappings']()}</h3>
 				<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.user_mappings_desc']()}</p>
+				{#if mappingsError}<p role="alert" class="mt-3 text-xs text-red-500">{mappingsError}</p>{/if}
 				<div class="mt-3 space-y-2">
 					{#each userMappings as mapping (mapping.forgejo_login)}
 						<div class="flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2">
-							<span class="min-w-0 truncate text-sm text-[var(--color-text-primary)]">{mapping.forgejo_login} → {members.find((member) => member.user_id === mapping.user_id)?.name ?? m['settings.forgejo.unavailable_assignee']()}</span>
+							<span class="min-w-0 truncate text-sm text-[var(--color-text-primary)]"
+								>{mapping.forgejo_login} → {members.find((member) => member.user_id === mapping.user_id)?.name ??
+									m['settings.forgejo.unavailable_assignee']()}</span
+							>
 							<button
-							aria-label={m['settings.forgejo.remove_mapping']({ login: mapping.forgejo_login })}
-								disabled={savingMappings}
-								onclick={() => saveMappings(userMappings.filter((item) => item.forgejo_login !== mapping.forgejo_login))}
+								aria-label={m['settings.forgejo.remove_mapping']({ login: mapping.forgejo_login })}
+								disabled={!canManage || savingMappings}
+								onclick={() =>
+									saveMappings(userMappings.filter((item) => item.forgejo_login !== mapping.forgejo_login))}
 								class="shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
-							><Trash2 size={15} /></button>
+								><Trash2 size={15} /></button
+							>
 						</div>
 					{/each}
 				</div>
@@ -478,6 +706,7 @@
 						aria-label={m['settings.forgejo.forgejo_login']()}
 						placeholder={m['settings.forgejo.forgejo_login']()}
 						bind:value={mappingLogin}
+						disabled={!canManage || savingMappings || !!mappingsError}
 						class="h-8 min-w-32 flex-1 text-sm"
 						maxlength={100}
 					/>
@@ -485,14 +714,20 @@
 						aria-label={m['settings.forgejo.ku_member']()}
 						class="h-8 min-w-36 flex-1 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
 						bind:value={mappingUserID}
+						disabled={!canManage || savingMappings || !!mappingsError}
 					>
 						<option value="">{m['settings.forgejo.ku_member']()}</option>
 						{#each members as member (member.user_id)}
 							<option value={member.user_id}>{member.name || member.email}</option>
 						{/each}
 					</select>
-					<Button size="sm" onclick={addMapping} disabled={savingMappings || !mappingLogin.trim() || !mappingUserID}>
-						<Plus size={14} /> {m['settings.forgejo.add_mapping']()}
+					<Button
+						size="sm"
+						onclick={addMapping}
+						disabled={!canManage || !!mappingsError || savingMappings || !mappingLogin.trim() || !mappingUserID}
+					>
+						<Plus size={14} />
+						{m['settings.forgejo.add_mapping']()}
 					</Button>
 				</div>
 			</div>
@@ -501,11 +736,25 @@
 			<div>
 				<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.automations']()}</h3>
 				<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.automations_desc']()}</p>
+				{#if automationsError}<ErrorState
+						message={automationsError}
+						onretry={() => loadConfiguration(slug, generation)}
+					/>{/if}
+				{#if workflowLoadFailed}<p role="alert" class="mt-3 text-xs text-red-500">
+						{m['settings.forgejo.failed_workflow_states']()}
+					</p>
+					<Button variant="ghost" size="sm" onclick={() => loadWorkflowStates(slug, generation)}
+						>{m['forgejo_actions.retry']()}</Button
+					>{/if}
 				<div class="mt-3 space-y-2">
 					{#each TRANSITION_EVENTS as meta}
 						{@const rule = ruleFor(meta.event)}
 						{#if rule}
-							<div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2.5">
+							{@const coverage = workflowStates.find((state) => state.value === rule.target_status)}
+							<div
+								data-forgejo-rule={meta.event}
+								class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2.5"
+							>
 								<div class="min-w-0">
 									<span class="text-sm text-[var(--color-text-primary)]">{meta.label()}</span>
 									<p class="text-xs text-[var(--color-text-tertiary)]">{meta.description()}</p>
@@ -515,21 +764,22 @@
 										aria-label={m['settings.forgejo.target_status']()}
 										class="h-8 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
 										value={rule.target_status}
-										disabled={!rule.is_active}
+										disabled={!canManage || savingEvents.has(meta.event) || workflowLoadFailed}
 										onchange={(e) => {
 											const value = (e.currentTarget as HTMLSelectElement).value;
 											patchRule(meta.event, { target_status: value, target_status_id: null });
 										}}
 									>
 										{#each pickerOptions(rule.target_status) as option}
-											<option value={option.value} selected={rule.target_status === option.value}>{option.label}</option>
+											<option value={option.value} selected={rule.target_status === option.value}>{option.label}</option
+											>
 										{/each}
 									</select>
 									<select
 										aria-label={m['settings.forgejo.target_assignee']()}
 										class="h-8 max-w-40 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
 										value={rule.assign_forgejo_user ? '__forgejo_user__' : (rule.target_assignee_id ?? '')}
-										disabled={!rule.is_active}
+										disabled={!canManage || savingEvents.has(meta.event)}
 										onchange={(e) => {
 											const value = (e.currentTarget as HTMLSelectElement).value;
 											patchRule(meta.event, {
@@ -549,8 +799,24 @@
 									</select>
 									<Switch
 										checked={rule.is_active}
+										aria-label={m['settings.forgejo.enable_rule']({ event: meta.label() })}
+										disabled={!canManage || savingEvents.has(meta.event) || (!rule.is_active && !canEnable(rule))}
 										onCheckedChange={(v) => patchRule(meta.event, { is_active: v })}
 									/>
+								</div>
+								<div class="w-full text-xs text-[var(--color-text-tertiary)]">
+									{#if savingEvents.has(meta.event)}<span role="status">{m['settings.forgejo.saving_rule']()}</span
+										>{/if}
+									{#if ruleErrors[meta.event]}<p role="alert" class="text-red-500">{ruleErrors[meta.event]}</p>{/if}
+									{#if !rule.is_active}<p>{m['settings.forgejo.configure_inactive']()}</p>{/if}
+									{#if rule.target_status && !workflowLoadFailed}
+										{#if !coverage}<p class="text-amber-500">{m['settings.forgejo.missing_status']()}</p>
+										{:else}<p>{m['settings.forgejo.applies_to']({ teams: coverage.teams.join(', ') })}</p>
+											{#if coverage.missingTeams.length}<p class="text-amber-500">
+													{m['settings.forgejo.missing_teams']({ teams: coverage.missingTeams.join(', ') })}
+												</p>{/if}{/if}
+									{/if}
+									{#if rule.target_status === 'pr'}<p>{m['settings.forgejo.review_created_auto']()}</p>{/if}
 								</div>
 							</div>
 						{/if}

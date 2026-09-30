@@ -18,6 +18,9 @@
 	import Menu from '@lucide/svelte/icons/menu';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
+	import Server from '@lucide/svelte/icons/server';
+	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
+	import { ROLE_HIERARCHY } from '$lib/security/roles';
 	
 	import type { Snippet } from 'svelte';
 	import type { Team } from '$lib/types/team';
@@ -45,6 +48,7 @@
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const currentPath = $derived(page.url.pathname);
 	const canUseDevMachines = $derived(!demoMode || authState.user?.is_sysadmin === true);
+	const canManageDevBoxes = $derived((ROLE_HIERARCHY[sidebarState.workspaceRole as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member);
 
 	let teams = $state<Team[]>([]);
 	let expandedTeams = $state<Set<string>>(new Set());
@@ -99,6 +103,7 @@
 				{ label: m['settings.nav.forgejo'](), href: `/${slug}/settings/forgejo`, icon: GitBranch },
 				{ label: m['settings.nav.templates'](), href: `/${slug}/settings/templates`, icon: FileText },
 				{ label: m['settings.nav.ai'](), href: `/${slug}/settings/ai`, icon: Sparkles },
+				...(canManageDevBoxes ? [{ label: m['dev_boxes.title'](), href: `/${slug}/dev-boxes`, icon: Server }] : []),
 				...(canUseDevMachines ? [{ label: m['settings.nav.dev_machines'](), href: `/${slug}/settings/dev-machines`, icon: SlidersHorizontal }] : [])
 			]
 		},

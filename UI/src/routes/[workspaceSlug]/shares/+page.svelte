@@ -74,10 +74,7 @@
 
 	<div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
 		{#if activeShares.length === 0 && !presenterSession.share}
-			<EmptyState
-				title={m['shares.empty_active_title']()}
-				description={m['shares.empty_active_description']()}
-			/>
+			<EmptyState title={m['shares.empty_active_title']()} description={m['shares.empty_active_description']()} />
 		{:else}
 			<div
 				class="grid h-full min-h-0 gap-4"
@@ -87,6 +84,7 @@
 				{#if presenterSession.share}
 					<div class="min-h-0 min-w-0" data-share-id={presenterSession.share.id}>
 						<ShareTile
+							workspaceSlug={slug}
 							shareId={presenterSession.share.id}
 							mode="present"
 							presenterName={presenterName(presenterSession.share)}
@@ -97,6 +95,7 @@
 					{#if share.id !== presenterSession.share?.id}
 						<div class="min-h-0 min-w-0" data-share-id={share.id}>
 							<ShareTile
+								workspaceSlug={slug}
 								shareId={share.id}
 								mode="view"
 								presenterName={presenterName(share)}

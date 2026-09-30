@@ -21,7 +21,15 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import { issuesState } from './issues.state.svelte';
 	import DatePickerPopover from '$lib/components/shared/DatePickerPopover.svelte';
-	import { StatusSelector, PrioritySelector, AssigneeSelector, LabelSelector, ProjectSelector, CycleSelector, TeamSelector } from './selectors';
+	import {
+		StatusSelector,
+		PrioritySelector,
+		AssigneeSelector,
+		LabelSelector,
+		ProjectSelector,
+		CycleSelector,
+		TeamSelector
+	} from './selectors';
 	import { listTemplates } from '$lib/api/issue-templates';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -187,11 +195,18 @@
 		statusId = '';
 		loadStatusesForTeam(teamId, defaultStatusId ?? savedDefaults.statusId);
 		projectId = defaultProjectId !== undefined ? validProject(defaultProjectId) : validProject(savedDefaults.projectId);
-		assigneeIds = defaultAssigneeIds ? validMemberIds(defaultAssigneeIds) : (defaultAssigneeId ? validMemberIds([defaultAssigneeId]) : validMemberIds(savedDefaults.assigneeIds));
+		assigneeIds = defaultAssigneeIds
+			? validMemberIds(defaultAssigneeIds)
+			: defaultAssigneeId
+				? validMemberIds([defaultAssigneeId])
+				: validMemberIds(savedDefaults.assigneeIds);
 		labelIds = defaultLabelIds ? validLabelIds(defaultLabelIds) : validLabelIds(savedDefaults.labelIds);
-		dueDate = defaultDueDate !== undefined ? defaultDueDate : savedDefaults.dueDate ?? null;
+		dueDate = defaultDueDate !== undefined ? defaultDueDate : (savedDefaults.dueDate ?? null);
 		cycleId = defaultCycleId !== undefined ? validCycle(defaultCycleId) : validCycle(savedDefaults.cycleId);
-		if (slug) listTemplates(slug).then(t => templates = t).catch(() => {});
+		if (slug)
+			listTemplates(slug)
+				.then((t) => (templates = t))
+				.catch(() => {});
 	}
 
 	$effect(() => {
@@ -234,9 +249,7 @@
 	}
 
 	function titleFromListLine(line: string): string {
-		return line
-			.replace(/^\s*(?:[-*+]\s+\[[ xX]?\]\s+|\[[ xX]?\]\s+|[-*+]\s+|\d+[.)]\s+)/, '')
-			.trim();
+		return line.replace(/^\s*(?:[-*+]\s+\[[ xX]?\]\s+|\[[ xX]?\]\s+|[-*+]\s+|\d+[.)]\s+)/, '').trim();
 	}
 
 	function pastedFiles(data: DataTransfer | null): File[] {
@@ -285,7 +298,7 @@
 		in_progress: 'started',
 		in_review: 'started',
 		done: 'completed',
-		cancelled: 'cancelled',
+		cancelled: 'cancelled'
 	};
 
 	function applyTemplate(tmpl: IssueTemplate) {
@@ -345,15 +358,15 @@
 	>
 		<!-- Top bar: Team + Template -->
 		<div class="flex items-center gap-1.5 px-3 pr-10 py-2 max-sm:shrink-0">
-			<TeamSelector
-				bind:open={teamOpen}
-				{teams}
-				value={teamId}
-				onchange={handleTeamChange}
-			>
+			<TeamSelector bind:open={teamOpen} {teams} value={teamId} onchange={handleTeamChange}>
 				{#snippet trigger()}
-					<button tabindex="-1" class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">
-						<span class="flex h-4 w-4 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]">
+					<button
+						tabindex="-1"
+						class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-tertiary)] px-2.5 py-1 text-xs font-medium text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+					>
+						<span
+							class="flex h-4 w-4 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]"
+						>
 							{selectedTeam?.key?.charAt(0) ?? 'T'}
 						</span>
 						{selectedTeam?.key ?? m['sharedComponents.create_issue.team']()}
@@ -364,7 +377,10 @@
 			{#if templates.length > 0}
 				<Popover.Root bind:open={templateOpen}>
 					<Popover.Trigger>
-						<button tabindex="-1" class="flex max-w-52 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+						<button
+							tabindex="-1"
+							class="flex max-w-52 items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
+						>
 							<FileText size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
 							<span class="truncate">{selectedTemplate?.title || m['sharedComponents.create_issue.template']()}</span>
 						</button>
@@ -390,7 +406,9 @@
 				</Popover.Root>
 			{:else}
 				<span class="text-xs font-medium text-[var(--color-text-secondary)]">
-					{parentIssue ? m['sharedComponents.create_issue.new_sub_issue']({ identifier: parentIssue.identifier }) : m['sharedComponents.create_issue.new_issue']()}
+					{parentIssue
+						? m['sharedComponents.create_issue.new_sub_issue']({ identifier: parentIssue.identifier })
+						: m['sharedComponents.create_issue.new_issue']()}
 				</span>
 			{/if}
 		</div>
@@ -398,7 +416,10 @@
 		<!-- Title + Description -->
 		<!-- svelte-ignore a11y_autofocus -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="px-4 py-3 max-sm:flex max-sm:flex-col max-sm:flex-1 max-sm:min-h-0 max-sm:overflow-y-auto" onkeydown={handleKeydown}>
+		<div
+			class="px-4 py-3 max-sm:flex max-sm:flex-col max-sm:flex-1 max-sm:min-h-0 max-sm:overflow-y-auto"
+			onkeydown={handleKeydown}
+		>
 			<input
 				id="create-issue-title"
 				type="text"
@@ -407,40 +428,50 @@
 				placeholder={m['sharedComponents.create_issue.issue_title_placeholder']()}
 				class="w-full bg-transparent text-lg font-semibold text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] max-sm:shrink-0"
 			/>
-			<div class="mt-4 max-h-[calc(60vh-120px)] overflow-y-auto max-sm:flex-1 max-sm:[max-height:none] max-sm:overflow-y-auto">
+			<div
+				class="mt-4 max-h-[calc(60vh-120px)] overflow-y-auto max-sm:flex-1 max-sm:[max-height:none] max-sm:overflow-y-auto"
+			>
 				{#key descriptionVersion}
-				<RichEditor
-					bind:this={descriptionEditor}
-					content={description}
-					workspaceSlug={slug}
-					{members}
-					issues={issuesState.issues}
-					placeholder={m['sharedComponents.create_issue.description_placeholder']()}
-					bubbleMenu={true}
-					borderless={true}
-					minHeight="120px"
-					{uploadUrl}
-					hideUploadButtons={true}
-					onuploadschange={(pending) => (pendingUploads = pending)}
-					onupdate={(html) => (description = html)}
-					onreworkselection={async (selectedText) => {
-						try {
-							const result = await reworkText(slug, {
-								text: selectedText,
-								context: title.trim() ? `New issue titled: ${title.trim()}` : 'New issue description'
-							});
-							appToast.success(m['issue.toast.selection_reworked']());
-							return result.text;
-						} catch (err: any) {
-							if (isAINotConfiguredError(err)) {
-								appToast.error(m['ai.not_configured'](), { description: m['ai.not_configured_hint']() });
+					<RichEditor
+						bind:this={descriptionEditor}
+						allowEmptyAI={!!title.trim()}
+						aiContextKey={title}
+						aiButtonLabel={description.replace(/<[^>]*>/g, '').trim()
+							? m['issue.ai.improve_description']()
+							: m['sharedComponents.create_issue.generate_description']()}
+						content={description}
+						workspaceSlug={slug}
+						{members}
+						issues={issuesState.issues}
+						placeholder={m['sharedComponents.create_issue.description_placeholder']()}
+						bubbleMenu={true}
+						borderless={true}
+						minHeight="120px"
+						{uploadUrl}
+						hideUploadButtons={true}
+						onuploadschange={(pending) => (pendingUploads = pending)}
+						onupdate={(html) => (description = html)}
+						onreworkselection={async (selectedText) => {
+							try {
+								const result = await reworkText(slug, {
+									text: selectedText || `Write an issue description for: ${title.trim()}`,
+									context: selectedText
+										? title.trim()
+											? `New issue titled: ${title.trim()}`
+											: 'New issue description'
+										: `New issue titled: ${title.trim()}. No description exists yet. Generate a complete issue description from this title, including background, scope, and acceptance criteria.`
+								});
+								return result.text;
+							} catch (err: any) {
+								if (isAINotConfiguredError(err)) {
+									appToast.error(m['ai.not_configured'](), { description: m['ai.not_configured_hint']() });
+									return '';
+								}
+								appToast.apiError(err, m['issue.toast.failed_rework']());
 								return '';
 							}
-							appToast.apiError(err, m['issue.toast.failed_rework']());
-							return '';
-						}
-					}}
-				/>
+						}}
+					/>
 				{/key}
 			</div>
 		</div>
@@ -452,11 +483,15 @@
 				bind:open={statusOpen}
 				statuses={teamStatusesState.statusOrder}
 				value={statusId}
-				onchange={(id) => { statusId = id; }}
+				onchange={(id) => {
+					statusId = id;
+				}}
 				width="w-44"
 			>
 				{#snippet trigger()}
-					<button class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+					<button
+						class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
+					>
 						<IssueStatusIcon category={selectedStatus?.category} color={selectedStatus?.color} size={12} />
 						{selectedStatus?.name ?? m['sharedComponents.create_issue.status']()}
 					</button>
@@ -467,10 +502,14 @@
 			<PrioritySelector
 				bind:open={priorityOpen}
 				value={priority}
-				onchange={(p) => { priority = p; }}
+				onchange={(p) => {
+					priority = p;
+				}}
 			>
 				{#snippet trigger()}
-					<button class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+					<button
+						class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
+					>
 						<IssuePriorityIcon {priority} size={12} />
 						{getPriorityLabel(priority)}
 					</button>
@@ -482,10 +521,16 @@
 				bind:open={projectOpen}
 				{projects}
 				value={projectId}
-				onchange={(id) => { projectId = id; }}
+				onchange={(id) => {
+					projectId = id;
+				}}
 			>
 				{#snippet trigger()}
-					<button class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedProject ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+					<button
+						class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedProject
+							? 'text-[var(--color-text-secondary)]'
+							: 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]"
+					>
 						<FolderKanban size={12} />
 						{selectedProject?.name ?? m['sharedComponents.create_issue.project']()}
 					</button>
@@ -499,14 +544,19 @@
 				value={assigneeIds}
 				onchange={(userId) => {
 					if (assigneeIds.includes(userId)) {
-						assigneeIds = assigneeIds.filter(id => id !== userId);
+						assigneeIds = assigneeIds.filter((id) => id !== userId);
 					} else {
 						assigneeIds = [...assigneeIds, userId];
 					}
 				}}
 			>
 				{#snippet trigger()}
-					<button class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedAssignees.length > 0 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+					<button
+						class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedAssignees.length >
+						0
+							? 'text-[var(--color-text-secondary)]'
+							: 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]"
+					>
 						<User size={12} />
 						{#if selectedAssignees.length === 0}
 							{m['sharedComponents.create_issue.assignee']()}
@@ -529,7 +579,12 @@
 				{slug}
 			>
 				{#snippet trigger()}
-					<button class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedLabels.length > 0 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+					<button
+						class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {selectedLabels.length >
+						0
+							? 'text-[var(--color-text-secondary)]'
+							: 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]"
+					>
 						<Tag size={12} />
 						{#if selectedLabels.length === 0}
 							{m['sharedComponents.create_issue.labels']()}
@@ -547,12 +602,18 @@
 				bind:open={cycleOpen}
 				cycles={cycles ?? []}
 				value={cycleId}
-				onchange={(id) => { cycleId = id; }}
+				onchange={(id) => {
+					cycleId = id;
+				}}
 			>
 				{#snippet trigger()}
-					<button class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {cycleId ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]">
+					<button
+						class="flex items-center gap-1.5 rounded-full border border-[var(--app-border)] px-2.5 py-1 max-sm:px-3 max-sm:py-1.5 text-xs {cycleId
+							? 'text-[var(--color-text-secondary)]'
+							: 'text-[var(--color-text-tertiary)]'} hover:bg-[var(--color-bg-hover)]"
+					>
 						{#if cycleId}
-							{cycles?.find(c => c.id === cycleId)?.name ?? m['sharedComponents.create_issue.cycle']()}
+							{cycles?.find((c) => c.id === cycleId)?.name ?? m['sharedComponents.create_issue.cycle']()}
 						{:else}
 							{m['sharedComponents.create_issue.cycle']()}
 						{/if}
@@ -570,7 +631,11 @@
 		</div>
 
 		<!-- Footer -->
-		<div class="flex items-center gap-3 px-4 py-2.5 max-sm:sticky max-sm:bottom-0 max-sm:shrink-0 max-sm:flex-col max-sm:items-stretch max-sm:border-t max-sm:border-[var(--app-border)] max-sm:bg-[var(--color-bg-secondary)] max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))] {uploadUrl ? 'justify-between' : 'justify-end'}">
+		<div
+			class="flex items-center gap-3 px-4 py-2.5 max-sm:sticky max-sm:bottom-0 max-sm:shrink-0 max-sm:flex-col max-sm:items-stretch max-sm:border-t max-sm:border-[var(--app-border)] max-sm:bg-[var(--color-bg-secondary)] max-sm:pb-[calc(1rem+env(safe-area-inset-bottom,0px))] {uploadUrl
+				? 'justify-between'
+				: 'justify-end'}"
+		>
 			{#if uploadUrl}
 				<div class="flex items-center gap-1 max-sm:order-2">
 					<button

@@ -63,8 +63,10 @@
 	import Info from '@lucide/svelte/icons/info';
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
 	import BarChart3 from '@lucide/svelte/icons/chart-column';
+	import Workflow from '@lucide/svelte/icons/workflow';
 	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
+	import Server from '@lucide/svelte/icons/server';
 
 	let {
 		workspace,
@@ -123,6 +125,9 @@
 
 	const canManageDevMachines = $derived(
 		(!demoMode || authState.user?.is_sysadmin === true) &&
+		(ROLE_HIERARCHY[workspace.current_user_role as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
+	);
+	const canManageDevBoxes = $derived(
 		(ROLE_HIERARCHY[workspace.current_user_role as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
 	);
 
@@ -738,6 +743,26 @@
 					<BarChart3 size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.insights']()}</span>
 				</a>
+				<a
+					href="/{slug}/actions"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/actions`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<Workflow size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.actions']()}</span>
+				</a>
+				{#if canManageDevBoxes}
+				<a
+					href="/{slug}/dev-boxes"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/dev-boxes`) || isActive(`/${slug}/dev-box-jobs`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<Server size={16} class="shrink-0" />
+					<span class="truncate">{m['dev_boxes.title']()}</span>
+				</a>
+				{/if}
 				{#if canManageDevMachines}
 				<a
 					href="/{slug}/machines"

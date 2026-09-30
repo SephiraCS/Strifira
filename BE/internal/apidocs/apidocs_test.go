@@ -25,7 +25,7 @@ func loadSpec(t *testing.T) map[string]any {
 	return paths
 }
 
-var routeRe = regexp.MustCompile(`(?m)^\t(e|api|ws|auth|pub|dm)\.(GET|POST|PATCH|PUT|DELETE|Any)\("([^"]*)",`)
+var routeRe = regexp.MustCompile(`(?m)^\t(e|api|ws|auth|pub|dm|workers)\.(GET|POST|PATCH|PUT|DELETE|Any)\("([^"]*)",`)
 
 var paramRe = regexp.MustCompile(`:(\w+)`)
 
@@ -47,6 +47,8 @@ func registeredOps(src string) map[string]bool {
 			path = "/api/public" + path
 		case "api":
 			path = "/api" + path
+		case "workers":
+			path = "/api/dev-box-worker" + path
 		default: // ws / dm
 			path = "/api/workspaces/:slug" + path
 		}
@@ -55,6 +57,13 @@ func registeredOps(src string) map[string]bool {
 		})] = true
 	}
 	return ops
+}
+
+func TestRegisteredWorkerOperations(t *testing.T) {
+	ops := registeredOps("\tworkers.POST(\"/jobs/:jobId/complete\", handler)\n")
+	if !ops["POST /api/dev-box-worker/jobs/{jobId}/complete"] {
+		t.Fatalf("worker route prefix not recognized: %v", ops)
+	}
 }
 
 // TestRouteParity keeps the document in lockstep with the routes actually

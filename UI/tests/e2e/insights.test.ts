@@ -1,12 +1,72 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
+
+async function plottedPixels(canvas: Locator) {
+	return canvas.evaluate((element: HTMLCanvasElement) => {
+		const context = element.getContext('2d');
+		if (!context) throw new Error('Chart has no canvas context');
+		const pixels = context.getImageData(0, 0, element.width, element.height).data;
+		const scale = element.width / element.clientWidth;
+		const plotted = new Uint8Array(element.width * element.height);
+		let count = 0;
+		let firstPixel = -1;
+		// Ignore axis labels and legends: an empty grid must fail even when its
+		// legend renders. Plotted bars, lines, and points have saturated colors.
+		for (let y = Math.ceil(40 * scale); y < element.height - 40 * scale; y++) {
+			for (let x = 0; x < element.width; x++) {
+				const offset = (y * element.width + x) * 4;
+				const [red, green, blue, alpha] = pixels.subarray(offset, offset + 4);
+				if (alpha > 180 && Math.max(red, green, blue) - Math.min(red, green, blue) > 40) {
+					count++;
+					plotted[y * element.width + x] = 1;
+					if (firstPixel < 0) firstPixel = y * element.width + x;
+				}
+			}
+		}
+		// Antialiased edge pixels can lie outside the symbol's hit geometry.
+		// Hover/click its colored region's center instead of its first edge pixel.
+		const pending = firstPixel < 0 ? [] : [firstPixel];
+		let regionSize = 0;
+		let sumX = 0;
+		let sumY = 0;
+		while (pending.length) {
+			const index = pending.pop()!;
+			if (!plotted[index]) continue;
+			plotted[index] = 0;
+			const x = index % element.width;
+			const y = Math.floor(index / element.width);
+			regionSize++;
+			sumX += x + 0.5;
+			sumY += y + 0.5;
+			if (x > 0) pending.push(index - 1);
+			if (x < element.width - 1) pending.push(index + 1);
+			if (y > 0) pending.push(index - element.width);
+			if (y < element.height - 1) pending.push(index + element.width);
+		}
+		const point = regionSize ? { x: sumX / regionSize / scale, y: sumY / regionSize / scale } : null;
+		return { count, point };
+	});
+}
+
+async function expectPlottedChart(page: Page, name: string, minimumPixels = 100) {
+	const canvas = page.getByTestId(name).locator('canvas').first();
+	await expect(canvas).toBeVisible();
+	await expect.poll(async () => (await plottedPixels(canvas)).count).toBeGreaterThan(minimumPixels);
+	return canvas;
+}
 
 test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	const teamId = '00000000-0000-0000-0000-000000000010';
 	let scopedOverviewRequests = 0;
 	const issueListQueries: URLSearchParams[] = [];
 	const pageErrors: Error[] = [];
+	const chartErrors: string[] = [];
 	page.on('pageerror', (error) => {
 		pageErrors.push(error);
+	});
+	page.on('console', (message) => {
+		if (message.type() === 'error' && /echarts|chart|series|component.*import|renderer/i.test(message.text())) {
+			chartErrors.push(message.text());
+		}
 	});
 	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
@@ -161,12 +221,19 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 					interval: 'week',
 					from: '2026-04-14',
 					to: '2026-07-12',
-					points: [{ date: '2026-07-06', created: 5, completed: 3, total_created: 42, total_completed: 24, scope: 18 }]
+					points: [
+						{ date: '2026-06-22', total_created: 24, total_completed: 12, scope: 12 },
+						{ date: '2026-06-29', total_created: 32, total_completed: 18, scope: 14 },
+						{ date: '2026-07-06', total_created: 42, total_completed: 24, scope: 18 }
+					]
 				}
 			});
 		}
 		if (path === '/api/workspaces/test/analytics/insights') {
 			const requestedSlice = requestUrl.searchParams.get('slice') ?? 'none';
+			const requestedMeasure = requestUrl.searchParams.get('measure') ?? 'issue_count';
+			const requestedSegment = requestUrl.searchParams.get('segment') ?? 'none';
+			const duration = requestedMeasure !== 'issue_count';
 			const group =
 				requestedSlice === 'cycle'
 					? { key: '__null__', label: 'No cycle' }
@@ -181,10 +248,10 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 								};
 			return route.fulfill({
 				json: {
-					measure: 'issue_count',
+					measure: requestedMeasure,
 					slice: requestedSlice,
-					segment: 'none',
-					unit: 'issues',
+					segment: requestedSegment,
+					unit: duration ? 'hours' : 'issues',
 					total_count: 42,
 					aggregate: 42,
 					groups: [
@@ -192,10 +259,22 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 							...group,
 							count: 18,
 							value: 18,
-							segments: []
+							p50: duration ? 24 : undefined,
+							segments:
+								requestedSegment === 'none'
+									? []
+									: [
+											{ key: '2', label: 'High priority', count: 10, p50: 24 },
+											{ key: '3', label: 'Low priority', count: 8, p50: 48 }
+										]
 						}
 					],
-					points: []
+					points: duration
+						? [
+								{ issue_id: 'issue-1', identifier: 'ENG-1', title: 'First issue', slice_key: group.key, value: 24 },
+								{ issue_id: 'issue-2', identifier: 'ENG-2', title: 'Second issue', slice_key: group.key, value: 48 }
+							]
+						: []
 				}
 			});
 		}
@@ -212,6 +291,8 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await expect(page.getByText('42', { exact: true })).toBeVisible();
 	await expect(page.getByText('Completion rate')).toBeVisible();
 	await expect(page.getByText('57%')).toBeVisible();
+	await expectPlottedChart(page, 'distribution-chart');
+	await expectPlottedChart(page, 'burnup-chart');
 	await page.getByLabel('Team scope').click();
 	await page.getByRole('option', { name: 'Engineering' }).click();
 	await expect(page).toHaveURL(new RegExp(`team=${teamId}`));
@@ -228,6 +309,18 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await expect(page.getByRole('button', { name: '90 days' })).toBeVisible();
 	await page.keyboard.press('Escape');
 	await expect(page.getByText('In progress', { exact: true })).toBeVisible();
+	await expectPlottedChart(page, 'insights-chart');
+
+	await page.goto('/test/insights?tab=explore&measure=lead_time&slice=status_type');
+	const scatter = await expectPlottedChart(page, 'insights-chart', 10);
+	const scatterPoint = (await plottedPixels(scatter)).point!;
+	await scatter.hover({ position: scatterPoint });
+	await expect(page.getByText(/hours: 1d 0h/)).toBeVisible();
+
+	await page.goto('/test/insights?tab=explore&slice=status_type&segment=priority');
+	const segmentedBars = await expectPlottedChart(page, 'insights-chart');
+	await segmentedBars.hover({ position: (await plottedPixels(segmentedBars)).point! });
+	await expect(page.getByText('High priority', { exact: false })).toBeVisible();
 
 	await page.goto('/test/insights?tab=explore&slice=cycle');
 	await expect(page.getByText('No cycle', { exact: true })).toBeVisible();
@@ -241,7 +334,8 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 
 	await page.goto('/test/insights?tab=explore&slice=status_type');
 	const statusTypeQueryCount = issueListQueries.length;
-	await page.getByText('Started', { exact: true }).click();
+	const statusBars = await expectPlottedChart(page, 'insights-chart');
+	await statusBars.click({ position: (await plottedPixels(statusBars)).point! });
 	await expect(page).toHaveURL('/test/my-issues?status_type=started');
 	await expect.poll(() => issueListQueries.length).toBeGreaterThan(statusTypeQueryCount);
 	const statusTypeQuery = issueListQueries.at(-1)!;
@@ -260,5 +354,7 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await page.goto('/test/insights?tab=explore');
 	await expect(page.getByRole('tab', { name: 'Explore' })).toBeVisible();
 	await expect(page.getByLabel('Measure')).toBeVisible();
+	await expectPlottedChart(page, 'insights-chart');
 	await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
+	expect(chartErrors).toEqual([]);
 });

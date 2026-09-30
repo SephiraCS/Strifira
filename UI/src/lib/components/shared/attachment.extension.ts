@@ -29,7 +29,8 @@ export const Attachment = Node.create({
 	},
 
 	parseHTML() {
-		return [{ tag: 'a[data-type="attachment"]' }];
+		// Match the attachment node before the generic a[href] link mark.
+		return [{ tag: 'a[data-type="attachment"]', priority: 100 }];
 	},
 
 	renderHTML({ HTMLAttributes }) {

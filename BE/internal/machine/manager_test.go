@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -63,6 +64,7 @@ type managerStoreFake struct {
 	updateAgentRunStarted     func() error
 	envVarListCalls           int
 	runtimeServicesCreated    int
+	logChunks                 []domain.DevMachineLogChunk
 }
 
 func (f *managerStoreFake) LeaseOperations(context.Context, string, int, time.Duration) ([]domain.DevMachineOperation, error) {
@@ -150,7 +152,8 @@ func (f *managerStoreFake) CreateEvent(_ context.Context, event *domain.DevMachi
 	f.events = append(f.events, *event)
 	return nil
 }
-func (f *managerStoreFake) CreateLogChunk(context.Context, *domain.DevMachineLogChunk) error {
+func (f *managerStoreFake) CreateLogChunk(_ context.Context, chunk *domain.DevMachineLogChunk) error {
+	f.logChunks = append(f.logChunks, *chunk)
 	return nil
 }
 func (f *managerStoreFake) RevokeMachineAccess(_ context.Context, machineID uuid.UUID) error {
@@ -303,9 +306,12 @@ func (f *managerStoreFake) PurgeAccessLogs(_ context.Context, before time.Time, 
 	return 0, nil
 }
 
-type forgejoAPIFake struct{}
+type forgejoAPIFake struct{ pullRequestErr error }
 
-func (forgejoAPIFake) CreatePullRequest(string, string, string, string, string, string, string, string) (*forgejoclient.PullRequest, error) {
+func (f forgejoAPIFake) CreatePullRequest(string, string, string, string, string, string, string, string) (*forgejoclient.PullRequest, error) {
+	if f.pullRequestErr != nil {
+		return nil, f.pullRequestErr
+	}
 	return &forgejoclient.PullRequest{HTMLURL: "https://git.example.com/ku/api/pull/1", Number: 1}, nil
 }
 
@@ -321,6 +327,14 @@ type runtimeFake struct {
 	environmentDeleteAttempts          int
 	onSpawn                            func()
 	agentExecution                     *AgentExecution
+	workspaceExecution                 *CommandExecution
+	workspaceCommandErr                error
+	workspaceCommands                  [][]string
+	gitState                           GitState
+	gitStateErr                        error
+	publishedBranches                  int
+	agentSecrets                       map[string]string
+	onAgentRun                         func(context.Context)
 }
 
 func (f *runtimeFake) Spawn(_ context.Context, _ *domain.DevMachine, services []domain.DevMachineService, _ map[string]map[string]string) (string, string, map[string]string, error) {
@@ -349,8 +363,12 @@ func (f *runtimeFake) Teardown(context.Context, *domain.DevMachine, []domain.Dev
 	f.tornDown++
 	return nil
 }
-func (f *runtimeFake) RunAgent(context.Context, *domain.DevMachine, *domain.DevMachineAgentRun, *domain.DevMachineAgentProvider, *domain.DevMachineCheckout, map[string]string) (*AgentExecution, error) {
+func (f *runtimeFake) RunAgent(ctx context.Context, _ *domain.DevMachine, _ *domain.DevMachineAgentRun, _ *domain.DevMachineAgentProvider, _ *domain.DevMachineCheckout, secrets map[string]string) (*AgentExecution, error) {
 	f.agentRuns++
+	f.agentSecrets = maps.Clone(secrets)
+	if f.onAgentRun != nil {
+		f.onAgentRun(ctx)
+	}
 	return f.agentExecution, nil
 }
 func (f *runtimeFake) CancelAgent(context.Context, *domain.DevMachineAgentRun) error { return nil }
@@ -366,7 +384,15 @@ func (f *runtimeFake) Stats(context.Context, *domain.DevMachine, []domain.DevMac
 	return ResourceUsage{}, nil
 }
 func (f *runtimeFake) GitState(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout) (GitState, error) {
-	return GitState{}, nil
+	return f.gitState, f.gitStateErr
+}
+func (f *runtimeFake) RunWorkspaceCommand(_ context.Context, _ []domain.DevMachineService, _ *domain.DevMachineCheckout, argv []string) (*CommandExecution, error) {
+	f.workspaceCommands = append(f.workspaceCommands, argv)
+	return f.workspaceExecution, f.workspaceCommandErr
+}
+func (f *runtimeFake) PublishAgentBranch(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout, string, string) error {
+	f.publishedBranches++
+	return nil
 }
 func (f *runtimeFake) PrepareCheckout(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout, string) error {
 	return nil
@@ -682,6 +708,15 @@ func TestForgejoCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T
 	require.NotContains(t, string(encoded), credential.EncryptedValue)
 	require.NotContains(t, string(encoded), credential.FingerprintSHA256)
 	require.NotContains(t, string(encoded), token)
+}
+
+func TestForgejoCredentialRejectsRepositoryLinkedToAnotherInstance(t *testing.T) {
+	store := &managerStoreFake{machine: &domain.DevMachine{ID: uuid.New(), WorkspaceID: uuid.New(), RepoOwner: "octo", RepoName: "repo"}, linkedRepository: &domain.ForgejoRepoModel{InstanceURL: "https://old.example.com"}}
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "must-not-be-returned"}, make([]byte, 32), nil, "test")
+	_, token, err := manager.forgejoCredential(t.Context(), store.machine, "octo/repo")
+	require.ErrorContains(t, err, "different Forgejo instance")
+	require.Empty(t, token)
+	require.Empty(t, store.runtimeCredentials)
 }
 
 func TestReconcilePurgesExpiredRuntimeCredentials(t *testing.T) {

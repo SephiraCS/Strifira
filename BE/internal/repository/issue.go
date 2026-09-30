@@ -56,7 +56,9 @@ func (r *IssueRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Is
 
 func (r *IssueRepository) GetByIdentifier(ctx context.Context, workspaceID uuid.UUID, identifier string) (*domain.Issue, error) {
 	var issue domain.Issue
-	err := r.db.GetContext(ctx, &issue, `SELECT * FROM issues WHERE workspace_id = $1 AND identifier_text = $2`, workspaceID, identifier)
+	err := r.db.GetContext(ctx, &issue, `SELECT i.* FROM issue_identifier_history h
+		JOIN issues i ON i.workspace_id = h.workspace_id AND i.id = h.issue_id
+		WHERE h.workspace_id = $1 AND h.identifier_text = $2`, workspaceID, identifier)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

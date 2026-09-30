@@ -10,6 +10,7 @@ import (
 type builtinProvider struct {
 	metadata Metadata
 	build    func(RunInput) []string
+	parse    func(string, string, int) RunResult
 }
 
 func (p *builtinProvider) Metadata() Metadata { return p.metadata }
@@ -35,6 +36,9 @@ func (p *builtinProvider) BuildInvocation(input RunInput) (Invocation, error) {
 
 func (p *builtinProvider) ParseEvents(raw []byte) []Event { return parseJSONLines(raw) }
 func (p *builtinProvider) ParseResult(stdout, stderr string, exitCode int) RunResult {
+	if p.parse != nil {
+		return p.parse(stdout, stderr, exitCode)
+	}
 	return defaultResult(stdout, stderr, exitCode)
 }
 
@@ -54,8 +58,11 @@ func NewClaudeCodeProvider(image string) Provider {
 			if input.Mode == ModeInteractive {
 				return []string{"claude"}
 			}
-			return []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "-p", input.Prompt}
+			// These tools run in the machine's isolated, unprivileged container.
+			// dontAsk makes unsupported tool requests fail instead of hanging for input.
+			return []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk", "--allowedTools", "Bash,Edit,Write", "-p", input.Prompt}
 		},
+		parse: parseClaudeResult,
 	}
 }
 
@@ -107,6 +114,23 @@ func (p *openCodeProvider) ParseResult(stdout, stderr string, exitCode int) RunR
 
 		typ, _ := evt["type"].(string)
 		part, _ := evt["part"].(map[string]any)
+		if typ == "error" {
+			failure, _ := evt["error"].(map[string]any)
+			data, _ := failure["data"].(map[string]any)
+			message, _ := data["message"].(string)
+			if message == "" {
+				message, _ = failure["name"].(string)
+			}
+			if message == "" {
+				message, _ = evt["message"].(string)
+			}
+			if message == "" {
+				message = "OpenCode provider error"
+			}
+			result.Status = "failed"
+			result.Summary = message
+			result.RiskNotes = append(result.RiskNotes, "OpenCode execution failed: "+message)
+		}
 
 		if typ == "text" {
 			if text, ok := part["text"].(string); ok && strings.TrimSpace(text) != "" {
@@ -207,15 +231,16 @@ func NewCodexProvider(image string) Provider {
 			ID:              "codex",
 			DisplayName:     "Codex",
 			DefaultImage:    image,
-			RequiredSecrets: []string{"OPENAI_API_KEY"},
+			RequiredSecrets: []string{"CODEX_API_KEY"},
 			SupportedModes:  []Mode{ModeInteractive, ModeAutonomous},
 		},
 		build: func(input RunInput) []string {
 			if input.Mode == ModeInteractive {
 				return []string{"codex"}
 			}
-			return []string{"codex", "exec", "--json", "--full-auto", input.Prompt}
+			return []string{"codex", "exec", "--json", "--sandbox", "danger-full-access", "-c", `approval_policy="never"`, input.Prompt}
 		},
+		parse: parseCodexResult,
 	}
 }
 

@@ -149,31 +149,52 @@
 			scheduleIssuesRefresh();
 		}
 		if (resources.includes('workspace')) {
-			getWorkspace(slug).then((ws) => { workspace = ws; sidebarState.workspaceRole = ws.current_user_role ?? 'guest'; }).catch(() => {});
+			getWorkspace(slug)
+				.then((ws) => {
+					workspace = ws;
+					sidebarState.workspaceRole = ws.current_user_role ?? 'guest';
+				})
+				.catch(() => {});
 		}
 		if (resources.includes('teams')) {
-			listTeams(slug).then((t) => {
-				teams = t;
-				sidebarState.teams = t;
-			}).catch(() => {});
+			listTeams(slug)
+				.then((t) => {
+					teams = t;
+					sidebarState.teams = t;
+				})
+				.catch(() => {});
 		}
 		if (resources.includes('projects')) {
-			listProjects(slug).then((p) => {
-				projects = p;
-				sidebarState.projects = p;
-			}).catch(() => {});
+			listProjects(slug)
+				.then((p) => {
+					projects = p;
+					sidebarState.projects = p;
+				})
+				.catch(() => {});
 		}
 		if (resources.includes('labels')) {
-			listLabels(slug).then((l) => { labels = l; }).catch(() => {});
+			listLabels(slug)
+				.then((l) => {
+					labels = l;
+				})
+				.catch(() => {});
 		}
 		if (resources.includes('members')) {
-			listMembers(slug).then((m) => { members = m; }).catch(() => {});
+			listMembers(slug)
+				.then((m) => {
+					members = m;
+				})
+				.catch(() => {});
 		}
 		if (resources.includes('views')) {
 			reloadViews(slug);
 		}
 		if (resources.includes('notifications')) {
-			listNotifications().then((r) => { unreadCount = r.unread_count; }).catch(() => {});
+			listNotifications()
+				.then((r) => {
+					unreadCount = r.unread_count;
+				})
+				.catch(() => {});
 		}
 	}
 
@@ -208,11 +229,36 @@
 	// Full shortcut definitions
 	const shortcutDefs = $derived<ShortcutDef[]>([
 		// Navigation sequences (G + key)
-		{ keys: ['g', 'i'], handler: () => goto(`/${slug}/inbox`), label: m['sidebar.go_inbox'](), category: m['sidebar.navigation']() },
-		{ keys: ['g', 'm'], handler: () => goto(`/${slug}/my-issues`), label: m['sidebar.go_my_issues'](), category: m['sidebar.navigation']() },
-		{ keys: ['g', 'a'], handler: () => goto(`/${slug}/insights`), label: m['sidebar.go_insights'](), category: m['sidebar.navigation']() },
-		{ keys: ['g', 'p'], handler: () => goto(`/${slug}/projects`), label: m['sidebar.go_projects'](), category: m['sidebar.navigation']() },
-		{ keys: ['g', 's'], handler: () => goto(`/${slug}/settings`), label: m['sidebar.go_settings'](), category: m['sidebar.navigation']() },
+		{
+			keys: ['g', 'i'],
+			handler: () => goto(`/${slug}/inbox`),
+			label: m['sidebar.go_inbox'](),
+			category: m['sidebar.navigation']()
+		},
+		{
+			keys: ['g', 'm'],
+			handler: () => goto(`/${slug}/my-issues`),
+			label: m['sidebar.go_my_issues'](),
+			category: m['sidebar.navigation']()
+		},
+		{
+			keys: ['g', 'a'],
+			handler: () => goto(`/${slug}/insights`),
+			label: m['sidebar.go_insights'](),
+			category: m['sidebar.navigation']()
+		},
+		{
+			keys: ['g', 'p'],
+			handler: () => goto(`/${slug}/projects`),
+			label: m['sidebar.go_projects'](),
+			category: m['sidebar.navigation']()
+		},
+		{
+			keys: ['g', 's'],
+			handler: () => goto(`/${slug}/settings`),
+			label: m['sidebar.go_settings'](),
+			category: m['sidebar.navigation']()
+		},
 		// Actions
 		{
 			key: 'c',
@@ -231,9 +277,26 @@
 			label: m['sidebar.create_issue'](),
 			category: m['sidebar.actions']()
 		},
-		{ key: 'k', meta: true, handler: () => (showCommandPalette = !showCommandPalette), label: m['sidebar.command_palette'](), category: m['sidebar.actions']() },
-		{ key: '/', handler: () => (showCommandPalette = true), label: m['sidebar.search'](), category: m['sidebar.actions']() },
-		{ key: '?', shift: true, handler: () => (showShortcutHelp = !showShortcutHelp), label: m['sidebar.keyboard_shortcuts'](), category: m['sidebar.help']() },
+		{
+			key: 'k',
+			meta: true,
+			handler: () => (showCommandPalette = !showCommandPalette),
+			label: m['sidebar.command_palette'](),
+			category: m['sidebar.actions']()
+		},
+		{
+			key: '/',
+			handler: () => (showCommandPalette = true),
+			label: m['sidebar.search'](),
+			category: m['sidebar.actions']()
+		},
+		{
+			key: '?',
+			shift: true,
+			handler: () => (showShortcutHelp = !showShortcutHelp),
+			label: m['sidebar.keyboard_shortcuts'](),
+			category: m['sidebar.help']()
+		}
 	]);
 
 	const shortcutEngine = createShortcutEngine(shortcutDefs);
@@ -300,7 +363,10 @@
 			confirmTeam = null;
 			confirmAction = null;
 		} catch (err: any) {
-			appToast.apiError(err, confirmAction === 'leave' ? m['sidebar.failed_leave_team']() : m['sidebar.failed_delete_team']());
+			appToast.apiError(
+				err,
+				confirmAction === 'leave' ? m['sidebar.failed_leave_team']() : m['sidebar.failed_delete_team']()
+			);
 		} finally {
 			confirmSubmitting = false;
 		}
@@ -345,13 +411,16 @@
 	function getCreateStatusId(): string | undefined {
 		const value = singleFilterValue(getActiveIssueFilters().status);
 		if (!value) return undefined;
-		return teamStatusesState.statusById.get(value)?.id ?? teamStatusesState.statusOrder.find((status) => status.slug === value)?.id;
+		return (
+			teamStatusesState.statusById.get(value)?.id ??
+			teamStatusesState.statusOrder.find((status) => status.slug === value)?.id
+		);
 	}
 
 	function getCreatePriority(): IssuePriority | undefined {
 		const value = singleFilterValue(getActiveIssueFilters().priority);
 		const priority = value === undefined ? NaN : Number(value);
-		return [0, 1, 2, 3, 4].includes(priority) ? priority as IssuePriority : undefined;
+		return [0, 1, 2, 3, 4].includes(priority) ? (priority as IssuePriority) : undefined;
 	}
 
 	function getCreateProjectId(): string | null | undefined {
@@ -408,8 +477,9 @@
 
 	// Allow child components to send WebSocket messages
 	function handleWSSend(e: CustomEvent<any>) {
+		if (e.detail.workspaceSlug && e.detail.workspaceSlug !== wsSlug) return;
 		if (ws_conn?.readyState === WebSocket.OPEN) {
-			ws_conn.send(JSON.stringify(e.detail));
+			ws_conn.send(JSON.stringify({ type: e.detail.type, payload: e.detail.payload }));
 		}
 	}
 	window.addEventListener('ws:send', handleWSSend as EventListener);
@@ -451,7 +521,7 @@
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
 			wsBackoffMs = 1000;
-			window.dispatchEvent(new CustomEvent('ws:reconnected'));
+			window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug } }));
 			// Share lists drift while disconnected (starts/ends/GC); refetch.
 			if (sharesState.enabled) void sharesState.load(workspaceSlug);
 		};
@@ -464,7 +534,7 @@
 			if (socket !== ws_conn) return;
 			// Only reconnect if still on the same workspace
 			if (!wsDestroyed && wsSlug === workspaceSlug) {
-				window.dispatchEvent(new CustomEvent('ws:disconnected'));
+				window.dispatchEvent(new CustomEvent('ws:disconnected', { detail: { workspaceSlug } }));
 				scheduleWebSocketReconnect(workspaceSlug);
 			}
 		};
@@ -551,10 +621,9 @@
 		if (!payload?.id || payload.started_by === authState.user?.id) return;
 		const member = members.find((mem) => mem.user_id === payload.started_by);
 		const who = member?.name ?? '';
-		appToast.info(
-			who ? m['shares.toast_started']({ name: who }) : m['shares.toast_started_anon'](),
-			{ duration: 8000 }
-		);
+		appToast.info(who ? m['shares.toast_started']({ name: who }) : m['shares.toast_started_anon'](), {
+			duration: 8000
+		});
 	}
 </script>
 
@@ -593,27 +662,54 @@
 						{slug}
 						mobile
 						oncreateissue={openCreateIssue}
-						oncreateteam={() => { showCreateTeam = true; showMobileSidebar = false; }}
-						onleaveteam={(team) => { showMobileSidebar = false; handleLeaveTeam(team); }}
-						ondeleteteam={(team) => { showMobileSidebar = false; handleDeleteTeam(team); }}
-					onsearch={() => { showCommandPalette = true; showMobileSidebar = false; }}
-					onnavigate={() => (showMobileSidebar = false)}
-					onshortcutshelp={() => { showMobileSidebar = false; showShortcutHelp = true; }}
-				/>
+						oncreateteam={() => {
+							showCreateTeam = true;
+							showMobileSidebar = false;
+						}}
+						onleaveteam={(team) => {
+							showMobileSidebar = false;
+							handleLeaveTeam(team);
+						}}
+						ondeleteteam={(team) => {
+							showMobileSidebar = false;
+							handleDeleteTeam(team);
+						}}
+						onsearch={() => {
+							showCommandPalette = true;
+							showMobileSidebar = false;
+						}}
+						onnavigate={() => (showMobileSidebar = false)}
+						onshortcutshelp={() => {
+							showMobileSidebar = false;
+							showShortcutHelp = true;
+						}}
+					/>
 				</Sheet.Content>
 			</Sheet.Root>
 		{/if}
 		<main class="flex min-w-0 flex-1 flex-col overflow-hidden">
 			{#if !isSettings}
-				<div class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--app-border)] bg-[var(--color-bg)] px-3 md:hidden">
+				<div
+					class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--app-border)] bg-[var(--color-bg)] px-3 md:hidden"
+				>
 					<div class="flex min-w-0 items-center gap-2">
-						<Button variant="ghost" size="icon-lg" onclick={() => (showMobileSidebar = true)} aria-label={m['sidebar.open_navigation']()}>
+						<Button
+							variant="ghost"
+							size="icon-lg"
+							onclick={() => (showMobileSidebar = true)}
+							aria-label={m['sidebar.open_navigation']()}
+						>
 							<Menu size={18} />
 						</Button>
 						<span class="truncate text-sm font-medium text-[var(--color-text-primary)]">{workspace.name}</span>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<Button variant="ghost" size="icon-lg" onclick={() => (showCommandPalette = true)} aria-label={m['sidebar.search']()}>
+						<Button
+							variant="ghost"
+							size="icon-lg"
+							onclick={() => (showCommandPalette = true)}
+							aria-label={m['sidebar.search']()}
+						>
 							<Search size={18} />
 						</Button>
 						<Button variant="ghost" size="icon-lg" onclick={openCreateIssue} aria-label={m['sidebar.create_issue']()}>
@@ -657,10 +753,7 @@
 		}}
 	/>
 
-	<CreateTeamDialog
-		bind:open={showCreateTeam}
-		onsubmit={handleCreateTeam}
-	/>
+	<CreateTeamDialog bind:open={showCreateTeam} onsubmit={handleCreateTeam} />
 
 	<Dialog.Root bind:open={confirmOpen}>
 		<Dialog.Content class="sm:max-w-[420px] border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
@@ -677,19 +770,21 @@
 				</Dialog.Description>
 			</Dialog.Header>
 			<Dialog.Footer>
-				<Button variant="outline" onclick={() => (confirmOpen = false)} disabled={confirmSubmitting}>{m['sidebar.cancel']()}</Button>
+				<Button variant="outline" onclick={() => (confirmOpen = false)} disabled={confirmSubmitting}
+					>{m['sidebar.cancel']()}</Button
+				>
 				<Button variant="destructive" onclick={confirmTeamAction} disabled={confirmSubmitting}>
-					{confirmSubmitting ? m['sidebar.working']() : confirmAction === 'delete' ? m['sidebar.delete_team_title']() : m['sidebar.leave_team_title']()}
+					{confirmSubmitting
+						? m['sidebar.working']()
+						: confirmAction === 'delete'
+							? m['sidebar.delete_team_title']()
+							: m['sidebar.leave_team_title']()}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>
 	</Dialog.Root>
 
-	<ShortcutHelp
-		bind:open={showShortcutHelp}
-		shortcuts={shortcutDefs}
-	/>
+	<ShortcutHelp bind:open={showShortcutHelp} shortcuts={shortcutDefs} />
 {:else}
-	<div class="flex h-screen items-center justify-center">
-	</div>
+	<div class="flex h-screen items-center justify-center"></div>
 {/if}

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import { getForgejoStatus, getIssueForgejoActivity } from '$lib/api/forgejo';
-	import type { ForgejoIssueActivity } from '$lib/types/forgejo';
+	import { onMount, untrack } from 'svelte';
+	import { getCachedForgejoStatus, getIssueForgejoActivity } from '$lib/api/forgejo';
+	import type { ForgejoIssueActivity, ForgejoStatus } from '$lib/types/forgejo';
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
@@ -13,47 +13,110 @@
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import { appToast } from '$lib/features/toast/toast';
 
-	let { slug, identifier }: { slug: string; identifier: string } = $props();
+	let { slug, identifier, issueId }: { slug: string; identifier: string; issueId: string } = $props();
 
 	let activity = $state<ForgejoIssueActivity | null>(null);
 	let loading = $state(true);
 	let expanded = $state(true);
 	let copiedBranch = $state<string | null>(null);
+	let mounted = $state(false);
+	let connection = $state<ForgejoStatus | null>(null);
+	let failed = $state(false);
+	let generation = 0;
+	let refreshing = $state(false);
+	let refreshQueued = false;
+	let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+	let controller: AbortController | undefined;
 
 	const hasActivity = $derived(
-		activity &&
-			(activity.pull_requests.length > 0 || activity.branches.length > 0 || activity.commits.length > 0)
+		activity && (activity.pull_requests.length > 0 || activity.branches.length > 0 || activity.commits.length > 0)
 	);
 
-	async function refresh() {
+	$effect(() => {
+		const workspaceSlug = slug;
+		const issueIdentifier = identifier;
+		if (!mounted) return;
+		untrack(() => {
+			generation++;
+			controller?.abort();
+			clearTimeout(refreshTimer);
+			clearTimeout(copiedTimer);
+			connection = null;
+			activity = null;
+			copiedBranch = null;
+			loading = true;
+			failed = false;
+			refreshing = false;
+			refreshQueued = false;
+			void refresh(workspaceSlug, issueIdentifier, generation);
+		});
+	});
+
+	async function refresh(workspaceSlug: string, issueIdentifier: string, requestGeneration: number) {
+		refreshing = true;
+		failed = false;
+		const requestController = new AbortController();
+		controller = requestController;
 		try {
-			const status = await getForgejoStatus(slug);
-			if (!status.connected) {
-				activity = null;
-				return;
-			}
-			activity = await getIssueForgejoActivity(slug, identifier, status.instance_url ?? '');
+			const status = connection ?? (await getCachedForgejoStatus(workspaceSlug));
+			if (!mounted || requestGeneration !== generation) return;
+			connection = status;
+			if (!status.connected) return;
+			const result = await getIssueForgejoActivity(
+				workspaceSlug,
+				issueIdentifier,
+				status.instance_url ?? '',
+				requestController.signal
+			);
+			if (mounted && requestGeneration === generation) activity = result;
 		} catch {
-			// Forgejo not connected or no activity — silently ignore
+			if (mounted && requestGeneration === generation) failed = true;
+		} finally {
+			if (requestGeneration === generation) {
+				loading = false;
+				refreshing = false;
+				if (refreshQueued) {
+					refreshQueued = false;
+					scheduleRefresh();
+				}
+			}
 		}
 	}
 
-	onMount(async () => {
-		await refresh();
-		loading = false;
-	});
+	function manualRefresh() {
+		if (refreshing) return;
+		void refresh(slug, identifier, generation);
+	}
+
+	function scheduleRefresh() {
+		clearTimeout(refreshTimer);
+		refreshTimer = setTimeout(() => {
+			if (refreshing) refreshQueued = true;
+			else void refresh(slug, identifier, generation);
+		}, 180);
+	}
 
 	onMount(() => {
-		function handleForgejoUpdate() {
-			refresh();
+		mounted = true;
+		function handleForgejoUpdate(event: Event) {
+			const detail = (event as CustomEvent<{ issue_id?: string; identifier?: string; id?: string }>).detail;
+			if (!detail || (detail.issue_id !== issueId && detail.id !== issueId && detail.identifier !== identifier)) return;
+			scheduleRefresh();
 		}
 		window.addEventListener('ws:forgejo:pr_updated', handleForgejoUpdate);
 		window.addEventListener('ws:forgejo:branch_created', handleForgejoUpdate);
 		window.addEventListener('ws:forgejo:commit_pushed', handleForgejoUpdate);
 		window.addEventListener('ws:issue-updated', handleForgejoUpdate);
 		return () => {
+			mounted = false;
+			generation++;
+			controller?.abort();
+			clearTimeout(refreshTimer);
+			clearTimeout(copiedTimer);
 			window.removeEventListener('ws:forgejo:pr_updated', handleForgejoUpdate);
 			window.removeEventListener('ws:forgejo:branch_created', handleForgejoUpdate);
 			window.removeEventListener('ws:forgejo:commit_pushed', handleForgejoUpdate);
@@ -61,13 +124,20 @@
 		};
 	});
 
-	function copyBranch(name: string) {
-		navigator.clipboard.writeText(name);
-		copiedBranch = name;
-		appToast.success(m['issue.forgejo.branch_copied']());
-		setTimeout(() => {
-			copiedBranch = null;
-		}, 2000);
+	async function copyBranch(name: string) {
+		const requestGeneration = generation;
+		try {
+			await navigator.clipboard.writeText(name);
+			if (requestGeneration !== generation) return;
+			copiedBranch = name;
+			appToast.success(m['issue.forgejo.branch_copied']());
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => {
+				copiedBranch = null;
+			}, 2000);
+		} catch {
+			appToast.error(m['issue.forgejo.copy_failed']());
+		}
 	}
 
 	function prStateClass(state: string, checksGreen: boolean) {
@@ -90,19 +160,42 @@
 	);
 </script>
 
-{#if !loading && hasActivity}
+{#if !loading && (hasActivity || connection?.connected || failed)}
 	<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
-		<button
-			onclick={() => (expanded = !expanded)}
-			class="flex w-full items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
-		>
-			<ChevronRight size={12} class="transition-transform {expanded ? 'rotate-90' : ''}" />
-			<GitBranch size={12} />
-			{m['issue.forgejo.activity']()}
-			<span class="ml-auto rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-xs normal-case tracking-normal">
-				{referenceCount}
-			</span>
-		</button>
+		<div class="flex items-center">
+			<button
+				onclick={() => (expanded = !expanded)}
+				class="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] transition-colors"
+			>
+				<ChevronRight size={12} class="transition-transform {expanded ? 'rotate-90' : ''}" />
+				<GitBranch size={12} />
+				{m['issue.forgejo.activity']()}
+				<span
+					class="ml-auto rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-xs normal-case tracking-normal"
+				>
+					{referenceCount}
+				</span>
+			</button>
+			<button
+				onclick={manualRefresh}
+				disabled={refreshing}
+				aria-label={m['issue.forgejo.refresh']()}
+				title={m['issue.forgejo.refresh']()}
+				class="mr-2 rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] disabled:opacity-50"
+				><RefreshCw size={12} class={refreshing ? 'animate-spin' : ''} /></button
+			>
+		</div>
+		{#if expanded && failed}<p
+				role="alert"
+				class="border-t border-[var(--app-border)] px-3 py-2.5 text-xs text-red-500"
+			>
+				{m['issue.forgejo.failed_load']()}
+			</p>{/if}
+		{#if expanded && !failed && !hasActivity}<p
+				class="border-t border-[var(--app-border)] px-3 py-2.5 text-xs leading-5 text-[var(--color-text-tertiary)]"
+			>
+				{m['issue.forgejo.empty']({ identifier })}
+			</p>{/if}
 
 		{#if expanded && activity}
 			<div class="space-y-2 border-t border-[var(--app-border)] px-3 py-2.5">
@@ -117,7 +210,11 @@
 						<div class="flex items-center gap-1.5">
 							<GitPullRequest
 								size={13}
-								class="shrink-0 {pr.state === 'merged' ? 'text-purple-500' : pr.state === 'open' ? 'text-green-500' : 'text-[var(--color-text-tertiary)]'}"
+								class="shrink-0 {pr.state === 'merged'
+									? 'text-purple-500'
+									: pr.state === 'open'
+										? 'text-green-500'
+										: 'text-[var(--color-text-tertiary)]'}"
 							/>
 							<span class="min-w-0 flex-1 truncate font-medium text-[var(--color-text-primary)]">{pr.title}</span>
 							{#if pr.checks_green}
@@ -129,9 +226,16 @@
 									CI
 								</span>
 							{/if}
-							<span class="shrink-0 rounded-full border px-1.5 py-0 text-[9px] leading-4 {prStateClass(pr.state, pr.checks_green)}">{pr.state}</span>
+							<span
+								class="shrink-0 rounded-full border px-1.5 py-0 text-[9px] leading-4 {prStateClass(
+									pr.state,
+									pr.checks_green
+								)}">{pr.state}</span
+							>
 						</div>
-						<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[21px] text-[10px] text-[var(--color-text-tertiary)]">
+						<div
+							class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-[21px] text-[10px] text-[var(--color-text-tertiary)]"
+						>
 							<span>{pr.repo_full_name}#{pr.number}</span>
 							{#if pr.additions || pr.deletions}
 								<span class="text-green-600">+{pr.additions}</span>
@@ -185,7 +289,9 @@
 						<GitCommitHorizontal size={13} class="mt-0.5 shrink-0 text-[var(--color-text-tertiary)]" />
 						<div class="min-w-0 flex-1">
 							<div class="truncate text-[var(--color-text-primary)]">{commit.message.split('\n')[0]}</div>
-							<div class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[var(--color-text-tertiary)]">
+							<div
+								class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[var(--color-text-tertiary)]"
+							>
 								<code>{commit.short_sha}</code>
 								<span>{commit.repo_full_name}</span>
 								{#if commit.author_login}
@@ -198,7 +304,8 @@
 				{/each}
 				{#if activity.commits.length > 5}
 					<p class="px-1.5 text-[10px] text-[var(--color-text-tertiary)]">
-						+{activity.commits.length - 5} {m['issue.forgejo.more_commits']()}
+						+{activity.commits.length - 5}
+						{m['issue.forgejo.more_commits']()}
 					</p>
 				{/if}
 			</div>

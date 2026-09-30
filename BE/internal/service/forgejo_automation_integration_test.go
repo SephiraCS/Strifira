@@ -71,7 +71,6 @@ func setupForgejoAutomation(t *testing.T) *forgejoAutomationEnv {
 			fRepo:          repository.NewForgejoRepository(db),
 			issueRepo:      repository.NewIssueRepository(db),
 			teamStatusRepo: repository.NewTeamStatusRepository(db),
-			historyRepo:    repository.NewIssueHistoryRepository(db),
 		},
 	}
 }

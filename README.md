@@ -28,7 +28,7 @@ Ku's published releases are runnable MVPs, not a mature enterprise platform. Thi
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, and WebSocket events. |
 | **Planning**     | Implemented: cycles with burndown/velocity charts, project management with Gantt view, and full cycle/project UI.                                                                                                                                         |
-| **Integrations** | Available: workspace webhooks and Forgejo with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and WebSocket refresh events.                                              |
+| **Integrations** | Available: workspace webhooks and Forgejo with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, reruns, and cancellation. |
 | **Analytics**    | Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on current issue data and stored lifecycle timestamps.                                                                                                                                              |
 | **Dev Machines** | Unreleased development-branch functionality implemented as an opt-in self-hosted subsystem: PostgreSQL control plane, multi-container runtime, manager, authenticated gateway, four agent providers, collector, and UI. Disabled by default; see [`TECHNICAL.md`](TECHNICAL.md). |
 | **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
@@ -64,6 +64,8 @@ The product is intentionally smaller than broad project-management suites. It co
 | ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, Forgejo, and presence |
 | 🖥️  | **Dev Machines**       | Unreleased opt-in multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
 | 🔧  | **Forgejo**            | Link repos, match issue IDs in development activity, react to CI checks, and apply status rules      |
+| 🤖  | **AI assistance**      | Generate issue descriptions, improve descriptions and comments, and review suggestions without losing attachments or intervening edits |
+| ▶️  | **Forgejo Actions**    | Browse linked repository workflows, inspect jobs and bounded logs, and rerun or cancel runs |
 | 📊  | **Analytics**          | Workspace/team overview, burn-up, and configurable insights                     |
 | 🔗  | **Public Sharing**     | Token-based read-only links for issues and views                                 |
 | 📦  | **Asset Management**   | File uploads, signed URLs for prompt images, S3-compatible storage               |
@@ -73,6 +75,10 @@ The product is intentionally smaller than broad project-management suites. It co
 | 🚀  | **Release Changelog**  | Multi-release changelog modal with markdown rendering from static manifest       |
 
 Completed issues can be archived from an issue's actions and restored from **Archived issues** in the workspace sidebar. **Settings → General** enables automatic archiving 30 days after completion by default; workspace owners can turn it off. Restored issues are exempt from automatic archiving until their status changes.
+
+Workspace owners configure an OpenAI-compatible endpoint, model, and API key in **Settings → AI**. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Ku presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
+
+**Actions** in the workspace sidebar shows workflows from linked Forgejo repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can rerun completed runs or cancel active runs. Job log downloads require Forgejo 16 or newer; older instances can still be opened through **Open in Forgejo**.
 
 ## 🤖 Dev Machines (Agentic Coding)
 
@@ -199,7 +205,7 @@ Ku is designed to be self-hosted. The reference stack in [`selfhosting/`](selfho
 
 Workspace owners and admins can download a versioned `.ku.zip` archive from **Settings → General → Workspace transfer**. An authenticated user with no workspace can choose **Import workspace** during workspace setup; an owner or admin can also start an import from the transfer settings. Import always creates a separate workspace and never overwrites an existing one.
 
-The archive contains a logical `manifest.json`, `data.json`, and the workspace's uploaded asset bytes. It preserves teams, statuses, labels, projects, cycles, issues and their relationships/history, templates, views, favorites, shared links, workspace notifications, integration metadata, AI prompts, and safe Dev Machine workspace policy/scope settings. Database and asset IDs are regenerated and references—including protected asset URLs—are remapped during import.
+The format 2 archive contains a logical `manifest.json`, `data.json`, and the workspace's uploaded asset bytes. It preserves teams, statuses, labels, projects, cycles, issues and their relationships/history, templates, views, favorites, shared links, workspace notifications, integration metadata, AI prompts, and safe Dev Machine workspace policy/scope settings. Historical issue identifiers retain their exact text and ownership so Forgejo references continue to resolve after team renames and workspace transfer. Database and asset IDs are regenerated and references—including protected asset URLs—are remapped during import. Format 1 archives are no longer supported; export the workspace again with the current version before importing.
 
 Workspace transfer deliberately excludes password hashes, refresh tokens, personal preferences, webhook secrets, Forgejo credentials and access tokens, AI API keys, Dev Machine credentials, active machines, Docker volumes/networks, environment images, logs, sessions, and runtime artifacts. Imported webhooks, shared links, Forgejo repositories/automation, and Dev Machine policy are disabled or rotated where appropriate; Forgejo, AI, webhooks, and Development Environments must be reconfigured on the target instance.
 

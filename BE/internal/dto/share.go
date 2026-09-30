@@ -8,6 +8,11 @@ import (
 // its presenter (product direction 2026-09-17).
 type CreateScreenShareRequest struct{}
 
+type EndScreenShareRequest struct {
+	PresenterToken string `json:"presenter_token"`
+	Force          bool   `json:"force"`
+}
+
 // ScreenShareUser is the presenter subset needed to render share tiles.
 type ScreenShareUser struct {
 	ID          string  `json:"id"`

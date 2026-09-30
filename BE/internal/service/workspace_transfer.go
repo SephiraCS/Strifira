@@ -669,6 +669,18 @@ func (s *WorkspaceTransferService) Import(ctx context.Context, path, name, slug 
 		}
 		for _, sourceRow := range parsed.data.Tables[spec.Name] {
 			row := remapTransferValue(cloneTransferRow(sourceRow), idMap, parsed.manifest.SourceWorkspaceSlug, slug, assetIDMap).(dto.WorkspaceTransferRow)
+			if spec.Name == "issues" || spec.Name == "issue_identifier_history" {
+				// Identifiers are exact domain identities, even when their text
+				// happens to match a UUID being remapped during this import.
+				row["identifier_text"] = sourceRow["identifier_text"]
+			}
+			if spec.Name == "forgejo_pull_requests" {
+				// External PR text remains verbatim even when it matches an
+				// entity UUID or contains an asset URL from this workspace.
+				if body, ok := sourceRow["body"]; ok {
+					row["body"] = body
+				}
+			}
 			if spec.Name == "workspace_members" && transferString(row["user_id"]) == importerID.String() {
 				continue
 			}
@@ -678,6 +690,9 @@ func (s *WorkspaceTransferService) Import(ctx context.Context, path, name, slug 
 				row["parent_id"] = nil
 			}
 			if err := s.repo.InsertRow(ctx, tx, spec.Name, row, columns); err != nil {
+				if errors.Is(err, repository.ErrWorkspaceTransferIdentifierConflict) {
+					return nil, invalidArchive("issue identifier belongs to a different imported issue", err)
+				}
 				return nil, fmt.Errorf("import %s: %w", spec.Name, err)
 			}
 		}

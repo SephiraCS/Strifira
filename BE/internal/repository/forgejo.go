@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -126,26 +128,43 @@ func (r *ForgejoRepository) DeleteReposByWorkspace(ctx context.Context, workspac
 // --- Pull Requests ---
 
 func (r *ForgejoRepository) UpsertPullRequest(ctx context.Context, pr *domain.ForgejoPullRequest) error {
-	query := `INSERT INTO forgejo_pull_requests (id, workspace_id, forgejo_repo_id, number, title, state, checks_green, author_login, author_avatar_url, html_url, head_branch, head_sha, base_branch, additions, deletions, merged_at, closed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+	query := `INSERT INTO forgejo_pull_requests (id, workspace_id, forgejo_repo_id, number, title, state, checks_green, author_login, author_avatar_url, html_url, head_branch, head_sha, base_branch, additions, deletions, merged_at, closed_at, body)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (forgejo_repo_id, number) DO UPDATE SET
-			title = EXCLUDED.title, state = EXCLUDED.state, checks_green = EXCLUDED.checks_green,
+			title = EXCLUDED.title, body = EXCLUDED.body, state = EXCLUDED.state,
+			checks_green = CASE WHEN forgejo_pull_requests.head_sha IS NOT DISTINCT FROM COALESCE(EXCLUDED.head_sha, forgejo_pull_requests.head_sha)
+				AND NOT (forgejo_pull_requests.state = 'draft' AND EXCLUDED.state = 'open')
+				THEN forgejo_pull_requests.checks_green ELSE false END,
 			author_login = EXCLUDED.author_login, author_avatar_url = EXCLUDED.author_avatar_url,
 			additions = EXCLUDED.additions, deletions = EXCLUDED.deletions,
 			head_branch = COALESCE(EXCLUDED.head_branch, forgejo_pull_requests.head_branch),
 			head_sha = COALESCE(EXCLUDED.head_sha, forgejo_pull_requests.head_sha),
 			base_branch = EXCLUDED.base_branch,
 			merged_at = EXCLUDED.merged_at, closed_at = EXCLUDED.closed_at, updated_at = NOW()
-		RETURNING id, created_at, updated_at`
-	return r.db.QueryRowContext(ctx, query,
+		WHERE forgejo_pull_requests.state <> 'merged' OR EXCLUDED.state = 'merged'
+		RETURNING id, created_at, updated_at, checks_green`
+	err := r.db.QueryRowContext(ctx, query,
 		pr.ID, pr.WorkspaceID, pr.ForgejoRepoID, pr.Number, pr.Title, pr.State, pr.ChecksGreen,
 		pr.AuthorLogin, pr.AuthorAvatarURL, pr.HTMLURL, pr.HeadBranch, pr.HeadSHA, pr.BaseBranch,
-		pr.Additions, pr.Deletions, pr.MergedAt, pr.ClosedAt,
-	).Scan(&pr.ID, &pr.CreatedAt, &pr.UpdatedAt)
+		pr.Additions, pr.Deletions, pr.MergedAt, pr.ClosedAt, pr.Body,
+	).Scan(&pr.ID, &pr.CreatedAt, &pr.UpdatedAt, &pr.ChecksGreen)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrForgejoStalePullRequest
+	}
+	return err
 }
 
-func (r *ForgejoRepository) UpdatePullRequestChecks(ctx context.Context, repoID uuid.UUID, number int, checksGreen bool) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE forgejo_pull_requests SET checks_green = $1, updated_at = NOW() WHERE forgejo_repo_id = $2 AND number = $3`, checksGreen, repoID, number)
+func (r *ForgejoRepository) UpdatePullRequestChecks(ctx context.Context, pr *domain.ForgejoPullRequest, checksGreen bool) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE forgejo_pull_requests SET checks_green = $1, updated_at = NOW()
+		WHERE id = $2 AND head_sha IS NOT DISTINCT FROM $3 AND state = $4 AND updated_at = $5 AND state IN ('open', 'draft')`,
+		checksGreen, pr.ID, pr.HeadSHA, pr.State, pr.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count == 0 {
+		return ErrForgejoStalePullRequest
+	}
 	return err
 }
 
@@ -193,19 +212,22 @@ func (r *ForgejoRepository) GetPRByRepoAndNumber(ctx context.Context, repoID uui
 
 // --- PR ↔ Issue links ---
 
-func (r *ForgejoRepository) ReplacePRIssueLinks(ctx context.Context, prID uuid.UUID, issueIDs []uuid.UUID) error {
+func (r *ForgejoRepository) ReplacePRIssueLinks(ctx context.Context, pr *domain.ForgejoPullRequest, issueIDs []uuid.UUID) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM forgejo_pull_request_issues WHERE pr_id = $1`, prID); err != nil {
+	if err := lockCurrentPullRequest(ctx, tx, pr); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM forgejo_pull_request_issues WHERE pr_id = $1`, pr.ID); err != nil {
 		return err
 	}
 	for _, issueID := range issueIDs {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO forgejo_pull_request_issues (pr_id, issue_id) VALUES ($1, $2)
-			ON CONFLICT DO NOTHING`, prID, issueID); err != nil {
+			ON CONFLICT DO NOTHING`, pr.ID, issueID); err != nil {
 			return err
 		}
 	}
@@ -317,22 +339,86 @@ func (r *ForgejoRepository) ReplaceUserMappings(ctx context.Context, workspaceID
 // them to the assignee set in one transaction so the legacy primary assignee
 // stays in sync. Existing assignees are never removed; the primary is only
 // filled in when unset.
-func (r *ForgejoRepository) ApplyIssueAutomation(ctx context.Context, issue *domain.Issue, addTarget *uuid.UUID) error {
+var ErrForgejoAutomationConflict = errors.New("issue changed while applying Forgejo automation")
+var ErrForgejoStalePullRequest = errors.New("pull request changed while applying Forgejo automation")
+
+// Hold the PR row until the guarded mutation commits. A synchronized or closed
+// webhook cannot replace its head/state between this check and an issue move.
+func lockCurrentPullRequest(ctx context.Context, tx *sqlx.Tx, expected *domain.ForgejoPullRequest) error {
+	if expected == nil {
+		return nil
+	}
+	var current domain.ForgejoPullRequest
+	err := tx.GetContext(ctx, &current, `SELECT id, head_sha, state, updated_at FROM forgejo_pull_requests WHERE id=$1 FOR UPDATE`, expected.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrForgejoStalePullRequest
+	}
+	if err != nil {
+		return err
+	}
+	if !current.UpdatedAt.Equal(expected.UpdatedAt) || current.State != expected.State || (current.HeadSHA == nil) != (expected.HeadSHA == nil) ||
+		(current.HeadSHA != nil && *current.HeadSHA != *expected.HeadSHA) {
+		return ErrForgejoStalePullRequest
+	}
+	return nil
+}
+
+func (r *ForgejoRepository) ApplyIssueAutomation(ctx context.Context, issue *domain.Issue, addTarget *uuid.UUID, expectedPR *domain.ForgejoPullRequest) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := tx.QueryRowContext(ctx, `UPDATE issues SET status = $1, status_id = $2,
-		assignee_id = CASE WHEN $3::uuid IS NOT NULL THEN COALESCE(assignee_id, $3::uuid) ELSE assignee_id END, updated_at = NOW()
-		WHERE id = $4 AND workspace_id = $5 RETURNING updated_at`,
+	if err := lockCurrentPullRequest(ctx, tx, expectedPR); err != nil {
+		return err
+	}
+	var previous domain.Issue
+	if err := tx.GetContext(ctx, &previous, `SELECT id, status, status_id, updated_at, creator_id FROM issues WHERE id=$1 AND workspace_id=$2 FOR UPDATE`, issue.ID, issue.WorkspaceID); err != nil {
+		return err
+	}
+	if !previous.UpdatedAt.Equal(issue.UpdatedAt) {
+		return ErrForgejoAutomationConflict
+	}
+	var oldAssignees []uuid.UUID
+	if addTarget != nil {
+		if err := tx.SelectContext(ctx, &oldAssignees, `SELECT user_id FROM issue_assignees WHERE issue_id=$1 ORDER BY user_id`, issue.ID); err != nil {
+			return err
+		}
+	}
+	if err := tx.QueryRowContext(ctx, `UPDATE issues SET status=$1, status_id=$2,
+  assignee_id=CASE WHEN $3::uuid IS NOT NULL THEN COALESCE(assignee_id,$3::uuid) ELSE assignee_id END, updated_at=NOW()
+  WHERE id=$4 AND workspace_id=$5 AND ($2::uuid IS NULL OR EXISTS(SELECT 1 FROM team_statuses ts WHERE ts.id=$2 AND ts.team_id=issues.team_id)) RETURNING updated_at`,
 		issue.Status, issue.StatusID, addTarget, issue.ID, issue.WorkspaceID).Scan(&issue.UpdatedAt); err != nil {
 		return err
 	}
-	if addTarget != nil {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO issue_assignees (issue_id, user_id)
-			VALUES ($1, $2) ON CONFLICT (issue_id, user_id) DO NOTHING`, issue.ID, *addTarget); err != nil {
+	history := func(field, oldValue, newValue string) error {
+		if previous.CreatorID == uuid.Nil {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO issue_history(id,issue_id,user_id,field,old_value,new_value) VALUES($1,$2,$3,$4,$5,$6)`, uuid.New(), issue.ID, previous.CreatorID, field, oldValue, newValue)
+		return err
+	}
+	if previous.Status != issue.Status || (previous.StatusID == nil) != (issue.StatusID == nil) || (previous.StatusID != nil && issue.StatusID != nil && *previous.StatusID != *issue.StatusID) {
+		if err := history("status", string(previous.Status), string(issue.Status)); err != nil {
 			return err
+		}
+	}
+	if addTarget != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO issue_assignees(issue_id,user_id) VALUES($1,$2) ON CONFLICT(issue_id,user_id) DO NOTHING`, issue.ID, *addTarget); err != nil {
+			return err
+		}
+		if !slices.Contains(oldAssignees, *addTarget) {
+			serialize := func(ids []uuid.UUID) string {
+				values := make([]string, 0, len(ids))
+				for _, id := range ids {
+					values = append(values, id.String())
+				}
+				slices.Sort(values)
+				return strings.Join(values, ", ")
+			}
+			if err := history("assignees", serialize(oldAssignees), serialize(append(oldAssignees, *addTarget))); err != nil {
+				return err
+			}
 		}
 		if issue.AssigneeID == nil {
 			issue.AssigneeID = addTarget
@@ -349,7 +435,7 @@ func (r *ForgejoRepository) ListAutoTransitions(ctx context.Context, workspaceID
 
 func (r *ForgejoRepository) GetAutoTransitionByEvent(ctx context.Context, workspaceID uuid.UUID, event string) (*domain.ForgejoAutoTransition, error) {
 	var t domain.ForgejoAutoTransition
-	err := r.db.GetContext(ctx, &t, `SELECT * FROM forgejo_auto_transitions WHERE workspace_id = $1 AND event = $2 AND is_active = true`, workspaceID, event)
+	err := r.db.GetContext(ctx, &t, `SELECT * FROM forgejo_auto_transitions WHERE workspace_id = $1 AND event = $2`, workspaceID, event)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

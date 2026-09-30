@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -31,9 +32,11 @@ func TestCheckoutScriptCleansEphemeralCredentialsOnSuccess(t *testing.T) {
 	require.NotContains(t, helper, removedCheckoutTokenPath)
 
 	missingTokenCmd := exec.Command(result.helperPath, "get")
+	missingTokenCmd.Stdin = strings.NewReader("protocol=https\nhost=github.com\npath=octo/repo\n\n")
 	missingTokenCmd.Env = []string{"PATH=" + os.Getenv("PATH")}
-	require.Error(t, missingTokenCmd.Run())
+	require.NoError(t, missingTokenCmd.Run())
 	processTokenCmd := exec.Command(result.helperPath, "get")
+	processTokenCmd.Stdin = strings.NewReader("protocol=https\nhost=github.com\npath=octo/repo\n\n")
 	processTokenCmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GITHUB_TOKEN=process-env-token"}
 	processTokenOutput, err := processTokenCmd.Output()
 	require.NoError(t, err)
@@ -74,6 +77,39 @@ func TestCredentialHelperScriptsDoNotReferencePersistentCheckoutToken(t *testing
 		content := string(contentBytes)
 		require.NotContains(t, content, removedCheckoutTokenPath, path)
 		require.NotContains(t, content, "cat /run/ku-secrets/github-token", path)
+	}
+}
+
+func TestGitCredentialHelpersScopeForgejoTokensToSelectedHTTPSRepository(t *testing.T) {
+	root := repoRootFromCaller(t)
+	for _, source := range []string{"devmachine/common/ku-agent-runner", "devmachine/ide/checkout.sh", "devmachine/ide/start.sh", "BE/internal/machine/docker.go"} {
+		t.Run(source, func(t *testing.T) {
+			content, err := os.ReadFile(filepath.Join(root, source))
+			require.NoError(t, err)
+			match := regexp.MustCompile(`(?s)cat > "\$credential_helper" <<'SCRIPT'\n(.*?)\nSCRIPT`).FindSubmatch(content)
+			require.Len(t, match, 2)
+			helper := filepath.Join(t.TempDir(), "credential")
+			require.NoError(t, os.WriteFile(helper, match[1], 0o700))
+			for _, test := range []struct{ protocol, host, path, want string }{
+				{"https", "git.example.com:8443", "octo/repo.git", "password=forgejo-test-token"},
+				{"https", "foreign.example", "octo/repo", ""},
+				{"http", "git.example.com:8443", "octo/repo", ""},
+				{"https", "git.example.com:8443", "other/repo", ""},
+				{"https", "github.com", "octo/repo", "password=github-test-token"},
+				{"https", "github.com.evil.example", "octo/repo", ""},
+			} {
+				cmd := exec.CommandContext(t.Context(), helper, "get")
+				cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "FORGEJO_TOKEN=forgejo-test-token", "GITHUB_TOKEN=github-test-token", "KU_FORGEJO_HOST=git.example.com:8443", "KU_GIT_REPOSITORY=octo/repo"}
+				cmd.Stdin = strings.NewReader(fmt.Sprintf("protocol=%s\nhost=%s\npath=%s\n\n", test.protocol, test.host, test.path))
+				output, err := cmd.Output()
+				require.NoError(t, err)
+				if test.want == "" {
+					require.Empty(t, output, test.host)
+				} else {
+					require.Contains(t, string(output), test.want)
+				}
+			}
+		})
 	}
 }
 
@@ -159,7 +195,7 @@ func runCheckoutScriptFixture(t *testing.T, failFetch bool) checkoutScriptResult
 	for _, dir := range []string{filepath.Join(workspaceRoot, "repos"), filepath.Join(workspaceRoot, "tasks"), secretDir, tmpDir, homeDir, fakeBin} {
 		require.NoError(t, os.MkdirAll(dir, 0o700))
 	}
-	staleBareRepository := filepath.Join(workspaceRoot, "repos", "octo-repo.git")
+	staleBareRepository := filepath.Join(workspaceRoot, "repos", "git.example.com-octo-repo.git")
 	require.NoError(t, os.MkdirAll(staleBareRepository, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(staleBareRepository, "config"), []byte("credential.helper=!f() { cat "+removedCheckoutTokenPath+"; }; f\ncore.askPass="+removedCheckoutTokenPath+"\n"), 0o600))
 
@@ -167,7 +203,7 @@ func runCheckoutScriptFixture(t *testing.T, failFetch bool) checkoutScriptResult
 	writeFakeGit(t, fakeGit)
 
 	rawToken := "checkout-raw-token-SEC02"
-	cmd := exec.Command("sh", filepath.Join(repoRoot, "devmachine", "ide", "checkout.sh"), "octo/repo", "main", "ku-sec-02", workspacePath)
+	cmd := exec.Command("sh", filepath.Join(repoRoot, "devmachine", "ide", "checkout.sh"), "octo/repo", "main", "ku-sec-02", workspacePath, "https://git.example.com/octo/repo")
 	cmd.Stdin = strings.NewReader(rawToken + "\n")
 	cmd.Env = []string{
 		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
@@ -215,11 +251,11 @@ printf '%s\n' "$*" >> "$log"
 if [ -n "${KU_CHECKOUT_TOKEN_FILE:-}" ]; then
   case "$KU_CHECKOUT_TOKEN_FILE" in "$KU_FAKE_GIT_SECRET_DIR"/*) ;; *) echo "token file outside secret dir" >&2; exit 90 ;; esac
   [ -f "$KU_CHECKOUT_TOKEN_FILE" ] || { echo "missing token file" >&2; exit 91; }
-  [ -x "${GIT_ASKPASS:-}" ] || { echo "missing askpass" >&2; exit 92; }
-  user=$("$GIT_ASKPASS" Username)
-  [ "$user" = x-access-token ] || { echo "bad askpass username" >&2; exit 93; }
-  password=$("$GIT_ASKPASS" Password)
-  [ -n "$password" ] || { echo "empty askpass password" >&2; exit 94; }
+  [ -x "${GIT_CONFIG_VALUE_1:-}" ] || { echo "missing credential helper" >&2; exit 92; }
+  credential=$(printf '%s\n' protocol=https "host=$KU_CHECKOUT_HOST" "path=$KU_CHECKOUT_REPOSITORY" '' | "$GIT_CONFIG_VALUE_1" get)
+  case "$credential" in *username=oauth2*password=*) ;; *) echo "missing scoped credential" >&2; exit 93 ;; esac
+  foreign=$(printf '%s\n' protocol=https host=foreign.example "path=$KU_CHECKOUT_REPOSITORY" '' | "$GIT_CONFIG_VALUE_1" get)
+  [ -z "$foreign" ] || { echo "credential leaked to foreign host" >&2; exit 94; }
 fi
 
 if [ "${KU_FAKE_GIT_FAIL_FETCH:-}" = "1" ]; then

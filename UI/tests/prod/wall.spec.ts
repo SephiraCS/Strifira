@@ -4,7 +4,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
  * Production wall verification against the deployed ku.mariogk.com.
  *
  * The synthetic capture replaces getDisplayMedia with an animated canvas
- * stream, so every engine exercises the real publish → SFU → subscribe →
+ * stream, so every engine exercises the real peer-to-peer WebRTC media and
  * decode path without a native picker. The Chrome-native-stop simulation
  * dispatches the 'ended' event on the captured track — exactly what the
  * browser fires when the user hits the native stop bar (a page-side

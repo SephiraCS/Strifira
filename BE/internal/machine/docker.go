@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,12 +68,27 @@ case "${1:-get}" in
   store|erase ) exit 0 ;;
   * ) exit 0 ;;
 esac
-if [ -z "${GITHUB_TOKEN:-}" ]; then
-  echo "missing active GitHub token" >&2
-  exit 1
+protocol=
+host=
+path=
+while IFS= read -r line && [ -n "$line" ]; do
+  case "$line" in
+    protocol=*) protocol=${line#protocol=} ;;
+    host=*) host=${line#host=} ;;
+    path=*) path=${line#path=} ;;
+  esac
+done
+[ "$protocol" = https ] || exit 0
+path=${path%.git}
+if [ -n "${FORGEJO_TOKEN:-}" ] && [ -n "${KU_FORGEJO_HOST:-}" ] && [ -n "${KU_GIT_REPOSITORY:-}" ] \
+    && [ "$host" = "$KU_FORGEJO_HOST" ] && [ "$path" = "$KU_GIT_REPOSITORY" ]; then
+  printf '%s\n' username=oauth2
+  printf '%s\n' "password=$FORGEJO_TOKEN"
+elif [ "$host" = github.com ] && [ -n "${GITHUB_TOKEN:-}" ] \
+    && { [ -z "${KU_GIT_REPOSITORY:-}" ] || [ "$path" = "$KU_GIT_REPOSITORY" ]; }; then
+  printf '%s\n' username=x-access-token
+  printf '%s\n' "password=$GITHUB_TOKEN"
 fi
-printf '%s\n' username=x-access-token
-printf '%s\n' "password=$GITHUB_TOKEN"
 SCRIPT
 chmod 0700 "$credential_helper"
 umask "$old_umask"
@@ -79,6 +96,7 @@ if command -v git >/dev/null 2>&1; then
   git config --global --unset-all core.askPass >/dev/null 2>&1 || true
   git config --global --unset-all credential.helper >/dev/null 2>&1 || true
   git config --global credential.helper "$credential_helper"
+  git config --global credential.useHttpPath true
   export GIT_TERMINAL_PROMPT=0
 fi
 exec "$@"`
@@ -646,6 +664,9 @@ func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine
 	workingDirectory := "/workspace"
 	if checkout != nil {
 		workingDirectory = checkout.WorkspacePath
+		if repositoryURL, parseErr := url.Parse(checkout.RepositoryURL); parseErr == nil {
+			runtimeEnvironment = append(runtimeEnvironment, "KU_FORGEJO_HOST="+repositoryURL.Host, "KU_GIT_REPOSITORY="+checkout.RepositoryFullName)
+		}
 	}
 	response, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
@@ -703,6 +724,11 @@ func (r *DockerRuntime) resumeAgent(ctx context.Context, inspection container.In
 		}
 		return &AgentExecution{ContainerID: containerID}, nil
 	}
+	drainLogs := false
+	if observer, ok := ctx.Value(agentLogObserverKey{}).(agentLogObserver); ok {
+		finishLogs := r.followAgentLogs(ctx, containerID, observer)
+		defer func() { finishLogs(drainLogs) }()
+	}
 	if inspection.State.Running {
 		waitResult := r.client.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 		select {
@@ -720,6 +746,7 @@ func (r *DockerRuntime) resumeAgent(ctx context.Context, inspection container.In
 			return &AgentExecution{ContainerID: containerID, ExitCode: -1}, ctx.Err()
 		}
 	}
+	drainLogs = true
 	stdout, stderr, err := r.containerLogs(ctx, containerID)
 	if err != nil {
 		return &AgentExecution{ContainerID: containerID, ExitCode: inspection.State.ExitCode}, err
@@ -812,9 +839,27 @@ func (r *DockerRuntime) GitState(ctx context.Context, machine *domain.DevMachine
 	if err != nil {
 		return GitState{}, err
 	}
-	commits, _ := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "rev-list", "origin/" + baseBranch + "..HEAD"})
-	changed, _ := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "diff", "--name-only", "origin/" + baseBranch + "...HEAD"})
-	return GitState{Branch: strings.TrimSpace(branch), Commits: nonEmptyLines(commits), ChangedFiles: nonEmptyLines(changed)}, nil
+	commits, err := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "rev-list", "origin/" + baseBranch + "..HEAD"})
+	if err != nil {
+		return GitState{}, err
+	}
+	// Include dirty and untracked files as well as commits: a model's summary is
+	// never the authority for which files were changed.
+	changed, err := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "diff", "--no-renames", "--name-only", "-z", "origin/" + baseBranch})
+	if err != nil {
+		return GitState{}, err
+	}
+	untracked, err := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "ls-files", "--others", "--exclude-standard", "-z"})
+	if err != nil {
+		return GitState{}, err
+	}
+	dirty, err := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "status", "--porcelain", "-z"})
+	if err != nil {
+		return GitState{}, err
+	}
+	files := strings.FieldsFunc(changed+untracked, func(c rune) bool { return c == 0 })
+	slices.Sort(files)
+	return GitState{Branch: strings.TrimSpace(branch), Commits: nonEmptyLines(commits), ChangedFiles: slices.Compact(files), Dirty: dirty != ""}, nil
 }
 
 func (r *DockerRuntime) PrepareCheckout(ctx context.Context, _ *domain.DevMachine, services []domain.DevMachineService, checkout *domain.DevMachineCheckout, token string) error {
@@ -827,7 +872,7 @@ func (r *DockerRuntime) PrepareCheckout(ctx context.Context, _ *domain.DevMachin
 	}
 	if err := r.execWithInput(ctx, developerContainer, []string{
 		"/usr/local/bin/ku-checkout", checkout.RepositoryFullName, checkout.BaseBranch,
-		checkout.WorkingBranch, checkout.WorkspacePath,
+		checkout.WorkingBranch, checkout.WorkspacePath, checkout.RepositoryURL,
 	}, token+"\n"); err != nil {
 		return err
 	}
@@ -1121,7 +1166,7 @@ func (r *DockerRuntime) secureHostConfig(machine *domain.DevMachine, serviceType
 		CapDrop: []string{"ALL"}, SecurityOpt: securityOptions,
 		LogConfig: boundedLogConfig(),
 		Tmpfs: map[string]string{
-			"/tmp":                tmpOptions,
+			"/tmp":            tmpOptions,
 			"/run/ku-secrets": "rw,noexec,nosuid,uid=1000,gid=1000,mode=0700,size=8m",
 			"/home/ku":        "rw,nosuid,uid=1000,gid=1000,size=512m",
 		},
@@ -1508,6 +1553,8 @@ func (r *DockerRuntime) execOutputAs(ctx context.Context, containerID string, co
 		return "", err
 	}
 	defer attached.Close()
+	stopClose := context.AfterFunc(ctx, func() { attached.Close() })
+	defer stopClose()
 	stdout := newCappedBuffer(maxCapturedLogBytes)
 	stderr := newCappedBuffer(maxCapturedLogBytes)
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, attached.Reader); err != nil {
@@ -1535,6 +1582,8 @@ func (r *DockerRuntime) execWithInput(ctx context.Context, containerID string, c
 		return err
 	}
 	defer attached.Close()
+	stopClose := context.AfterFunc(ctx, func() { attached.Close() })
+	defer stopClose()
 	if _, err := io.WriteString(attached.Conn, input); err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -89,15 +90,15 @@ type GlobalForgejoCredentials struct {
 }
 
 type Manager struct {
-	store          ManagerStore
-	runtime        Runtime
-	agents         *agent.Registry
-	forgejo        forgejoAPI
-	globalForgejo  *GlobalForgejoCredentials
-	encryptionKey  []byte
-	forgejoKey     []byte
-	owner          string
-	pollInterval   time.Duration
+	store         ManagerStore
+	runtime       Runtime
+	agents        *agent.Registry
+	forgejo       forgejoAPI
+	globalForgejo *GlobalForgejoCredentials
+	encryptionKey []byte
+	forgejoKey    []byte
+	owner         string
+	pollInterval  time.Duration
 
 	operationsCompleted atomic.Uint64
 	operationsFailed    atomic.Uint64
@@ -123,7 +124,7 @@ func NewManager(store ManagerStore, runtime Runtime, agents *agent.Registry, for
 		store: store, runtime: runtime, agents: agents, forgejo: forgejo, globalForgejo: globalForgejo,
 		encryptionKey: encryptionKey, forgejoKey: forgejoKey, owner: owner, pollInterval: time.Second,
 		operationSlots: make(chan struct{}, 8),
-		activeRuns:    make(map[uuid.UUID]map[uuid.UUID]context.CancelFunc),
+		activeRuns:     make(map[uuid.UUID]map[uuid.UUID]context.CancelFunc),
 	}
 }
 
@@ -430,10 +431,12 @@ func (m *Manager) processOperation(ctx context.Context, operation *domain.DevMac
 		if err := m.store.UpdateCheckoutState(ctx, checkout.ID, "preparing", nil); err != nil {
 			return err
 		}
-		_, token, err := m.forgejoCredential(ctx, machine, checkout.RepositoryFullName)
+		instanceURL, token, err := m.forgejoCredential(ctx, machine, checkout.RepositoryFullName)
 		if err != nil {
 			return fmt.Errorf("forgejo_token_failed: %w", err)
 		}
+		// A saved checkout URL may be stale; credentials only go to the linked instance.
+		checkout.RepositoryURL = strings.TrimRight(instanceURL, "/") + "/" + checkout.RepositoryFullName
 		if err := m.runtime.PrepareCheckout(ctx, machine, services, checkout, token); err != nil {
 			return err
 		}
@@ -632,9 +635,16 @@ func (m *Manager) serviceSecrets(ctx context.Context, machine *domain.DevMachine
 	}
 	_, hasIDE := serviceSecrets["ide"]
 	if hasIDE {
-		_, forgejoToken, err := m.forgejoCredential(ctx, machine, "")
+		instanceURL, forgejoToken, err := m.forgejoCredential(ctx, machine, "")
 		if err == nil && forgejoToken != "" {
+			parsed, parseErr := url.Parse(instanceURL)
+			if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+				return nil, errors.New("Forgejo credentials require a valid HTTPS instance URL")
+			}
 			serviceSecrets["ide"]["FORGEJO_TOKEN"] = forgejoToken
+			serviceSecrets["ide"]["KU_FORGEJO_HOST"] = parsed.Host
+			serviceSecrets["ide"]["KU_GIT_REPOSITORY"] = checkoutRepositoryFullName(machine, nil)
+			serviceSecrets["ide"]["KU_REPO_URL"] = strings.TrimRight(instanceURL, "/") + "/" + checkoutRepositoryFullName(machine, nil)
 		} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("forgejo_token_failed: %w", err)
 		}
@@ -704,6 +714,9 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 		allowedSecretSet[name] = true
 	}
 	for _, envVar := range envVars {
+		if envVar.Name == "FORGEJO_TOKEN" || envVar.Name == "GITHUB_TOKEN" || strings.HasPrefix(envVar.Name, "KU_") {
+			continue
+		}
 		if !allowedSecretSet[envVar.Name] {
 			continue
 		}
@@ -712,16 +725,6 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 			return fmt.Errorf("secret_decryption_failed: %w", err)
 		}
 		secrets[envVar.Name] = value
-	}
-	if run.PushBranch || run.OpenPullRequest {
-		_, forgejoToken, err := m.forgejoCredential(ctx, machine, checkoutRepositoryFullName(machine, checkout))
-		if err != nil || forgejoToken == "" {
-			if err == nil {
-				err = errors.New("no linked Forgejo repository")
-			}
-			return fmt.Errorf("forgejo_token_failed: workspace Forgejo token is unavailable: %w", err)
-		}
-		secrets["FORGEJO_TOKEN"] = forgejoToken
 	}
 	service := &domain.DevMachineService{
 		ID: uuid.New(), WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID, ServiceType: "agent",
@@ -734,6 +737,29 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 	}
 	runContext, cancel := context.WithTimeout(ctx, time.Duration(run.MaxRuntimeSeconds)*time.Second)
 	defer cancel()
+	streamed := false
+	streamSequences := make(map[string]int64)
+	observer := agentLogObserver(func(containerID, stream, content string) {
+		content = redact(content, secrets)
+		if !streamed {
+			_ = m.store.UpdateServiceRuntime(runContext, service.ID, containerID, "running", "running", nil)
+		}
+		streamed = true
+		streamSequences[stream]++
+		_ = m.store.CreateLogChunk(runContext, &domain.DevMachineLogChunk{
+			WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID, ServiceID: &service.ID,
+			Stream: stream, Sequence: streamSequences[stream], Content: content,
+		})
+		if stream == "stdout" {
+			for _, event := range provider.ParseEvents([]byte(content)) {
+				_ = m.store.CreateEvent(runContext, &domain.DevMachineEvent{
+					WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID,
+					Source: "agent", EventType: event.Type, Payload: event.Payload, OccurredAt: time.Now().UTC(),
+				})
+			}
+		}
+	})
+	runContext = context.WithValue(runContext, agentLogObserverKey{}, observer)
 	execution, executionErr := m.runtime.RunAgent(runContext, machine, run, providerRecord, checkout, secrets)
 	timedOut := errors.Is(executionErr, context.DeadlineExceeded) || errors.Is(runContext.Err(), context.DeadlineExceeded)
 	if timedOut {
@@ -754,19 +780,21 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 		execution = &AgentExecution{ExitCode: -1}
 	}
 	stdout, stderr := redact(execution.Stdout, secrets), redact(execution.Stderr, secrets)
-	if stdout != "" {
+	if !streamed && stdout != "" {
 		_ = m.store.CreateLogChunk(ctx, &domain.DevMachineLogChunk{
 			WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID, ServiceID: &service.ID,
 			Stream: "stdout", Sequence: 1, Content: stdout,
 		})
 	}
-	if stderr != "" {
+	if !streamed && stderr != "" {
 		_ = m.store.CreateLogChunk(ctx, &domain.DevMachineLogChunk{
 			WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID, ServiceID: &service.ID,
 			Stream: "stderr", Sequence: 1, Content: stderr,
 		})
 	}
 	result := provider.ParseResult(stdout, stderr, execution.ExitCode)
+	// Only independently executed test argv establishes the persisted test result.
+	result.TestsRun, result.TestStatus = []string{}, "not_run"
 	repositoryFullName := checkoutRepositoryFullName(machine, checkout)
 	if result.PullRequestURL != "" {
 		if safeURL, ok := m.safePullRequestURL(ctx, machine, result.PullRequestURL, repositoryFullName); ok {
@@ -776,7 +804,11 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 			result.RiskNotes = append(result.RiskNotes, "Agent-reported pull request URL was ignored because it did not match the selected Forgejo repository.")
 		}
 	}
-	for _, providerEvent := range provider.ParseEvents([]byte(stdout)) {
+	var finalEvents []agent.Event
+	if !streamed {
+		finalEvents = provider.ParseEvents([]byte(stdout))
+	}
+	for _, providerEvent := range finalEvents {
 		payload := providerEvent.Payload
 		if len(payload) == 0 {
 			payload, _ = json.Marshal(map[string]any{"message": providerEvent.Message})
@@ -799,11 +831,28 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 	} else {
 		run.Status = domain.DevMachineAgentRunStatusSucceeded
 	}
-	services, _ := m.store.ListServices(ctx, machine.WorkspaceID, machine.ID)
-	if gitState, gitErr := m.runtime.GitState(ctx, machine, services, checkout); gitErr == nil {
-		result.Branch = gitState.Branch
-		result.Commits = gitState.Commits
-		result.ChangedFiles = gitState.ChangedFiles
+	services, serviceErr := m.store.ListServices(ctx, machine.WorkspaceID, machine.ID)
+	if run.Status == domain.DevMachineAgentRunStatusSucceeded {
+		verificationErr := serviceErr
+		if verificationErr == nil {
+			verificationErr = m.verifyAgentRun(runContext, machine, run, checkout, services, &result, secrets)
+		}
+		if verificationErr != nil {
+			executionErr = verificationErr
+			result.Status = "failed"
+			run.Status = domain.DevMachineAgentRunStatusFailed
+			if errors.Is(runContext.Err(), context.DeadlineExceeded) {
+				result.Status = "timeout"
+				run.Status = domain.DevMachineAgentRunStatusTimeout
+			}
+			result.RiskNotes = append(result.RiskNotes, redact(safeError(verificationErr), secrets))
+		}
+	} else if gitState, gitErr := m.runtime.GitState(ctx, machine, services, checkout); gitErr == nil {
+		result.Branch, result.Commits, result.ChangedFiles = gitState.Branch, gitState.Commits, gitState.ChangedFiles
+	}
+	if current, err := m.store.GetAgentRunInternal(ctx, run.ID); err == nil && current != nil && current.Status == domain.DevMachineAgentRunStatusCancelled {
+		result.Status = "cancelled"
+		run.Status = domain.DevMachineAgentRunStatusCancelled
 	}
 	if run.Status == domain.DevMachineAgentRunStatusSucceeded && run.OpenPullRequest && result.Branch != "" {
 		instanceURL, freshToken, prErr := m.forgejoCredential(ctx, machine, checkoutRepositoryFullName(machine, checkout))
@@ -821,7 +870,11 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 				fmt.Sprintf("Ku agent run for %s", workingBranch), result.Branch, baseBranch, result.Summary)
 		}
 		if prErr != nil {
-			result.RiskNotes = append(result.RiskNotes, "Pull request creation failed: "+safeError(prErr))
+			message := "Pull request creation failed: " + redact(safeError(prErr), secrets)
+			result.RiskNotes = append(result.RiskNotes, message)
+			result.Status = "failed"
+			run.Status = domain.DevMachineAgentRunStatusFailed
+			executionErr = errors.New(message)
 		} else if safeURL, ok := safeForgejoPullRequestURL(pullRequest.HTMLURL, repositoryFullName, instanceURL); !ok {
 			result.PullRequestURL = ""
 			result.RiskNotes = append(result.RiskNotes, "Created pull request URL was ignored because Forgejo returned an unexpected repository URL.")
@@ -853,7 +906,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 		run.PullRequestURL = &result.PullRequestURL
 	}
 	if executionErr != nil {
-		message := safeError(executionErr)
+		message := redact(safeError(executionErr), secrets)
 		run.ErrorMessage = &message
 	}
 	for _, commit := range result.Commits {
@@ -1287,10 +1340,18 @@ func (m *Manager) forgejoCredential(ctx context.Context, machine *domain.DevMach
 	if linked == nil {
 		return "", "", sql.ErrNoRows
 	}
+	linkedInstance, err := forgejoclient.NormalizeInstanceURL(linked.InstanceURL)
+	if err != nil {
+		return "", "", errors.New("linked repository has an invalid Forgejo instance")
+	}
 
 	if m.globalForgejo != nil {
+		instanceURL, err := forgejoclient.NormalizeInstanceURL(m.globalForgejo.URL)
+		if err != nil || instanceURL != linkedInstance {
+			return "", "", errors.New("selected repository belongs to a different Forgejo instance")
+		}
 		m.recordCredential(ctx, machine.ID, m.globalForgejo.Token)
-		return m.globalForgejo.URL, m.globalForgejo.Token, nil
+		return instanceURL, m.globalForgejo.Token, nil
 	}
 	if len(m.forgejoKey) == 0 {
 		return "", "", sql.ErrNoRows
@@ -1302,6 +1363,10 @@ func (m *Manager) forgejoCredential(ctx context.Context, machine *domain.DevMach
 	if conn == nil {
 		return "", "", sql.ErrNoRows
 	}
+	instanceURL, err := forgejoclient.NormalizeInstanceURL(conn.InstanceURL)
+	if err != nil || instanceURL != linkedInstance {
+		return "", "", errors.New("selected repository belongs to a different Forgejo instance")
+	}
 	token, err := cryptoutil.Decrypt(conn.Token, m.forgejoKey)
 	if err != nil {
 		return "", "", fmt.Errorf("forgejo_token_decryption_failed: %w", err)
@@ -1310,7 +1375,7 @@ func (m *Manager) forgejoCredential(ctx context.Context, machine *domain.DevMach
 		return "", "", errors.New("empty Forgejo token")
 	}
 	m.recordCredential(ctx, machine.ID, token)
-	return strings.TrimRight(conn.InstanceURL, "/"), token, nil
+	return instanceURL, token, nil
 }
 
 // recordCredential keeps the machine's runtime-credential audit trail in

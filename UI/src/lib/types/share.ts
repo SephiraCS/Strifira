@@ -23,6 +23,7 @@ export interface ScreenShareList {
 
 export interface ScreenShareJoin {
 	share: ScreenShare;
+	presenter_token: string;
 }
 
 // A share is identified by its presenter; creation carries no fields.

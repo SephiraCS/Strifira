@@ -5,6 +5,7 @@ repository=${1:-}
 base_branch=${2:-}
 working_branch=${3:-}
 workspace_path=${4:-}
+repository_url=${5:-}
 workspace_root=${KU_WORKSPACE_ROOT:-/workspace}
 checkout_secret_dir=${KU_CHECKOUT_SECRET_DIR:-/run/ku-secrets}
 checkout_tmp_dir=${KU_CHECKOUT_TMP_DIR:-/tmp}
@@ -52,12 +53,27 @@ case "${1:-get}" in
   store|erase ) exit 0 ;;
   * ) exit 0 ;;
 esac
-if [ -z "${GITHUB_TOKEN:-}" ]; then
-  echo "missing active GitHub token" >&2
-  exit 1
+protocol=
+host=
+path=
+while IFS= read -r line && [ -n "$line" ]; do
+  case "$line" in
+    protocol=*) protocol=${line#protocol=} ;;
+    host=*) host=${line#host=} ;;
+    path=*) path=${line#path=} ;;
+  esac
+done
+[ "$protocol" = https ] || exit 0
+path=${path%.git}
+if [ -n "${FORGEJO_TOKEN:-}" ] && [ -n "${KU_FORGEJO_HOST:-}" ] && [ -n "${KU_GIT_REPOSITORY:-}" ] \
+    && [ "$host" = "$KU_FORGEJO_HOST" ] && [ "$path" = "$KU_GIT_REPOSITORY" ]; then
+  printf '%s\n' username=oauth2
+  printf '%s\n' "password=$FORGEJO_TOKEN"
+elif [ "$host" = github.com ] && [ -n "${GITHUB_TOKEN:-}" ] \
+    && { [ -z "${KU_GIT_REPOSITORY:-}" ] || [ "$path" = "$KU_GIT_REPOSITORY" ]; }; then
+  printf '%s\n' username=x-access-token
+  printf '%s\n' "password=$GITHUB_TOKEN"
 fi
-printf '%s\n' username=x-access-token
-printf '%s\n' "password=$GITHUB_TOKEN"
 SCRIPT
   chmod 0700 "$credential_helper"
   umask "$old_umask"
@@ -69,6 +85,7 @@ configure_checkout_git_helper() {
   git -C "$checkout_dir" config --unset-all core.askPass >/dev/null 2>&1 || true
   git -C "$checkout_dir" config --unset-all credential.helper >/dev/null 2>&1 || true
   git -C "$checkout_dir" config credential.helper "$credential_helper"
+  git -C "$checkout_dir" config credential.useHttpPath true
 }
 
 clear_bare_git_credentials() {
@@ -105,6 +122,18 @@ valid_ref() {
 }
 valid_ref "$base_branch" && valid_ref "$working_branch" || { echo "invalid branch" >&2; exit 1; }
 
+case "$repository_url" in
+  https://* ) ;;
+  * ) echo "repository URL must use HTTPS" >&2; exit 1 ;;
+esac
+case "$repository_url" in *'@'*|*'?'*|*'#'*|*' '* ) echo "invalid repository URL" >&2; exit 1 ;; esac
+url_without_scheme=${repository_url#https://}
+repository_host=${url_without_scheme%%/*}
+case "$repository_host" in *[!A-Za-z0-9.:-]* ) echo "invalid repository host" >&2; exit 1 ;; esac
+[ -n "$repository_host" ] && [ "$url_without_scheme" != "$repository_host" ] || { echo "invalid repository URL" >&2; exit 1; }
+repository_url_path=${url_without_scheme#*/}
+[ "${repository_url_path%.git}" = "$repository" ] || { echo "repository URL must match repository" >&2; exit 1; }
+
 IFS= read -r github_token
 [ -n "$github_token" ] || { echo "missing repository credential" >&2; exit 1; }
 umask 077
@@ -113,20 +142,31 @@ printf '%s' "$github_token" > "$token_file"
 chmod 0600 "$token_file"
 unset github_token
 
-askpass=$(mktemp "$checkout_tmp_dir/ku-checkout-askpass.XXXXXX")
+askpass=$(mktemp "$checkout_tmp_dir/ku-checkout-credential.XXXXXX")
 cat > "$askpass" <<'SCRIPT'
 #!/bin/sh
-case "$1" in
-  *Username*) printf '%s\n' x-access-token ;;
-  *) cat "$KU_CHECKOUT_TOKEN_FILE" ;;
-esac
+[ "${1:-get}" = get ] || exit 0
+protocol=; host=; path=
+while IFS= read -r line && [ -n "$line" ]; do
+  case "$line" in protocol=*) protocol=${line#protocol=} ;; host=*) host=${line#host=} ;; path=*) path=${line#path=} ;; esac
+done
+if [ "$protocol" = https ] && [ "$host" = "$KU_CHECKOUT_HOST" ] && [ "${path%.git}" = "$KU_CHECKOUT_REPOSITORY" ]; then
+  printf '%s\n' username=oauth2
+  printf 'password='
+  cat "$KU_CHECKOUT_TOKEN_FILE"
+  printf '\n'
+fi
 SCRIPT
 chmod 0700 "$askpass"
-export GIT_ASKPASS="$askpass" GIT_TERMINAL_PROMPT=0 KU_CHECKOUT_TOKEN_FILE="$token_file"
+export GIT_ASKPASS=/bin/false GIT_TERMINAL_PROMPT=0 KU_CHECKOUT_TOKEN_FILE="$token_file"
+export KU_CHECKOUT_HOST="$repository_host" KU_CHECKOUT_REPOSITORY="$repository"
+export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=
+export GIT_CONFIG_KEY_1=credential.helper GIT_CONFIG_VALUE_1="$askpass"
+export GIT_CONFIG_KEY_2=credential.useHttpPath GIT_CONFIG_VALUE_2=true
 
-repository_key=$(printf '%s' "$repository" | tr '/' '-')
+repository_key=$(printf '%s' "$repository_host/$repository" | tr '/:' '--')
 bare_repository="$workspace_root/repos/${repository_key}.git"
-repository_url="https://github.com/${repository}"
+
 
 if [ ! -d "$bare_repository" ]; then
   git clone --bare "$repository_url" "$bare_repository"

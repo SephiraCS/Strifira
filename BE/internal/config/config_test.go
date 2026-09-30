@@ -18,6 +18,25 @@ func TestParseSysadmins(t *testing.T) {
 	assert.Len(t, ids, 1)
 }
 
+func TestLoadBindAddress(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/fixture")
+	t.Setenv("REDIS_URL", "redis://localhost:6379")
+	t.Setenv("JWT_SECRET", strings.Repeat("fixture", 8))
+	t.Setenv("DEV_MACHINES_ENABLED", "false")
+	t.Setenv("SYSADMINS", "")
+	t.Setenv("SYSTEM_UPDATER_TOKEN", "")
+	t.Setenv("BIND_ADDRESS", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.BindAddress)
+
+	t.Setenv("BIND_ADDRESS", "127.0.0.1")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1", cfg.BindAddress)
+}
+
 func TestParseSysadminsRejectsInvalidID(t *testing.T) {
 	_, err := parseSysadmins("not-a-uuid")
 

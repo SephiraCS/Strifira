@@ -1,6 +1,8 @@
-FROM docker.io/library/golang:1.27.1-alpine AS go-stage
+ARG GO_IMAGE=docker.io/library/golang:1.27.1-alpine
+ARG NODE_IMAGE=docker.io/library/node:22.23.1-alpine3.23
+FROM ${GO_IMAGE} AS go-stage
 
-FROM docker.io/library/node:22.23.1-alpine3.23
+FROM ${NODE_IMAGE}
 
 ARG PROVIDER
 ARG NPM_VERSION=12.0.1

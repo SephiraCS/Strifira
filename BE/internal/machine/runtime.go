@@ -26,6 +26,13 @@ type GitState struct {
 	Branch       string
 	Commits      []string
 	ChangedFiles []string
+	Dirty        bool
+}
+
+type CommandExecution struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
 }
 
 type RuntimeInspection struct {
@@ -59,6 +66,8 @@ type Runtime interface {
 	Inspect(context.Context, *domain.DevMachine, []domain.DevMachineService) (RuntimeInspection, error)
 	Stats(context.Context, *domain.DevMachine, []domain.DevMachineService) (ResourceUsage, error)
 	GitState(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout) (GitState, error)
+	RunWorkspaceCommand(context.Context, []domain.DevMachineService, *domain.DevMachineCheckout, []string) (*CommandExecution, error)
+	PublishAgentBranch(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout, string, string) error
 	PrepareCheckout(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout, string) error
 	SnapshotEnvironment(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineEnvironment) (string, error)
 	DeleteEnvironmentImage(context.Context, *domain.DevMachineEnvironment) error
