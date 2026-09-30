@@ -22,9 +22,8 @@ type forgejoActionsService interface {
 	ListActionRuns(context.Context, uuid.UUID, uuid.UUID, fj.ActionRunOptions) (*dto.ListResponse[dto.ForgejoActionRunResponse], error)
 	GetActionRun(context.Context, uuid.UUID, uuid.UUID, int64) (*dto.ForgejoActionRunResponse, error)
 	ListActionJobs(context.Context, uuid.UUID, uuid.UUID, int64, int, int) (*dto.ListResponse[dto.ForgejoActionJobResponse], error)
-	GetActionJob(context.Context, uuid.UUID, uuid.UUID, int64) (*dto.ForgejoActionJobResponse, error)
-	GetActionJobLog(context.Context, uuid.UUID, uuid.UUID, int64, int64) (*dto.ForgejoActionLogResponse, error)
-	RerunActionRun(context.Context, uuid.UUID, uuid.UUID, int64) error
+	GetActionJob(context.Context, uuid.UUID, uuid.UUID, int64, int64) (*dto.ForgejoActionJobResponse, error)
+	GetActionJobLog(context.Context, uuid.UUID, uuid.UUID, int64, int64, int64) (*dto.ForgejoActionLogResponse, error)
 	CancelActionRun(context.Context, uuid.UUID, uuid.UUID, int64) error
 }
 
@@ -164,11 +163,15 @@ func (h *ForgejoActionsHandler) GetJob(c echo.Context) error {
 	if err != nil {
 		return forgejoActionError(c, err, false)
 	}
+	runID, err := actionID(c, "runId")
+	if err != nil {
+		return forgejoActionError(c, err, false)
+	}
 	jobID, err := actionID(c, "jobId")
 	if err != nil {
 		return forgejoActionError(c, err, false)
 	}
-	result, err := h.svc.GetActionJob(c.Request().Context(), workspaceID, repoID, jobID)
+	result, err := h.svc.GetActionJob(c.Request().Context(), workspaceID, repoID, runID, jobID)
 	if err != nil {
 		return forgejoActionError(c, err, false)
 	}
@@ -180,6 +183,10 @@ func (h *ForgejoActionsHandler) GetJobLogs(c echo.Context) error {
 	if err != nil {
 		return forgejoActionError(c, err, true)
 	}
+	runID, err := actionID(c, "runId")
+	if err != nil {
+		return forgejoActionError(c, err, true)
+	}
 	jobID, err := actionID(c, "jobId")
 	if err != nil {
 		return forgejoActionError(c, err, true)
@@ -188,22 +195,14 @@ func (h *ForgejoActionsHandler) GetJobLogs(c echo.Context) error {
 	if err != nil {
 		return forgejoActionError(c, err, true)
 	}
-	result, err := h.svc.GetActionJobLog(c.Request().Context(), workspaceID, repoID, jobID, attempt)
+	result, err := h.svc.GetActionJobLog(c.Request().Context(), workspaceID, repoID, runID, jobID, attempt)
 	if err != nil {
 		return forgejoActionError(c, err, true)
 	}
 	return response.Success(c, http.StatusOK, result)
 }
 
-func (h *ForgejoActionsHandler) Rerun(c echo.Context) error {
-	return h.mutateRun(c, true)
-}
-
 func (h *ForgejoActionsHandler) Cancel(c echo.Context) error {
-	return h.mutateRun(c, false)
-}
-
-func (h *ForgejoActionsHandler) mutateRun(c echo.Context, rerun bool) error {
 	workspaceID, repoID, err := actionScope(c)
 	if err != nil {
 		return forgejoActionError(c, err, false)
@@ -212,11 +211,7 @@ func (h *ForgejoActionsHandler) mutateRun(c echo.Context, rerun bool) error {
 	if err != nil {
 		return forgejoActionError(c, err, false)
 	}
-	if rerun {
-		err = h.svc.RerunActionRun(c.Request().Context(), workspaceID, repoID, runID)
-	} else {
-		err = h.svc.CancelActionRun(c.Request().Context(), workspaceID, repoID, runID)
-	}
+	err = h.svc.CancelActionRun(c.Request().Context(), workspaceID, repoID, runID)
 	if err != nil {
 		return forgejoActionError(c, err, false)
 	}
@@ -233,6 +228,8 @@ func forgejoActionError(c echo.Context, err error, logs bool) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid Forgejo Actions parameters")
 	case errors.Is(err, service.ErrForgejoActionRepoNotFound):
 		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "Repository is not linked in this workspace")
+	case errors.Is(err, service.ErrForgejoActionJobNotFound):
+		return response.Error(c, http.StatusNotFound, "ACTION_NOT_FOUND", "Job was not found in this run")
 	case errors.Is(err, service.ErrForgejoActionConnection):
 		return response.Error(c, http.StatusConflict, "FORGEJO_CONNECTION_UNAVAILABLE", "Connect this workspace to the linked repository's Forgejo instance")
 	case errors.Is(err, service.ErrForgejoActionState):

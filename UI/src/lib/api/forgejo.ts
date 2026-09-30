@@ -133,29 +133,28 @@ export function listForgejoActionJobs(
 export function getForgejoActionJob(
 	slug: string,
 	repoId: string,
+	runId: number,
 	jobId: number,
 	signal?: AbortSignal
 ): Promise<ForgejoActionJob> {
-	return api.fetch(`${actionsPath(slug, repoId)}/jobs/${jobId}`, { signal });
+	return api.fetch(`${actionsPath(slug, repoId)}/runs/${runId}/jobs/${jobId}`, { signal });
 }
 
 export function getForgejoActionLogs(
 	slug: string,
 	repoId: string,
+	runId: number,
 	jobId: number,
 	attempt: number,
 	signal?: AbortSignal
 ): Promise<ForgejoActionLogs> {
 	const query = new URLSearchParams();
 	if (attempt > 0) query.set('attempt', String(attempt));
-	return api.fetch(`${actionsPath(slug, repoId)}/jobs/${jobId}/logs${query.size ? `?${query}` : ''}`, { signal });
+	return api.fetch(`${actionsPath(slug, repoId)}/runs/${runId}/jobs/${jobId}/logs${query.size ? `?${query}` : ''}`, {
+		signal
+	});
 }
 
-export function requestForgejoAction(
-	slug: string,
-	repoId: string,
-	runId: number,
-	action: 'rerun' | 'cancel'
-): Promise<{ status: 'requested' }> {
-	return api.post(`${actionsPath(slug, repoId)}/runs/${runId}/${action}`);
+export function cancelForgejoActionRun(slug: string, repoId: string, runId: number): Promise<{ status: 'accepted' }> {
+	return api.post(`${actionsPath(slug, repoId)}/runs/${runId}/cancel`);
 }

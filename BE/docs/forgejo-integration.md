@@ -36,8 +36,9 @@ variants are accepted for compatibility.
 | `FORGEJO_WEBHOOK_URL` | Webhook target override (dev tunnels); defaults to `FRONTEND_URL` + `/api/forgejo/webhook` |
 
 The token needs `read:user` to validate the connection and `read:repository`
-to browse repositories. Creating signed webhooks and rerunning or cancelling
-Actions require `write:repository`. Instance URLs must be HTTP(S) origins,
+to browse repositories. Creating signed webhooks and cancelling Actions
+require `write:repository`. Reruns use the native Forgejo run page and your
+normal Forgejo login and repository permissions. Instance URLs must be HTTP(S) origins,
 without a path, query, fragment, or embedded credentials. Ku refuses to change
 the instance while repositories remain linked; unlink them first. Rotating the
 token on the same instance is supported. The status separates a configured
@@ -47,10 +48,15 @@ connection from one whose token currently authenticates successfully.
 
 The workspace Actions page lists runs from linked repositories, with status
 and branch/ref filters, paginated history, run details, jobs, attempts, and
-plaintext logs. All workspace members can read Actions; rerun and cancel use
-the existing `workspace:manage` permission (currently the workspace owner).
-Only completed runs (`success`, `failure`, `cancelled`, `skipped`) can be
-rerun. Pending, running, and blocked runs can be cancelled.
+plaintext logs. All workspace members can read Actions. Cancellation uses
+the existing `workspace:manage` permission (currently the workspace owner);
+pending, running, and blocked runs can be cancelled.
+
+For completed runs (`success`, `failure`, `cancelled`, `skipped`), the owner's
+**Rerun in Forgejo** link opens the native run page. Sign in with your normal
+Forgejo account and use the rerun controls there; your Forgejo repository
+permissions apply. Forgejo 16.0.5 has no REST endpoint for requesting reruns.
+Ku does not submit a rerun request or report that one succeeded.
 
 The REST base is
 `/api/workspaces/:slug/forgejo/repos/:repoId/actions`, where `repoId` is the
@@ -62,9 +68,8 @@ repository ID. Run and job IDs are the numeric IDs returned by Forgejo.
 | `GET /runs` | `{data, total_count, page, per_page, has_more}`; default 20 runs, maximum 100 per page |
 | `GET /runs/:runId` | Run metadata and status |
 | `GET /runs/:runId/jobs` | Paginated job list; default 100 per page |
-| `GET /jobs/:jobId` | Job metadata and ordered steps, when supported by the instance |
-| `GET /jobs/:jobId/logs?attempt=N` | `{content, truncated, max_bytes}`; plaintext content, latest attempt by default |
-| `POST /runs/:runId/rerun` | Request a rerun of a completed run |
+| `GET /runs/:runId/jobs/:jobId` | Job metadata resolved from the run's native job list |
+| `GET /runs/:runId/jobs/:jobId/logs?attempt=N` | `{content, truncated, max_bytes}`; plaintext content, latest attempt by default |
 | `POST /runs/:runId/cancel` | Request cancellation of an active run |
 
 Run filters are `status`, `ref`, `event`, `head_sha`, `workflow_id`, and
@@ -74,12 +79,15 @@ branch name to `refs/heads/<name>`. Forgejo uses `waiting` for queued runs.
 Job logs use **job IDs**, and `attempt` selects a job attempt; runs have no
 single attempt number because jobs can be rerun independently.
 The upstream contracts are defined in Forgejo's
-[Actions API models](https://codeberg.org/forgejo/forgejo/src/branch/forgejo/modules/structs/action.go)
-and [repository API handlers](https://codeberg.org/forgejo/forgejo/src/branch/forgejo/routers/api/v1/repo/action.go).
+[Forgejo 16.0.5 Actions API models](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/modules/structs/action.go)
+and [repository API handlers](https://codeberg.org/forgejo/forgejo/src/tag/v16.0.5/routers/api/v1/repo/action.go).
 
-Plaintext job logs require Forgejo 16 or newer. Job details/ordered steps are
-available on newer Forgejo builds that advertise `repoGetActionJob`; where
-that endpoint is unavailable, the UI still displays the job and its logs.
+Plaintext job logs require Forgejo 16 or newer. Ku resolves job metadata through
+Forgejo's supported `GET /repos/{owner}/{repo}/actions/runs/{runId}/jobs` and
+checks that the requested job belongs to that run before returning metadata
+or requesting logs. Forgejo 16's native job list exposes ID, run ID, name,
+status, and attempt, without individual steps or their timings. The
+**View workflow steps in Forgejo** link opens the native run page for those details.
 Expired logs and jobs that have not yet executed can also return unavailable.
 Each log request reads at most 2 MiB and reports truncation explicitly.
 

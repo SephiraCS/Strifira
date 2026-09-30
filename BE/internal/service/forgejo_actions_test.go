@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
@@ -85,9 +84,11 @@ func TestForgejoActionsRejectUnlinkedOrForeignRepositories(t *testing.T) {
 			svc := &ForgejoService{fRepo: &actionsTestStore{repo: tc.repo}, global: &GlobalForgejoConfig{URL: server.URL, Token: "workspace-token"}}
 			_, err := svc.ListActionRuns(t.Context(), workspaceID, repoID, fj.ActionRunOptions{})
 			assert.ErrorIs(t, err, tc.err)
-			_, err = svc.GetActionJobLog(t.Context(), workspaceID, repoID, 12, 0)
+			_, err = svc.GetActionJobLog(t.Context(), workspaceID, repoID, 4, 12, 0)
 			assert.ErrorIs(t, err, tc.err)
-			assert.ErrorIs(t, svc.RerunActionRun(t.Context(), workspaceID, repoID, 12), tc.err)
+			_, err = svc.GetActionJob(t.Context(), workspaceID, repoID, 4, 12)
+			assert.ErrorIs(t, err, tc.err)
+			assert.ErrorIs(t, svc.CancelActionRun(t.Context(), workspaceID, repoID, 12), tc.err)
 		})
 	}
 	assert.Zero(t, calls, "credentials must not be sent before workspace and instance checks pass")
@@ -105,8 +106,6 @@ func TestForgejoActionsMapsModelsAndPaginatesJobs(t *testing.T) {
 			fmt.Fprint(w, `{"workflow_runs":[{"id":4,"title":"Build project","index_in_repo":8,"workflow_id":"build.yaml","prettyref":"feature/work","commit_sha":"0123456789","event":"push","status":"waiting","started":"1970-01-01T00:00:00Z","stopped":"0001-01-01T00:00:00Z","created":"2026-09-30T12:00:00Z","updated":"2026-09-30T12:00:01Z","html_url":"javascript:alert(1)"}],"total_count":22}`)
 		case "/api/v1/repos/org/project/actions/runs/4/jobs":
 			fmt.Fprint(w, `[{"id":1,"run_id":4,"name":"Test"},{"id":2,"run_id":4,"name":"Build","attempt":3,"status":"failure"},{"id":3,"run_id":4,"name":"Deploy"}]`)
-		case "/api/v1/repos/org/project/actions/jobs/2":
-			fmt.Fprint(w, `{"id":2,"run_id":4,"name":"Build","attempt":3,"status":"failure","steps":[{"number":0,"name":"Set up job","status":"success","started":"2026-09-30T12:00:00Z","stopped":"2026-09-30T12:00:01Z"},{"number":1,"name":"Compile","status":"failure","started":"2026-09-30T12:00:01Z","stopped":"2026-09-30T12:00:05Z"}]}`)
 		case "/api/v1/repos/org/project/actions/jobs/2/logs":
 			assert.Equal(t, "2", r.URL.Query().Get("attempt"))
 			fmt.Fprint(w, "attempt two failed\n")
@@ -138,56 +137,56 @@ func TestForgejoActionsMapsModelsAndPaginatesJobs(t *testing.T) {
 	assert.EqualValues(t, 3, jobs.Data[0].Attempt)
 	assert.Equal(t, 3, jobs.TotalCount)
 	assert.True(t, jobs.HasMore)
-	assert.Empty(t, jobs.Data[0].Steps)
-	job, err := svc.GetActionJob(t.Context(), workspaceID, repoID, 2)
+	job, err := svc.GetActionJob(t.Context(), workspaceID, repoID, 4, 2)
 	require.NoError(t, err)
-	require.Len(t, job.Steps, 2)
+	assert.Equal(t, jobs.Data[0], *job)
 	assert.Equal(t, "failure", job.Conclusion)
-	require.NotNil(t, job.StartedAt)
-	require.NotNil(t, job.CompletedAt)
-	assert.Equal(t, 5*time.Second, job.CompletedAt.Sub(*job.StartedAt))
-	log, err := svc.GetActionJobLog(t.Context(), workspaceID, repoID, 2, 2)
+	log, err := svc.GetActionJobLog(t.Context(), workspaceID, repoID, 4, 2, 2)
 	require.NoError(t, err)
 	assert.Equal(t, "attempt two failed\n", log.Content)
+	for _, tc := range []struct {
+		page, size, count int
+		hasMore           bool
+	}{
+		{1, 1, 1, true}, {3, 1, 1, false}, {4, 1, 0, false}, {10000, 100, 0, false},
+	} {
+		page, err := svc.ListActionJobs(t.Context(), workspaceID, repoID, 4, tc.page, tc.size)
+		require.NoError(t, err)
+		assert.Len(t, page.Data, tc.count)
+		assert.Equal(t, 3, page.TotalCount)
+		assert.Equal(t, tc.page, page.Page)
+		assert.Equal(t, tc.size, page.PerPage)
+		assert.Equal(t, tc.hasMore, page.HasMore)
+	}
 }
 
-func TestForgejoActionsMutationsRequireMatchingRunState(t *testing.T) {
+func TestForgejoActionsCancellationRequiresActiveRun(t *testing.T) {
 	for _, status := range []string{"success", "failure", "cancelled", "skipped", "waiting", "running", "blocked", "unknown"} {
-		for _, rerun := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s rerun=%t", status, rerun), func(t *testing.T) {
-				workspaceID, repoID := uuid.New(), uuid.New()
-				var mutations int
-				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					if r.Method == http.MethodGet {
-						fmt.Fprintf(w, `{"id":9,"status":%q}`, status)
-						return
-					}
-					mutations++
-					if rerun {
-						assert.Equal(t, "/api/v1/repos/org/project/actions/runs/9/rerun", r.URL.Path)
-					} else {
-						assert.Equal(t, "/api/v1/repos/org/project/actions/runs/9/cancel", r.URL.Path)
-					}
-					w.WriteHeader(http.StatusNoContent)
-				}))
-				defer server.Close()
-				svc := &ForgejoService{fRepo: &actionsTestStore{repo: &domain.ForgejoRepoModel{WorkspaceID: workspaceID, InstanceURL: server.URL, FullName: "org/project", IsActive: true}}, global: &GlobalForgejoConfig{URL: server.URL, Token: "token"}}
-				var err error
-				if rerun {
-					err = svc.RerunActionRun(t.Context(), workspaceID, repoID, 9)
-				} else {
-					err = svc.CancelActionRun(t.Context(), workspaceID, repoID, 9)
+		t.Run(status, func(t *testing.T) {
+			workspaceID, repoID := uuid.New(), uuid.New()
+			var mutations int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					assert.Equal(t, "/api/v1/repos/org/project/actions/runs/9", r.URL.Path)
+					fmt.Fprintf(w, `{"id":9,"status":%q}`, status)
+					return
 				}
-				allowed := (rerun && actionConclusion(status) != "") || (!rerun && (status == "waiting" || status == "running" || status == "blocked"))
-				if allowed {
-					require.NoError(t, err)
-					assert.Equal(t, 1, mutations)
-				} else {
-					assert.ErrorIs(t, err, ErrForgejoActionState)
-					assert.Zero(t, mutations)
-				}
-			})
-		}
+				mutations++
+				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, "/api/v1/repos/org/project/actions/runs/9/cancel", r.URL.Path)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			svc := &ForgejoService{fRepo: &actionsTestStore{repo: &domain.ForgejoRepoModel{WorkspaceID: workspaceID, InstanceURL: server.URL, FullName: "org/project", IsActive: true}}, global: &GlobalForgejoConfig{URL: server.URL, Token: "token"}}
+			err := svc.CancelActionRun(t.Context(), workspaceID, repoID, 9)
+			if status == "waiting" || status == "running" || status == "blocked" {
+				require.NoError(t, err)
+				assert.Equal(t, 1, mutations)
+			} else {
+				assert.ErrorIs(t, err, ErrForgejoActionState)
+				assert.Zero(t, mutations)
+			}
+		})
 	}
 }
 
@@ -197,8 +196,14 @@ func TestForgejoActionsRejectsInvalidParametersBeforeLookingUpRepository(t *test
 		_, err := svc.ListActionRuns(t.Context(), uuid.New(), uuid.New(), opts)
 		assert.ErrorIs(t, err, ErrForgejoActionParams)
 	}
-	_, err := svc.GetActionJobLog(t.Context(), uuid.New(), uuid.New(), 1, -1)
+	_, err := svc.GetActionJobLog(t.Context(), uuid.New(), uuid.New(), 1, 1, -1)
 	assert.ErrorIs(t, err, ErrForgejoActionParams)
+	for _, ids := range [][2]int64{{0, 1}, {1, 0}, {-1, 1}, {1, -1}} {
+		_, err := svc.GetActionJob(t.Context(), uuid.New(), uuid.New(), ids[0], ids[1])
+		assert.ErrorIs(t, err, ErrForgejoActionParams)
+		_, err = svc.GetActionJobLog(t.Context(), uuid.New(), uuid.New(), ids[0], ids[1], 0)
+		assert.ErrorIs(t, err, ErrForgejoActionParams)
+	}
 	assert.ErrorIs(t, svc.CancelActionRun(t.Context(), uuid.New(), uuid.New(), 0), ErrForgejoActionParams)
 }
 
@@ -224,27 +229,70 @@ func TestForgejoActionsUsesEncryptedWorkspaceConnection(t *testing.T) {
 	assert.Equal(t, "success", run.Status)
 }
 
-func TestForgejo16JobLogsDoNotRequireJobDetailEndpoint(t *testing.T) {
+func TestForgejo16JobLogsAuthorizeThroughRunJobs(t *testing.T) {
 	workspaceID, repoID := uuid.New(), uuid.New()
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.Path)
-		if r.URL.Path != "/api/v1/repos/org/project/actions/jobs/42/logs" {
+		requests = append(requests, r.URL.RequestURI())
+		switch r.URL.Path {
+		case "/api/v1/repos/org/project/actions/runs/9/jobs":
+			fmt.Fprint(w, `[{"id":42,"run_id":9,"attempt":3,"status":"success"}]`)
+		case "/api/v1/repos/org/project/actions/jobs/42/logs":
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, "Forgejo 16 log\n")
+		default:
+			t.Errorf("unsupported request %s", r.URL)
 			w.WriteHeader(http.StatusNotFound)
-			return
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, "Forgejo 16 log\n")
 	}))
 	defer server.Close()
 	svc := &ForgejoService{
 		fRepo:  &actionsTestStore{repo: &domain.ForgejoRepoModel{WorkspaceID: workspaceID, InstanceURL: server.URL, FullName: "org/project", IsActive: true}},
 		global: &GlobalForgejoConfig{URL: server.URL, Token: "workspace-token"},
 	}
-	log, err := svc.GetActionJobLog(t.Context(), workspaceID, repoID, 42, 0)
+	current, err := svc.GetActionJobLog(t.Context(), workspaceID, repoID, 9, 42, 0)
 	require.NoError(t, err)
-	assert.Equal(t, "Forgejo 16 log\n", log.Content)
-	assert.Equal(t, []string{"/api/v1/repos/org/project/actions/jobs/42/logs"}, requests)
+	explicit, err := svc.GetActionJobLog(t.Context(), workspaceID, repoID, 9, 42, 3)
+	require.NoError(t, err)
+	assert.Equal(t, "Forgejo 16 log\n", current.Content)
+	assert.Equal(t, current, explicit)
+	assert.Equal(t, []string{
+		"/api/v1/repos/org/project/actions/runs/9/jobs", "/api/v1/repos/org/project/actions/jobs/42/logs",
+		"/api/v1/repos/org/project/actions/runs/9/jobs", "/api/v1/repos/org/project/actions/jobs/42/logs?attempt=3",
+	}, requests)
+}
+
+func TestForgejoActionsRejectJobOutsideRunBeforeReadingLogs(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		status     int
+	}{
+		{"missing job", `[]`, http.StatusOK},
+		{"different job", `[{"id":43,"run_id":9}]`, http.StatusOK},
+		{"wrong run", `[{"id":42,"run_id":10}]`, http.StatusOK},
+		{"missing run", ``, http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workspaceID, repoID := uuid.New(), uuid.New()
+			var requests []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests = append(requests, r.URL.Path)
+				assert.Equal(t, "/api/v1/repos/org/project/actions/runs/9/jobs", r.URL.Path)
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer server.Close()
+			svc := &ForgejoService{
+				fRepo:  &actionsTestStore{repo: &domain.ForgejoRepoModel{WorkspaceID: workspaceID, InstanceURL: server.URL, FullName: "org/project", IsActive: true}},
+				global: &GlobalForgejoConfig{URL: server.URL, Token: "workspace-token"},
+			}
+			_, err := svc.GetActionJob(t.Context(), workspaceID, repoID, 9, 42)
+			assert.ErrorIs(t, err, ErrForgejoActionJobNotFound)
+			_, err = svc.GetActionJobLog(t.Context(), workspaceID, repoID, 9, 42, 0)
+			assert.ErrorIs(t, err, ErrForgejoActionJobNotFound)
+			assert.Equal(t, []string{"/api/v1/repos/org/project/actions/runs/9/jobs", "/api/v1/repos/org/project/actions/runs/9/jobs"}, requests)
+		})
+	}
 }
 
 func TestForgejoActionLinksStayOnConfiguredOrigin(t *testing.T) {

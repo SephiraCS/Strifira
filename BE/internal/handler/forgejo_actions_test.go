@@ -28,6 +28,7 @@ type forgejoActionsStub struct {
 	workspaceID uuid.UUID
 	repoID      uuid.UUID
 	resourceID  int64
+	runID       int64
 	attempt     int64
 	opts        fj.ActionRunOptions
 	page        int
@@ -63,20 +64,16 @@ func (s *forgejoActionsStub) ListActionJobs(_ context.Context, ws, repo uuid.UUI
 	}, s.err
 }
 
-func (s *forgejoActionsStub) GetActionJob(_ context.Context, ws, repo uuid.UUID, id int64) (*dto.ForgejoActionJobResponse, error) {
+func (s *forgejoActionsStub) GetActionJob(_ context.Context, ws, repo uuid.UUID, runID, id int64) (*dto.ForgejoActionJobResponse, error) {
 	s.record("get job", ws, repo, id)
-	return &dto.ForgejoActionJobResponse{ID: id, Status: "running"}, s.err
+	s.runID = runID
+	return &dto.ForgejoActionJobResponse{ID: id, RunID: runID, Status: "running"}, s.err
 }
 
-func (s *forgejoActionsStub) GetActionJobLog(_ context.Context, ws, repo uuid.UUID, id, attempt int64) (*dto.ForgejoActionLogResponse, error) {
+func (s *forgejoActionsStub) GetActionJobLog(_ context.Context, ws, repo uuid.UUID, runID, id, attempt int64) (*dto.ForgejoActionLogResponse, error) {
 	s.record("logs", ws, repo, id)
-	s.attempt = attempt
+	s.runID, s.attempt = runID, attempt
 	return &dto.ForgejoActionLogResponse{Content: "test output\n", Truncated: true, MaxBytes: fj.MaxActionLogBytes}, s.err
-}
-
-func (s *forgejoActionsStub) RerunActionRun(_ context.Context, ws, repo uuid.UUID, id int64) error {
-	s.record("rerun", ws, repo, id)
-	return s.err
 }
 
 func (s *forgejoActionsStub) CancelActionRun(_ context.Context, ws, repo uuid.UUID, id int64) error {
@@ -91,11 +88,11 @@ func forgejoActionsRouter(t *testing.T, stub *forgejoActionsStub, workspaceID uu
 	source, err := os.ReadFile("../../cmd/server/main.go")
 	require.NoError(t, err)
 	registrations := regexp.MustCompile(`ws\.(GET|POST)\("([^"]+)", forgejoActionsH\.(\w+), mw.RequirePermission\("([^"]+)"\)\)`).FindAllStringSubmatch(string(source), -1)
-	require.Len(t, registrations, 7, "all Actions routes must have explicit permission middleware")
+	require.Len(t, registrations, 6, "all Actions routes must have explicit permission middleware")
 	h := NewForgejoActionsHandler(stub)
 	handlers := map[string]echo.HandlerFunc{
 		"ListRuns": h.ListRuns, "GetRun": h.GetRun, "ListJobs": h.ListJobs,
-		"GetJob": h.GetJob, "GetJobLogs": h.GetJobLogs, "Rerun": h.Rerun, "Cancel": h.Cancel,
+		"GetJob": h.GetJob, "GetJobLogs": h.GetJobLogs, "Cancel": h.Cancel,
 	}
 	e := echo.New()
 	ws := e.Group("/api/workspaces/:slug", func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -136,9 +133,8 @@ func TestForgejoActionsRoutesScopeAndPermissions(t *testing.T) {
 		{http.MethodGet, "/runs", "list runs", 0},
 		{http.MethodGet, "/runs/81", "get run", 81},
 		{http.MethodGet, "/runs/81/jobs", "list jobs", 81},
-		{http.MethodGet, "/jobs/91", "get job", 91},
-		{http.MethodGet, "/jobs/91/logs", "logs", 91},
-		{http.MethodPost, "/runs/81/rerun", "rerun", 81},
+		{http.MethodGet, "/runs/81/jobs/91", "get job", 91},
+		{http.MethodGet, "/runs/81/jobs/91/logs", "logs", 91},
 		{http.MethodPost, "/runs/81/cancel", "cancel", 81},
 	} {
 		for _, role := range []string{domain.RoleOwner, domain.RoleAdmin, domain.RoleMember, domain.RoleGuest, "", "unknown"} {
@@ -162,6 +158,9 @@ func TestForgejoActionsRoutesScopeAndPermissions(t *testing.T) {
 				require.Equal(t, repoID, stub.repoID)
 				require.Equal(t, test.operation, stub.operation)
 				require.Equal(t, test.id, stub.resourceID)
+				if test.operation == "get job" || test.operation == "logs" {
+					require.Equal(t, int64(81), stub.runID)
+				}
 			})
 		}
 	}
@@ -175,13 +174,15 @@ func TestForgejoActionsRejectInvalidInputsBeforeService(t *testing.T) {
 		{http.MethodGet, strings.Replace(base, repoID, uuid.Nil.String(), 1) + "/runs"},
 		{http.MethodGet, base + "/runs/0"},
 		{http.MethodGet, base + "/runs/-1/jobs"},
-		{http.MethodGet, base + "/jobs/abc"},
-		{http.MethodGet, base + "/jobs/9223372036854775808"},
-		{http.MethodGet, base + "/jobs/0/logs"},
-		{http.MethodGet, base + "/jobs/91/logs?attempt=-1"},
-		{http.MethodGet, base + "/jobs/91/logs?attempt=0"},
-		{http.MethodGet, base + "/jobs/91/logs?attempt=abc"},
-		{http.MethodGet, base + "/jobs/91/logs?attempt=1&attempt=2"},
+		{http.MethodGet, base + "/runs/0/jobs/91"},
+		{http.MethodGet, base + "/runs/abc/jobs/91/logs"},
+		{http.MethodGet, base + "/runs/81/jobs/abc"},
+		{http.MethodGet, base + "/runs/81/jobs/9223372036854775808"},
+		{http.MethodGet, base + "/runs/81/jobs/0/logs"},
+		{http.MethodGet, base + "/runs/81/jobs/91/logs?attempt=-1"},
+		{http.MethodGet, base + "/runs/81/jobs/91/logs?attempt=0"},
+		{http.MethodGet, base + "/runs/81/jobs/91/logs?attempt=abc"},
+		{http.MethodGet, base + "/runs/81/jobs/91/logs?attempt=1&attempt=2"},
 		{http.MethodGet, base + "/runs?page=0"},
 		{http.MethodGet, base + "/runs?page=10001"},
 		{http.MethodGet, base + "/runs?page=abc"},
@@ -197,7 +198,6 @@ func TestForgejoActionsRejectInvalidInputsBeforeService(t *testing.T) {
 		{http.MethodGet, base + "/runs?run_number=0"},
 		{http.MethodGet, base + "/runs?run_number=9223372036854775808"},
 		{http.MethodGet, base + "/runs/81/jobs?per_page=0"},
-		{http.MethodPost, base + "/runs/-1/rerun"},
 		{http.MethodPost, base + "/runs/abc/cancel"},
 	} {
 		t.Run(test.method+" "+test.path, func(t *testing.T) {
@@ -239,7 +239,7 @@ func TestForgejoActionsFiltersPaginationAndLogs(t *testing.T) {
 	require.Equal(t, 2, stub.page)
 	require.Equal(t, 10, stub.perPage)
 
-	recorder = requestForgejoActions(t, stub, uuid.New(), domain.RoleGuest, http.MethodGet, base+"/jobs/91/logs?attempt=3")
+	recorder = requestForgejoActions(t, stub, uuid.New(), domain.RoleGuest, http.MethodGet, base+"/runs/81/jobs/91/logs?attempt=3")
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, int64(3), stub.attempt)
 	var logs dto.ForgejoActionLogResponse
@@ -257,6 +257,7 @@ func TestForgejoActionsErrorsAreClassifiedAndSanitized(t *testing.T) {
 		status     int
 	}{
 		{"repository", "NOT_FOUND", service.ErrForgejoActionRepoNotFound, http.StatusNotFound},
+		{"job outside run", "ACTION_NOT_FOUND", service.ErrForgejoActionJobNotFound, http.StatusNotFound},
 		{"connection", "FORGEJO_CONNECTION_UNAVAILABLE", service.ErrForgejoActionConnection, http.StatusConflict},
 		{"parameters", "BAD_REQUEST", service.ErrForgejoActionParams, http.StatusBadRequest},
 		{"state", "ACTION_STATE_CONFLICT", service.ErrForgejoActionState, http.StatusConflict},
@@ -285,7 +286,7 @@ func TestForgejoActionsErrorsAreClassifiedAndSanitized(t *testing.T) {
 		})
 	}
 	stub := &forgejoActionsStub{err: &fj.APIError{StatusCode: 404}}
-	recorder := requestForgejoActions(t, stub, uuid.New(), domain.RoleGuest, http.MethodGet, base+"/jobs/91/logs")
+	recorder := requestForgejoActions(t, stub, uuid.New(), domain.RoleGuest, http.MethodGet, base+"/runs/81/jobs/91/logs")
 	require.Equal(t, http.StatusNotFound, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "ACTION_LOGS_UNAVAILABLE")
 	require.Contains(t, recorder.Body.String(), "Forgejo 16 or newer")
@@ -299,4 +300,27 @@ func TestForgejoActionsMissingWorkspaceIsForbidden(t *testing.T) {
 	require.NoError(t, NewForgejoActionsHandler(stub).ListRuns(c))
 	require.Equal(t, http.StatusForbidden, recorder.Code)
 	require.Zero(t, stub.calls)
+}
+
+func TestForgejoActionsRemovedRoutesReturnNotFound(t *testing.T) {
+	base := "/api/workspaces/test/forgejo/repos/" + uuid.New().String() + "/actions"
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/jobs/91"}, {http.MethodGet, "/jobs/91/logs"}, {http.MethodPost, "/runs/81/rerun"},
+	} {
+		stub := &forgejoActionsStub{}
+		recorder := requestForgejoActions(t, stub, uuid.New(), domain.RoleOwner, tc.method, base+tc.path)
+		require.Equal(t, http.StatusNotFound, recorder.Code)
+		require.Zero(t, stub.calls)
+	}
+}
+
+func TestForgejoActionsMembershipFailureOnJobAndLogs(t *testing.T) {
+	base := "/api/workspaces/test/forgejo/repos/" + uuid.New().String() + "/actions/runs/81/jobs/91"
+	for _, suffix := range []string{"", "/logs"} {
+		stub := &forgejoActionsStub{err: service.ErrForgejoActionJobNotFound}
+		recorder := requestForgejoActions(t, stub, uuid.New(), domain.RoleGuest, http.MethodGet, base+suffix)
+		require.Equal(t, http.StatusNotFound, recorder.Code)
+		require.Contains(t, recorder.Body.String(), "ACTION_NOT_FOUND")
+		require.NotContains(t, recorder.Body.String(), "ACTION_LOGS_UNAVAILABLE")
+	}
 }

@@ -2383,16 +2383,22 @@ paths:
         "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
         "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
 
-  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/jobs/{jobId}:
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/jobs/{jobId}:
     parameters:
       - $ref: "#/components/parameters/Slug"
       - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
       - $ref: "#/components/parameters/ForgejoActionJobId"
     get:
       operationId: forgejoGetActionJob
       tags: [Forgejo]
-      summary: Get a workflow job and available steps
-      description: "Requires: issue:read. Older Forgejo versions may omit step details."
+      summary: Get a workflow job in its run
+      description: |
+        Requires: issue:read. Ku resolves the job from Forgejo 16.0.5's
+        repository-scoped run-jobs list and verifies its run ID. A missing
+        job or a job belonging to another run returns `ACTION_NOT_FOUND`.
+        The native API provides job metadata and attempt; step details,
+        job timestamps, and job URLs are available in the Forgejo UI.
       responses:
         "200":
           description: Workflow job details.
@@ -2407,17 +2413,21 @@ paths:
         "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
         "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
 
-  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/jobs/{jobId}/logs:
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/jobs/{jobId}/logs:
     parameters:
       - $ref: "#/components/parameters/Slug"
       - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
       - $ref: "#/components/parameters/ForgejoActionJobId"
     get:
       operationId: forgejoGetActionJobLogs
       tags: [Forgejo]
       summary: Read a bounded workflow job log
       description: |
-        Requires: issue:read. The upstream job logs API requires Forgejo 16
+        Requires: issue:read. Ku first verifies that the job belongs to
+        this run through Forgejo's repository-scoped run-jobs list. A
+        missing job or mismatched run returns `ACTION_NOT_FOUND` before
+        requesting any log. The upstream job logs API requires Forgejo 16
         or newer. Omit `attempt` to request the current attempt. At most
         2 MiB of log content is returned; `truncated` signals additional
         upstream content. A missing log or unsupported API returns
@@ -2435,42 +2445,10 @@ paths:
         "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404":
-          description: Repository is not linked (`NOT_FOUND`), or logs are absent/the upstream log API is unsupported (`ACTION_LOGS_UNAVAILABLE`).
+          description: Repository is not linked (`NOT_FOUND`), the job is absent from the run (`ACTION_NOT_FOUND`), or logs are absent/the upstream log API is unsupported (`ACTION_LOGS_UNAVAILABLE`).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
-        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
-        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
-        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
-        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
-
-  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/rerun:
-    parameters:
-      - $ref: "#/components/parameters/Slug"
-      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
-      - $ref: "#/components/parameters/ForgejoActionRunId"
-    post:
-      operationId: forgejoRerunActionRun
-      tags: [Forgejo]
-      summary: Rerun a completed workflow run
-      description: |
-        Requires: workspace:manage (workspace owner only). Ku checks the
-        upstream run state before requesting the action. Allowed states:
-        `success`, `failure`, `cancelled`, or `skipped`. This operation uses the configured workspace
-        Forgejo token and accepts no caller-supplied token or repository URL.
-      responses:
-        "202":
-          description: Forgejo accepted the request; refresh the run to observe the new state.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status: { type: string, enum: [accepted] }
-        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/ForgejoActionsNotFound" }
         "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
         "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
         "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
@@ -5039,21 +5017,15 @@ components:
             data: { type: array, items: { $ref: "#/components/schemas/ForgejoActionRun" } }
     ForgejoActionJob:
       type: object
-      required: [id, run_id, name, status, conclusion, html_url, attempt, started_at, completed_at, steps]
+      description: Native Forgejo 16.0.5 metadata, resolved through the run-jobs list.
+      required: [id, run_id, name, status, conclusion, attempt]
       properties:
         id: { type: integer, format: int64, minimum: 1 }
         run_id: { type: integer, format: int64, minimum: 1 }
         name: { type: string }
         status: { type: string }
         conclusion: { type: string, description: "Terminal status, or an empty string while active." }
-        html_url: { type: string }
         attempt: { type: integer, format: int64 }
-        started_at: { type: [string, 'null'], format: date-time }
-        completed_at: { type: [string, 'null'], format: date-time }
-        steps:
-          type: array
-          description: Empty when the Forgejo version does not provide step details.
-          items: { $ref: "#/components/schemas/ForgejoActionStep" }
     ForgejoActionJobList:
       allOf:
         - $ref: "#/components/schemas/PaginationMeta"
@@ -5061,16 +5033,6 @@ components:
           required: [data, total_count, page, per_page, has_more]
           properties:
             data: { type: array, items: { $ref: "#/components/schemas/ForgejoActionJob" } }
-    ForgejoActionStep:
-      type: object
-      required: [number, name, status, conclusion, started_at, completed_at]
-      properties:
-        number: { type: integer, format: int64 }
-        name: { type: string }
-        status: { type: string }
-        conclusion: { type: string }
-        started_at: { type: [string, 'null'], format: date-time }
-        completed_at: { type: [string, 'null'], format: date-time }
     ForgejoActionLog:
       type: object
       required: [content, truncated, max_bytes]

@@ -21,25 +21,12 @@ type ForgejoActionRunResponse struct {
 }
 
 type ForgejoActionJobResponse struct {
-	ID          int64                       `json:"id"`
-	RunID       int64                       `json:"run_id"`
-	Name        string                      `json:"name"`
-	Status      string                      `json:"status"`
-	Conclusion  string                      `json:"conclusion"`
-	HTMLURL     string                      `json:"html_url"`
-	Attempt     int64                       `json:"attempt"`
-	StartedAt   *time.Time                  `json:"started_at"`
-	CompletedAt *time.Time                  `json:"completed_at"`
-	Steps       []ForgejoActionStepResponse `json:"steps"`
-}
-
-type ForgejoActionStepResponse struct {
-	Number      int64      `json:"number"`
-	Name        string     `json:"name"`
-	Status      string     `json:"status"`
-	Conclusion  string     `json:"conclusion"`
-	StartedAt   *time.Time `json:"started_at"`
-	CompletedAt *time.Time `json:"completed_at"`
+	ID         int64  `json:"id"`
+	RunID      int64  `json:"run_id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	Attempt    int64  `json:"attempt"`
 }
 
 type ForgejoActionLogResponse struct {

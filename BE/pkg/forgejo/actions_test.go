@@ -33,14 +33,12 @@ func TestActionsClientForgejoContract(t *testing.T) {
 			fmt.Fprint(w, `{"id":44,"status":"running"}`)
 		case "/api/v1/repos/org/project/actions/runs/44/jobs":
 			fmt.Fprint(w, `[{"id":52,"run_id":44,"attempt":3,"name":"Build","status":"failure"}]`)
-		case "/api/v1/repos/org/project/actions/jobs/52":
-			fmt.Fprint(w, `{"id":52,"run_id":44,"attempt":3,"steps":[{"number":0,"name":"Set up job","status":"success","started":"2026-09-30T12:00:00Z","stopped":"2026-09-30T12:00:01Z"},{"number":1,"name":"Build","status":"failure","started":null,"stopped":null}]}`)
 		case "/api/v1/repos/org/project/actions/jobs/52/logs":
 			assert.Equal(t, "text/plain", r.Header.Get("Accept"))
 			assert.Equal(t, "2", r.URL.Query().Get("attempt"))
 			w.Header().Set("Content-Type", "text/plain")
 			fmt.Fprint(w, "build failed\n")
-		case "/api/v1/repos/org/project/actions/runs/44/rerun", "/api/v1/repos/org/project/actions/runs/44/cancel":
+		case "/api/v1/repos/org/project/actions/runs/44/cancel":
 			assert.Equal(t, http.MethodPost, r.Method)
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -63,18 +61,16 @@ func TestActionsClientForgejoContract(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, jobs, 1)
 	assert.EqualValues(t, 3, jobs[0].Attempt)
-	job, err := client.GetActionJob(t.Context(), "org", "project", 52)
-	require.NoError(t, err)
-	require.Len(t, job.Steps, 2)
-	assert.EqualValues(t, 0, job.Steps[0].Number)
-	assert.Nil(t, job.Steps[1].Started)
 	log, err := client.GetActionJobLog(t.Context(), "org", "project", 52, 2)
 	require.NoError(t, err)
 	assert.Equal(t, "build failed\n", log.Content)
 	assert.False(t, log.Truncated)
-	require.NoError(t, client.RerunActionRun(t.Context(), "org", "project", 44))
 	require.NoError(t, client.CancelActionRun(t.Context(), "org", "project", 44))
-	assert.Len(t, requests, 7)
+	assert.Equal(t, []string{
+		"GET /api/v1/repos/org/project/actions/runs", "GET /api/v1/repos/org/project/actions/runs/44",
+		"GET /api/v1/repos/org/project/actions/runs/44/jobs", "GET /api/v1/repos/org/project/actions/jobs/52/logs",
+		"POST /api/v1/repos/org/project/actions/runs/44/cancel",
+	}, requests)
 }
 
 func TestActionsLogsAreBounded(t *testing.T) {

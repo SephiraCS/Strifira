@@ -115,26 +115,13 @@ export interface ForgejoActionRun {
 	completed_at: string | null;
 }
 
-export interface ForgejoActionStep {
-	number: number;
-	name: string;
-	status: string;
-	conclusion: string;
-	started_at: string | null;
-	completed_at: string | null;
-}
-
 export interface ForgejoActionJob {
 	id: number;
 	run_id: number;
 	name: string;
 	status: string;
 	conclusion: string;
-	html_url: string;
 	attempt: number;
-	started_at: string | null;
-	completed_at: string | null;
-	steps: ForgejoActionStep[];
 }
 
 export interface ForgejoActionLogs {

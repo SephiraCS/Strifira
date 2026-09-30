@@ -37,21 +37,11 @@ type ActionRunList struct {
 }
 
 type ActionJob struct {
-	ID      int64        `json:"id"`
-	RunID   int64        `json:"run_id"`
-	Attempt int64        `json:"attempt"`
-	Name    string       `json:"name"`
-	HTMLURL string       `json:"html_url"`
-	Status  string       `json:"status"`
-	Steps   []ActionStep `json:"steps"`
-}
-
-type ActionStep struct {
-	Number  int64      `json:"number"`
-	Name    string     `json:"name"`
-	Status  string     `json:"status"`
-	Started *time.Time `json:"started"`
-	Stopped *time.Time `json:"stopped"`
+	ID      int64  `json:"id"`
+	RunID   int64  `json:"run_id"`
+	Attempt int64  `json:"attempt"`
+	Name    string `json:"name"`
+	Status  string `json:"status"`
 }
 
 type ActionRunOptions struct {
@@ -131,18 +121,6 @@ func (c *Client) ListActionJobs(ctx context.Context, owner, name string, runID i
 	return jobs, nil
 }
 
-func (c *Client) GetActionJob(ctx context.Context, owner, name string, jobID int64) (*ActionJob, error) {
-	path, err := actionRepoPath(owner, name)
-	if err != nil {
-		return nil, err
-	}
-	var job ActionJob
-	if err := c.doContext(ctx, http.MethodGet, fmt.Sprintf("%s/jobs/%d", path, jobID), nil, &job); err != nil {
-		return nil, err
-	}
-	return &job, nil
-}
-
 func (c *Client) GetActionJobLog(ctx context.Context, owner, name string, jobID, attempt int64) (*ActionLog, error) {
 	path, err := actionRepoPath(owner, name)
 	if err != nil {
@@ -170,18 +148,10 @@ func (c *Client) GetActionJobLog(ctx context.Context, owner, name string, jobID,
 	}, nil
 }
 
-func (c *Client) RerunActionRun(ctx context.Context, owner, name string, runID int64) error {
-	return c.mutateActionRun(ctx, owner, name, runID, "rerun")
-}
-
 func (c *Client) CancelActionRun(ctx context.Context, owner, name string, runID int64) error {
-	return c.mutateActionRun(ctx, owner, name, runID, "cancel")
-}
-
-func (c *Client) mutateActionRun(ctx context.Context, owner, name string, runID int64, operation string) error {
 	path, err := actionRepoPath(owner, name)
 	if err != nil {
 		return err
 	}
-	return c.doContext(ctx, http.MethodPost, fmt.Sprintf("%s/runs/%d/%s", path, runID, operation), nil, nil)
+	return c.doContext(ctx, http.MethodPost, fmt.Sprintf("%s/runs/%d/cancel", path, runID), nil, nil)
 }

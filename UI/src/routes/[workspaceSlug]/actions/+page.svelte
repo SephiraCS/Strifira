@@ -29,7 +29,7 @@
 		listForgejoActionJobs,
 		getForgejoActionJob,
 		getForgejoActionLogs,
-		requestForgejoAction
+		cancelForgejoActionRun
 	} from '$lib/api/forgejo';
 	import type { ForgejoStatus, ForgejoActionRun, ForgejoActionJob, ForgejoActionLogs } from '$lib/types/forgejo';
 	import { safeForgejoActionsUrl } from '$lib/security/forgejo-url';
@@ -66,7 +66,6 @@
 	let jobFailed = $state(false);
 	let logsFailed = $state(false);
 	let refreshing = $state(false);
-	let pendingAction = $state<'rerun' | 'cancel' | null>(null);
 	let actionDialogOpen = $state(false);
 	let actionBusy = $state(false);
 	let actionRequested = $state<number | null>(null);
@@ -266,20 +265,23 @@
 	}
 
 	async function loadJob(job: ForgejoActionJob, preserve = false) {
+		const runId = selectedRunId;
+		if (runId === null) return;
 		const generation = ++jobGeneration;
 		const workspaceSlug = slug;
 		const repositoryId = repoId;
 		jobController?.abort();
 		const controller = new AbortController();
 		jobController = controller;
+		const jobChanged = selectedJob?.id !== job.id || selectedJob?.attempt !== job.attempt;
 		selectedJob = job;
-		if (!preserve) logs = null;
+		if (!preserve || jobChanged) logs = null;
 		jobLoading = true;
 		jobFailed = false;
 		logsFailed = false;
 		const [detail, output] = await Promise.allSettled([
-			getForgejoActionJob(workspaceSlug, repositoryId, job.id, controller.signal),
-			getForgejoActionLogs(workspaceSlug, repositoryId, job.id, job.attempt, controller.signal)
+			getForgejoActionJob(workspaceSlug, repositoryId, runId, job.id, controller.signal),
+			getForgejoActionLogs(workspaceSlug, repositoryId, runId, job.id, job.attempt, controller.signal)
 		]);
 		if (!mounted || generation !== jobGeneration || controller.signal.aborted) return;
 		if (detail.status === 'fulfilled') selectedJob = detail.value;
@@ -290,6 +292,7 @@
 				const currentOutput = await getForgejoActionLogs(
 					workspaceSlug,
 					repositoryId,
+					runId,
 					job.id,
 					detail.value.attempt,
 					controller.signal
@@ -330,20 +333,14 @@
 		if (selectedRunId !== null) void loadRun(selectedRunId, true);
 	}
 
-	function confirmAction(action: 'rerun' | 'cancel') {
-		pendingAction = action;
-		actionDialogOpen = true;
-	}
-
-	async function performAction() {
-		if (!selectedRun || !pendingAction || !canManage || actionBusy) return;
+	async function cancelRun() {
+		if (!selectedRun || !runIsActive || !canManage || actionBusy) return;
 		const runId = selectedRun.id;
 		const repositoryId = repoId;
 		const workspaceSlug = slug;
-		const action = pendingAction;
 		actionBusy = true;
 		try {
-			await requestForgejoAction(workspaceSlug, repositoryId, runId, action);
+			await cancelForgejoActionRun(workspaceSlug, repositoryId, runId);
 			appToast.success(m['forgejo_actions.requested']());
 			if (repositoryId === repoId && workspaceSlug === slug && selectedRunId === runId) {
 				actionRequested = runId;
@@ -554,24 +551,31 @@
 										title={m['forgejo_actions.open_forgejo']()}><ExternalLink size={14} /></Button
 									>{/if}
 							</div>
-							{#if canManage && (runIsActive || canRerun)}<div class="mt-4 flex items-center gap-2">
+							{#if canManage && (runIsActive || canRerun)}<div class="mt-4 flex flex-wrap items-center gap-2">
 									{#if runIsActive}<Button
 											variant="outline"
 											size="sm"
 											disabled={actionBusy || actionRequested === selectedRun.id}
-											onclick={() => confirmAction('cancel')}
+											onclick={() => (actionDialogOpen = true)}
 											><Square size={12} />{m['forgejo_actions.cancel_run']()}</Button
 										>{:else if canRerun}<Button
 											variant="outline"
 											size="sm"
-											disabled={actionBusy || actionRequested === selectedRun.id}
-											onclick={() => confirmAction('rerun')}
-											><RotateCcw size={14} />{m['forgejo_actions.rerun']()}</Button
+											href={runUrl ?? undefined}
+											disabled={!runUrl}
+											target="_blank"
+											rel="noopener noreferrer"
+											><RotateCcw size={14} />{m['forgejo_actions.rerun_in_forgejo']()}<ExternalLink
+												size={12}
+											/></Button
 										>{/if}{#if actionRequested === selectedRun.id}<span
 											role="status"
 											class="text-xs text-[var(--color-text-tertiary)]">{m['forgejo_actions.requested']()}</span
 										>{/if}
 								</div>{/if}
+							{#if canManage && canRerun}<p class="mt-2 text-xs text-[var(--color-text-tertiary)]">
+									{m['forgejo_actions.rerun_handoff']()}
+								</p>{/if}
 						</div>
 						<div class="p-4">
 							<h3 class="mb-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
@@ -615,20 +619,18 @@
 									<ActionStatus status={selectedJob.status} conclusion={selectedJob.conclusion} />
 								</div>
 								{#if jobFailed}<ErrorState
-										message={m['forgejo_actions.failed_steps']()}
+										message={m['forgejo_actions.failed_job']()}
 										onretry={() => selectedJob && loadJob(selectedJob)}
 									/>{/if}
-								{#if selectedJob.steps?.length}<div class="mb-4 space-y-1" aria-label={m['forgejo_actions.steps']()}>
-										{#each selectedJob.steps as step (step.number)}<div
-												class="flex min-w-0 items-center gap-2 rounded px-2 py-1.5 text-xs"
-											>
-												<ActionStatus status={step.status} conclusion={step.conclusion} compact /><span
-													class="min-w-0 flex-1 break-words">{step.name}</span
-												><span class="shrink-0 tabular-nums text-[var(--color-text-tertiary)]"
-													>{actionDuration(step.started_at, step.completed_at)}</span
-												>
-											</div>{/each}
-									</div>{/if}
+								{#if runUrl}<Button
+										class="mb-3"
+										size="sm"
+										variant="ghost"
+										href={runUrl}
+										target="_blank"
+										rel="noopener noreferrer"
+										>{m['forgejo_actions.steps_in_forgejo']()}<ExternalLink size={12} /></Button
+									>{/if}
 								<div class="mb-2 flex flex-wrap items-center justify-between gap-2">
 									<h4 class="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
 										{m['forgejo_actions.logs']()}
@@ -675,23 +677,14 @@
 <AlertDialog.Root bind:open={actionDialogOpen}
 	><AlertDialog.Content
 		><AlertDialog.Header
-			><AlertDialog.Title
-				>{pendingAction === 'cancel'
-					? m['forgejo_actions.confirm_cancel_title']()
-					: m['forgejo_actions.confirm_rerun_title']()}</AlertDialog.Title
-			><AlertDialog.Description
-				>{pendingAction === 'cancel'
-					? m['forgejo_actions.confirm_cancel_desc']()
-					: m['forgejo_actions.confirm_rerun_desc']()}</AlertDialog.Description
+			><AlertDialog.Title>{m['forgejo_actions.confirm_cancel_title']()}</AlertDialog.Title><AlertDialog.Description
+				>{m['forgejo_actions.confirm_cancel_desc']()}</AlertDialog.Description
 			></AlertDialog.Header
 		><AlertDialog.Footer
 			><AlertDialog.Cancel disabled={actionBusy}>{m['common.cancel']()}</AlertDialog.Cancel><AlertDialog.Action
-				variant={pendingAction === 'cancel' ? 'destructive' : 'default'}
-				onclick={performAction}
-				disabled={actionBusy}
-				>{pendingAction === 'cancel'
-					? m['forgejo_actions.cancel_run']()
-					: m['forgejo_actions.rerun']()}</AlertDialog.Action
+				variant="destructive"
+				onclick={cancelRun}
+				disabled={actionBusy}>{m['forgejo_actions.cancel_run']()}</AlertDialog.Action
 			></AlertDialog.Footer
 		></AlertDialog.Content
 	></AlertDialog.Root

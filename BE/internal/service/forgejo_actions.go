@@ -15,6 +15,7 @@ import (
 
 var (
 	ErrForgejoActionRepoNotFound = errors.New("repository is not linked in this workspace")
+	ErrForgejoActionJobNotFound  = errors.New("workflow job was not found in this run")
 	ErrForgejoActionConnection   = errors.New("Forgejo connection is unavailable or differs from the linked repository")
 	ErrForgejoActionParams       = errors.New("invalid Forgejo Actions parameters")
 	ErrForgejoActionState        = errors.New("the run's current state does not allow this action")
@@ -118,7 +119,7 @@ func (s *ForgejoService) ListActionJobs(ctx context.Context, workspaceID, repoID
 	if err != nil || runID <= 0 {
 		return nil, ErrForgejoActionParams
 	}
-	client, owner, name, instance, err := s.actionClient(ctx, workspaceID, repoID)
+	client, owner, name, _, err := s.actionClient(ctx, workspaceID, repoID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,33 +133,36 @@ func (s *ForgejoService) ListActionJobs(ctx context.Context, workspaceID, repoID
 		Data: make([]dto.ForgejoActionJobResponse, 0, end-start), TotalCount: len(jobs), Page: page, PerPage: perPage, HasMore: end < len(jobs),
 	}
 	for _, job := range jobs[start:end] {
-		result.Data = append(result.Data, actionJobResponse(job, instance))
+		result.Data = append(result.Data, actionJobResponse(job))
 	}
 	return result, nil
 }
 
-func (s *ForgejoService) GetActionJob(ctx context.Context, workspaceID, repoID uuid.UUID, jobID int64) (*dto.ForgejoActionJobResponse, error) {
-	if jobID <= 0 {
-		return nil, ErrForgejoActionParams
-	}
-	client, owner, name, instance, err := s.actionClient(ctx, workspaceID, repoID)
-	if err != nil {
-		return nil, err
-	}
-	job, err := client.GetActionJob(ctx, owner, name, jobID)
-	if err != nil {
-		return nil, err
-	}
-	result := actionJobResponse(*job, instance)
-	return &result, nil
-}
-
-func (s *ForgejoService) GetActionJobLog(ctx context.Context, workspaceID, repoID uuid.UUID, jobID, attempt int64) (*dto.ForgejoActionLogResponse, error) {
-	if jobID <= 0 || attempt < 0 {
+func (s *ForgejoService) GetActionJob(ctx context.Context, workspaceID, repoID uuid.UUID, runID, jobID int64) (*dto.ForgejoActionJobResponse, error) {
+	if runID <= 0 || jobID <= 0 {
 		return nil, ErrForgejoActionParams
 	}
 	client, owner, name, _, err := s.actionClient(ctx, workspaceID, repoID)
 	if err != nil {
+		return nil, err
+	}
+	job, err := findActionJob(ctx, client, owner, name, runID, jobID)
+	if err != nil {
+		return nil, err
+	}
+	result := actionJobResponse(job)
+	return &result, nil
+}
+
+func (s *ForgejoService) GetActionJobLog(ctx context.Context, workspaceID, repoID uuid.UUID, runID, jobID, attempt int64) (*dto.ForgejoActionLogResponse, error) {
+	if runID <= 0 || jobID <= 0 || attempt < 0 {
+		return nil, ErrForgejoActionParams
+	}
+	client, owner, name, _, err := s.actionClient(ctx, workspaceID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := findActionJob(ctx, client, owner, name, runID, jobID); err != nil {
 		return nil, err
 	}
 	log, err := client.GetActionJobLog(ctx, owner, name, jobID, attempt)
@@ -168,15 +172,25 @@ func (s *ForgejoService) GetActionJobLog(ctx context.Context, workspaceID, repoI
 	return &dto.ForgejoActionLogResponse{Content: log.Content, Truncated: log.Truncated, MaxBytes: log.MaxBytes}, nil
 }
 
-func (s *ForgejoService) RerunActionRun(ctx context.Context, workspaceID, repoID uuid.UUID, runID int64) error {
-	return s.mutateActionRun(ctx, workspaceID, repoID, runID, true)
+// Forgejo 16 exposes jobs through the repository-scoped run list. Verify both
+// IDs before returning metadata or reading its separate job log endpoint.
+func findActionJob(ctx context.Context, client *fj.Client, owner, name string, runID, jobID int64) (fj.ActionJob, error) {
+	jobs, err := client.ListActionJobs(ctx, owner, name, runID)
+	if err != nil {
+		if upstream, ok := errors.AsType[*fj.APIError](err); ok && upstream.StatusCode == 404 {
+			return fj.ActionJob{}, ErrForgejoActionJobNotFound
+		}
+		return fj.ActionJob{}, err
+	}
+	for _, job := range jobs {
+		if job.ID == jobID && job.RunID == runID {
+			return job, nil
+		}
+	}
+	return fj.ActionJob{}, ErrForgejoActionJobNotFound
 }
 
 func (s *ForgejoService) CancelActionRun(ctx context.Context, workspaceID, repoID uuid.UUID, runID int64) error {
-	return s.mutateActionRun(ctx, workspaceID, repoID, runID, false)
-}
-
-func (s *ForgejoService) mutateActionRun(ctx context.Context, workspaceID, repoID uuid.UUID, runID int64, rerun bool) error {
 	if runID <= 0 {
 		return ErrForgejoActionParams
 	}
@@ -188,13 +202,9 @@ func (s *ForgejoService) mutateActionRun(ctx context.Context, workspaceID, repoI
 	if err != nil {
 		return err
 	}
-	finished := slices.Contains([]string{"success", "failure", "cancelled", "skipped"}, run.Status)
 	active := slices.Contains([]string{"waiting", "running", "blocked"}, run.Status)
-	if (rerun && !finished) || (!rerun && !active) {
+	if !active {
 		return ErrForgejoActionState
-	}
-	if rerun {
-		return client.RerunActionRun(ctx, owner, name, runID)
 	}
 	return client.CancelActionRun(ctx, owner, name, runID)
 }
@@ -235,26 +245,9 @@ func actionRunResponse(run fj.ActionRun, instance string) dto.ForgejoActionRunRe
 	}
 }
 
-func actionJobResponse(job fj.ActionJob, instance string) dto.ForgejoActionJobResponse {
-	result := dto.ForgejoActionJobResponse{
+func actionJobResponse(job fj.ActionJob) dto.ForgejoActionJobResponse {
+	return dto.ForgejoActionJobResponse{
 		ID: job.ID, RunID: job.RunID, Name: job.Name, Status: job.Status, Conclusion: actionConclusion(job.Status),
-		HTMLURL: actionURL(job.HTMLURL, instance), Attempt: job.Attempt, Steps: make([]dto.ForgejoActionStepResponse, 0, len(job.Steps)),
+		Attempt: job.Attempt,
 	}
-	for _, step := range job.Steps {
-		started, completed := actionTime(step.Started), actionTime(step.Stopped)
-		result.Steps = append(result.Steps, dto.ForgejoActionStepResponse{
-			Number: step.Number, Name: step.Name, Status: step.Status, Conclusion: actionConclusion(step.Status),
-			StartedAt: started, CompletedAt: completed,
-		})
-		if started != nil && (result.StartedAt == nil || started.Before(*result.StartedAt)) {
-			result.StartedAt = started
-		}
-		if completed != nil && (result.CompletedAt == nil || completed.After(*result.CompletedAt)) {
-			result.CompletedAt = completed
-		}
-	}
-	if result.Conclusion == "" {
-		result.CompletedAt = nil
-	}
-	return result
 }

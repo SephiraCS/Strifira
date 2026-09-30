@@ -28,7 +28,7 @@ Ku's published releases are runnable MVPs, not a mature enterprise platform. Thi
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, and WebSocket events. |
 | **Planning**     | Implemented: cycles with burndown/velocity charts, project management with Gantt view, and full cycle/project UI.                                                                                                                                         |
-| **Integrations** | Available: workspace webhooks and Forgejo with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, reruns, and cancellation. |
+| **Integrations** | Available: workspace webhooks and Forgejo with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, links to rerun in Forgejo, and cancellation. |
 | **Analytics**    | Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on current issue data and stored lifecycle timestamps.                                                                                                                                              |
 | **Dev Machines** | Unreleased development-branch functionality implemented as an opt-in self-hosted subsystem: PostgreSQL control plane, multi-container runtime, manager, authenticated gateway, four agent providers, collector, and UI. Disabled by default; see [`TECHNICAL.md`](TECHNICAL.md). |
 | **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
@@ -65,7 +65,7 @@ The product is intentionally smaller than broad project-management suites. It co
 | 🖥️  | **Dev Machines**       | Unreleased opt-in multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
 | 🔧  | **Forgejo**            | Link repos, match issue IDs in development activity, react to CI checks, and apply status rules      |
 | 🤖  | **AI assistance**      | Generate issue descriptions, improve descriptions and comments, and review suggestions without losing attachments or intervening edits |
-| ▶️  | **Forgejo Actions**    | Browse linked repository workflows, inspect jobs and bounded logs, and rerun or cancel runs |
+| ▶️  | **Forgejo Actions**    | Browse linked repository workflows, inspect jobs and bounded logs, rerun in Forgejo, and cancel active runs |
 | 📊  | **Analytics**          | Workspace/team overview, burn-up, and configurable insights                     |
 | 🔗  | **Public Sharing**     | Token-based read-only links for issues and views                                 |
 | 📦  | **Asset Management**   | File uploads, signed URLs for prompt images, S3-compatible storage               |
@@ -78,7 +78,7 @@ Completed issues can be archived from an issue's actions and restored from **Arc
 
 Workspace owners configure an OpenAI-compatible endpoint, model, and API key in **Settings → AI**. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Ku presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
 
-**Actions** in the workspace sidebar shows workflows from linked Forgejo repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can rerun completed runs or cancel active runs. Job log downloads require Forgejo 16 or newer; older instances can still be opened through **Open in Forgejo**.
+**Actions** in the workspace sidebar shows workflows from linked Forgejo repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Ku. For completed runs, **Rerun in Forgejo** opens the native run page: sign in with your normal Forgejo account and use its rerun controls. Your Forgejo repository permissions apply. **View workflow steps in Forgejo** opens that page for individual step details. Job logs and downloads require Forgejo 16 or newer; older instances can still be opened through **Open in Forgejo**.
 
 ## 🤖 Dev Machines (Agentic Coding)
 
