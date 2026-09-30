@@ -1867,5 +1867,6 @@
 	"issue.forgejo.empty": "No linked code activity yet. Include {identifier} in a branch name, pull request title or description, or commit message in a linked repository.",
 	"issue.forgejo.failed_load": "Could not load linked code activity.",
 	"issue.forgejo.refresh": "Refresh code activity",
-	"settings.forgejo.review_created_auto": "The PR status is created automatically in teams that need it."
+	"settings.forgejo.review_created_auto": "The PR status is created automatically in teams that need it.",
+	"common.toast.failed_load_dialog": "Failed to load the issue dialog"
 }

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import Upload from '@lucide/svelte/icons/upload';
-	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import AlertTriangle from '@lucide/svelte/icons/triangle-alert';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -93,7 +93,7 @@
 
 <input bind:this={input} type="file" accept=".zip,.ku.zip,application/zip" class="hidden" onchange={selected} />
 <Button variant={compact ? 'outline' : 'default'} onclick={chooseFile} disabled={loadingPreview}>
-	{#if loadingPreview}<Loader2 size={14} class="animate-spin" />{:else}<Upload size={14} />{/if}
+	{#if loadingPreview}<LoaderCircle size={14} class="animate-spin" />{:else}<Upload size={14} />{/if}
 	{m['workspace_transfer.import_button']()}
 </Button>
 
@@ -154,7 +154,7 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (open = false)}>{m['workspace_transfer.cancel']()}</Button>
 			<Button onclick={runImport} disabled={!canImport}>
-				{#if importing}<Loader2 size={14} class="animate-spin" />{/if}
+				{#if importing}<LoaderCircle size={14} class="animate-spin" />{/if}
 				{importing ? m['workspace_transfer.importing']() : m['workspace_transfer.import_confirm']()}
 			</Button>
 		</Dialog.Footer>

@@ -7,7 +7,7 @@
 	import Clock3 from '@lucide/svelte/icons/clock-3';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import * as Card from '$lib/components/ui/card';
 	import { bulkPermanentDeleteDevMachines, listDevMachines } from '$lib/api/dev-machines';

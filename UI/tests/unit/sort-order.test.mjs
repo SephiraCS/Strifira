@@ -57,3 +57,10 @@ test('board order breaks sort_order ties like the server: newest first, then id 
 	// 00.12 is newer than 00.1 even though it sorts lower as a string.
 	assert.deepEqual(issues.sort(compareBoardOrder).map((issue) => issue.id), ['d', 'c', 'b', 'a']);
 });
+
+test('board ties retain the server timestamp precision', () => {
+	const older = { id: 'z', sort_order: 0, created_at: '2026-09-30T12:00:00.000001Z' };
+	const newer = { id: 'a', sort_order: 0, created_at: '2026-09-30T12:00:00.000002Z' };
+	assert.deepEqual([older, newer].sort(compareBoardOrder), [newer, older]);
+	assert.equal(compareBoardOrder(newer, { ...newer, created_at: '2026-09-30T09:00:00.000002-03:00' }), 0);
+});

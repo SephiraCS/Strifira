@@ -59,7 +59,7 @@
 	import SquarePen from '@lucide/svelte/icons/square-pen';
 	import Search from '@lucide/svelte/icons/search';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Info from '@lucide/svelte/icons/info';
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
 	import BarChart3 from '@lucide/svelte/icons/chart-column';

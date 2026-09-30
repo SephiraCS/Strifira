@@ -11,9 +11,9 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { appToast } from '$lib/features/toast/toast';
 	import Plus from '@lucide/svelte/icons/plus';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
-	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	let labels = $state<Label[]>([]);
@@ -109,7 +109,7 @@
 							<Popover.Root open={menuOpenId === label.id} onOpenChange={(open) => { menuOpenId = open ? label.id : null; }}>
 								<Popover.Trigger>
 									<Button variant="ghost" size="icon-sm" class="h-7 w-7">
-										<MoreHorizontal size={14} />
+										<Ellipsis size={14} />
 									</Button>
 								</Popover.Trigger>
 								<Popover.Content class="w-36 p-1" align="end">

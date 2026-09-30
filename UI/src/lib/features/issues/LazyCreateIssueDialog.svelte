@@ -26,10 +26,11 @@
 	function load() {
 		loadDialog()
 			.then((module) => (Dialog = module.default))
-			.catch(() => {
+			.catch((error) => {
+				console.error('Failed to load issue dialog', error);
 				if (!open) return;
 				open = false;
-				appToast.error(m['sidebar.failed_create_issue']());
+				appToast.error(m['common.toast.failed_load_dialog']());
 			});
 	}
 

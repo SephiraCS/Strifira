@@ -8,7 +8,7 @@
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
-	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { m } from '$lib/paraglide/messages.js';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
@@ -63,7 +63,7 @@
 		{#if !presenterSession.share}
 			<Button onclick={() => void presenterSession.start(slug)} disabled={presenterSession.starting}>
 				{#if presenterSession.starting}
-					<Loader2 size={14} class="animate-spin" />
+					<LoaderCircle size={14} class="animate-spin" />
 				{:else}
 					<MonitorUp size={14} />
 				{/if}

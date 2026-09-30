@@ -32,8 +32,8 @@
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import Trash2 from '@lucide/svelte/icons/trash';
-	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Circle from '@lucide/svelte/icons/circle';
 	import Play from '@lucide/svelte/icons/play';
 	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
@@ -302,7 +302,7 @@
 				<Popover.Root bind:open={actionsOpen}>
 					<Popover.Trigger>
 						<Button variant="ghost" size="icon-sm">
-							<MoreHorizontal size={14} />
+							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
 					<Popover.Content class="w-40 p-1" align="end">

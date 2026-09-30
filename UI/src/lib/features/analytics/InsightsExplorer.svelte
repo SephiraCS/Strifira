@@ -11,7 +11,7 @@
 	import Hash from '@lucide/svelte/icons/hash';
 	import Hourglass from '@lucide/svelte/icons/hourglass';
 	import Inbox from '@lucide/svelte/icons/inbox';
-	import Layers3 from '@lucide/svelte/icons/layers';
+	import Layers3 from '@lucide/svelte/icons/layers-3';
 	import RefreshCcw from '@lucide/svelte/icons/refresh-ccw';
 	import Tag from '@lucide/svelte/icons/tag';
 	import Timer from '@lucide/svelte/icons/timer';

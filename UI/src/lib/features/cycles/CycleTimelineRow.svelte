@@ -8,12 +8,12 @@
 	import CircleDotDashed from '@lucide/svelte/icons/circle-dot-dashed';
 	import CircleCheckBig from '@lucide/svelte/icons/circle-check-big';
 	import Circle from '@lucide/svelte/icons/circle';
-	import MoreHorizontal from '@lucide/svelte/icons/ellipsis';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Calendar from '@lucide/svelte/icons/calendar';
 	import Play from '@lucide/svelte/icons/play';
 	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let {
 		cycle,
@@ -128,7 +128,7 @@
 						? '!opacity-100'
 						: ''}"
 				>
-					<MoreHorizontal size={14} />
+					<Ellipsis size={14} />
 				</button>
 			</Popover.Trigger>
 			<Popover.Content class="w-48 p-1" align="end" side="bottom">

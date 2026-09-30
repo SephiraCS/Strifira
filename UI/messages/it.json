@@ -1867,5 +1867,6 @@
 	"issue.forgejo.empty": "Nessuna attività di codice collegata. Includi {identifier} nel nome di un branch, nel titolo o nella descrizione di una pull request oppure nel messaggio di un commit in un repository collegato.",
 	"issue.forgejo.failed_load": "Impossibile caricare l’attività di codice collegata.",
 	"issue.forgejo.refresh": "Aggiorna attività di codice",
-	"settings.forgejo.review_created_auto": "Lo stato PR viene creato automaticamente nei team che ne hanno bisogno."
+	"settings.forgejo.review_created_auto": "Lo stato PR viene creato automaticamente nei team che ne hanno bisogno.",
+	"common.toast.failed_load_dialog": "Impossibile caricare la finestra della segnalazione"
 }

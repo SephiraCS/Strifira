@@ -39,13 +39,25 @@ export function placementSortOrders(ordered: Ordered[], index: number): Map<stri
 
 type Placed = Ordered & { created_at: string };
 
+function createdAtMicroseconds(timestamp: string): bigint {
+	const milliseconds = Date.parse(timestamp);
+	if (!Number.isFinite(milliseconds)) return 0n;
+	const fraction = /\.(\d+)(?:Z|[+-]\d{2}:\d{2})$/.exec(timestamp)?.[1] ?? '';
+	const submillisecond = Number(fraction.padEnd(6, '0').slice(3, 6));
+	return BigInt(milliseconds) * 1000n + BigInt(submillisecond);
+}
+
 /** The list API's board order: sort_order, then newest first, then id
  * descending (BE/internal/repository/issue.go). Applying the same
  * tie-break keeps optimistic updates from reshuffling equal sort_orders. */
 export function compareBoardOrder(a: Placed, b: Placed): number {
-	return (
-		a.sort_order - b.sort_order ||
-		Date.parse(b.created_at) - Date.parse(a.created_at) ||
-		(a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
-	);
+	const order = a.sort_order - b.sort_order;
+	if (order) return order;
+	const aCreated = createdAtMicroseconds(a.created_at);
+	const bCreated = createdAtMicroseconds(b.created_at);
+	if (aCreated < bCreated) return 1;
+	if (aCreated > bCreated) return -1;
+	if (a.id < b.id) return 1;
+	if (a.id > b.id) return -1;
+	return 0;
 }

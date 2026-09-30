@@ -10,7 +10,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import UserPlus from '@lucide/svelte/icons/user-plus';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 

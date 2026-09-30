@@ -1839,5 +1839,6 @@
 	"issue.forgejo.empty": "尚無關聯的程式碼活動。請在已關聯儲存庫的分支名稱、提取請求標題或描述，或提交訊息中包含 {identifier}。",
 	"issue.forgejo.failed_load": "無法載入關聯的程式碼活動。",
 	"issue.forgejo.refresh": "重新整理程式碼活動",
-	"settings.forgejo.review_created_auto": "系統會為需要的團隊自動建立 PR 狀態。"
+	"settings.forgejo.review_created_auto": "系統會為需要的團隊自動建立 PR 狀態。",
+	"common.toast.failed_load_dialog": "無法載入問題對話框"
 }

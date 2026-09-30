@@ -10,7 +10,7 @@ on:
     branches: [main]
     paths:
       - '**/Dockerfile*'
-      - '.dockerignore'
+      - '**/.dockerignore'
       - 'devmachine/**'
       - 'BE/go.mod'
       - 'BE/go.sum'
@@ -32,15 +32,16 @@ jobs:
     name: Image Security Scan (${{ matrix.id }})
     runs-on: terrascale-builder
     timeout-minutes: 45
-    # One leg per image so every build and scan runs in parallel. The app
-    # leg builds the root Dockerfile that ci.yml stages and build.yml ships.
+    # Keep expensive nested image builds bounded so the shared Docker daemon
+    # can also create and clean up test jobs. Every image still gets scanned.
+    # The app leg builds the root Dockerfile that ci.yml stages and build.yml ships.
     strategy:
       fail-fast: false
       matrix:
         include:
           - { id: app, context: ., file: ./Dockerfile, inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
           - { id: backend, context: ./BE, file: ./BE/Dockerfile, inputs: 'BE/Dockerfile BE/go.mod BE/go.sum' }
-          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/Caddyfile UI/package.json UI/package-lock.json' }
+          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/.dockerignore UI/Caddyfile UI/package.json UI/package-lock.json' }
           - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway, inputs: 'BE/Dockerfile.machine-gateway BE/go.mod BE/go.sum' }
           - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager, inputs: 'BE/Dockerfile.machine-manager BE/go.mod BE/go.sum' }
           - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile, inputs: devmachine }
@@ -85,9 +86,25 @@ jobs:
           PROVIDER: ${{ matrix.provider }}
         run: |
           set -euo pipefail
+          # Forgejo currently starts every matrix leg despite max-parallel.
+          # Hold one of three shared slots until build/save finish. Closing
+          # FD 9 in children keeps their helper processes from retaining it.
+          lock_dir="${TRIVY_CACHE_DIR:?}/image-build-locks"
+          mkdir -p "$lock_dir"
+          while true; do
+            for build_slot in 1 2 3; do
+              exec 9>"$lock_dir/$build_slot.lock"
+              if flock --nonblock 9; then
+                break 2
+              fi
+              exec 9>&-
+            done
+            sleep 2
+          done
+          echo "Acquired image build slot $build_slot"
           podman build --pull --layers=false ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
-            --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}"
-          podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan"
+            --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}" 9>&-
+          podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan" 9>&-
 
       # Every leg shares /cache/trivy. The vulnerability DB is opened
       # read-only, but its refresh and Trivy's BoltDB scan cache take

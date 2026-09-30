@@ -297,7 +297,7 @@
 			const updatedIssue = await issuesState.update(slug, issueIdentifier, req);
 			// Neighbours only change when the drop landed between equal
 			// sort_orders and the group was renumbered.
-			await Promise.all(
+			const results = await Promise.allSettled(
 				[...(sortOrders ?? [])]
 					.filter(([id]) => id !== sourceIssue.id)
 					.map(([id, order]) => {
@@ -305,6 +305,11 @@
 						return issuesState.update(slug, neighbour.identifier, { sort_order: order });
 					})
 			);
+			if (results.some((result) => result.status === 'rejected')) {
+				appToast.error(m['common.toast.failed_move_issue']());
+				await issuesState.refresh();
+				return;
+			}
 			if (isSameGroup && reorderedGroup) {
 				applyLocalGroupOrder(reorderedGroup.map((issue) => (issue.id === updatedIssue.id ? updatedIssue : issue)));
 			}

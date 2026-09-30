@@ -8,7 +8,7 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import Check from '@lucide/svelte/icons/check';
-	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { onMount } from 'svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
@@ -189,7 +189,7 @@
 				<Button type="button" variant="outline" onclick={() => (showCreateWorkspace = false)} disabled={creating}>{m['sidebar.cancel']()}</Button>
 				<Button type="submit" disabled={creating || !newWorkspaceName.trim() || !newWorkspaceSlug.trim()}>
 					{#if creating}
-						<Loader2 size={14} class="animate-spin" />
+						<LoaderCircle size={14} class="animate-spin" />
 						{m['sidebar.creating']()}
 					{:else}
 						{m['sidebar.create_workspace']()}

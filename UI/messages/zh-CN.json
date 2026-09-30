@@ -1839,5 +1839,6 @@
 	"issue.forgejo.empty": "暂无关联的代码活动。请在已关联仓库的分支名称、拉取请求标题或描述、或提交信息中包含 {identifier}。",
 	"issue.forgejo.failed_load": "无法加载关联的代码活动。",
 	"issue.forgejo.refresh": "刷新代码活动",
-	"settings.forgejo.review_created_auto": "系统会为需要的团队自动创建 PR 状态。"
+	"settings.forgejo.review_created_auto": "系统会为需要的团队自动创建 PR 状态。",
+	"common.toast.failed_load_dialog": "无法加载问题对话框"
 }

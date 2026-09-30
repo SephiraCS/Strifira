@@ -10,7 +10,7 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import Bookmark from '@lucide/svelte/icons/bookmark';
 	import CircleUser from '@lucide/svelte/icons/circle-user';
-	import Trash2 from '@lucide/svelte/icons/trash';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
