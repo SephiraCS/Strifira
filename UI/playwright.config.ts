@@ -4,7 +4,7 @@ export default defineConfig({
 	testDir: 'tests/e2e',
 	forbidOnly: !!process.env.CI,
 	retries: 0,
-	workers: process.env.CI ? 2 : undefined,
+	workers: process.env.CI ? 4 : undefined,
 	reporter: process.env.CI ? [['dot'], ['html', { open: 'never' }]] : 'list',
 	webServer: {
 		command: 'npm run build && npm run preview -- --port 4174',

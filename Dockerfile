@@ -2,15 +2,15 @@
 FROM docker.io/library/node:22-alpine AS ui-builder
 WORKDIR /app
 COPY UI/package*.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --prefer-offline
 COPY UI/ .
 RUN npm run build
 
-# Stage 2: Build Caddy from source with patched Go
-FROM docker.io/library/golang:1.26.6-alpine AS caddy-builder
-RUN apk add --no-cache git
-RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-RUN xcaddy build latest --replace golang.org/x/text=golang.org/x/text@v0.39.0 \
+# Stage 2: Build Caddy from source with patched Go. Versions are pinned so
+# the build is reproducible and a warm Go build cache makes it a relink.
+FROM docker.io/library/golang:1.27.1-alpine AS caddy-builder
+RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.7
+RUN xcaddy build v2.11.4 \
     --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
     --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.2
 
