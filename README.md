@@ -174,6 +174,11 @@ for `https://*.machines.localhost`. The dev proxy binds `127.0.0.1:80` and
 The root gateway container is named `ku-dev-machine-gateway` to avoid the
 selfhosting `ku-machine-gateway` name.
 
+To run another local instance, set `PORT=8081`, `KU_DEV_API_URL=http://localhost:8081`,
+`KU_DEV_UI_PORT=5174`, and `FRONTEND_URL=http://localhost:5174` in its root `.env`
+before `make dev`. Vite uses the same API target for HTTP, WebSockets, and uploads.
+The `KU_DEV_` settings can also be supplied through the process environment.
+
 ### 📖 Commands
 
 | Command                | What it does                          |
