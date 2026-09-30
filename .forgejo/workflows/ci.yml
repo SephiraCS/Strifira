@@ -170,9 +170,11 @@ jobs:
       # Every RUN sees the runner's shared Go and npm caches, so module and
       # package downloads and unchanged Go packages (Caddy included) are
       # reused. Nested podman keeps no layers between jobs, so intermediate
-      # layers are not committed at all.
+      # layers are not committed at all. The runner prunes /cache when it
+      # outgrows its budget, and a missing volume source fails the build.
       - name: Build the image
         run: |
+          mkdir -p "${GOMODCACHE}" "${GOCACHE}" "${NPM_CONFIG_CACHE}"
           podman build --jobs 0 --layers=false \
             --volume "${GOMODCACHE}:/go/pkg/mod" \
             --volume "${GOCACHE}:/root/.cache/go-build" \
