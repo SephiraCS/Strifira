@@ -18,26 +18,27 @@
 # hours. A store's directory is not touched while it is in use, so that age
 # must stay above every job's timeout-minutes (at most 60 today).
 set -eu
+export LC_ALL=C
 
 root=/cache/ci-tmp
 root=$(realpath -m -- "$root")
 
 validate_store() {
 	[ ! -L "$1" ] || { echo "refusing to remove symlink: $1" >&2; return 1; }
-	resolved=$(realpath -m -- "$1")
-	[ "$(dirname -- "$resolved")" = "$root" ] || {
-		echo "refusing to remove $resolved: not a store under $root" >&2
+	validated_path=$(realpath -m -- "$1")
+	[ "$(dirname -- "$validated_path")" = "$root" ] || {
+		echo "refusing to remove $validated_path: not a store under $root" >&2
 		return 1
 	}
-	case "$(basename -- "$resolved")" in
+	case "$(basename -- "$validated_path")" in
 	ku-*) ;;
-	*) echo "refusing to remove $resolved: invalid store name" >&2; return 1 ;;
+	*) echo "refusing to remove $validated_path: invalid store name" >&2; return 1 ;;
 	esac
-	[ "${2:-}" = owned ] || [ -f "$resolved/storage.conf" ] || {
-		echo "refusing to remove $resolved: no store configuration" >&2
+	[ "${2:-}" = owned ] || [ -f "$validated_path/storage.conf" ] || {
+		echo "refusing to remove $validated_path: no store configuration" >&2
 		return 1
 	}
-	printf '%s\n' "$resolved"
+	printf '%s\n' "$validated_path"
 }
 
 # Deletes a store, first detaching any overlay mounts a build or container

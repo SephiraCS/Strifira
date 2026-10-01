@@ -90,21 +90,28 @@ for workflow in "$repo"/.forgejo/workflows/*.yml "$repo"/.forgejo/workflows/*.ya
     [ ! -f "$workflow" ] || set -- "$@" "$workflow"
 done
 [ "$#" -gt 0 ] || { echo 'no workflows found' >&2; exit 1; }
-awk '
-    /^    runs-on:/ { jobs[FILENAME]++ }
-    /^    timeout-minutes:/ {
-        limits[FILENAME]++
-        if ($2 !~ /^[0-9]+$/ || $2 >= 360) {
-            printf "invalid timeout-minutes %s in %s: expected a number below 360\n", $2, FILENAME > "/dev/stderr"
-            failed = 1
-        }
-    }
-    END {
-        for (file in jobs) if (jobs[file] != limits[file]) {
-            printf "every job in %s must declare timeout-minutes\n", file > "/dev/stderr"
-            failed = 1
-        }
-        exit failed
-    }
-' "$@"
+go -C "$repo/BE" build -o "$sandbox/check-timeouts" ./cmd/check-ci-timeouts
+"$sandbox/check-timeouts" "$@"
+# YAML indentation and step timeouts must not bypass per-job validation.
+cat > "$sandbox/valid.yaml" <<'YAML'
+name: policy fixture
+jobs:
+    verify:
+        runs-on: builder
+        timeout-minutes: 15
+        steps:
+            - run: true
+              timeout-minutes: 1
+YAML
+"$sandbox/check-timeouts" "$sandbox/valid.yaml"
+for timeout in missing 0 360 480; do
+    if [ "$timeout" = missing ]; then
+        sed '/^        timeout-minutes:/d' "$sandbox/valid.yaml" > "$sandbox/invalid.yaml"
+    else
+        sed "s/timeout-minutes: 15/timeout-minutes: $timeout/" "$sandbox/valid.yaml" > "$sandbox/invalid.yaml"
+    fi
+    if "$sandbox/check-timeouts" "$sandbox/invalid.yaml"; then
+        echo "accepted invalid job timeout: $timeout" >&2; exit 1
+    fi
+done
 echo 'podman store cleanup checks passed'

@@ -14,6 +14,11 @@ ARG NPM_VERSION=12.0.1
 ARG CLAUDE_CODE_VERSION=2.1.218
 ARG OPENCODE_VERSION=1.18.4
 ARG CODEX_VERSION=0.145.0
+ARG BRACE_EXPANSION_VERSION=5.0.11
+ARG IP_ADDRESS_VERSION=10.3.1
+ARG JS_YAML_VERSION=4.3.2
+ARG TAR_VERSION=7.5.21
+ARG UNDICI_VERSION=7.29.1
 
 COPY --from=node-stage /usr/local /usr/local
 COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
@@ -41,10 +46,10 @@ RUN apt-get update \
     && npm install -g --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && npm install -g --allow-scripts=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \
-    && for pair in "brace-expansion@5.0.11" "ip-address@10.3.1" "js-yaml@4.3.2" "tar@7.5.21" "undici@7.29.1"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
+    && for pair in "brace-expansion@${BRACE_EXPANSION_VERSION}" "ip-address@${IP_ADDRESS_VERSION}" "js-yaml@${JS_YAML_VERSION}" "tar@${TAR_VERSION}" "undici@${UNDICI_VERSION}"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
     && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
-         "js-yaml@4.3.2" "shell-quote@1.9.0" "tar@7.5.21" \
+         "js-yaml@${JS_YAML_VERSION}" "shell-quote@1.9.0" "tar@${TAR_VERSION}" \
     && rm -rf /usr/lib/code-server/node_modules/js-yaml \
          /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
          /usr/lib/code-server/lib/vscode/node_modules/tar \
