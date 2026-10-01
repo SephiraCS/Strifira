@@ -21,25 +21,49 @@ set -eu
 
 root=/cache/ci-tmp
 
+validate_store() {
+	store=$(realpath -m -- "$1")
+	[ "$(dirname -- "$store")" = "$root" ] || {
+		echo "refusing to remove $store: not a store under $root" >&2
+		return 1
+	}
+	case "$(basename -- "$store")" in
+	ku-*) ;;
+	*) echo "refusing to remove $store: invalid store name" >&2; return 1 ;;
+	esac
+	[ -f "$store/storage.conf" ] || {
+		echo "refusing to remove $store: no store configuration" >&2
+		return 1
+	}
+}
+
 # Deletes a store, first detaching any overlay mounts a build or container
 # left behind (rm -rf alone fails with EBUSY on them). Failures only warn:
 # a leftover store must not fail the job, and the sweep retries it later.
 delete_store() {
-	awk -v p="$1/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
-	rm -rf "$1" || echo "warning: could not delete $1" >&2
+	validate_store "$1" || return 1
+	awk -v p="$store/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
+	rm -rf -- "$store" || echo "warning: could not delete $store" >&2
 }
 
 case "${1:-}" in
 create)
 	: "${2:?usage: $0 create <name>}"
 	: "${GITHUB_ENV:?GITHUB_ENV is required}"
+	case "$2" in
+	*[!A-Za-z0-9._-]*|.|..) echo "invalid store name: $2" >&2; exit 2 ;;
+	esac
+	case "${GITHUB_RUN_ID:?}" in
+	*[!0-9]*) echo "invalid GITHUB_RUN_ID" >&2; exit 2 ;;
+	esac
 	mkdir -p "$root"
-	find "$root" -mindepth 1 -maxdepth 1 -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
-		delete_store "$stale"
+	find "$root" -mindepth 1 -maxdepth 1 -type d -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
+		delete_store "$stale" || echo "warning: could not sweep $stale" >&2
 	done
 	store="$root/ku-${GITHUB_RUN_ID:?}-$2"
 	# A re-run reuses the run ID; never build on a cancelled attempt's store.
 	[ ! -e "$store" ] || delete_store "$store"
+	[ ! -e "$store" ] || { echo "could not reset $store" >&2; exit 1; }
 	mkdir -p "$store/root" "$store/run" "$store/tmp"
 	cat >"$store/storage.conf" <<-CONF
 		[storage]
@@ -60,14 +84,9 @@ create)
 remove)
 	store="${PODMAN_STORE:-}"
 	[ -n "$store" ] && [ -d "$store" ] || exit 0
-	case "$store" in
-	"$root"/ku-*) ;;
-	*)
-		echo "refusing to remove $store: not a store under $root" >&2
-		exit 1
-		;;
-	esac
-	podman rm --all --force --time 0 >/dev/null 2>&1 || true
+	validate_store "$store"
+	CONTAINERS_STORAGE_CONF="$store/storage.conf" CONTAINERS_CONF_OVERRIDE="$store/containers.conf" \
+		podman rm --all --force --time 0 >/dev/null 2>&1 || true
 	delete_store "$store"
 	;;
 *)

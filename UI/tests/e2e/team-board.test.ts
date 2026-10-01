@@ -229,12 +229,27 @@ async function mockTeamBoard(page: Page, options: { progressSorts?: number[] } =
 	return { issueRequests, patches, allPatches, bulkPatches, store };
 }
 
+// Navigation finishes before the client has hydrated and fetched the board.
+// Wait for its final fixture page before measuring rendering and interactions.
+async function openTeamBoard(page: Page) {
+	const loaded = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return response.request().method() === 'GET' &&
+			url.pathname === '/api/workspaces/test/issues' &&
+			url.searchParams.get('page') === '3';
+	});
+	await page.goto(`/test/teams/${teamId}`);
+	const response = await loaded;
+	expect(response.ok()).toBe(true);
+	expect((await response.json()).has_more).toBe(false);
+}
+
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 test('team board initial load follows every page of the team issues', async ({ page }) => {
 	const { issueRequests } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 
 	// The victim (rank 1) renders immediately…
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
@@ -248,7 +263,7 @@ test('team board initial load follows every page of the team issues', async ({ p
 test('identical background refreshes cause no DOM churn on the board', async ({ page }) => {
 	const { issueRequests } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	// Every WS event, webhook burst, and reconcile tick ends in an
@@ -287,7 +302,7 @@ test('identical background refreshes cause no DOM churn on the board', async ({ 
 test('moving a card to In Progress keeps it visible through the background refresh', async ({ page }) => {
 	const { issueRequests, patches } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	// Drag the victim card from Backlog into In Progress — the exact
@@ -396,7 +411,7 @@ test('a cross-column drop saves only the dropped card and keeps its place after 
 	// with the dropped card's stale sort_order and sending it to the bottom.
 	const MOVED = 'Done issue 20';
 	const { issueRequests, allPatches, store } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 1')).toBeVisible();
 	await page.locator('button', { hasText: MOVED }).first().scrollIntoViewIfNeeded();
 
@@ -425,7 +440,7 @@ test('a cross-column drop saves only the dropped card and keeps its place after 
 
 test('reordering inside a column saves only the moved card', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 3')).toBeVisible();
 
 	await dragCard(page, 'Progress issue 3', await cardCenter(page, 'Progress issue 0'));
@@ -449,7 +464,7 @@ test('a drop between cards that share a sort_order keeps its place after a refre
 	// neighbours gives the dropped card the same value, and the server's
 	// tie-break (created_at, id) then moves it after the next refresh.
 	const { issueRequests } = await mockTeamBoard(page, { progressSorts: [1000, 1000, 1000, 1000] });
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 2')).toBeVisible();
 
 	await dragCard(page, VICTIM_TITLE, await cardCenter(page, 'Progress issue 2'));
@@ -465,7 +480,7 @@ test('a drop between cards that share a sort_order keeps its place after a refre
 test('team header button archives every done issue in one bulk request', async ({ page }) => {
 	const { bulkPatches, store } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	const doneIds = store.filter((it) => it.status_info?.category === 'completed').map((it) => it.id);
@@ -487,7 +502,7 @@ test('team header button archives every done issue in one bulk request', async (
 test('done column ... menu archives the whole column', async ({ page }) => {
 	const { bulkPatches, store } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(DEEP_TAIL_TITLE)).toBeVisible();
 
 	const doneIds = store.filter((it) => it.status_info?.category === 'completed').map((it) => it.id);
@@ -518,7 +533,7 @@ test('column sort button reorders one column display-only', async ({ page }) => 
 		}
 	}
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	const backlog = page.locator('div[aria-label="Backlog"]');

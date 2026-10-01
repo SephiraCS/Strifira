@@ -36,7 +36,9 @@ jobs:
 
       - name: Create the podman store
         working-directory: .
-        run: scripts/ci/podman-store.sh create backend-test
+        run: |
+          sh scripts/ci/podman-store_test.sh
+          scripts/ci/podman-store.sh create backend-test
 
       # Runner service containers are not reachable from job containers, so
       # PostgreSQL and Redis run as podman containers inside the privileged

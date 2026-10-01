@@ -17,9 +17,9 @@ RUN apk upgrade --no-cache && apk add --no-cache bash ca-certificates curl git m
          codex) npm install -g "@openai/codex@${CODEX_VERSION}" ;; \
          *) echo "unsupported provider: $PROVIDER" >&2; exit 1 ;; \
        esac \
-    && for pair in "brace-expansion@5.0.9" "ip-address@10.3.1" "js-yaml@4.3.2" "tar@7.5.21" "undici@7.29.0"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
+    && for pair in "brace-expansion@5.0.11" "ip-address@10.3.1" "js-yaml@4.3.2" "tar@7.5.21" "undici@7.29.1"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
     && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
-    && rm -rf /tmp/npm-patches /root/.npm \
+    && rm -rf /tmp/npmpatch /root/.npm \
     && case "$PROVIDER" in \
          claude-code) claude --version ;; \
          opencode) opencode --version ;; \
