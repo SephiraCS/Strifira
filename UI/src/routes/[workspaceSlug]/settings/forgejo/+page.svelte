@@ -63,6 +63,8 @@
 	let transitions = $state<ForgejoAutoTransition[]>([]);
 	let repoSearch = $state('');
 	let savingRepos = $state(false);
+	let repoDiscoveryGeneration = 0;
+	let repoDiscoveryContext = $state<string | null>(null);
 
 	let instanceUrl = $state(DEFAULT_INSTANCE_URL);
 	let token = $state('');
@@ -73,6 +75,9 @@
 	let mappingLogin = $state('');
 	let mappingUserID = $state('');
 	let savingMappings = $state(false);
+	const repositoryContext = $derived(status?.connected ? JSON.stringify([slug, status.instance_url ?? '']) : null);
+	const reposReady = $derived(repoDiscoveryContext !== null && repoDiscoveryContext === repositoryContext);
+	const canEditRepos = $derived(canManage && reposReady && !loading && !loadingRepos && !savingRepos && !connecting);
 
 	const filteredRepos = $derived(
 		repoSearch
@@ -89,6 +94,7 @@
 	);
 
 	function toggleSelectAll() {
+		if (!canEditRepos) return;
 		const next = new Set(selectedRepoIds);
 		if (allFilteredSelected) {
 			for (const r of filteredRepos) next.delete(r.forgejo_repo_id);
@@ -122,11 +128,21 @@
 		return mounted && slug === workspaceSlug && generation === requestGeneration;
 	}
 
+	function resetRepositoryDiscovery() {
+		repoDiscoveryGeneration++;
+		repoDiscoveryContext = null;
+		availableRepos = [];
+		selectedRepoIds = new Set();
+		repoSearch = '';
+		loadingRepos = false;
+	}
+
 	async function load(workspaceSlug: string) {
 		const requestGeneration = ++generation;
 		loading = true;
 		loadError = '';
 		status = null;
+		resetRepositoryDiscovery();
 		transitions = [];
 		userMappings = [];
 		members = [];
@@ -136,7 +152,6 @@
 		savingMappings = false;
 		loadingMappings = false;
 		savingRepos = false;
-		loadingRepos = false;
 		automationsError = '';
 		mappingsError = '';
 		instanceUrl = DEFAULT_INSTANCE_URL;
@@ -233,6 +248,8 @@
 		try {
 			await connectForgejo(workspaceSlug, instanceUrl.trim(), token.trim());
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			resetRepositoryDiscovery();
+			showRepoSelector = false;
 			token = '';
 			const connection = await getForgejoStatus(workspaceSlug);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
@@ -252,6 +269,9 @@
 		const requestGeneration = generation;
 		try {
 			await disconnectForgejo(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			resetRepositoryDiscovery();
+			showRepoSelector = false;
 			const connection = await getForgejoStatus(workspaceSlug);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
 			status = connection;
@@ -265,28 +285,35 @@
 	}
 
 	async function loadAvailableRepos() {
-		if (!canManage || savingRepos) return;
+		if (!canManage || !status?.connected || loading || loadingRepos || savingRepos || connecting) return;
 		const workspaceSlug = slug;
 		const requestGeneration = generation;
+		const requestContext = repositoryContext;
+		resetRepositoryDiscovery();
+		const discoveryGeneration = repoDiscoveryGeneration;
+		const isCurrentDiscovery = () =>
+			isCurrent(workspaceSlug, requestGeneration) &&
+			discoveryGeneration === repoDiscoveryGeneration &&
+			requestContext === repositoryContext;
 		loadingRepos = true;
 		showRepoSelector = true;
 		reposError = '';
-		repoSearch = '';
 		try {
 			const repositories = await listForgejoRepos(workspaceSlug);
-			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			if (!isCurrentDiscovery()) return;
 			availableRepos = repositories;
 			selectedRepoIds = new Set(repositories.filter((repo) => repo.linked).map((repo) => repo.forgejo_repo_id));
+			repoDiscoveryContext = requestContext;
 		} catch (error) {
-			if (isCurrent(workspaceSlug, requestGeneration))
-				reposError = errorMessage(error, m['settings.forgejo.failed_load_repos']());
+			if (isCurrentDiscovery()) reposError = errorMessage(error, m['settings.forgejo.failed_load_repos']());
 		} finally {
-			if (isCurrent(workspaceSlug, requestGeneration)) loadingRepos = false;
+			if (isCurrent(workspaceSlug, requestGeneration) && discoveryGeneration === repoDiscoveryGeneration)
+				loadingRepos = false;
 		}
 	}
 
 	function toggleRepo(repoId: number) {
-		if (savingRepos) return;
+		if (!canEditRepos || !availableRepos.some((repo) => repo.forgejo_repo_id === repoId)) return;
 		const next = new Set(selectedRepoIds);
 		if (next.has(repoId)) next.delete(repoId);
 		else next.add(repoId);
@@ -294,9 +321,10 @@
 	}
 
 	async function saveRepoSelection() {
-		if (!canManage || savingRepos || loadingRepos) return;
+		if (!canEditRepos) return;
 		const workspaceSlug = slug;
 		const requestGeneration = generation;
+		const requestContext = repositoryContext;
 		const desiredIds = new Set(selectedRepoIds);
 		savingRepos = true;
 		reposError = '';
@@ -332,6 +360,11 @@
 			const connection = await getForgejoStatus(workspaceSlug);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
 			status = connection;
+			if (requestContext !== repositoryContext) {
+				resetRepositoryDiscovery();
+				reposError ||= m['settings.forgejo.failed_load_repos']();
+				return;
+			}
 			availableRepos = availableRepos.map((repo) => ({
 				...repo,
 				linked: connection.repos.some((linked) => linked.forgejo_repo_id === repo.forgejo_repo_id)
@@ -342,8 +375,10 @@
 				appToast.success(m['settings.forgejo.repos_saved']());
 			}
 		} catch (error) {
-			if (isCurrent(workspaceSlug, requestGeneration))
+			if (isCurrent(workspaceSlug, requestGeneration)) {
+				repoDiscoveryContext = null;
 				reposError ||= errorMessage(error, m['settings.forgejo.failed_status']());
+			}
 		} finally {
 			if (isCurrent(workspaceSlug, requestGeneration)) savingRepos = false;
 		}
@@ -586,8 +621,11 @@
 							<div class="flex items-center justify-center py-8">
 								<LoaderCircle size={18} class="animate-spin text-[var(--color-text-tertiary)]" />
 							</div>
-						{:else if reposError && availableRepos.length === 0}
-							<ErrorState message={reposError} onretry={loadAvailableRepos} />
+						{:else if !reposReady}
+							<ErrorState
+								message={reposError || m['settings.forgejo.failed_load_repos']()}
+								onretry={loadAvailableRepos}
+							/>
 						{:else}
 							{#if reposError}<p role="alert" class="mb-3 text-xs text-red-500">{reposError}</p>{/if}
 							<div class="relative">
@@ -605,7 +643,7 @@
 
 							<button
 								onclick={toggleSelectAll}
-								disabled={savingRepos}
+								disabled={!canEditRepos}
 								class="mt-2 flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
 							>
 								<Checkbox
@@ -624,7 +662,7 @@
 								{#each filteredRepos as repo}
 									<button
 										onclick={() => toggleRepo(repo.forgejo_repo_id)}
-										disabled={savingRepos}
+										disabled={!canEditRepos}
 										class="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-bg-hover)] {selectedRepoIds.has(
 											repo.forgejo_repo_id
 										)
@@ -660,7 +698,7 @@
 											repoSearch = '';
 										}}>{m['settings.cancel']()}</Button
 									>
-									<Button size="sm" onclick={saveRepoSelection} disabled={savingRepos}>
+									<Button size="sm" onclick={saveRepoSelection} disabled={!canEditRepos}>
 										{#if savingRepos}
 											<LoaderCircle size={14} class="animate-spin" />
 										{/if}

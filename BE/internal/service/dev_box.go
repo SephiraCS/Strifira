@@ -35,7 +35,9 @@ const (
 	DevBoxHeartbeatIntervalSeconds = 15
 	DevBoxOnlineDuration           = 90 * time.Second
 	DevBoxMaxLogBytes              = 4 << 20
+	DevBoxMaxLogEntryBytes         = 64 << 10
 	DevBoxMaxPatchBytes            = 1 << 20
+	DevBoxMaxResultBytes           = dto.DevBoxCompleteBodyLimit
 )
 
 type DevBoxMembershipStore interface {
@@ -484,7 +486,7 @@ func (s *DevBoxService) AppendLog(ctx context.Context, box *domain.DevBox, jobID
 	if err != nil {
 		return nil, err
 	}
-	if req.Sequence < 1 || len(req.Content) == 0 || len(req.Content) > 65536 || !utf8.ValidString(req.Content) || strings.ContainsRune(req.Content, '\x00') || (req.Stream != "stdout" && req.Stream != "stderr" && req.Stream != "system") {
+	if req.Sequence < 1 || len(req.Content) == 0 || len(req.Content) > DevBoxMaxLogEntryBytes || !utf8.ValidString(req.Content) || strings.ContainsRune(req.Content, '\x00') || (req.Stream != "stdout" && req.Stream != "stderr" && req.Stream != "system") {
 		return nil, ErrInvalidDevBoxInput
 	}
 	log := &domain.DevBoxJobLog{JobID: jobID, Sequence: req.Sequence, Stream: req.Stream, Content: req.Content}
@@ -501,7 +503,7 @@ func validateDevBoxResult(result *domain.DevBoxJobResult) error {
 		!utf8.ValidString(result.Summary) || !utf8.ValidString(result.Patch) ||
 		strings.ContainsRune(result.Summary, '\x00') || strings.ContainsRune(result.Patch, '\x00') ||
 		(result.TestStatus != "passed" && result.TestStatus != "failed" && result.TestStatus != "not_run") ||
-		(result.Branch != "" && !validGitRef(result.Branch)) {
+		len(result.Branch) > 255 || !utf8.ValidString(result.Branch) || (result.Branch != "" && !validGitRef(result.Branch)) {
 		return ErrInvalidDevBoxInput
 	}
 	for _, values := range [][]string{result.ChangedFiles, result.TestsRun, result.RiskNotes} {
@@ -510,6 +512,17 @@ func validateDevBoxResult(result *domain.DevBoxJobResult) error {
 				return ErrInvalidDevBoxInput
 			}
 		}
+	}
+	return nil
+}
+
+func validateDevBoxResultSize(result *domain.DevBoxJobResult) error {
+	encoded, err := json.Marshal(result)
+	// PostgreSQL's JSONB text adds separators to compact JSON. At most 700
+	// array elements and 11 fields fit within this reserved formatting space;
+	// Go's HTML escaping can only make the compact encoding larger.
+	if err != nil || len(encoded)+1024 > DevBoxMaxResultBytes {
+		return ErrInvalidDevBoxInput
 	}
 	return nil
 }
@@ -541,6 +554,9 @@ func (s *DevBoxService) Complete(ctx context.Context, box *domain.DevBox, jobID 
 	result.ChangedFiles, result.TestsRun, result.RiskNotes = nonNilSlice(result.ChangedFiles), nonNilSlice(result.TestsRun), nonNilSlice(result.RiskNotes)
 	if result.Branch != "" && result.Branch != job.WorkingBranch {
 		return nil, fmt.Errorf("%w: result branch does not match the assigned job", ErrInvalidDevBoxInput)
+	}
+	if err := validateDevBoxResultSize(&result); err != nil {
+		return nil, err
 	}
 	return s.store.CompleteJob(ctx, box.ID, jobID, box.TokenHash, hash, &result)
 }

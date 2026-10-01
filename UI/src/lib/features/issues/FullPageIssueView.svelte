@@ -15,6 +15,7 @@
 		reopenComment,
 		getIssueHistory,
 		getIssue,
+		updateIssue,
 		signIssuePromptAssets,
 		createSubIssue,
 		bulkCreateSubIssues,
@@ -167,26 +168,50 @@
 	let lastLocalUpdate = 0;
 	let issueRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let issueRefreshRequest = 0;
+	let issueRefreshActive = 0;
 	let activityRefreshRequest = 0;
 	let refreshContext = '';
 	let destroyed = false;
+	let issueRefreshQueued = false;
+	let descriptionEditVersion = 0;
+	let descriptionMutationVersion = 0;
+	let descriptionDirty = false;
+	let descriptionSavedHtml = '';
+	let descriptionPendingSaves = $state(0);
+	let descriptionSaveFailed = $state(false);
+	let descriptionSaveQueue = Promise.resolve();
 
 	$effect(() => {
 		const context = `${slug}/${issue.id}/${issue.identifier}`;
 		untrack(() => {
 			if (context === refreshContext) return;
+			if (descriptionSaveTimer) {
+				clearTimeout(descriptionSaveTimer);
+				descriptionSaveTimer = null;
+				const save = pendingDescriptionSave;
+				pendingDescriptionSave = null;
+				if (save) void save();
+			}
 			refreshContext = context;
+			issueRefreshQueued = false;
+			descriptionDirty = false;
+			descriptionSaveFailed = false;
+			pendingDescriptionHtml = issue.description ?? '';
+			descriptionSavedHtml = issue.description ?? '';
+			lastLocalUpdate = 0;
 			clearTimeout(issueRefreshTimer);
 			issueRefreshRequest++;
 			activityRefreshRequest++;
 		});
 	});
 	let descriptionSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let pendingDescriptionSave: (() => Promise<void>) | null = null;
 	let pendingDescriptionHtml = '';
 	let descriptionAIContent = $state('');
 	let descriptionAIExternalContent: string | undefined;
 	$effect(() => {
 		const content = issue.description ?? '';
+		if (!descriptionDirty && descriptionPendingSaves === 0) descriptionSavedHtml = content;
 		if (content !== descriptionAIExternalContent) {
 			descriptionAIExternalContent = content;
 			descriptionAIContent = content;
@@ -265,15 +290,23 @@
 
 	function scheduleIssueRefresh() {
 		clearTimeout(issueRefreshTimer);
+		issueRefreshTimer = undefined;
+		issueRefreshQueued = true;
+		if (destroyed || descriptionDirty || descriptionSaveTimer || descriptionPendingSaves > 0) return;
 		const context = refreshContext;
 		const delay = Math.max(180, lastLocalUpdate + 2100 - Date.now());
 		issueRefreshTimer = setTimeout(() => {
+			issueRefreshTimer = undefined;
 			if (destroyed || context !== refreshContext) return;
-			if (Date.now() - lastLocalUpdate < 2000 || descriptionSaveTimer) {
+			if (
+				Date.now() - lastLocalUpdate < 2000 ||
+				descriptionDirty ||
+				descriptionSaveTimer ||
+				descriptionPendingSaves > 0
+			) {
 				scheduleIssueRefresh();
 				return;
 			}
-			issueRefreshTimer = undefined;
 			void refreshIssue();
 		}, delay);
 	}
@@ -363,7 +396,9 @@
 		if (descriptionSaveTimer) {
 			clearTimeout(descriptionSaveTimer);
 			descriptionSaveTimer = null;
-			void flushDescriptionSave(pendingDescriptionHtml);
+			const save = pendingDescriptionSave;
+			pendingDescriptionSave = null;
+			if (save) void save();
 		}
 		window.removeEventListener('ws:issue-updated', onIssueUpdated);
 		window.removeEventListener('ws:issue-deleted', onIssueDeleted);
@@ -409,24 +444,76 @@
 
 	function saveDescription(html: string) {
 		lastLocalUpdate = Date.now();
+		const version = ++descriptionEditVersion;
+		const context = refreshContext;
+		const workspaceSlug = slug;
+		const identifier = issue.identifier;
+		descriptionDirty = true;
+		descriptionSaveFailed = false;
+		if (issueRefreshActive > 0) issueRefreshQueued = true;
+		issueRefreshRequest++;
 		pendingDescriptionHtml = html;
 		descriptionAIContent = html;
 		if (descriptionSaveTimer) clearTimeout(descriptionSaveTimer);
+		const save = () => flushDescriptionSave(html, version, context, workspaceSlug, identifier);
+		pendingDescriptionSave = save;
 		descriptionSaveTimer = setTimeout(() => {
 			descriptionSaveTimer = null;
-			void flushDescriptionSave(pendingDescriptionHtml);
+			pendingDescriptionSave = null;
+			void save();
 		}, 2000);
 	}
 
-	async function flushDescriptionSave(html: string) {
-		if (html === (issue.description ?? '')) return;
-		try {
-			lastLocalUpdate = Date.now();
-			const updated = await issuesState.update(slug, issue.identifier, { description: html });
-			onupdated?.(updated);
-		} catch {
-			appToast.error(m['issue.toast.failed_description']());
-		}
+	async function flushDescriptionSave(
+		html: string,
+		version = descriptionEditVersion,
+		context = refreshContext,
+		workspaceSlug = slug,
+		identifier = issue.identifier
+	) {
+		lastLocalUpdate = Date.now();
+		descriptionPendingSaves++;
+		descriptionMutationVersion++;
+		if (issueRefreshActive > 0) issueRefreshQueued = true;
+		issueRefreshRequest++;
+		// Serialize PATCHes so an earlier edit can never finish after its undo.
+		const save = descriptionSaveQueue.then(async () => {
+			try {
+				if (context === refreshContext && html === descriptionSavedHtml) {
+					if (version === descriptionEditVersion) {
+						descriptionDirty = false;
+						descriptionSaveFailed = false;
+					}
+					return;
+				}
+				const updated = await updateIssue(workspaceSlug, identifier, { description: html });
+				if (context !== refreshContext) return;
+				descriptionSavedHtml = updated.description ?? '';
+				if (version !== descriptionEditVersion) return;
+				descriptionDirty = false;
+				descriptionSaveFailed = false;
+				if (!destroyed) publishIssueUpdate(updated, identifier);
+			} catch {
+				if (!destroyed && context === refreshContext && version === descriptionEditVersion) {
+					descriptionSaveFailed = true;
+					appToast.error(m['issue.toast.failed_description']());
+				}
+			} finally {
+				descriptionPendingSaves--;
+				descriptionMutationVersion++;
+				if (
+					!destroyed &&
+					context === refreshContext &&
+					descriptionPendingSaves === 0 &&
+					!descriptionDirty &&
+					issueRefreshQueued
+				) {
+					scheduleIssueRefresh();
+				}
+			}
+		});
+		descriptionSaveQueue = save;
+		await save;
 	}
 
 	async function reworkSelectedDescriptionText(selectedText: string): Promise<string> {
@@ -715,29 +802,47 @@
 	}
 
 	async function refreshIssue() {
+		if (descriptionDirty || descriptionSaveTimer || descriptionPendingSaves > 0) {
+			issueRefreshQueued = true;
+			return;
+		}
+		issueRefreshQueued = false;
 		const request = ++issueRefreshRequest;
 		const context = refreshContext;
 		const workspaceSlug = slug;
 		const identifier = issue.identifier;
 		const localUpdate = lastLocalUpdate;
+		const mutationVersion = descriptionMutationVersion;
+		const editVersion = descriptionEditVersion;
+		issueRefreshActive++;
 		try {
 			const fresh = await getIssue(workspaceSlug, identifier);
 			if (destroyed || context !== refreshContext || request !== issueRefreshRequest) return;
-			if (localUpdate !== lastLocalUpdate) {
+			if (
+				localUpdate !== lastLocalUpdate ||
+				mutationVersion !== descriptionMutationVersion ||
+				editVersion !== descriptionEditVersion ||
+				descriptionDirty ||
+				descriptionPendingSaves > 0
+			) {
 				scheduleIssueRefresh();
 				return;
 			}
-			const idx = issuesState.issues.findIndex((i) => i.identifier === identifier);
-			if (idx >= 0) issuesState.issues[idx] = fresh;
-			if (issuesState.selectedIssue?.identifier === identifier) {
-				issuesState.selectedIssue = fresh;
-			}
-			onupdated?.(fresh);
+			publishIssueUpdate(fresh, identifier);
 		} catch {
 			/* ignore */
+		} finally {
+			issueRefreshActive--;
 		}
 		// Refresh activity in background
 		if (!destroyed && context === refreshContext && request === issueRefreshRequest) void refreshActivity();
+	}
+
+	function publishIssueUpdate(updated: Issue, identifier: string) {
+		const idx = issuesState.issues.findIndex((item) => item.identifier === identifier);
+		if (idx >= 0) issuesState.issues[idx] = updated;
+		if (issuesState.selectedIssue?.identifier === identifier) issuesState.selectedIssue = updated;
+		onupdated?.(updated);
 	}
 
 	async function refreshActivity() {
@@ -1382,6 +1487,21 @@
 						oncreateissue={(text) => openCreateIssueDialog(text)}
 						onreworkselection={reworkSelectedDescriptionText}
 					/>
+					{#if descriptionSaveFailed}
+						<div role="alert" class="mt-2 flex items-center gap-3 text-xs text-[var(--color-error)]">
+							<span>{m['issue.toast.failed_description']()}</span>
+							<button
+								type="button"
+								disabled={descriptionPendingSaves > 0}
+								onclick={() => {
+									if (descriptionPendingSaves === 0) void flushDescriptionSave(pendingDescriptionHtml);
+								}}
+								class="rounded border border-[var(--app-border)] px-2 py-1 text-[var(--color-text-secondary)] disabled:opacity-50"
+							>
+								{m['shares.retry']()}
+							</button>
+						</div>
+					{/if}
 				</div>
 
 				<!-- Sub-issues -->

@@ -245,40 +245,42 @@ type DevMachineOperation struct {
 }
 
 type DevMachineAgentRun struct {
-	ID                 uuid.UUID                `json:"id" db:"id"`
-	MachineID          uuid.UUID                `json:"machine_id" db:"machine_id"`
-	WorkspaceID        uuid.UUID                `json:"workspace_id" db:"workspace_id"`
-	IssueID            *uuid.UUID               `json:"issue_id,omitempty" db:"issue_id"`
-	CheckoutID         *uuid.UUID               `json:"checkout_id,omitempty" db:"checkout_id"`
-	RequestedByUserID  *uuid.UUID               `json:"requested_by_user_id,omitempty" db:"requested_by_user_id"`
-	ProviderID         string                   `json:"provider_id" db:"provider_id"`
-	Mode               string                   `json:"mode" db:"mode"`
-	Status             DevMachineAgentRunStatus `json:"status" db:"status"`
-	Prompt             string                   `json:"prompt" db:"prompt"`
-	AcceptanceCriteria json.RawMessage          `json:"acceptance_criteria" db:"acceptance_criteria"`
-	AllowedCommands    json.RawMessage          `json:"allowed_commands" db:"allowed_commands"`
-	ForbiddenPaths     json.RawMessage          `json:"forbidden_paths" db:"forbidden_paths"`
-	AllowedSecrets     json.RawMessage          `json:"allowed_secrets" db:"allowed_secrets"`
-	TestCommand        *json.RawMessage         `json:"test_command,omitempty" db:"test_command"`
-	CommandArgv        json.RawMessage          `json:"command_argv" db:"command_argv"`
-	MaxRuntimeSeconds  int                      `json:"max_runtime_seconds" db:"max_runtime_seconds"`
-	PushBranch         bool                     `json:"push_branch" db:"push_branch"`
-	OpenPullRequest    bool                     `json:"open_pull_request" db:"open_pull_request"`
-	Result             *json.RawMessage         `json:"result,omitempty" db:"result"`
-	Summary            *string                  `json:"summary,omitempty" db:"summary"`
-	ChangedFiles       json.RawMessage          `json:"changed_files" db:"changed_files"`
-	Commits            json.RawMessage          `json:"commits" db:"commits"`
-	Branch             *string                  `json:"branch,omitempty" db:"branch"`
-	PullRequestURL     *string                  `json:"pull_request_url,omitempty" db:"pull_request_url"`
-	TestsRun           json.RawMessage          `json:"tests_run" db:"tests_run"`
-	TestStatus         string                   `json:"test_status" db:"test_status"`
-	RiskNotes          json.RawMessage          `json:"risk_notes" db:"risk_notes"`
-	ExitCode           *int                     `json:"exit_code,omitempty" db:"exit_code"`
-	ErrorMessage       *string                  `json:"error_message,omitempty" db:"error_message"`
-	CreatedAt          time.Time                `json:"created_at" db:"created_at"`
-	StartedAt          *time.Time               `json:"started_at,omitempty" db:"started_at"`
-	CompletedAt        *time.Time               `json:"completed_at,omitempty" db:"completed_at"`
-	CancelledAt        *time.Time               `json:"cancelled_at,omitempty" db:"cancelled_at"`
+	// Loaded from the backend's immutable per-run selection before cleanup.
+	RepositorySelection *DevMachineCheckout      `json:"-" db:"-"`
+	ID                  uuid.UUID                `json:"id" db:"id"`
+	MachineID           uuid.UUID                `json:"machine_id" db:"machine_id"`
+	WorkspaceID         uuid.UUID                `json:"workspace_id" db:"workspace_id"`
+	IssueID             *uuid.UUID               `json:"issue_id,omitempty" db:"issue_id"`
+	CheckoutID          *uuid.UUID               `json:"checkout_id,omitempty" db:"checkout_id"`
+	RequestedByUserID   *uuid.UUID               `json:"requested_by_user_id,omitempty" db:"requested_by_user_id"`
+	ProviderID          string                   `json:"provider_id" db:"provider_id"`
+	Mode                string                   `json:"mode" db:"mode"`
+	Status              DevMachineAgentRunStatus `json:"status" db:"status"`
+	Prompt              string                   `json:"prompt" db:"prompt"`
+	AcceptanceCriteria  json.RawMessage          `json:"acceptance_criteria" db:"acceptance_criteria"`
+	AllowedCommands     json.RawMessage          `json:"allowed_commands" db:"allowed_commands"`
+	ForbiddenPaths      json.RawMessage          `json:"forbidden_paths" db:"forbidden_paths"`
+	AllowedSecrets      json.RawMessage          `json:"allowed_secrets" db:"allowed_secrets"`
+	TestCommand         *json.RawMessage         `json:"test_command,omitempty" db:"test_command"`
+	CommandArgv         json.RawMessage          `json:"command_argv" db:"command_argv"`
+	MaxRuntimeSeconds   int                      `json:"max_runtime_seconds" db:"max_runtime_seconds"`
+	PushBranch          bool                     `json:"push_branch" db:"push_branch"`
+	OpenPullRequest     bool                     `json:"open_pull_request" db:"open_pull_request"`
+	Result              *json.RawMessage         `json:"result,omitempty" db:"result"`
+	Summary             *string                  `json:"summary,omitempty" db:"summary"`
+	ChangedFiles        json.RawMessage          `json:"changed_files" db:"changed_files"`
+	Commits             json.RawMessage          `json:"commits" db:"commits"`
+	Branch              *string                  `json:"branch,omitempty" db:"branch"`
+	PullRequestURL      *string                  `json:"pull_request_url,omitempty" db:"pull_request_url"`
+	TestsRun            json.RawMessage          `json:"tests_run" db:"tests_run"`
+	TestStatus          string                   `json:"test_status" db:"test_status"`
+	RiskNotes           json.RawMessage          `json:"risk_notes" db:"risk_notes"`
+	ExitCode            *int                     `json:"exit_code,omitempty" db:"exit_code"`
+	ErrorMessage        *string                  `json:"error_message,omitempty" db:"error_message"`
+	CreatedAt           time.Time                `json:"created_at" db:"created_at"`
+	StartedAt           *time.Time               `json:"started_at,omitempty" db:"started_at"`
+	CompletedAt         *time.Time               `json:"completed_at,omitempty" db:"completed_at"`
+	CancelledAt         *time.Time               `json:"cancelled_at,omitempty" db:"cancelled_at"`
 }
 
 type DevMachineAgentRunStep struct {
@@ -297,16 +299,17 @@ type DevMachineAgentRunStep struct {
 }
 
 type DevMachineEvent struct {
-	ID          int64           `json:"id" db:"id"`
-	WorkspaceID uuid.UUID       `json:"workspace_id" db:"workspace_id"`
-	MachineID   uuid.UUID       `json:"machine_id" db:"machine_id"`
-	AgentRunID  *uuid.UUID      `json:"agent_run_id,omitempty" db:"agent_run_id"`
-	ActorUserID *uuid.UUID      `json:"actor_user_id,omitempty" db:"actor_user_id"`
-	Source      string          `json:"source" db:"source"`
-	EventType   string          `json:"event_type" db:"event_type"`
-	Payload     json.RawMessage `json:"payload" db:"payload"`
-	OccurredAt  time.Time       `json:"occurred_at" db:"occurred_at"`
-	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
+	ID           int64           `json:"id" db:"id"`
+	OccurrenceID uuid.UUID       `json:"-" db:"occurrence_id"`
+	WorkspaceID  uuid.UUID       `json:"workspace_id" db:"workspace_id"`
+	MachineID    uuid.UUID       `json:"machine_id" db:"machine_id"`
+	AgentRunID   *uuid.UUID      `json:"agent_run_id,omitempty" db:"agent_run_id"`
+	ActorUserID  *uuid.UUID      `json:"actor_user_id,omitempty" db:"actor_user_id"`
+	Source       string          `json:"source" db:"source"`
+	EventType    string          `json:"event_type" db:"event_type"`
+	Payload      json.RawMessage `json:"payload" db:"payload"`
+	OccurredAt   time.Time       `json:"occurred_at" db:"occurred_at"`
+	CreatedAt    time.Time       `json:"created_at" db:"created_at"`
 }
 
 type DevMachineLogChunk struct {

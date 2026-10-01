@@ -61,7 +61,7 @@ def request_json(
                 f"{method} {path} failed with HTTP {error.code}"
             ) from None
         response = error
-    except (urllib.error.URLError, OSError):
+    except (urllib.error.URLError, OSError, http.client.HTTPException):
         raise LiveCheckError(f"{method} {path} could not reach its endpoint") from None
     with response:
         if response.status != expected:

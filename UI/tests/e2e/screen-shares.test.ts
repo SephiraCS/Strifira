@@ -311,6 +311,7 @@ async function installPeerRig(page: Page) {
 			streams: [] as MediaStream[],
 			stops: [] as number[],
 			captureCalls: 0,
+			captureAudio: false,
 			pickerMode: 'immediate' as 'immediate' | 'cancel' | 'pending',
 			completePicker: null as (() => void) | null,
 			makeStream() {
@@ -318,6 +319,15 @@ async function installPeerRig(page: Page) {
 				canvas.width = 8;
 				canvas.height = 8;
 				const stream = canvas.captureStream(1);
+				let audioContext: AudioContext | null = null;
+				if (rig.captureAudio) {
+					audioContext = new AudioContext();
+					const destination = audioContext.createMediaStreamDestination();
+					const oscillator = audioContext.createOscillator();
+					oscillator.connect(destination);
+					oscillator.start();
+					stream.addTrack(destination.stream.getAudioTracks()[0]);
+				}
 				const index = rig.streams.length;
 				rig.streams.push(stream);
 				rig.stops.push(0);
@@ -326,6 +336,7 @@ async function installPeerRig(page: Page) {
 					track.stop = () => {
 						rig.stops[index]++;
 						originalStop();
+						if (track.kind === 'audio') void audioContext?.close();
 					};
 				}
 				return stream;
@@ -355,7 +366,7 @@ async function installPeerRig(page: Page) {
 			constructor() {
 				rig.peers.push(this);
 			}
-			addTransceiver(kind: string) {
+			addTransceiver(kind: string, init: RTCRtpTransceiverInit = {}) {
 				const sender = {
 					track: null as MediaStreamTrack | null,
 					replaceTrack: async (next: MediaStreamTrack | null) => {
@@ -364,7 +375,14 @@ async function installPeerRig(page: Page) {
 					getParameters: () => ({}),
 					setParameters: async () => {}
 				};
-				const transceiver = { sender, receiver: { track: { kind } } };
+				const transceiver = {
+					sender,
+					receiver: { track: { kind } },
+					mid: null as string | null,
+					direction: init.direction ?? 'sendrecv',
+					currentDirection: null as RTCRtpTransceiverDirection | null,
+					fromAddTrack: false
+				};
 				this.senders.push(sender);
 				this.transceivers.push(transceiver);
 				return transceiver;
@@ -373,17 +391,10 @@ async function installPeerRig(page: Page) {
 				return this.transceivers;
 			}
 			addTrack(track: MediaStreamTrack) {
-				const sender = {
-					track,
-					replaceTrack: async (next: MediaStreamTrack) => {
-						sender.track = next;
-					},
-					getParameters: () => ({}),
-					setParameters: async () => {}
-				};
-				this.senders.push(sender);
-				this.transceivers.push({ sender, receiver: { track: { kind: track.kind } } });
-				return sender;
+				const transceiver = this.addTransceiver(track.kind);
+				transceiver.sender.track = track;
+				transceiver.fromAddTrack = true;
+				return transceiver.sender;
 			}
 			getSenders() {
 				return this.senders;
@@ -397,11 +408,31 @@ async function installPeerRig(page: Page) {
 			async setLocalDescription(description: RTCSessionDescriptionInit) {
 				this.localDescription = description;
 				this.signalingState = description.type === 'offer' ? 'have-local-offer' : 'stable';
+				if (description.type === 'answer') {
+					for (const transceiver of this.transceivers) {
+						if (transceiver.mid !== null)
+							transceiver.currentDirection = ['sendonly', 'sendrecv'].includes(transceiver.direction)
+								? 'sendonly'
+								: 'inactive';
+					}
+				}
 			}
 			async setRemoteDescription(description: RTCSessionDescriptionInit) {
 				this.remoteDescription = description;
 				this.remoteDescriptions.push(description);
 				this.signalingState = description.type === 'offer' ? 'have-remote-offer' : 'stable';
+				if (description.type === 'offer') {
+					// Match the incoming offer's media sections. addTrack can be
+					// reused; an unassociated addTransceiver cannot be reused.
+					for (const [index, kind] of ['video', 'audio'].entries()) {
+						const transceiver =
+							this.transceivers.find(
+								(candidate) =>
+									candidate.mid === null && candidate.fromAddTrack && candidate.receiver.track.kind === kind
+							) ?? this.addTransceiver(kind, { direction: 'recvonly' });
+						transceiver.mid = String(index);
+					}
+				}
 			}
 			async addIceCandidate(candidate: RTCIceCandidateInit) {
 				this.candidates.push(candidate);
@@ -730,6 +761,136 @@ test('duplicate start attempts stay blocked until capture and share creation bot
 	);
 	expect(joins).toHaveLength(1);
 	expect(joins[0].payload.presenter_token).toBe(presenterToken);
+});
+
+test('workspace navigation invalidates a pending picker and allows capture before the new socket opens', async ({
+	page
+}) => {
+	const requests = await stubOwnShare(page);
+	const otherShareId = '00000000-0000-0000-0000-000000000092';
+	const otherWorkspace = {
+		...workspacePayload(true),
+		id: '00000000-0000-0000-0000-000000000093',
+		slug: 'other',
+		name: 'Other Workspace'
+	};
+	let otherCreates = 0;
+	await page.route('**/api/workspaces', (route) => route.fulfill({ json: [workspacePayload(true), otherWorkspace] }));
+	await page.route('**/api/workspaces/other{,/**}', (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (path === '/api/workspaces/other') return route.fulfill({ json: otherWorkspace });
+		if (path === '/api/workspaces/other/shares') {
+			if (route.request().method() === 'POST') {
+				otherCreates++;
+				return route.fulfill({
+					json: {
+						share: {
+							...activeShare,
+							id: otherShareId,
+							workspace_id: otherWorkspace.id,
+							started_by: '00000000-0000-0000-0000-000000000001'
+						},
+						presenter_token: presenterToken
+					}
+				});
+			}
+			return route.fulfill({ json: { active: [], recent: [] } });
+		}
+		if (path === '/api/workspaces/other/issues') {
+			return route.fulfill({ json: { data: [], total_count: 0, page: 1, per_page: 50, has_more: false } });
+		}
+		return route.fulfill({ json: [] });
+	});
+	await page.addInitScript(() => {
+		const Socket = window.WebSocket;
+		class PendingSocket extends EventTarget {
+			readyState: number = Socket.CONNECTING;
+			onopen: (() => void) | null = null;
+			onclose: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			onmessage: ((event: MessageEvent) => void) | null = null;
+			close() {
+				this.readyState = Socket.CLOSED;
+				this.onclose?.();
+			}
+		}
+		(window as any).WebSocket = class extends Socket {
+			constructor(url: string | URL, protocols?: string | string[]) {
+				if (String(url).includes('/api/workspaces/other/ws')) return new PendingSocket() as any;
+				super(url, protocols);
+			}
+		};
+		(window as any).__workspaceReconnects = [];
+		window.addEventListener('ws:reconnected', (event) => {
+			(window as any).__workspaceReconnects.push((event as CustomEvent).detail.workspaceSlug);
+		});
+	});
+	await page.goto('/test/shares');
+	await expect.poll(() => page.evaluate(() => (window as any).__workspaceReconnects)).toContain('test');
+	await page.evaluate(() => {
+		(window as any).__shareRig.pickerMode = 'pending';
+	});
+	await page.getByRole('button', { name: 'Share my screen', exact: true }).click();
+	await expect.poll(() => page.evaluate(() => (window as any).__shareRig.captureCalls)).toBe(1);
+	await page.getByText('Test Workspace', { exact: true }).first().click();
+	await page.getByText('Other Workspace', { exact: true }).click();
+	await expect(page).toHaveURL(/\/other\/my-issues$/);
+	await page.locator('a[href="/other/shares"]').first().click();
+	const start = page.getByRole('button', { name: 'Share my screen', exact: true });
+	await expect(start).toBeEnabled();
+	await page.evaluate(() => {
+		(window as any).__shareRig.pickerMode = 'immediate';
+	});
+	await start.click();
+	await expect(page.locator(`[data-share-id="${otherShareId}"]`)).toContainText('Sharing');
+	await page.evaluate(() => (window as any).__shareRig.completePicker());
+	await expect.poll(() => page.evaluate(() => (window as any).__shareRig.stops)).toEqual([0, 1]);
+	expect(requests.creates).toBe(0);
+	expect(otherCreates).toBe(1);
+	expect(await page.evaluate(() => (window as any).__workspaceReconnects)).not.toContain('other');
+	await expect(page.locator(`[data-share-id="${otherShareId}"]`)).toContainText('Sharing');
+});
+
+test('a silent presenter reserves the offered audio sender for a later source with audio', async ({ page }) => {
+	await stubOwnShare(page);
+	await page.goto('/test/shares');
+	await page.getByRole('button', { name: 'Share my screen', exact: true }).click();
+	const tile = page.locator(`[data-share-id="${shareId}"]`);
+	await expect(tile).toContainText('Sharing');
+	await page.evaluate(
+		(id) =>
+			window.dispatchEvent(
+				new CustomEvent('ws:share.signal', {
+					detail: {
+						share_id: id,
+						from_peer: '00000000-0000-0000-0000-000000000021',
+						negotiation_id: '00000000-0000-0000-0000-000000000023',
+						data: { type: 'offer', sdp: 'viewer-offer' }
+					}
+				})
+			),
+		shareId
+	);
+	await expect.poll(async () => (await sentSignals(page, 'answer')).length).toBe(1);
+	const audioSections = () =>
+		page.evaluate(() =>
+			(window as any).__shareRig.peers[0]
+				.getTransceivers()
+				.filter((transceiver: any) => transceiver.receiver.track.kind === 'audio')
+				.map((transceiver: any) => ({
+					mid: transceiver.mid,
+					direction: transceiver.currentDirection,
+					track: transceiver.sender.track?.kind ?? null
+				}))
+		);
+	expect(await audioSections()).toEqual([{ mid: '1', direction: 'sendonly', track: null }]);
+	await page.evaluate(() => {
+		(window as any).__shareRig.captureAudio = true;
+	});
+	await tile.getByRole('button', { name: 'Change what you share', exact: true }).click();
+	await expect.poll(audioSections).toEqual([{ mid: '1', direction: 'sendonly', track: 'audio' }]);
+	expect((await sentSignals(page, 'answer')).length).toBe(1);
+	expect(await page.evaluate(() => (window as any).__shareRig.peers.length)).toBe(1);
 });
 
 test('two viewer browser tabs for the same user keep independent negotiations', async ({ page, context }) => {

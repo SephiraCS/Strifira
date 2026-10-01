@@ -20,6 +20,12 @@ declare global {
 			messages: SignalEvent[];
 			captures: MediaStream[];
 			captureCalls: number;
+			audioSources: Array<{
+				capture: number;
+				context: AudioContext;
+				analyser: AnalyserNode;
+				oscillator: OscillatorNode;
+			}>;
 		};
 	}
 }
@@ -49,7 +55,7 @@ async function newUser(browser: Browser, baseURL: string, role: string): Promise
 	);
 	await context.addInitScript(() => {
 		localStorage.setItem('PARAGLIDE_LOCALE', 'en');
-		window.__kuLive = { peers: [], sockets: [], messages: [], captures: [], captureCalls: 0 };
+		window.__kuLive = { peers: [], sockets: [], messages: [], captures: [], captureCalls: 0, audioSources: [] };
 
 		// Observe native constructors without replacing any transport behavior.
 		// The suite uses real offers/answers, ICE, RTP encoding and decoding.
@@ -108,36 +114,64 @@ async function openWall(context: BrowserContext, slug: string): Promise<Page> {
 	return page;
 }
 
-async function installCanvasCapture(page: Page, label: string): Promise<void> {
-	await page.evaluate((name) => {
-		// Headless browsers have no screen picker. Only capture is synthetic;
-		// canvas.captureStream produces real video tracks for native WebRTC.
-		navigator.mediaDevices.getDisplayMedia = async () => {
-			window.__kuLive.captureCalls++;
-			const canvas = document.createElement('canvas');
-			canvas.width = 640;
-			canvas.height = 360;
-			const ctx = canvas.getContext('2d')!;
-			let frame = 0;
-			const capture = window.__kuLive.captureCalls;
-			const draw = () => {
-				// Stable distinct colors prove replaceTrack changed decoded
-				// source, rather than leaving the receiver on old frames.
-				ctx.fillStyle = capture % 2 ? '#2255dd' : '#22bb55';
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-				ctx.fillStyle = '#fff';
-				ctx.font = 'bold 30px sans-serif';
-				ctx.fillText(`${name}: capture ${capture}, frame ${frame++}`, 20, 180);
-				ctx.fillRect((frame * 8) % canvas.width, 240, 30, 40);
+async function installCanvasCapture(page: Page, label: string, audioOnSwitch = false): Promise<void> {
+	await page.evaluate(
+		({ name, audioOnSwitch }) => {
+			// Headless browsers have no screen picker. Only capture is synthetic;
+			// canvas.captureStream produces real video tracks for native WebRTC.
+			navigator.mediaDevices.getDisplayMedia = async () => {
+				window.__kuLive.captureCalls++;
+				const canvas = document.createElement('canvas');
+				canvas.width = 640;
+				canvas.height = 360;
+				const ctx = canvas.getContext('2d')!;
+				let frame = 0;
+				const capture = window.__kuLive.captureCalls;
+				const draw = () => {
+					// Stable distinct colors prove replaceTrack changed decoded
+					// source, rather than leaving the receiver on old frames.
+					ctx.fillStyle = capture % 2 ? '#2255dd' : '#22bb55';
+					ctx.fillRect(0, 0, canvas.width, canvas.height);
+					ctx.fillStyle = '#fff';
+					ctx.font = 'bold 30px sans-serif';
+					ctx.fillText(`${name}: capture ${capture}, frame ${frame++}`, 20, 180);
+					ctx.fillRect((frame * 8) % canvas.width, 240, 30, 40);
+				};
+				draw();
+				const timer = window.setInterval(draw, 33);
+				const stream = canvas.captureStream(30);
+				let audioContext: AudioContext | null = null;
+				if (audioOnSwitch && capture > 1) {
+					// The first source is silent; switching adds a real non-silent
+					// audio track that native WebRTC must encode and deliver.
+					audioContext = new AudioContext();
+					await audioContext.resume();
+					const destination = audioContext.createMediaStreamDestination();
+					const oscillator = audioContext.createOscillator();
+					const gain = audioContext.createGain();
+					const analyser = audioContext.createAnalyser();
+					oscillator.frequency.value = 523.25;
+					gain.gain.value = 0.2;
+					oscillator.connect(gain).connect(analyser).connect(destination);
+					oscillator.start();
+					stream.addTrack(destination.stream.getAudioTracks()[0]);
+					window.__kuLive.audioSources.push({ capture, context: audioContext, analyser, oscillator });
+				}
+				for (const track of stream.getTracks()) {
+					const stop = track.stop.bind(track);
+					track.stop = () => {
+						stop();
+						if (track.kind === 'video') clearInterval(timer);
+						if (track.kind === 'audio') void audioContext?.close();
+					};
+				}
+				stream.getVideoTracks()[0].addEventListener('ended', () => clearInterval(timer));
+				window.__kuLive.captures.push(stream);
+				return stream;
 			};
-			draw();
-			const timer = window.setInterval(draw, 33);
-			const stream = canvas.captureStream(30);
-			stream.getVideoTracks()[0].addEventListener('ended', () => clearInterval(timer));
-			window.__kuLive.captures.push(stream);
-			return stream;
-		};
-	}, label);
+		},
+		{ name: label, audioOnSwitch }
+	);
 }
 
 async function frameCount(page: Page, shareId: string): Promise<number> {
@@ -165,6 +199,47 @@ async function receivedVideo(page: Page): Promise<{ frames: number; bytes: numbe
 			}
 		}
 		return { frames, bytes, connected };
+	});
+}
+
+async function receivedAudio(page: Page): Promise<{ bytes: number; samples: number; energy: number }> {
+	return page.evaluate(async () => {
+		let bytes = 0;
+		let samples = 0;
+		let energy = 0;
+		for (const peer of window.__kuLive.peers) {
+			if (peer.connectionState !== 'connected') continue;
+			for (const report of (await peer.getStats()).values()) {
+				if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+					bytes += report.bytesReceived ?? 0;
+					samples += report.totalSamplesReceived ?? 0;
+					energy += report.totalAudioEnergy ?? 0;
+				}
+			}
+		}
+		return { bytes, samples, energy };
+	});
+}
+
+async function capturedAudio(page: Page): Promise<{
+	state: AudioContextState | null;
+	time: number;
+	rms: number;
+	trackState: MediaStreamTrackState | null;
+}> {
+	return page.evaluate(() => {
+		const source = window.__kuLive.audioSources.at(-1);
+		if (!source) return { state: null, time: 0, rms: 0, trackState: null };
+		const samples = new Float32Array(source.analyser.fftSize);
+		source.analyser.getFloatTimeDomainData(samples);
+		const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
+		const track = window.__kuLive.captures[source.capture - 1]?.getAudioTracks()[0];
+		return {
+			state: source.context.state,
+			time: source.context.currentTime,
+			rms,
+			trackState: track?.readyState ?? null
+		};
 	});
 }
 
@@ -221,11 +296,12 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 		);
 		const source = await openWall(presenter, slug);
 		pages.push({ role: 'presenter', page: source });
-		await installCanvasCapture(source, 'primary');
+		await installCanvasCapture(source, 'primary', true);
 		await source.getByRole('button', { name: 'Share my screen', exact: true }).click();
 		await expect.poll(async () => (await activeShares(presenter, slug)).length).toBe(1);
 		const shareId = (await activeShares(presenter, slug))[0].id;
 		await expect.poll(() => frameCount(source, shareId)).toBeGreaterThan(10);
+		expect(await source.evaluate(() => window.__kuLive.captures[0].getAudioTracks().length)).toBe(0);
 
 		// Identical account cookies must produce independent socket/peer IDs.
 		const ownViewerA = await openWall(presenter, slug);
@@ -342,10 +418,45 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 			.poll(() => source.evaluate(() => window.__kuLive.captures[0].getVideoTracks()[0].readyState))
 			.toBe('ended');
 		expect((await activeShares(presenter, slug))[0].id).toBe(shareId);
+		await expect.poll(async () => (await capturedAudio(source)).state).toBe('running');
+		await expect.poll(async () => (await capturedAudio(source)).rms).toBeGreaterThan(0.05);
+		expect((await capturedAudio(source)).trackState).toBe('live');
+		await testInfo.attach('silent-to-audio-source', {
+			body: JSON.stringify(await capturedAudio(source), null, 2),
+			contentType: 'application/json'
+		});
 		for (const page of [ownViewerB, otherViewerA, otherViewerB]) {
 			await expectVideoContinues(page, shareId);
 			await expect.poll(() => hasGreenSource(page, shareId)).toBe(true);
+			// Tiles start muted for autoplay. Opt into real audio playback
+			// through the product control before checking decoded energy.
+			await page.locator(`[data-share-id="${shareId}"] button[title="Unmute"]`).click();
+			await expect(page.locator(`[data-share-id="${shareId}"] button[title="Mute"]`)).toBeVisible();
+			await expect
+				.poll(() =>
+					page.locator(`[data-share-id="${shareId}"] video`).evaluate((video: HTMLVideoElement) => video.muted)
+				)
+				.toBe(false);
+			// RTP bytes, decoded samples and positive audio energy prove
+			// delivery of the new source, beyond a successful replaceTrack.
+			await expect.poll(async () => (await receivedAudio(page)).bytes).toBeGreaterThan(1024);
+			await expect.poll(async () => (await receivedAudio(page)).samples).toBeGreaterThan(4800);
+			await expect.poll(async () => (await receivedAudio(page)).energy).toBeGreaterThan(0);
 		}
+		await testInfo.attach('silent-to-audio-media-delivery', {
+			body: JSON.stringify(
+				await Promise.all(
+					[ownViewerB, otherViewerA, otherViewerB].map(async (page, index) => ({
+						viewer: index,
+						audio: await receivedAudio(page),
+						video: await receivedVideo(page)
+					}))
+				),
+				null,
+				2
+			),
+			contentType: 'application/json'
+		});
 
 		// Drop actual signaling sockets. Automatic layout reconnect and share
 		// re-announcement must recover; no synthetic reconnect event is fired.
@@ -395,6 +506,8 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 				.map(async ({ role, page }) => ({
 					role,
 					media: await receivedVideo(page).catch(() => null),
+					audio: await receivedAudio(page).catch(() => null),
+					sourceAudio: await capturedAudio(page).catch(() => null),
 					signals: await page
 						.evaluate(() =>
 							window.__kuLive.messages

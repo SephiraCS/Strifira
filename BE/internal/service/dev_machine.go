@@ -1762,7 +1762,7 @@ func terminalWorkingDirectory(machine *domain.DevMachine, checkout *domain.DevMa
 		return checkout.WorkspacePath
 	}
 	if machine.RepoOwner != "" && machine.RepoName != "" {
-		return "/workspace"
+		return "/workspace/repository"
 	}
 	return "/workspace/tasks"
 }
@@ -2013,6 +2013,9 @@ func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineChe
 	builder.WriteString("\n\nKu execution contract:\n")
 	workspacePath := "/workspace"
 	repository, baseBranch, workingBranch := machine.RepoOwner+"/"+machine.RepoName, machine.BaseBranch, machine.WorkingBranch
+	if machine.RepoOwner != "" && machine.RepoName != "" {
+		workspacePath = "/workspace/repository"
+	}
 	if checkout != nil {
 		workspacePath, repository, baseBranch, workingBranch = checkout.WorkspacePath, checkout.RepositoryFullName, checkout.BaseBranch, checkout.WorkingBranch
 	}

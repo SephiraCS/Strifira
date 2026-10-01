@@ -42,6 +42,13 @@ func childEnvironment(provider string) []string {
 }
 
 func runProcess(ctx context.Context, dir string, environment, argv []string, stdout, stderr io.Writer) (int, error) {
+	defer func() {
+		for _, output := range []io.Writer{stdout, stderr} {
+			if flusher, ok := output.(interface{ Flush() }); ok {
+				flusher.Flush()
+			}
+		}
+	}()
 	if len(argv) == 0 || argv[0] == "" {
 		return -1, errors.New("empty command")
 	}

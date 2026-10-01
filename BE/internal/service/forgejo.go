@@ -700,10 +700,10 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 	if mergeRuleErr != nil {
 		return mergeRuleErr
 	}
-	ready := event.Action == "edited" && event.Changes.Title != nil && isDraftTitle(event.Changes.Title.From) && !event.PullRequest.Draft
+	ready := event.Action == "edited" && event.Changes.Title != nil && isDraftTitle(event.Changes.Title.From)
 	for _, issue := range linkedIssues {
 		switch {
-		case !currentGreen && ((event.Action == "opened" && !event.PullRequest.Draft) || event.Action == "reopened" || ready):
+		case !currentGreen && pr.State == "open" && (event.Action == "opened" || event.Action == "reopened" || ready):
 			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, "pr_opened", issue, event.PullRequest.User.Login, pr); err != nil {
 				return err
 			}
@@ -928,7 +928,8 @@ func (s *ForgejoService) processActionRunEvent(ctx context.Context, payload []by
 }
 
 func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.ForgejoRepoModel, sha string) error {
-
+	// Keep these versions from before the external fetch. Reloading afterward
+	// would let an older response borrow a newer observation's version token.
 	openPRs, err := s.fRepo.ListOpenPRsByHeadSHA(ctx, repo.ID, sha)
 	if err != nil {
 		return err
@@ -966,23 +967,15 @@ func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.F
 	allGreen := combined.AllChecksPassed()
 
 	for i := range openPRs {
-		pr, err := s.fRepo.GetPRByRepoAndNumber(ctx, repo.ID, openPRs[i].Number)
-		if err != nil {
-			return err
-		}
-		if pr == nil || pr.HeadSHA == nil || *pr.HeadSHA != sha || (pr.State != "open" && pr.State != "draft") {
-			continue
-		}
+		pr := &openPRs[i]
 		if err := s.relinkPullRequestReferences(ctx, repo, pr, allGreen); err != nil {
 			if errors.Is(err, repository.ErrForgejoStalePullRequest) {
 				continue
 			}
 			return err
 		}
-		if pr.ChecksGreen == allGreen {
-			continue
-		}
-		if allGreen && pr.State != "draft" {
+		checksChanged := pr.ChecksGreen != allGreen
+		if checksChanged && allGreen && pr.State != "draft" {
 			if err := s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr); err != nil {
 				if errors.Is(err, repository.ErrForgejoStalePullRequest) {
 					continue
@@ -990,11 +983,16 @@ func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.F
 				return err
 			}
 		}
+		// Advance the version even when the flag is unchanged: a fresh failure
+		// must supersede an older in-flight success without replaying transitions.
 		if err := s.fRepo.UpdatePullRequestChecks(ctx, pr, allGreen); err != nil {
 			if errors.Is(err, repository.ErrForgejoStalePullRequest) {
 				continue
 			}
 			return err
+		}
+		if !checksChanged {
+			continue
 		}
 		ids, err := s.fRepo.ListIssueIDsForPR(ctx, pr.ID)
 		if err != nil {

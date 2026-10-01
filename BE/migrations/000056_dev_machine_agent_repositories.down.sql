@@ -1,0 +1,1 @@
+DROP TABLE dev_machine_agent_run_repositories;

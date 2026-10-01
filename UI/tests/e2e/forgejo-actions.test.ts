@@ -25,7 +25,7 @@ async function mockActions(
 		created_at: '2026-09-30T12:00:00Z',
 		updated_at: '2026-09-30T12:01:00Z',
 		started_at: '2026-09-30T12:00:00Z',
-		completed_at: '2026-09-30T12:01:00Z'
+		completed_at: '2026-09-30T12:01:00Z' as string | null
 	};
 	const runningRun = {
 		...completedRun,
@@ -164,6 +164,7 @@ test('reads native job logs, hands reruns to Forgejo, and cancels active runs as
 	page.on('pageerror', (error) => pageErrors.push(error));
 	await page.goto('/test/actions');
 	await page.getByRole('button', { name: /Build application/ }).click();
+	await expect(page.getByRole('region', { name: 'Jobs', exact: true })).toContainText('1m 0s');
 	const nativeRunLink = page.getByRole('link', { name: 'Open in Forgejo' });
 	await expect(nativeRunLink).toBeVisible();
 	await expect(nativeRunLink).toHaveAttribute('href', 'https://git.example.com/TerraScale/ku/actions/runs/42');
@@ -241,6 +242,25 @@ test('preserves readable logs when job refresh fails and reports cancellation er
 	expect(calls.actions).toHaveLength(1);
 });
 
+test('queries each newly selected status immediately', async ({ page }) => {
+	const { calls } = await mockActions(page);
+	await page.goto('/test/actions');
+	await expect(page.getByRole('button', { name: /Build application/ })).toBeVisible();
+	for (const status of ['success', 'running', 'failure', '']) {
+		const previousCount = calls.lists.length;
+		await page.getByLabel('Status', { exact: true }).selectOption(status);
+		await expect.poll(() => calls.lists.length).toBe(previousCount + 1);
+		expect(calls.lists.at(-1)?.searchParams.get('status') ?? '').toBe(status);
+		await expect(page.getByRole('button', { name: /Build application/ })).toHaveCount(
+			status === 'success' || status === '' ? 1 : 0
+		);
+		await expect(page.getByRole('button', { name: /Deploy preview/ })).toHaveCount(
+			status === 'running' || status === '' ? 1 : 0
+		);
+		if (status === 'failure') await expect(page.getByText('No workflow runs', { exact: true })).toBeVisible();
+	}
+});
+
 test('sends status and branch filters and discards delayed details when switching repository', async ({ page }) => {
 	const { calls } = await mockActions(page);
 	await page.goto('/test/actions');
@@ -300,6 +320,85 @@ test('polls active runs only while visible and leaves completed filters idle', a
 	const count = calls.lists.length;
 	await page.clock.fastForward(45001);
 	expect(calls.lists).toHaveLength(count);
+});
+
+test('retries final log failures while visible, preserves partial output, and returns completed runs to idle', async ({
+	page
+}) => {
+	const { calls, completedRun, job } = await mockActions(page);
+	completedRun.status = 'running';
+	completedRun.conclusion = '';
+	completedRun.completed_at = null;
+	job.status = 'running';
+	job.conclusion = '';
+	let logReads = 0;
+	let jobReads = 0;
+	await page.route(`**${actionsPath}/runs?**`, (route) => {
+		calls.lists.push(new URL(route.request().url()));
+		return route.fulfill({
+			json: { data: [completedRun], total_count: 1, page: 1, per_page: 20, has_more: false }
+		});
+	});
+	await page.route(`**${actionsPath}/runs/101/jobs/201`, (route) => {
+		jobReads++;
+		return route.fulfill({ json: job });
+	});
+	await page.route(`**${actionsPath}/runs/101/jobs/201/logs?**`, (route) => {
+		logReads++;
+		if (logReads === 2 || logReads === 3)
+			return route.fulfill({ status: 503, json: { error: { message: 'Final logs are temporarily unavailable' } } });
+		return route.fulfill({
+			json: {
+				content: logReads === 1 ? 'Partial build output\n' : 'Complete build output\nAll tests passed\n',
+				truncated: false,
+				max_bytes: 2097152
+			}
+		});
+	});
+	await page.clock.install();
+	await page.goto('/test/actions');
+	await page.getByRole('button', { name: /Build application/ }).click();
+	await page.getByRole('button', { name: /Linux checks/ }).click();
+	await expect(page.locator('pre')).toHaveText('Partial build output\n');
+	completedRun.status = 'success';
+	completedRun.conclusion = 'success';
+	completedRun.completed_at = '2026-09-30T12:01:00Z';
+	job.status = 'success';
+	job.conclusion = 'success';
+	await page.clock.fastForward(15001);
+	const failure = page.getByText('Could not load job logs.', { exact: true });
+	await expect(failure).toBeVisible();
+	await expect(page.locator('pre')).toHaveText('Partial build output\n');
+	await expect(page.getByRole('button', { name: 'Download logs', exact: true })).toBeEnabled();
+	await expect(page.getByRole('link', { name: 'Rerun in Forgejo', exact: true })).toBeVisible();
+	expect(calls.lists).toHaveLength(2);
+	expect(logReads).toBe(2);
+	await page.evaluate(() => {
+		Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+		document.dispatchEvent(new Event('visibilitychange'));
+	});
+	await page.clock.fastForward(30001);
+	expect(logReads).toBe(2);
+	expect(jobReads).toBe(2);
+	await page.evaluate(() => {
+		Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+		document.dispatchEvent(new Event('visibilitychange'));
+	});
+	await expect.poll(() => logReads).toBe(3);
+	await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+	await expect(failure).toBeVisible();
+	await expect(page.locator('pre')).toHaveText('Partial build output\n');
+	expect(calls.lists).toHaveLength(2);
+	await page.clock.fastForward(15001);
+	await expect(page.locator('pre')).toHaveText('Complete build output\nAll tests passed\n');
+	await expect(failure).toHaveCount(0);
+	expect(logReads).toBe(4);
+	expect(jobReads).toBe(4);
+	expect(calls.lists).toHaveLength(2);
+	await page.clock.fastForward(45001);
+	expect(logReads).toBe(4);
+	expect(jobReads).toBe(4);
+	expect(calls.lists).toHaveLength(2);
 });
 
 test('coalesces Forgejo issue updates, ignores other issues, and waits for clipboard success', async ({ page }) => {

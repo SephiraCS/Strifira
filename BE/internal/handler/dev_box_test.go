@@ -96,7 +96,7 @@ func TestDevBoxHandlerCapsCompleteStreamedBodiesIncludingTrailingBytes(t *testin
 	}{
 		{name: "user request", limit: 128 << 10, call: handler.Create},
 		{name: "heartbeat", limit: 8 << 10, call: handler.Heartbeat},
-		{name: "log append", limit: 70 << 10, call: handler.AppendLog},
+		{name: "log append", limit: devBoxLogBodyLimit, call: handler.AppendLog},
 		{name: "completion", limit: dto.DevBoxCompleteBodyLimit, call: handler.Complete},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -157,6 +157,51 @@ func TestDevBoxCompletionPreservesMaximumEscapedResult(t *testing.T) {
 			require.Equal(t, request.Result, *store.completed)
 		})
 	}
+}
+
+type devBoxLogStoreFake struct {
+	repository.DevBoxStore
+	log *domain.DevBoxJobLog
+}
+
+func (f *devBoxLogStoreFake) AppendLog(_ context.Context, _, _ uuid.UUID, _, _ string, log *domain.DevBoxJobLog, _ int64) (bool, bool, error) {
+	f.log = log
+	return true, false, nil
+}
+
+func TestDevBoxLogHandlerAcceptsWorstCaseEscapingWithinDecodedLimit(t *testing.T) {
+	for _, size := range []int{16 << 10, service.DevBoxMaxLogEntryBytes} {
+		for _, character := range []string{"<", "\x01"} {
+			t.Run(fmt.Sprintf("%d bytes escaped %U", size, []rune(character)[0]), func(t *testing.T) {
+				request := dto.DevBoxAppendLogRequest{LeaseToken: "kul_" + strings.Repeat("a", 64), Sequence: 1, Stream: "stdout", Content: strings.Repeat(character, size)}
+				body, err := json.Marshal(request)
+				require.NoError(t, err)
+				require.Greater(t, len(body), 70<<10)
+				require.LessOrEqual(t, len(body), devBoxLogBodyLimit)
+				store := &devBoxLogStoreFake{}
+				handler := NewDevBoxHandler(service.NewDevBoxService(store, nil, nil, nil))
+				recorder := httptest.NewRecorder()
+				c := devBoxHandlerContext(t, http.MethodPost, "/", string(body), recorder)
+				c.Request().ContentLength = -1
+				require.NoError(t, devBoxAuthenticatedHandler(handler.AppendLog)(c))
+				require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+				require.NotNil(t, store.log)
+				require.Equal(t, request.Content, store.log.Content)
+			})
+		}
+	}
+	t.Run("decoded overflow is still rejected", func(t *testing.T) {
+		request := dto.DevBoxAppendLogRequest{LeaseToken: "kul_" + strings.Repeat("a", 64), Sequence: 1, Stream: "stdout", Content: strings.Repeat("x", service.DevBoxMaxLogEntryBytes+1)}
+		body, err := json.Marshal(request)
+		require.NoError(t, err)
+		store := &devBoxLogStoreFake{}
+		handler := NewDevBoxHandler(service.NewDevBoxService(store, nil, nil, nil))
+		recorder := httptest.NewRecorder()
+		c := devBoxHandlerContext(t, http.MethodPost, "/", string(body), recorder)
+		require.NoError(t, devBoxAuthenticatedHandler(handler.AppendLog)(c))
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		require.Nil(t, store.log)
+	})
 }
 
 func TestDevBoxCompletionEncodedBodyBoundary(t *testing.T) {

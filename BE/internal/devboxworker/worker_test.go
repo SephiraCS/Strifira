@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -89,6 +91,20 @@ func leasedWorker(executor Executor) (*Worker, *fakeAPI, Lease) {
 	lease := Lease{Job: Job{ID: uuid.NewString(), MaxRuntimeSeconds: 30}, Token: "immutable-lease", HeartbeatIntervalSeconds: 1}
 	api := &fakeAPI{start: state, renew: state}
 	return &Worker{API: api, Executor: executor, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, api, lease
+}
+
+func TestNewWorkerInjectsTokenIntoVersionAndExecutionRedaction(t *testing.T) {
+	config := testConfig(t)
+	token := "kub_" + strings.Repeat("d", 64)
+	provider := filepath.Join(t.TempDir(), "provider")
+	require.NoError(t, os.WriteFile(provider, []byte("#!/bin/sh\nprintf '%s' '"+token+"'\n"), 0700))
+	config.Providers["claude-code"] = provider
+	worker, err := New(config, NewClient(config, token))
+	require.NoError(t, err)
+	require.Equal(t, "[REDACTED]", worker.Heartbeat.Providers[0].Version)
+	executor, ok := worker.Executor.(*LocalExecutor)
+	require.True(t, ok)
+	require.Equal(t, token, executor.redactionToken)
 }
 
 func TestProviderVersionNormalizationAllowsContractHeartbeatAndClaim(t *testing.T) {
@@ -544,9 +560,9 @@ func TestCompletionBudgetAndAttemptLimits(t *testing.T) {
 	}
 }
 
-func TestLeaseLossCancelsInFlightCompletionRetry(t *testing.T) {
+func TestAuthorityLossCancelsInFlightCompletionRetry(t *testing.T) {
 	worker, api, lease := leasedWorker(executorFunc(func(context.Context, Job, func(string, string)) Result { return Result{Status: "succeeded"} }))
-	api.renewError = &HTTPError{Status: http.StatusConflict}
+	api.renewError = &HTTPError{Status: http.StatusForbidden}
 	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
@@ -564,28 +580,36 @@ func TestLeaseLossCancelsInFlightCompletionRetry(t *testing.T) {
 	require.Less(t, time.Since(started), 2*time.Second)
 }
 
-func TestLeaseExpiryAfterShutdownStopsCompletionRetries(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	worker, api, lease := leasedWorker(executorFunc(func(context.Context, Job, func(string, string)) Result {
-		cancel()
-		return Result{Status: "succeeded"}
-	}))
-	var attempts atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = io.Copy(io.Discard, r.Body)
-		if attempts.Add(1) == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		<-r.Context().Done()
-	}))
-	defer server.Close()
-	worker.API = &completionClientAPI{fakeAPI: api, client: NewClient(Config{ServerURL: server.URL}, "worker-registration")}
-	started := time.Now()
-	require.ErrorIs(t, worker.RunLease(ctx, lease), ErrLeaseLost)
-	require.Equal(t, int32(2), attempts.Load())
-	require.Less(t, time.Since(started), 3*time.Second)
+type completionDeadlineAPI struct{ *fakeAPI }
+
+func (a *completionDeadlineAPI) Complete(ctx context.Context, id, token string, result Result) error {
+	if err := a.fakeAPI.Complete(ctx, id, token, result); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return &transportError{err: ctx.Err()}
+}
+
+func TestShutdownCompletionRetriesRemainBoundedBeyondExecutionLeaseExpiry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		worker, api, lease := leasedWorker(executorFunc(func(context.Context, Job, func(string, string)) Result {
+			cancel()
+			return Result{Status: "succeeded"}
+		}))
+		worker.API = &completionDeadlineAPI{fakeAPI: api}
+		started := time.Now()
+		require.ErrorIs(t, worker.RunLease(ctx, lease), context.DeadlineExceeded)
+		// Three 3-second attempts and 250/500 ms backoffs remain within the
+		// independent shutdown budget, even though the execution lease expires.
+		require.Equal(t, 9750*time.Millisecond, time.Since(started))
+		require.Less(t, time.Since(started), 12*time.Second)
+		require.Len(t, api.completed, 3)
+		require.Equal(t, "cancelled", api.completed[0].Status)
+		require.Equal(t, api.completed[0], api.completed[1])
+		require.Equal(t, api.completed[0], api.completed[2])
+	})
 }
 
 func TestLogRetryKeepsSequenceAndImmutableLease(t *testing.T) {
@@ -636,6 +660,165 @@ func TestRuntimeExpiredInTransitNeverStartsExecution(t *testing.T) {
 	require.NoError(t, worker.RunLease(t.Context(), lease))
 	require.Len(t, api.completed, 1)
 	require.Equal(t, "timeout", api.completed[0].Status)
+}
+
+type cappedRuntimeAPI struct {
+	*fakeAPI
+	deadline time.Time
+}
+
+func (a *cappedRuntimeAPI) Renew(context.Context, string, string) (LeaseState, error) {
+	return LeaseState{Status: "running", ServerTime: time.Now(), ExpiresAt: a.deadline, DeadlineAt: a.deadline}, nil
+}
+
+func TestRuntimeCappedLeaseReportsTimeoutMetadataBeforeServerDeadline(t *testing.T) {
+	for _, capAtStart := range []bool{true, false} {
+		t.Run(fmt.Sprintf("capped at start %t", capAtStart), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				worker, api, lease := leasedWorker(executorFunc(func(ctx context.Context, _ Job, _ func(string, string)) Result {
+					<-ctx.Done()
+					return Result{Status: "failed", Summary: "provider execution details", Patch: "retained patch", ChangedFiles: []string{"README.md"}, TestStatus: "failed", TestExitCode: new(7), TestsRun: []string{"go test ./..."}, RiskNotes: []string{"test details retained"}}
+				}))
+				start := time.Now()
+				deadline := start.Add(10 * time.Second)
+				api.start.ServerTime, api.start.DeadlineAt = start, deadline
+				api.start.ExpiresAt = deadline
+				if !capAtStart {
+					api.start.ExpiresAt = start.Add(8 * time.Second)
+				}
+				lease.Job.MaxRuntimeSeconds = 10
+				worker.API = &cappedRuntimeAPI{fakeAPI: api, deadline: deadline}
+				require.NoError(t, worker.RunLease(t.Context(), lease))
+				require.Equal(t, 7*time.Second, time.Since(start))
+				require.True(t, time.Now().Before(deadline), "timeout delivery starts while completion remains allowed")
+				require.Len(t, api.completed, 1)
+				result := api.completed[0]
+				require.Equal(t, "timeout", result.Status)
+				require.Contains(t, result.Summary, "provider execution details")
+				require.Equal(t, "retained patch", result.Patch)
+				require.Equal(t, []string{"README.md"}, result.ChangedFiles)
+				require.Equal(t, []string{"go test ./..."}, result.TestsRun)
+				require.Equal(t, 7, *result.TestExitCode)
+				require.Contains(t, result.RiskNotes, "test details retained")
+			})
+		})
+	}
+}
+
+type terminalRenewalReplayAPI struct {
+	*fakeAPI
+	reportStarted chan struct{}
+	renewReturned chan struct{}
+	renewStatus   int
+	terminalState string
+	responseDelay time.Duration
+	renewCalls    atomic.Int32
+	completeCalls atomic.Int32
+}
+
+func (a *terminalRenewalReplayAPI) Renew(ctx context.Context, _, _ string) (LeaseState, error) {
+	select {
+	case <-a.reportStarted:
+	case <-ctx.Done():
+		return LeaseState{}, ctx.Err()
+	}
+	select {
+	case <-time.After(a.renewDelay):
+	case <-ctx.Done():
+		return LeaseState{}, ctx.Err()
+	}
+	if a.renewCalls.Add(1) == 1 {
+		close(a.renewReturned)
+		if a.renewStatus == http.StatusOK {
+			state := a.start
+			lifetime := state.ExpiresAt.Sub(state.ServerTime)
+			state.ServerTime = time.Now()
+			state.ExpiresAt = state.ServerTime.Add(lifetime)
+			return state, nil
+		}
+		if a.terminalState != "" {
+			return LeaseState{Status: a.terminalState}, nil
+		}
+	}
+	if a.renewStatus == http.StatusOK {
+		return LeaseState{}, &HTTPError{Status: http.StatusConflict}
+	}
+	return LeaseState{}, &HTTPError{Status: a.renewStatus}
+}
+
+func (a *terminalRenewalReplayAPI) Complete(ctx context.Context, id, token string, result Result) error {
+	if a.completeCalls.Add(1) == 1 {
+		if err := a.fakeAPI.Complete(ctx, id, token, result); err != nil {
+			return err
+		}
+		close(a.reportStarted)
+		select {
+		case <-a.renewReturned:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+		if a.renewStatus == http.StatusUnauthorized || a.renewStatus == http.StatusForbidden {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		select {
+		case <-time.After(a.responseDelay):
+			return &transportError{err: io.EOF}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return a.fakeAPI.Complete(ctx, id, token, result)
+}
+
+func TestTerminalRenewalDuringReportingAllowsCommittedResultReplay(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		status        int
+		renewDelay    time.Duration
+		terminalState string
+	}{
+		{name: "conflict before expiry", status: http.StatusConflict},
+		{name: "conflict after expiry", status: http.StatusConflict, renewDelay: 3 * time.Second},
+		{name: "renewed lease during reporting", status: http.StatusOK},
+		{name: "terminal state after expiry", terminalState: "succeeded", renewDelay: 3 * time.Second},
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "unauthorized after expiry", status: http.StatusUnauthorized, renewDelay: 3 * time.Second},
+		{name: "forbidden", status: http.StatusForbidden},
+		{name: "forbidden after expiry", status: http.StatusForbidden, renewDelay: 3 * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var executed atomic.Int32
+				worker, api, lease := leasedWorker(executorFunc(func(context.Context, Job, func(string, string)) Result {
+					executed.Add(1)
+					return Result{Status: "succeeded", TestStatus: "passed", Patch: "immutable artifact"}
+				}))
+				started := time.Now()
+				deadline := started.Add(10 * time.Second)
+				api.start.DeadlineAt = deadline
+				api.renewDelay = test.renewDelay
+				lease.Job.MaxRuntimeSeconds = 10
+				calls := &terminalRenewalReplayAPI{fakeAPI: api, reportStarted: make(chan struct{}), renewReturned: make(chan struct{}), renewStatus: test.status, terminalState: test.terminalState, responseDelay: 4 * time.Second}
+				worker.API = calls
+				err := worker.RunLease(t.Context(), lease)
+				require.Equal(t, int32(1), executed.Load(), "reporting never reruns execution")
+				if test.status != http.StatusUnauthorized && test.status != http.StatusForbidden {
+					require.NoError(t, err)
+					require.Equal(t, 5250*time.Millisecond+test.renewDelay, time.Since(started))
+					require.Greater(t, time.Since(started), 2*time.Second, "replay outlasts the original execution lease timer")
+					require.True(t, time.Now().Before(deadline), "the server runtime deadline remains valid")
+					require.Equal(t, int32(2), calls.completeCalls.Load())
+					require.Len(t, api.completed, 2)
+					require.Equal(t, api.completed[0], api.completed[1], "committed result replay stays immutable")
+				} else {
+					require.ErrorIs(t, err, ErrLeaseLost)
+					require.Equal(t, time.Second+test.renewDelay, time.Since(started), "only the real authority response stops reporting")
+					require.Equal(t, int32(1), calls.completeCalls.Load(), "real authority loss still prevents replay")
+				}
+			})
+		})
+	}
 }
 
 func TestLateRenewDoesNotExtendExpiredServerLease(t *testing.T) {

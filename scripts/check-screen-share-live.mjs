@@ -22,8 +22,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const kuDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const uiDir = path.join(kuDir, "UI");
 const beDir = path.join(kuDir, "BE");
-const skipBuild = process.argv.includes("--skip-build");
-if (process.argv.some((arg, index) => index > 1 && arg !== "--skip-build")) {
+const isMain =
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const skipBuild = isMain && process.argv.includes("--skip-build");
+if (
+  isMain &&
+  process.argv.some((arg, index) => index > 1 && arg !== "--skip-build")
+) {
   throw new Error(
     "Usage: node scripts/check-screen-share-live.mjs [--skip-build]",
   );
@@ -54,13 +60,26 @@ const toolEnv = Object.fromEntries(
     .filter((key) => process.env[key] !== undefined)
     .map((key) => [key, process.env[key]]),
 );
-const tempDir = await mkdtemp(path.join(os.tmpdir(), "ku-screen-share-live-"));
+const tempDir = isMain
+  ? await mkdtemp(path.join(os.tmpdir(), "ku-screen-share-live-"))
+  : undefined;
 const containerName = `ku-screen-share-live-${randomUUID()}`;
 const children = new Set();
 const sockets = new Set();
 let containerCreated = false;
 let server;
 let interrupted = false;
+
+export async function writeIsolatedViteConfig(
+  configFile,
+  baseConfigFile,
+  envDir,
+) {
+  await writeFile(
+    configFile,
+    `import { createViteConfig } from ${JSON.stringify(pathToFileURL(baseConfigFile).href)};\nexport default (configEnv) => createViteConfig(configEnv, ${JSON.stringify(envDir)});\n`,
+  );
+}
 
 function start(command, args, options = {}) {
   const child = spawn(command, args, {
@@ -259,143 +278,147 @@ async function cleanup() {
   await rm(tempDir, { recursive: true, force: true });
 }
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => {
-    interrupted = true;
-    for (const child of children) terminate(child, "SIGTERM");
-  });
-}
-
-try {
-  if (!skipBuild) {
-    // Vite normally reads ku/.env through envDir. Override it with an
-    // empty directory for this local build instead of loading secrets.
-    const buildConfig = path.join(tempDir, "vite-live.config.mjs");
-    await writeFile(
-      buildConfig,
-      `import base from ${JSON.stringify(pathToFileURL(path.join(uiDir, "vite.config.ts")).href)};\nexport default { ...base, envDir: ${JSON.stringify(tempDir)} };\n`,
-    );
-    await run("npm", ["run", "build", "--", "--config", buildConfig], {
-      cwd: uiDir,
+if (isMain) {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => {
+      interrupted = true;
+      for (const child of children) terminate(child, "SIGTERM");
     });
   }
-  console.log(
-    "Starting disposable PostgreSQL using existing Podman registry configuration.",
-  );
-  // Loopback-only random publish; all data disappears with this container.
-  containerCreated = true;
-  await run("podman", [
-    "run",
-    "--detach",
-    "--rm",
-    "--name",
-    containerName,
-    "--label",
-    "io.ku.test=screen-share-live",
-    "--publish",
-    "127.0.0.1::5432",
-    "--tmpfs",
-    "/var/lib/postgresql/data:rw",
-    "--env",
-    "POSTGRES_HOST_AUTH_METHOD=trust",
-    "--env",
-    "POSTGRES_DB=ku_live",
-    "docker.io/library/postgres:17-alpine",
-  ]);
-  const dbMapping = await capture("podman", [
-    "port",
-    containerName,
-    "5432/tcp",
-  ]);
-  const dbPort = Number(dbMapping.match(/^127\.0\.0\.1:(\d+)$/)?.[1]);
-  if (!dbPort)
-    throw new Error(`Unexpected PostgreSQL port mapping: ${dbMapping}`);
-  await waitUntil(async () => {
+
+  try {
+    if (!skipBuild) {
+      // Vite normally reads ku/.env through envDir. Override it with an
+      // empty directory for this local build instead of loading secrets.
+      const buildConfig = path.join(tempDir, "vite-live.config.mjs");
+      await writeIsolatedViteConfig(
+        buildConfig,
+        path.join(uiDir, "vite.config.ts"),
+        tempDir,
+      );
+      await run("npm", ["run", "build", "--", "--config", buildConfig], {
+        cwd: uiDir,
+      });
+    }
+    console.log(
+      "Starting disposable PostgreSQL using existing Podman registry configuration.",
+    );
+    // Loopback-only random publish; all data disappears with this container.
+    containerCreated = true;
+    await run("podman", [
+      "run",
+      "--detach",
+      "--rm",
+      "--name",
+      containerName,
+      "--label",
+      "io.ku.test=screen-share-live",
+      "--publish",
+      "127.0.0.1::5432",
+      "--tmpfs",
+      "/var/lib/postgresql/data:rw",
+      "--env",
+      "POSTGRES_HOST_AUTH_METHOD=trust",
+      "--env",
+      "POSTGRES_DB=ku_live",
+      "docker.io/library/postgres:17-alpine",
+    ]);
+    const dbMapping = await capture("podman", [
+      "port",
+      containerName,
+      "5432/tcp",
+    ]);
+    const dbPort = Number(dbMapping.match(/^127\.0\.0\.1:(\d+)$/)?.[1]);
+    if (!dbPort)
+      throw new Error(`Unexpected PostgreSQL port mapping: ${dbMapping}`);
+    await waitUntil(async () => {
+      try {
+        await run(
+          "podman",
+          [
+            "exec",
+            containerName,
+            "pg_isready",
+            "-U",
+            "postgres",
+            "-d",
+            "ku_live",
+          ],
+          { stdio: "ignore" },
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    }, "disposable PostgreSQL");
+    const databaseURL = `postgres://postgres@127.0.0.1:${dbPort}/ku_live?sslmode=disable`;
+    const binary = path.join(tempDir, "ku-server");
+    await run("go", ["build", "-o", binary, "./cmd/server"], { cwd: beDir });
+    await run(binary, ["migrate", "up"], {
+      cwd: beDir,
+      env: { ...toolEnv, DATABASE_URL: databaseURL },
+    });
+    const apiPort = await unusedPort();
+    const baseURL = await serveBuild(apiPort);
+    const logs = [];
+    const backend = start(binary, [], {
+      cwd: beDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: {
+        ...toolEnv,
+        PORT: String(apiPort),
+        BIND_ADDRESS: "127.0.0.1",
+        DATABASE_URL: databaseURL,
+        // Config reserves Redis; the current server never uses it.
+        REDIS_URL: "redis://127.0.0.1:1",
+        JWT_SECRET: randomUUID() + randomUUID(),
+        FRONTEND_URL: baseURL,
+        ENVIRONMENT: "development",
+        STORAGE_TYPE: "local",
+        STORAGE_LOCAL_DIR: path.join(tempDir, "uploads"),
+        DEV_MACHINES_ENABLED: "false",
+      },
+    });
+    backend.stdout.on("data", (data) => {
+      logs.push(data.toString());
+    });
+    backend.stderr.on("data", (data) => {
+      logs.push(data.toString());
+    });
+    await waitUntil(async () => {
+      if (backend.exitCode !== null || backend.signalCode)
+        throw new Error(`Backend stopped:\n${logs.join("")}`);
+      try {
+        return (await fetch(`http://127.0.0.1:${apiPort}/ready`)).ok;
+      } catch {
+        return false;
+      }
+    }, "isolated backend");
+    console.log(`Testing real WebRTC against disposable Ku at ${baseURL}`);
     try {
       await run(
-        "podman",
+        process.execPath,
         [
-          "exec",
-          containerName,
-          "pg_isready",
-          "-U",
-          "postgres",
-          "-d",
-          "ku_live",
+          path.join(uiDir, "node_modules/@playwright/test/cli.js"),
+          "test",
+          "--config",
+          "playwright.integration.config.ts",
         ],
-        { stdio: "ignore" },
+        {
+          cwd: uiDir,
+          env: { ...toolEnv, KU_LIVE_ISOLATED: "1", KU_LIVE_BASE_URL: baseURL },
+        },
       );
-      return true;
-    } catch {
-      return false;
+    } catch (error) {
+      const logFile = path.join(uiDir, "test-results/integration/backend.log");
+      await writeFile(logFile, logs.join(""));
+      console.error(`Backend diagnostics: ${logFile}`);
+      throw error;
     }
-  }, "disposable PostgreSQL");
-  const databaseURL = `postgres://postgres@127.0.0.1:${dbPort}/ku_live?sslmode=disable`;
-  const binary = path.join(tempDir, "ku-server");
-  await run("go", ["build", "-o", binary, "./cmd/server"], { cwd: beDir });
-  await run(binary, ["migrate", "up"], {
-    cwd: beDir,
-    env: { ...toolEnv, DATABASE_URL: databaseURL },
-  });
-  const apiPort = await unusedPort();
-  const baseURL = await serveBuild(apiPort);
-  const logs = [];
-  const backend = start(binary, [], {
-    cwd: beDir,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: {
-      ...toolEnv,
-      PORT: String(apiPort),
-      DATABASE_URL: databaseURL,
-      // Config reserves Redis; the current server never uses it.
-      REDIS_URL: "redis://127.0.0.1:1",
-      JWT_SECRET: randomUUID() + randomUUID(),
-      FRONTEND_URL: baseURL,
-      ENVIRONMENT: "development",
-      STORAGE_TYPE: "local",
-      STORAGE_LOCAL_DIR: path.join(tempDir, "uploads"),
-      DEV_MACHINES_ENABLED: "false",
-    },
-  });
-  backend.stdout.on("data", (data) => {
-    logs.push(data.toString());
-  });
-  backend.stderr.on("data", (data) => {
-    logs.push(data.toString());
-  });
-  await waitUntil(async () => {
-    if (backend.exitCode !== null || backend.signalCode)
-      throw new Error(`Backend stopped:\n${logs.join("")}`);
-    try {
-      return (await fetch(`http://127.0.0.1:${apiPort}/ready`)).ok;
-    } catch {
-      return false;
-    }
-  }, "isolated backend");
-  console.log(`Testing real WebRTC against disposable Ku at ${baseURL}`);
-  try {
-    await run(
-      process.execPath,
-      [
-        path.join(uiDir, "node_modules/@playwright/test/cli.js"),
-        "test",
-        "--config",
-        "playwright.integration.config.ts",
-      ],
-      {
-        cwd: uiDir,
-        env: { ...toolEnv, KU_LIVE_ISOLATED: "1", KU_LIVE_BASE_URL: baseURL },
-      },
-    );
   } catch (error) {
-    const logFile = path.join(uiDir, "test-results/integration/backend.log");
-    await writeFile(logFile, logs.join(""));
-    console.error(`Backend diagnostics: ${logFile}`);
-    throw error;
+    console.error(error.message);
+    process.exitCode = interrupted ? 130 : 1;
+  } finally {
+    await cleanup();
   }
-} catch (error) {
-  console.error(error.message);
-  process.exitCode = interrupted ? 130 : 1;
-} finally {
-  await cleanup();
 }

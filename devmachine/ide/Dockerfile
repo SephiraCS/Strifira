@@ -19,7 +19,6 @@ COPY --from=node-stage /usr/local /usr/local
 COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
 COPY ide/start.sh /usr/local/bin/ku-ide-start
 COPY ide/shell.sh /usr/local/bin/ku-shell
-COPY ide/checkout.sh /usr/local/bin/ku-checkout
 COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
 COPY ide/command-event.js /usr/local/lib/ku-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
@@ -57,7 +56,7 @@ RUN apt-get update \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku \
-    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-checkout /usr/local/bin/ku-terminal-session \
+    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-terminal-session \
     && code-server --version \
     && node --version \
     && npm --version \

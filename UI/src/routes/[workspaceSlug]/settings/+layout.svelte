@@ -21,7 +21,7 @@
 	import Server from '@lucide/svelte/icons/server';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { ROLE_HIERARCHY } from '$lib/security/roles';
-	
+
 	import type { Snippet } from 'svelte';
 	import type { Team } from '$lib/types/team';
 	import { listTeams } from '$lib/api/teams';
@@ -48,7 +48,10 @@
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const currentPath = $derived(page.url.pathname);
 	const canUseDevMachines = $derived(!demoMode || authState.user?.is_sysadmin === true);
-	const canManageDevBoxes = $derived((ROLE_HIERARCHY[sidebarState.workspaceRole as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member);
+	const canManageDevBoxes = $derived(
+		canUseDevMachines &&
+			(ROLE_HIERARCHY[sidebarState.workspaceRole as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
+	);
 
 	let teams = $state<Team[]>([]);
 	let expandedTeams = $state<Set<string>>(new Set());
@@ -104,14 +107,20 @@
 				{ label: m['settings.nav.templates'](), href: `/${slug}/settings/templates`, icon: FileText },
 				{ label: m['settings.nav.ai'](), href: `/${slug}/settings/ai`, icon: Sparkles },
 				...(canManageDevBoxes ? [{ label: m['dev_boxes.title'](), href: `/${slug}/dev-boxes`, icon: Server }] : []),
-				...(canUseDevMachines ? [{ label: m['settings.nav.dev_machines'](), href: `/${slug}/settings/dev-machines`, icon: SlidersHorizontal }] : [])
+				...(canUseDevMachines
+					? [
+							{
+								label: m['settings.nav.dev_machines'](),
+								href: `/${slug}/settings/dev-machines`,
+								icon: SlidersHorizontal
+							}
+						]
+					: [])
 			]
 		},
 		{
 			label: m['settings.nav.system'](),
-			items: [
-				{ label: m['settings.nav.version'](), href: `/${slug}/settings/version`, icon: RefreshCw }
-			]
+			items: [{ label: m['settings.nav.version'](), href: `/${slug}/settings/version`, icon: RefreshCw }]
 		}
 	]);
 
@@ -192,7 +201,7 @@
 									: 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
 							>
 								<SlidersHorizontal size={13} />
-									{m['settings.nav.general']()}
+								{m['settings.nav.general']()}
 							</a>
 							<a
 								href="/{slug}/settings/teams/{team.id}/statuses"
@@ -203,7 +212,7 @@
 									: 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
 							>
 								<CircleDot size={13} />
-									{m['settings.nav.issue_statuses']()}
+								{m['settings.nav.issue_statuses']()}
 							</a>
 						</div>
 					{/if}
@@ -218,7 +227,12 @@
 	<div
 		class="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--app-border)] bg-[var(--color-bg)] px-3 md:hidden"
 	>
-		<Button variant="ghost" size="icon-lg" onclick={() => (showMobileNav = true)} aria-label={m['settings.open_menu']()}>
+		<Button
+			variant="ghost"
+			size="icon-lg"
+			onclick={() => (showMobileNav = true)}
+			aria-label={m['settings.open_menu']()}
+		>
 			<Menu size={18} />
 		</Button>
 		<span class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.title']()}</span>

@@ -125,10 +125,7 @@
 
 	const canManageDevMachines = $derived(
 		(!demoMode || authState.user?.is_sysadmin === true) &&
-		(ROLE_HIERARCHY[workspace.current_user_role as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
-	);
-	const canManageDevBoxes = $derived(
-		(ROLE_HIERARCHY[workspace.current_user_role as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
+			(ROLE_HIERARCHY[workspace.current_user_role as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
 	);
 
 	async function handleLogout() {
@@ -656,8 +653,12 @@
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>
-			<AlertDialog.Cancel variant="outline" onclick={() => (pendingDeleteView = null)}>{m['sidebar.cancel']()}</AlertDialog.Cancel>
-			<AlertDialog.Action variant="destructive" onclick={handleDeleteView}>{m['sidebar.delete_view_button']()}</AlertDialog.Action>
+			<AlertDialog.Cancel variant="outline" onclick={() => (pendingDeleteView = null)}
+				>{m['sidebar.cancel']()}</AlertDialog.Cancel
+			>
+			<AlertDialog.Action variant="destructive" onclick={handleDeleteView}
+				>{m['sidebar.delete_view_button']()}</AlertDialog.Action
+			>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
@@ -752,63 +753,67 @@
 					<Workflow size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.actions']()}</span>
 				</a>
-				{#if canManageDevBoxes}
-				<a
-					href="/{slug}/dev-boxes"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/dev-boxes`) || isActive(`/${slug}/dev-box-jobs`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
-					<Server size={16} class="shrink-0" />
-					<span class="truncate">{m['dev_boxes.title']()}</span>
-				</a>
-				{/if}
 				{#if canManageDevMachines}
-				<a
-					href="/{slug}/machines"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/machines`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
-					<Box size={16} class="shrink-0" />
-					<span class="truncate">{m['sidebar.dev_machines']()}</span>
-				</a>
-				{/if}
-				{#if workspace.screen_sharing_enabled}
-				<div class="flex items-center gap-1">
 					<a
-						href="/{slug}/shares"
-						class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/shares`)
+						href="/{slug}/dev-boxes"
+						class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/dev-boxes`) ||
+						isActive(`/${slug}/dev-box-jobs`)
 							? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
 							: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
 					>
-						<MonitorPlay size={16} class="shrink-0" />
-						<span class="truncate">{m['sidebar.screen_shares']()}</span>
-						{#if presenterSession.active}
-							<span class="ml-auto flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" title={m['shares.sharing_badge']()}></span>
-						{:else if sharesState.active.length > 0}
-							<span
-								class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
-							>
-								{sharesState.active.length > 9 ? '9+' : sharesState.active.length}
-							</span>
-						{/if}
+						<Server size={16} class="shrink-0" />
+						<span class="truncate">{m['dev_boxes.title']()}</span>
 					</a>
-					<!-- The share is persistent across navigation: keep a Stop
-					     control reachable from every page. -->
-					{#if presenterSession.active}
-						<button
-							class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-red-500 hover:bg-[var(--color-bg-hover)]"
-							onclick={(e) => {
-								e.preventDefault();
-								void presenterSession.stop();
-							}}
-							title={m['shares.stop']()}
+				{/if}
+				{#if canManageDevMachines}
+					<a
+						href="/{slug}/machines"
+						class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/machines`)
+							? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+							: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+					>
+						<Box size={16} class="shrink-0" />
+						<span class="truncate">{m['sidebar.dev_machines']()}</span>
+					</a>
+				{/if}
+				{#if workspace.screen_sharing_enabled}
+					<div class="flex items-center gap-1">
+						<a
+							href="/{slug}/shares"
+							class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/shares`)
+								? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+								: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
 						>
-							<MonitorUp size={14} />
-						</button>
-					{/if}
-				</div>
+							<MonitorPlay size={16} class="shrink-0" />
+							<span class="truncate">{m['sidebar.screen_shares']()}</span>
+							{#if presenterSession.active}
+								<span
+									class="ml-auto flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500"
+									title={m['shares.sharing_badge']()}
+								></span>
+							{:else if sharesState.active.length > 0}
+								<span
+									class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+								>
+									{sharesState.active.length > 9 ? '9+' : sharesState.active.length}
+								</span>
+							{/if}
+						</a>
+						<!-- The share is persistent across navigation: keep a Stop
+					     control reachable from every page. -->
+						{#if presenterSession.active}
+							<button
+								class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-red-500 hover:bg-[var(--color-bg-hover)]"
+								onclick={(e) => {
+									e.preventDefault();
+									void presenterSession.stop();
+								}}
+								title={m['shares.stop']()}
+							>
+								<MonitorUp size={14} />
+							</button>
+						{/if}
+					</div>
 				{/if}
 			</div>
 
@@ -820,7 +825,9 @@
 						class="flex w-full items-center px-2 py-1"
 					>
 						<span class="flex items-center gap-1">
-							<span class="text-[11px] font-semibold text-[var(--color-text-secondary)]">{m['sidebar.favorites']()}</span>
+							<span class="text-[11px] font-semibold text-[var(--color-text-secondary)]"
+								>{m['sidebar.favorites']()}</span
+							>
 							<ChevronDown
 								size={12}
 								class="text-[var(--color-text-tertiary)] transition-transform {favoritesCollapsed ? '-rotate-90' : ''}"

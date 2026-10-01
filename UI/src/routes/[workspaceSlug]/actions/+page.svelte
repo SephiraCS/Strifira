@@ -13,6 +13,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Square from '@lucide/svelte/icons/square';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Timer from '@lucide/svelte/icons/timer';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
@@ -96,6 +97,8 @@
 		runs.some((run) => isActiveAction(actionStatus(run.status, run.conclusion))) || runIsActive
 	);
 	const foregroundBusy = $derived(runsLoading || detailsBusy || jobLoading);
+	const jobRecoveryPending = $derived(selectedJob !== null && (jobFailed || logsFailed));
+	const runDuration = $derived(selectedRun ? actionDuration(selectedRun.started_at, selectedRun.completed_at) : '');
 	const runUrl = $derived(
 		selectedRun && repository
 			? safeForgejoActionsUrl(
@@ -305,7 +308,7 @@
 		if (detail.status === 'fulfilled') {
 			selectedJob = detail.value;
 			jobFailed = false;
-		} else if (!background) jobFailed = true;
+		} else jobFailed = true;
 		if (detail.status === 'fulfilled' && detail.value.attempt !== job.attempt) {
 			logs = null;
 			try {
@@ -327,12 +330,12 @@
 		} else if (output.status === 'fulfilled') {
 			logs = output.value;
 			logsFailed = false;
-		} else if (!background || !logs) logsFailed = true;
+		} else logsFailed = true;
 		jobLoading = false;
 	}
 
 	function canRefreshInBackground() {
-		return visible && activeRuns && !foregroundBusy;
+		return visible && (activeRuns || jobRecoveryPending) && !foregroundBusy;
 	}
 
 	async function refresh(background = false) {
@@ -342,6 +345,10 @@
 		const workspaceSlug = slug;
 		const runId = selectedRunId;
 		try {
+			if (background && !activeRuns && selectedJob && jobRecoveryPending) {
+				await loadJob(selectedJob, true, true);
+				return;
+			}
 			await loadRuns(runsPage, background);
 			if (
 				mounted &&
@@ -462,8 +469,11 @@
 					><select
 						id="actions-status"
 						class="h-9 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 text-sm"
-						bind:value={statusFilter}
-						onchange={applyFilters}
+						value={statusFilter}
+						onchange={(event) => {
+							statusFilter = event.currentTarget.value;
+							applyFilters();
+						}}
 						><option value="">{m['forgejo_actions.all_statuses']()}</option><option value="waiting"
 							>{m['forgejo_actions.status_waiting']()}</option
 						><option value="running">{m['forgejo_actions.status_running']()}</option><option value="success"
@@ -573,6 +583,8 @@
 												class="inline-flex items-center gap-1"
 												title={`${m['forgejo_actions.commit']()}: ${selectedRun.head_sha}`}
 												><GitCommitHorizontal size={12} /><code>{selectedRun.head_sha.slice(0, 8)}</code></span
+											>{/if}{#if runDuration}<span class="inline-flex items-center gap-1"
+												><Timer size={12} />{runDuration}</span
 											>{/if}
 									</div>
 								</div>
@@ -655,7 +667,7 @@
 								</div>
 								{#if jobFailed}<ErrorState
 										message={m['forgejo_actions.failed_job']()}
-										onretry={() => selectedJob && loadJob(selectedJob)}
+										onretry={() => selectedJob && loadJob(selectedJob, true)}
 									/>{/if}
 								{#if runUrl}<Button
 										class="mb-3"
@@ -683,7 +695,8 @@
 								{#if logsFailed}<ErrorState
 										message={m['forgejo_actions.failed_logs']()}
 										onretry={() => selectedJob && loadJob(selectedJob, true)}
-									/>{:else if logs}{#if logs.truncated}<p class="mb-2 text-xs text-amber-500">
+									/>{/if}
+								{#if logs}{#if logs.truncated}<p class="mb-2 text-xs text-amber-500">
 											{m['forgejo_actions.truncated_logs']({ n: Math.round(logs.max_bytes / 1048576) })}
 										</p>{/if}
 									<!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable logs need keyboard focus.) -->
@@ -692,7 +705,7 @@
 										tabindex="0"
 										aria-label={m['forgejo_actions.logs']()}
 										class="max-h-[32rem] overflow-auto rounded-md border border-[var(--app-border)] bg-[var(--color-bg-primary)] p-3 font-mono text-[11px] leading-5 text-[var(--color-text-secondary)]">{logContent ||
-											m['forgejo_actions.no_logs']()}</pre>{:else if !jobLoading}<p
+											m['forgejo_actions.no_logs']()}</pre>{:else if !jobLoading && !logsFailed}<p
 										class="text-xs text-[var(--color-text-tertiary)]"
 									>
 										{m['forgejo_actions.no_logs']()}

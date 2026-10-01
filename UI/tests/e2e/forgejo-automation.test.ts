@@ -450,6 +450,152 @@ for (const resource of ['user-mappings', 'members']) {
 	});
 }
 
+test('clears old repository selections before rediscovery and blocks saves after discovery fails', async ({ page }) => {
+	await mockForgejo(page);
+	const oldRepo = { forgejo_repo_id: 41, full_name: 'team/legacy', private: false, linked: false };
+	const freshRepo = { forgejo_repo_id: 73, full_name: 'team/current', private: false, linked: false };
+	let discoveries = 0;
+	const additions: number[][] = [];
+	await page.route('**/api/workspaces/test/forgejo/repos', (route) => {
+		if (route.request().method() === 'POST') {
+			additions.push(route.request().postDataJSON().forgejo_repo_ids);
+			return route.fulfill({ json: { status: 'linked' } });
+		}
+		discoveries++;
+		if (discoveries === 2)
+			return route.fulfill({ status: 503, json: { error: { message: 'Could not load repositories' } } });
+		return route.fulfill({ json: [discoveries === 1 ? oldRepo : freshRepo] });
+	});
+	await page.goto('/test/settings/forgejo');
+	await page.getByRole('button', { name: 'Manage', exact: true }).click();
+	await page.getByRole('button', { name: oldRepo.full_name, exact: true }).click();
+	await expect(page.getByText('1 selected', { exact: true })).toBeVisible();
+	await page.getByPlaceholder('Search repositories…').fill('legacy');
+	await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await page.getByRole('button', { name: 'Manage', exact: true }).click();
+	await expect(page.getByText('Could not load repositories', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: oldRepo.full_name, exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+	expect(additions).toEqual([]);
+	await page.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(page.getByRole('button', { name: freshRepo.full_name, exact: true })).toBeVisible();
+	await expect(page.getByText('0 selected', { exact: true })).toBeVisible();
+	await expect(page.getByPlaceholder('Search repositories…')).toHaveValue('');
+	await page.getByRole('button', { name: freshRepo.full_name, exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Manage', exact: true })).toBeVisible();
+	expect(discoveries).toBe(3);
+	expect(additions).toEqual([[73]]);
+});
+
+test('requires fresh discovery after client navigation to another workspace and Forgejo instance', async ({ page }) => {
+	await mockForgejo(page);
+	const oldRepo = { forgejo_repo_id: 41, full_name: 'team/legacy', private: false, linked: false };
+	const freshRepo = { forgejo_repo_id: 73, full_name: 'other/current', private: false, linked: false };
+	const otherWorkspace = {
+		id: 'workspace-other',
+		name: 'Other Workspace',
+		slug: 'other',
+		current_user_role: 'owner',
+		screen_sharing_enabled: false
+	};
+	let discoveries = 0;
+	const additions: { workspace: string; ids: number[] }[] = [];
+	await page.route('**/api/workspaces/test/forgejo/repos', (route) => route.fulfill({ json: [oldRepo] }));
+	await page.route('**/api/workspaces/other**', (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (path === '/api/workspaces/other') return route.fulfill({ json: otherWorkspace });
+		if (path === '/api/workspaces/other/forgejo/status')
+			return route.fulfill({
+				json: { configured: true, connected: true, instance_url: 'https://git.other.example.com', repos: [] }
+			});
+		if (path === '/api/workspaces/other/forgejo/repos') {
+			if (route.request().method() === 'POST') {
+				additions.push({ workspace: 'other', ids: route.request().postDataJSON().forgejo_repo_ids });
+				return route.fulfill({ json: { status: 'linked' } });
+			}
+			discoveries++;
+			if (discoveries === 1)
+				return route.fulfill({ status: 503, json: { error: { message: 'Could not load repositories' } } });
+			return route.fulfill({ json: [freshRepo] });
+		}
+		return route.fulfill({ json: [] });
+	});
+	await page.goto('/test/settings/forgejo');
+	await page.getByRole('button', { name: 'Manage', exact: true }).click();
+	await page.getByRole('button', { name: oldRepo.full_name, exact: true }).click();
+	await page.getByPlaceholder('Search repositories…').fill('legacy');
+	await page.evaluate(() => {
+		Object.defineProperty(window, 'kuDiscoveryNavigationMarker', { configurable: true, value: 'retained' });
+		const link = document.createElement('a');
+		link.href = '/other/settings/forgejo';
+		link.textContent = 'Other Forgejo settings';
+		document.body.append(link);
+	});
+	await page.getByRole('link', { name: 'Other Forgejo settings', exact: true }).click();
+	await expect(page).toHaveURL(/\/other\/settings\/forgejo$/);
+	expect(await page.evaluate(() => Reflect.get(window, 'kuDiscoveryNavigationMarker'))).toBe('retained');
+	await expect(page.getByText('https://git.other.example.com', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Manage', exact: true }).click();
+	await expect(page.getByText('Could not load repositories', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: oldRepo.full_name, exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+	expect(additions).toEqual([]);
+	await page.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(page.getByRole('button', { name: freshRepo.full_name, exact: true })).toBeVisible();
+	await expect(page.getByPlaceholder('Search repositories…')).toHaveValue('');
+	await expect(page.getByText('0 selected', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: freshRepo.full_name, exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Manage', exact: true })).toBeVisible();
+	expect(additions).toEqual([{ workspace: 'other', ids: [73] }]);
+});
+
+test('requires repository rediscovery after a save cannot reconcile connection status', async ({ page }) => {
+	await mockForgejo(page);
+	const repo = { id: 'linked-one', forgejo_repo_id: 41, full_name: 'team/current', private: false, linked: true };
+	let linked = true;
+	let statusReads = 0;
+	let discoveries = 0;
+	const removals: string[] = [];
+	await page.route('**/api/workspaces/test/forgejo/status', (route) => {
+		statusReads++;
+		if (statusReads === 2)
+			return route.fulfill({
+				status: 503,
+				json: { error: { message: 'Connection status is temporarily unavailable' } }
+			});
+		return route.fulfill({
+			json: { configured: true, connected: true, instance_url: 'https://git.example.com', repos: linked ? [repo] : [] }
+		});
+	});
+	await page.route('**/api/workspaces/test/forgejo/repos', (route) => {
+		discoveries++;
+		return route.fulfill({ json: [{ ...repo, linked }] });
+	});
+	await page.route('**/api/workspaces/test/forgejo/repos/linked-one', (route) => {
+		removals.push(repo.id);
+		linked = false;
+		return route.fulfill({ json: { status: 'deleted' } });
+	});
+	await page.goto('/test/settings/forgejo');
+	await page.getByRole('button', { name: 'Manage', exact: true }).click();
+	await page.getByRole('button', { name: repo.full_name, exact: true }).click();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByText('Connection status is temporarily unavailable', { exact: true })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: repo.full_name, exact: true })).toHaveCount(0);
+	expect(removals).toEqual([repo.id]);
+	await page.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(page.getByRole('button', { name: repo.full_name, exact: true })).toBeVisible();
+	await expect(page.getByText('0 selected', { exact: true })).toBeVisible();
+	await page.getByRole('button', { name: 'Save', exact: true }).click();
+	await expect(page.getByRole('button', { name: 'Manage', exact: true })).toBeVisible();
+	expect(removals).toEqual([repo.id]);
+	expect(discoveries).toBe(2);
+	expect(statusReads).toBe(3);
+});
+
 test('attempts every selected unlink, reports failed repositories, and retries only remaining links', async ({
 	page
 }) => {

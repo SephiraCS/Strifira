@@ -21,7 +21,10 @@ type Executor interface {
 	Execute(context.Context, Job, func(string, string)) Result
 }
 
-type LocalExecutor struct{ Config Config }
+type LocalExecutor struct {
+	Config         Config
+	redactionToken string
+}
 
 type boundedBuffer struct {
 	mu        sync.Mutex
@@ -30,24 +33,67 @@ type boundedBuffer struct {
 	truncated bool
 	stream    string
 	log       func(string, string)
+	token     string
+	pending   []byte
 }
 
 func (b *boundedBuffer) Write(data []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	n := len(data)
-	available := max(0, b.limit-b.buffer.Len())
-	part := data[:min(available, n)]
-	_, _ = b.buffer.Write(part)
-	b.truncated = b.truncated || n > available
-	if b.log != nil {
-		for len(part) > 0 {
-			end := min(len(part), 16*1024)
-			b.log(b.stream, cleanText(string(part[:end])))
-			part = part[end:]
+	b.writeLocked(data, false)
+	return len(data), nil
+}
+
+// Flush marks EOF. Until then potential token prefixes and incomplete UTF-8
+// runes remain private, including across arbitrary subprocess writes.
+func (b *boundedBuffer) Flush() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.writeLocked(nil, true)
+}
+
+func (b *boundedBuffer) writeLocked(data []byte, final bool) {
+	data = append(b.pending, data...)
+	if b.token != "" {
+		data = bytes.ReplaceAll(data, []byte(b.token), []byte("[REDACTED]"))
+	}
+	end := len(data)
+	if !final {
+		for held := min(len(b.token)-1, end); held > 0; held-- {
+			if bytes.Equal(data[end-held:], []byte(b.token[:held])) {
+				end -= held
+				break
+			}
+		}
+		for held := min(utf8.UTFMax-1, end); held > 0; held-- {
+			if !utf8.FullRune(data[end-held : end]) {
+				end -= held
+				break
+			}
 		}
 	}
-	return n, nil
+	b.pending = bytes.Clone(data[end:])
+	complete := data[:end]
+	available := max(0, b.limit-b.buffer.Len())
+	part := complete[:min(available, len(complete))]
+	if utf8.Valid(complete) {
+		for !utf8.Valid(part) {
+			part = part[:len(part)-1]
+		}
+	}
+	_, _ = b.buffer.Write(part)
+	b.truncated = b.truncated || len(part) < len(complete)
+	if b.log != nil {
+		clean := []byte(cleanText(string(part)))
+		for len(clean) > 0 {
+			end := min(len(clean), 16*1024)
+			for !utf8.Valid(clean[:end]) {
+				end--
+			}
+			b.log(b.stream, string(clean[:end]))
+			clean = clean[end:]
+		}
+	}
 }
 
 func (b *boundedBuffer) String() string {
@@ -134,6 +180,13 @@ func requireTaskBranch(ctx context.Context, dir, assigned string) error {
 }
 
 func (e *LocalExecutor) Execute(ctx context.Context, job Job, log func(string, string)) Result {
+	publishLog := log
+	log = func(stream, content string) {
+		if e.redactionToken != "" {
+			content = strings.ReplaceAll(content, e.redactionToken, "[REDACTED]")
+		}
+		publishLog(stream, cleanText(content))
+	}
 	result := Result{Status: "failed", ExitCode: -1, TestStatus: "not_run", ChangedFiles: []string{}, TestsRun: []string{}, RiskNotes: []string{}}
 	fail := func(err error) Result {
 		result.Status = "failed"
@@ -191,8 +244,8 @@ func (e *LocalExecutor) Execute(ctx context.Context, job Job, log func(string, s
 	if err != nil {
 		return fail(err)
 	}
-	stdout := &boundedBuffer{limit: maxOutputBytes, stream: "stdout", log: log}
-	stderr := &boundedBuffer{limit: maxOutputBytes, stream: "stderr", log: log}
+	stdout := &boundedBuffer{limit: maxOutputBytes, stream: "stdout", log: log, token: e.redactionToken}
+	stderr := &boundedBuffer{limit: maxOutputBytes, stream: "stderr", log: log, token: e.redactionToken}
 	code, processErr := runProcess(ctx, worktree, childEnvironment(job.Provider), argv, stdout, stderr)
 	parsed := provider.ParseResult(stdout.String(), stderr.String(), code)
 	result.Status, result.ExitCode, result.Summary = parsed.Status, code, boundedText(parsed.Summary, maxSummaryBytes)
@@ -216,8 +269,8 @@ func (e *LocalExecutor) Execute(ctx context.Context, job Job, log func(string, s
 	if len(job.TestCommand) > 0 {
 		log("system", "Running configured tests independently of the provider.\n")
 		result.TestsRun = []string{boundedText(strings.Join(job.TestCommand, " "), 4096)}
-		testOutput := &boundedBuffer{limit: maxOutputBytes, stream: "stdout", log: log}
-		testError := &boundedBuffer{limit: maxOutputBytes, stream: "stderr", log: log}
+		testOutput := &boundedBuffer{limit: maxOutputBytes, stream: "stdout", log: log, token: e.redactionToken}
+		testError := &boundedBuffer{limit: maxOutputBytes, stream: "stderr", log: log, token: e.redactionToken}
 		testCode, testErr := runProcess(ctx, worktree, childEnvironment(""), job.TestCommand, testOutput, testError)
 		result.TestExitCode = new(testCode)
 		result.TestStatus = "passed"

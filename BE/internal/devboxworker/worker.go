@@ -65,6 +65,10 @@ func New(config Config, api API) (*Worker, error) {
 		return nil, err
 	}
 	heartbeat := Heartbeat{Hostname: hostname, OS: runtime.GOOS, Arch: runtime.GOARCH, Version: Version, Providers: []ProviderInfo{}}
+	var redactionToken string
+	if client, ok := api.(*Client); ok {
+		redactionToken = client.token
+	}
 	ids := make([]string, 0, len(config.Providers))
 	for id := range config.Providers {
 		ids = append(ids, id)
@@ -72,7 +76,7 @@ func New(config Config, api API) (*Worker, error) {
 	slices.Sort(ids)
 	for _, id := range ids {
 		versionCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		output := &boundedBuffer{limit: 1000}
+		output := &boundedBuffer{limit: 1000, token: redactionToken}
 		_, err := runProcess(versionCtx, "", childEnvironment(""), []string{config.Providers[id], "--version"}, output, output)
 		cancel()
 		if err != nil {
@@ -80,7 +84,7 @@ func New(config Config, api API) (*Worker, error) {
 		}
 		heartbeat.Providers = append(heartbeat.Providers, ProviderInfo{ID: id, Version: normalizeProviderVersion(output.String())})
 	}
-	return &Worker{Config: config, API: api, Executor: &LocalExecutor{Config: config}, Logger: slog.Default(), Heartbeat: heartbeat}, nil
+	return &Worker{Config: config, API: api, Executor: &LocalExecutor{Config: config, redactionToken: redactionToken}, Logger: slog.Default(), Heartbeat: heartbeat}, nil
 }
 
 func (w *Worker) Run(ctx context.Context, once bool) error {
@@ -177,11 +181,22 @@ func leaseDuration(state LeaseState) (time.Duration, error) {
 	if state.ServerTime.IsZero() || state.ExpiresAt.IsZero() {
 		return 0, errors.New("lease response omitted server time or deadline")
 	}
-	duration := state.ExpiresAt.Sub(state.ServerTime) - time.Second
-	if duration <= 0 || duration > 2*time.Minute {
+	lifetime := state.ExpiresAt.Sub(state.ServerTime)
+	if lifetime <= 0 || lifetime > 2*time.Minute+time.Second {
+		return 0, errors.New("lease response has an invalid lifetime")
+	}
+	duration := lifetime - time.Second
+	if runtimeCappedLease(state) {
+		return max(duration, time.Nanosecond), nil
+	}
+	if duration <= 0 {
 		return 0, errors.New("lease response has an invalid lifetime")
 	}
 	return duration, nil
+}
+
+func runtimeCappedLease(state LeaseState) bool {
+	return !state.DeadlineAt.IsZero() && !state.ExpiresAt.Before(state.DeadlineAt)
 }
 
 func (w *Worker) RunLease(parent context.Context, lease Lease) error {
@@ -223,7 +238,7 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 		return err
 	}
 	duration -= startElapsed
-	if duration <= 0 || state.Status != "running" {
+	if state.Status != "running" || (duration <= 0 && !runtimeCappedLease(state)) {
 		return ErrLeaseLost
 	}
 	if state.CancelRequested {
@@ -233,18 +248,38 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 	if !state.DeadlineAt.IsZero() {
 		runtimeLimit = min(runtimeLimit, state.DeadlineAt.Sub(state.ServerTime)-startElapsed)
 	}
+	// Reserve time for process cleanup and the first completion upload while the
+	// server can still accept a rich timeout result instead of sweeping the job.
+	runtimeLimit -= min(3*time.Second, max(runtimeLimit/2, 0))
 	if runtimeLimit <= 0 {
 		cancel(ErrRuntimeExceeded)
 	}
 	runtimeTimer := time.AfterFunc(max(runtimeLimit, time.Nanosecond), func() { cancel(ErrRuntimeExceeded) })
 	defer runtimeTimer.Stop()
-	leaseTimer := time.AfterFunc(duration, stopLease)
+	// The lease clock governs execution. Once the immutable result is ready,
+	// only the authenticated completion endpoint and delivery budgets govern
+	// reporting. Serialize that transition with expiry and renewal responses.
+	var leaseMu sync.Mutex
+	reporting := false
+	runtimeCapped := runtimeCappedLease(state)
+	leaseTimer := time.AfterFunc(max(duration, time.Nanosecond), func() {
+		leaseMu.Lock()
+		defer leaseMu.Unlock()
+		if reporting {
+			return
+		}
+		if runtimeCapped {
+			cancel(ErrRuntimeExceeded)
+		} else {
+			stopLease()
+		}
+	})
 	defer leaseTimer.Stop()
 	interval := time.Duration(lease.HeartbeatIntervalSeconds) * time.Second
 	if interval <= 0 {
 		interval = 15 * time.Second
 	}
-	interval = min(interval, duration/2)
+	interval = min(interval, max(duration/2, time.Nanosecond))
 	logs := make(chan LogEntry, 128)
 	var dropped atomic.Bool
 	var logBytes atomic.Int64
@@ -258,31 +293,50 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 				renewRequestedAt := time.Now()
 				next, err := w.API.Renew(ctx, lease.Job.ID, lease.Token)
 				renewElapsed := time.Since(renewRequestedAt)
-				if err != nil {
-					if ctx.Err() == nil {
-						stopLease()
+				keepRenewing := func() bool {
+					leaseMu.Lock()
+					defer leaseMu.Unlock()
+					if err != nil {
+						if status, ok := errors.AsType[*HTTPError](err); ok && status.Status == http.StatusConflict && reporting {
+							// Completion may already have committed its terminal state.
+							// Let the authenticated completion replay resolve ambiguity.
+							return false
+						}
+						if ctx.Err() == nil || fatalHTTP(err) {
+							stopLease()
+						}
+						return false
 					}
+					if next.CancelRequested {
+						cancel(ErrRemoteCancellation)
+						return false
+					}
+					if next.Status != "running" {
+						if reporting && (next.Status == "succeeded" || next.Status == "failed" || next.Status == "cancelled" || next.Status == "timeout") {
+							return false
+						}
+						stopLease()
+						return false
+					}
+					lifetime, err := leaseDuration(next)
+					if err != nil {
+						stopLease()
+						return false
+					}
+					lifetime -= renewElapsed
+					if lifetime <= 0 && !runtimeCappedLease(next) {
+						stopLease()
+						return false
+					}
+					if !reporting {
+						runtimeCapped = runtimeCappedLease(next)
+						leaseTimer.Reset(max(lifetime, time.Nanosecond))
+					}
+					return true
+				}()
+				if !keepRenewing {
 					return
 				}
-				if next.CancelRequested {
-					cancel(ErrRemoteCancellation)
-					return
-				}
-				if next.Status != "running" {
-					stopLease()
-					return
-				}
-				lifetime, err := leaseDuration(next)
-				if err != nil {
-					stopLease()
-					return
-				}
-				lifetime -= renewElapsed
-				if lifetime <= 0 {
-					stopLease()
-					return
-				}
-				leaseTimer.Reset(lifetime)
 				if err := w.API.Heartbeat(ctx, w.Heartbeat); err != nil {
 					if ctx.Err() != nil {
 						return
@@ -343,7 +397,13 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 	if dropped.Load() {
 		result.RiskNotes = append(result.RiskNotes, "Execution logs were truncated by the local or server limit.")
 	}
+	leaseMu.Lock()
 	cause := context.Cause(ctx)
+	if !errors.Is(cause, ErrLeaseLost) {
+		reporting = true
+		leaseTimer.Stop()
+	}
+	leaseMu.Unlock()
 	if errors.Is(cause, ErrLeaseLost) {
 		cancel(ErrLeaseLost)
 		wg.Wait()
@@ -351,7 +411,11 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 	}
 	if cause != nil {
 		result.Status, result.ExitCode = "cancelled", -1
-		result.Summary = boundedText(cause.Error(), maxSummaryBytes)
+		summary := cause.Error()
+		if result.Summary != "" && result.Summary != summary {
+			summary += "\n" + result.Summary
+		}
+		result.Summary = boundedText(summary, maxSummaryBytes)
 		if errors.Is(cause, ErrRuntimeExceeded) {
 			result.Status = "timeout"
 		}

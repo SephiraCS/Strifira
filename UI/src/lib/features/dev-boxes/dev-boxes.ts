@@ -24,11 +24,14 @@ export function jobStatusLabel(status: DevBoxJobStatus): string {
 
 export function parseTestCommand(value: string): string[] {
 	const command: unknown = JSON.parse(value);
+	const encoder = new TextEncoder();
 	if (
 		!Array.isArray(command) ||
 		command.length === 0 ||
 		command.length > 32 ||
-		command.some((arg) => typeof arg !== 'string' || !arg.trim() || arg.length > 4096 || arg.includes('\0'))
+		command.some(
+			(arg) => typeof arg !== 'string' || !arg.trim() || encoder.encode(arg).length > 4096 || arg.includes('\0')
+		)
 	) {
 		throw new Error(m['dev_boxes.test_command_invalid']());
 	}

@@ -43,6 +43,7 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import TerminalDock from '$lib/features/dev-machines/TerminalDock.svelte';
 	import { setTerminalDock } from '$lib/features/dev-machines/terminal-dock-context.svelte';
+	import { presenterSession } from '$lib/features/shares/presenter.session.svelte';
 
 	let { children } = $props();
 	let workspace = $state<Workspace | null>(null);
@@ -65,6 +66,17 @@
 	let workspaceLoadFailed = $state(false);
 	let workspaceLoading = $state(false);
 	let workspaceLoadId = 0;
+	let workspaceRequestId = 0;
+	const ancillaryResources = ['projects', 'labels', 'members', 'views', 'notifications'] as const;
+	type AncillaryResource = (typeof ancillaryResources)[number];
+	let ancillaryRequestIds: Partial<Record<AncillaryResource, number>> = {};
+	let ancillaryErrors = $state<Partial<Record<AncillaryResource, boolean>>>({});
+	let ancillaryLoading = $state<Partial<Record<AncillaryResource, boolean>>>({});
+	const ancillaryLoadFailed = $derived(Object.values(ancillaryErrors).some(Boolean));
+	const retryDisabled = $derived(
+		!(workspaceLoadFailed && !workspaceLoading) &&
+			!ancillaryResources.some((resource) => ancillaryErrors[resource] && !ancillaryLoading[resource])
+	);
 	const isMobile = new IsMobile();
 	const terminalDock = setTerminalDock();
 	const slug = $derived(page.params.workspaceSlug ?? '');
@@ -72,50 +84,111 @@
 
 	$effect(() => {
 		terminalDock.setWorkspace(slug);
+		presenterSession.setWorkspace(slug);
 	});
 
-	async function loadWorkspaceData(workspaceSlug: string) {
-		const loadId = ++workspaceLoadId;
+	async function loadWorkspaceShell(workspaceSlug: string) {
+		const loadId = workspaceLoadId;
+		const requestId = ++workspaceRequestId;
+		const isCurrent = () => loadId === workspaceLoadId && requestId === workspaceRequestId && workspaceSlug === slug;
 		workspaceLoading = true;
 		try {
 			// Team icons need the icon set; fetch it alongside the teams.
 			loadLucideLibrary();
-			const [ws, t, p, l, loadedMembers, v, notifRes] = await Promise.all([
-				getWorkspace(workspaceSlug),
-				listTeams(workspaceSlug),
-				listProjects(workspaceSlug),
-				listLabels(workspaceSlug),
-				listMembers(workspaceSlug),
-				listViews(workspaceSlug),
-				listNotifications()
-			]);
-			if (loadId !== workspaceLoadId) return;
-			// Keep the previous complete snapshot when any request fails.
+			const [ws, t] = await Promise.all([getWorkspace(workspaceSlug), listTeams(workspaceSlug)]);
+			if (!isCurrent()) return;
+			// Ancillary requests must never hold the shell or mounted view hostage.
 			workspace = ws;
 			sidebarState.workspaceRole = ws.current_user_role ?? 'guest';
 			teams = t;
 			sidebarState.teams = t;
-			projects = p;
-			sidebarState.projects = p;
-			labels = l;
-			members = loadedMembers;
-			views = v;
-			unreadCount = notifRes.unread_count;
 			sharesState.setEnabled(ws.screen_sharing_enabled);
 			if (ws.screen_sharing_enabled) void sharesState.load(workspaceSlug);
 			workspaceLoadFailed = false;
 		} catch {
-			if (loadId === workspaceLoadId) workspaceLoadFailed = true;
+			if (isCurrent()) workspaceLoadFailed = true;
 		} finally {
-			if (loadId === workspaceLoadId) workspaceLoading = false;
+			if (isCurrent()) workspaceLoading = false;
 		}
 	}
 
-	async function reloadViews(workspaceSlug: string) {
+	async function loadAncillary<T>(
+		resource: AncillaryResource,
+		workspaceSlug: string,
+		fetchData: () => Promise<T>,
+		apply: (data: T) => void
+	) {
+		const loadId = workspaceLoadId;
+		const requestId = (ancillaryRequestIds[resource] ?? 0) + 1;
+		ancillaryRequestIds[resource] = requestId;
+		const isCurrent = () =>
+			loadId === workspaceLoadId && ancillaryRequestIds[resource] === requestId && workspaceSlug === slug;
+		ancillaryLoading = { ...ancillaryLoading, [resource]: true };
 		try {
-			views = await listViews(workspaceSlug);
+			const data = await fetchData();
+			if (!isCurrent()) return;
+			apply(data);
+			ancillaryErrors = { ...ancillaryErrors, [resource]: false };
 		} catch {
-			// Keep the current navigation list if a background refresh fails.
+			// Keep each collection's previous value; retry only failed requests.
+			if (isCurrent()) ancillaryErrors = { ...ancillaryErrors, [resource]: true };
+		} finally {
+			if (isCurrent()) ancillaryLoading = { ...ancillaryLoading, [resource]: false };
+		}
+	}
+
+	function loadAncillaryResource(resource: AncillaryResource, workspaceSlug: string) {
+		switch (resource) {
+			case 'projects':
+				void loadAncillary(
+					resource,
+					workspaceSlug,
+					() => listProjects(workspaceSlug),
+					(data) => {
+						projects = data;
+						sidebarState.projects = data;
+					}
+				);
+				break;
+			case 'labels':
+				void loadAncillary(
+					resource,
+					workspaceSlug,
+					() => listLabels(workspaceSlug),
+					(data) => (labels = data)
+				);
+				break;
+			case 'members':
+				void loadAncillary(
+					resource,
+					workspaceSlug,
+					() => listMembers(workspaceSlug),
+					(data) => (members = data)
+				);
+				break;
+			case 'views':
+				void loadAncillary(
+					resource,
+					workspaceSlug,
+					() => listViews(workspaceSlug),
+					(data) => (views = data)
+				);
+				break;
+			case 'notifications':
+				void loadAncillary(resource, workspaceSlug, listNotifications, (data) => (unreadCount = data.unread_count));
+				break;
+		}
+	}
+
+	function loadWorkspaceData(workspaceSlug: string) {
+		void loadWorkspaceShell(workspaceSlug);
+		for (const resource of ancillaryResources) loadAncillaryResource(resource, workspaceSlug);
+	}
+
+	function retryWorkspaceData() {
+		if (workspaceLoadFailed && !workspaceLoading) void loadWorkspaceShell(slug);
+		for (const resource of ancillaryResources) {
+			if (ancillaryErrors[resource] && !ancillaryLoading[resource]) loadAncillaryResource(resource, slug);
 		}
 	}
 
@@ -140,7 +213,7 @@
 		const detail = (e as CustomEvent<{ slug?: string; resources?: string[] }>).detail;
 		if (detail?.slug && detail.slug !== slug) return;
 		const resources = detail?.resources;
-		if (!slug) return;
+		if (!authReady || !slug) return;
 		if (!resources || resources.length === 0) {
 			loadWorkspaceData(slug);
 			if (issuesState.issues.length > 0) {
@@ -151,53 +224,9 @@
 		if (resources.includes('issues') && issuesState.issues.length > 0) {
 			scheduleIssuesRefresh();
 		}
-		if (resources.includes('workspace')) {
-			getWorkspace(slug)
-				.then((ws) => {
-					workspace = ws;
-					sidebarState.workspaceRole = ws.current_user_role ?? 'guest';
-				})
-				.catch(() => {});
-		}
-		if (resources.includes('teams')) {
-			listTeams(slug)
-				.then((t) => {
-					teams = t;
-					sidebarState.teams = t;
-				})
-				.catch(() => {});
-		}
-		if (resources.includes('projects')) {
-			listProjects(slug)
-				.then((p) => {
-					projects = p;
-					sidebarState.projects = p;
-				})
-				.catch(() => {});
-		}
-		if (resources.includes('labels')) {
-			listLabels(slug)
-				.then((l) => {
-					labels = l;
-				})
-				.catch(() => {});
-		}
-		if (resources.includes('members')) {
-			listMembers(slug)
-				.then((m) => {
-					members = m;
-				})
-				.catch(() => {});
-		}
-		if (resources.includes('views')) {
-			reloadViews(slug);
-		}
-		if (resources.includes('notifications')) {
-			listNotifications()
-				.then((r) => {
-					unreadCount = r.unread_count;
-				})
-				.catch(() => {});
+		if (resources.includes('workspace') || resources.includes('teams')) void loadWorkspaceShell(slug);
+		for (const resource of ancillaryResources) {
+			if (resources.includes(resource)) loadAncillaryResource(resource, slug);
 		}
 	}
 
@@ -216,8 +245,12 @@
 	$effect(() => {
 		if (authReady && slug && slug !== loadedSlug) {
 			loadedSlug = slug;
+			workspaceLoadId++;
 			workspace = null;
 			workspaceLoadFailed = false;
+			ancillaryErrors = {};
+			ancillaryLoading = {};
+			unreadCount = 0;
 			sidebarState.workspaceRole = 'guest';
 			teams = [];
 			projects = [];
@@ -469,6 +502,7 @@
 
 	onDestroy(() => {
 		workspaceLoadId++;
+		presenterSession.setWorkspace('');
 		wsDestroyed = true;
 		clearWebSocketReconnect();
 		if (issuesRefreshTimer) {
@@ -693,13 +727,13 @@
 			</Sheet.Root>
 		{/if}
 		<main class="flex min-w-0 flex-1 flex-col overflow-hidden">
-			{#if workspaceLoadFailed}
+			{#if workspaceLoadFailed || ancillaryLoadFailed}
 				<div
 					role="alert"
 					class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--app-border)] px-4 py-2 text-sm"
 				>
 					<p class="text-[var(--color-error)]">{m['login.error_generic']()}</p>
-					<Button variant="outline" size="sm" disabled={workspaceLoading} onclick={() => loadWorkspaceData(slug)}>
+					<Button variant="outline" size="sm" disabled={retryDisabled} onclick={retryWorkspaceData}>
 						{m['settings.ai.retry_load']()}
 					</Button>
 				</div>
@@ -803,7 +837,7 @@
 	<ShortcutHelp bind:open={showShortcutHelp} shortcuts={shortcutDefs} />
 {:else if workspaceLoadFailed && !workspaceLoading}
 	<main class="flex h-dvh items-center justify-center bg-[var(--color-bg)]">
-		<ErrorState message={m['login.error_generic']()} onretry={() => loadWorkspaceData(slug)} />
+		<ErrorState message={m['login.error_generic']()} onretry={retryWorkspaceData} />
 	</main>
 {:else}
 	<div class="flex h-screen items-center justify-center"></div>

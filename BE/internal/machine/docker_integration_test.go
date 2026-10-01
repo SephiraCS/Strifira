@@ -68,7 +68,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 		"browser":   {"KU_BROWSER_CDP_TOKEN": "integration-cdp-token"},
 	}
 
-	networkName, volumeName, containers, err := runtime.Spawn(ctx, machine, services, secrets)
+	networkName, volumeName, containers, err := runtime.Spawn(ctx, machine, services, secrets, nil)
 	require.NoError(t, err)
 	volumeInspection, err := runtime.client.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 		requireContainerRunning(t, ctx, runtime, service.ServiceKey, *service.ContainerID)
 	}
 
-	command, err := json.Marshal([]string{"git", "config", "--global", "--get", "credential.helper"})
+	command, err := json.Marshal([]string{"/bin/sh", "-c", `set -eu; test -z "${FORGEJO_TOKEN:-}"; test -z "${GITHUB_TOKEN:-}"; if git config --global --get credential.helper; then exit 1; fi; printf git-isolated`})
 	require.NoError(t, err)
 	run := &domain.DevMachineAgentRun{
 		ID: uuid.New(), Mode: "task", CommandArgv: command,
@@ -170,7 +170,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Zero(t, execution.ExitCode)
-	require.Contains(t, execution.Stdout, "/home/ku/.ku-git-credential")
+	require.Contains(t, execution.Stdout, "git-isolated")
 	retriedExecution, err := runtime.RunAgent(ctx, machine, run, provider, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, execution.ContainerID, retriedExecution.ContainerID)
@@ -185,6 +185,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, customExecution.ExitCode)
 	require.Contains(t, customExecution.Stdout, "TEST_SECRET=custom-secret-value")
+	require.NotContains(t, customExecution.Stdout, "custom-github-token")
 	services = append(services, domain.DevMachineService{
 		ServiceType: "agent", ServiceKey: "agent", ContainerID: &execution.ContainerID,
 	}, domain.DevMachineService{

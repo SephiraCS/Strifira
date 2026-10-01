@@ -132,7 +132,12 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+	<Dialog.Content
+		class="max-h-[85vh] overflow-y-auto sm:max-w-xl"
+		showCloseButton={!busy}
+		escapeKeydownBehavior={busy ? 'ignore' : 'close'}
+		interactOutsideBehavior={busy ? 'ignore' : 'close'}
+	>
 		<form onsubmit={submit} class="space-y-4">
 			<Dialog.Header
 				><Dialog.Title>{m['dev_boxes.delegate']()}</Dialog.Title><Dialog.Description
@@ -224,9 +229,10 @@
 			{/if}
 			{#if validationError}<p role="alert" class="text-sm text-destructive">{validationError}</p>{/if}
 			<div class="flex justify-end gap-2 border-t pt-4">
-				<Button type="button" variant="outline" onclick={() => (open = false)}>{m['common.cancel']()}</Button><Button
-					type="submit"
-					disabled={!canSubmit}>{busy ? m['dev_boxes.delegating']() : m['dev_boxes.delegate_action']()}</Button
+				<Button type="button" variant="outline" disabled={busy} onclick={() => (open = false)}
+					>{m['common.cancel']()}</Button
+				><Button type="submit" disabled={!canSubmit}
+					>{busy ? m['dev_boxes.delegating']() : m['dev_boxes.delegate_action']()}</Button
 				>
 			</div>
 		</form>

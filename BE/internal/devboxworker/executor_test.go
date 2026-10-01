@@ -7,14 +7,98 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/agent"
 	"github.com/stretchr/testify/require"
 )
+
+func TestBoundedBufferRedactsBeforeWriteAndLogChunkBoundaries(t *testing.T) {
+	token := "kub_" + strings.Repeat("a", 64)
+	for split := 1; split < len(token); split++ {
+		t.Run(fmt.Sprintf("token write split %d", split), func(t *testing.T) {
+			var logs strings.Builder
+			output := &boundedBuffer{limit: maxOutputBytes, token: token, stream: "stdout", log: func(stream, content string) {
+				require.Equal(t, "stdout", stream)
+				require.LessOrEqual(t, len(content), 16*1024)
+				require.True(t, utf8.ValidString(content))
+				logs.WriteString(content)
+			}}
+			_, err := output.Write([]byte("before " + token[:split]))
+			require.NoError(t, err)
+			require.Equal(t, "before ", logs.String(), "potential token prefixes stay private")
+			_, err = output.Write([]byte(token[split:] + " after"))
+			require.NoError(t, err)
+			output.Flush()
+			require.Equal(t, "before [REDACTED] after", output.String())
+			require.Equal(t, output.String(), logs.String())
+		})
+	}
+	t.Run("token at 16 KiB chunk boundary", func(t *testing.T) {
+		var logs strings.Builder
+		output := &boundedBuffer{limit: maxOutputBytes, token: token, log: func(_, content string) {
+			require.LessOrEqual(t, len(content), 16*1024)
+			logs.WriteString(content)
+		}}
+		prefix := strings.Repeat("x", 16*1024-len(token)/2)
+		_, err := output.Write([]byte(prefix + token + strings.Repeat("y", 16*1024)))
+		require.NoError(t, err)
+		output.Flush()
+		require.Equal(t, prefix+"[REDACTED]"+strings.Repeat("y", 16*1024), logs.String())
+		require.Equal(t, output.String(), logs.String())
+		require.NotContains(t, logs.String(), token)
+	})
+}
+
+func TestBoundedBufferStreamingUTF8EOFAndLimits(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		writes []string
+		want   string
+	}{
+		{name: "split Unicode runes", writes: []string{"text \xe2", "\x82", "\xac and \xf0\x9f", "\x8c\x8d"}, want: "text € and 🌍"},
+		{name: "incomplete UTF8 at EOF", writes: []string{"text \xf0\x9f"}, want: "text �"},
+		{name: "partial token prefix at EOF", writes: []string{"ordinary ku"}, want: "ordinary ku"},
+		{name: "binary log output", writes: []string{"\x00\xff\x01"}, want: "\\0�\x01"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var logs strings.Builder
+			output := &boundedBuffer{limit: maxOutputBytes, token: "kub_" + strings.Repeat("b", 64), log: func(_, content string) {
+				require.LessOrEqual(t, len(content), 16*1024)
+				require.True(t, utf8.ValidString(content))
+				require.NotContains(t, content, "\x00")
+				logs.WriteString(content)
+			}}
+			for _, write := range test.writes {
+				_, err := output.Write([]byte(write))
+				require.NoError(t, err)
+			}
+			output.Flush()
+			require.Equal(t, test.want, logs.String())
+			require.Equal(t, strings.Join(test.writes, ""), output.rawString(), "raw capture preserves binary and NUL-delimited tool output")
+		})
+	}
+	t.Run("Unicode chunk boundary and capture cap", func(t *testing.T) {
+		var logs strings.Builder
+		output := &boundedBuffer{limit: 16*1024 + 3, log: func(_, content string) {
+			require.LessOrEqual(t, len(content), 16*1024)
+			require.True(t, utf8.ValidString(content))
+			logs.WriteString(content)
+		}}
+		content := strings.Repeat("x", 16*1024-1) + "€🌍"
+		_, err := output.Write([]byte(content))
+		require.NoError(t, err)
+		output.Flush()
+		require.Equal(t, strings.Repeat("x", 16*1024-1)+"€", output.String())
+		require.Equal(t, output.String(), logs.String())
+		require.True(t, output.truncated)
+	})
+}
 
 func fixtureRepository(t *testing.T) Config {
 	t.Helper()
@@ -60,6 +144,34 @@ func TestLocalExecutorProducesReviewPatchAndRunsTestsSeparately(t *testing.T) {
 	readme, err := os.ReadFile(filepath.Join(config.Repositories["owner/repo"].Path, "README.md"))
 	require.NoError(t, err)
 	require.Equal(t, "base\n", string(readme))
+}
+
+func TestLocalExecutorRedactsProviderTestsAndSystemLogsAndFlushesEOF(t *testing.T) {
+	config := fixtureRepository(t)
+	token := "kub_" + strings.Repeat("c", 64)
+	privateRoot := config.WorkRoot + "-" + token
+	require.NoError(t, os.Rename(config.WorkRoot, privateRoot))
+	config.WorkRoot = privateRoot
+	provider := config.Providers["claude-code"]
+	script := "#!/bin/sh\nprintf 'changed\\n' > README.md\nprintf '%s' '" + token[:34] + "' >&2\nprintf '%s' '" + token[34:] + "' >&2\nprintf '%s' '{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"" + token + "\"}'\n"
+	require.NoError(t, os.WriteFile(provider, []byte(script), 0700))
+	job := fixtureJob(config)
+	job.TestCommand = []string{"/bin/sh", "-c", "printf '%s' '" + token + "'; printf '\\342\\202\\254' >&2"}
+	var logs strings.Builder
+	var logsMu sync.Mutex
+	result := (&LocalExecutor{Config: config, redactionToken: token}).Execute(t.Context(), job, func(_, content string) {
+		require.True(t, utf8.ValidString(content))
+		require.LessOrEqual(t, len(content), 16*1024)
+		logsMu.Lock()
+		defer logsMu.Unlock()
+		logs.WriteString(content)
+	})
+	require.Equal(t, "succeeded", result.Status, result.Summary)
+	require.Equal(t, "[REDACTED]", result.Summary, "captured provider output is redacted before parsing")
+	require.Equal(t, "passed", result.TestStatus)
+	require.NotContains(t, logs.String(), token)
+	require.Contains(t, logs.String(), "[REDACTED]", "system paths, stderr and independent stdout are sanitized")
+	require.Contains(t, logs.String(), "€", "EOF flush preserves the final Unicode output")
 }
 
 func TestLocalExecutorServicePromptIncludesAcceptanceCriteriaOnce(t *testing.T) {

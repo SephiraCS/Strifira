@@ -56,6 +56,7 @@ class PresenterSession {
 	private slug = '';
 	private currentWorkspaceSlug = '';
 	private presenterToken = '';
+	private pendingCapture: MediaStream | null = null;
 	private generation = 0;
 	private peers = new Map<string, RTCPeerConnection>();
 	private peerNegotiations = new Map<string, string>();
@@ -71,6 +72,22 @@ class PresenterSession {
 		return this.share !== null && this.live && !this.ended;
 	}
 
+	/** Route ownership changes even while the workspace socket is unavailable. */
+	setWorkspace(workspaceSlug: string): void {
+		if (workspaceSlug === this.currentWorkspaceSlug) return;
+		this.currentWorkspaceSlug = workspaceSlug;
+		this.generation++;
+		this.starting = false;
+		this.pendingCapture?.getTracks().forEach((track) => track.stop());
+		this.pendingCapture = null;
+		if (this.share && workspaceSlug !== this.slug) {
+			void this.stop();
+			// Release capture immediately; the old workspace's end request
+			// must not block starting a share in the newly selected workspace.
+			this.teardown();
+		}
+	}
+
 	/**
 	 * Capture-first start, inside the click's user-activation window
 	 * (Chrome denies getDisplayMedia once the gesture has expired behind
@@ -78,27 +95,29 @@ class PresenterSession {
 	 * the share row created.
 	 */
 	async start(workspaceSlug: string): Promise<void> {
-		if (this.starting || this.share) return;
+		if (this.starting || this.share || this.currentWorkspaceSlug !== workspaceSlug) return;
+		const generation = ++this.generation;
+		const current = () => generation === this.generation && this.currentWorkspaceSlug === workspaceSlug;
 		this.starting = true;
 		let stream: MediaStream | null = null;
 		try {
 			try {
 				stream = await navigator.mediaDevices.getDisplayMedia(CAPTURE_OPTIONS);
 			} catch (err) {
-				appToast.apiError(err, m['shares.capture_failed']());
+				if (current()) appToast.apiError(err, m['shares.capture_failed']());
 				return;
 			}
-			if (this.currentWorkspaceSlug && this.currentWorkspaceSlug !== workspaceSlug) {
+			if (!current()) {
 				stream.getTracks().forEach((track) => track.stop());
 				return;
 			}
+			this.pendingCapture = stream;
 			const joined = await createShare(workspaceSlug, {});
-			if (this.currentWorkspaceSlug && this.currentWorkspaceSlug !== workspaceSlug) {
+			if (!current()) {
 				stream.getTracks().forEach((track) => track.stop());
 				await endShare(workspaceSlug, joined.share.id, joined.presenter_token);
 				return;
 			}
-			this.generation++;
 			this.slug = workspaceSlug;
 			this.presenterToken = joined.presenter_token;
 			this.ended = false;
@@ -113,9 +132,12 @@ class PresenterSession {
 			void sharesState.reload();
 		} catch (err) {
 			stream?.getTracks().forEach((t) => t.stop());
-			appToast.apiError(err, m['shares.start_failed']());
+			if (current()) appToast.apiError(err, m['shares.start_failed']());
 		} finally {
-			this.starting = false;
+			if (current()) {
+				this.pendingCapture = null;
+				this.starting = false;
+			}
 		}
 	}
 
@@ -124,12 +146,13 @@ class PresenterSession {
 		if (this.stopping || !this.share) return;
 		this.stopping = true;
 		const share = this.share;
+		const generation = this.generation;
 		try {
 			await endShare(this.slug, share.id, this.presenterToken);
 		} catch {
 			// Server-side end failed; lazy GC closes the row.
 		}
-		this.teardown();
+		if (generation === this.generation) this.teardown();
 	}
 
 	/** Re-pick the captured screen/window/tab while staying live. */
@@ -170,10 +193,12 @@ class PresenterSession {
 			// Cancelling the picker leaves the existing capture untouched.
 			// If that source ended while the picker was open, finally stops it.
 		} finally {
-			this.switching = false;
-			if (this.endAfterSwitch && !this.stopping && !this.ended) {
-				this.endAfterSwitch = false;
-				void this.stop();
+			if (generation === this.generation) {
+				this.switching = false;
+				if (this.endAfterSwitch && !this.stopping && !this.ended) {
+					this.endAfterSwitch = false;
+					void this.stop();
+				}
 			}
 		}
 	}
@@ -221,12 +246,8 @@ class PresenterSession {
 		});
 
 		onWebSocketReconnected((workspaceSlug) => {
-			this.currentWorkspaceSlug = workspaceSlug;
-			if (!this.share || this.ended) return;
-			if (workspaceSlug !== this.slug) {
-				void this.stop();
+			if (!this.share || this.ended || workspaceSlug !== this.currentWorkspaceSlug || workspaceSlug !== this.slug)
 				return;
-			}
 			const shareId = this.share.id;
 			const generation = this.generation;
 			announceSharePresence(this.slug, shareId, 'presenter', 'join', this.presenterToken);
@@ -313,7 +334,6 @@ class PresenterSession {
 			for (const track of sourceStream.getTracks()) {
 				pc.addTrack(track, sourceStream);
 			}
-			if (sourceStream.getAudioTracks().length === 0) pc.addTransceiver('audio', { direction: 'sendonly' });
 			void this.applySenderQuality(pc);
 		}
 		pc.onicecandidate = (e) => {
@@ -353,6 +373,16 @@ class PresenterSession {
 			try {
 				await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
 				if (!current()) return;
+				// Configure the audio section actually associated with the
+				// viewer's offer. Reserve sending even for a silent capture so
+				// a later surface switch can add audio without renegotiation.
+				for (const transceiver of pc.getTransceivers()) {
+					if (transceiver.mid === null || transceiver.receiver.track.kind !== 'audio') continue;
+					transceiver.direction = 'sendonly';
+					const audio = this.stream?.getAudioTracks()[0] ?? null;
+					if (transceiver.sender.track !== audio) await transceiver.sender.replaceTrack(audio);
+					if (!current()) return;
+				}
 				const answer = await pc.createAnswer();
 				if (!current()) return;
 				await pc.setLocalDescription(answer);
@@ -392,6 +422,8 @@ class PresenterSession {
 		this.stream = null;
 		this.presenterToken = '';
 		this.live = false;
+		this.switching = false;
+		this.endAfterSwitch = false;
 		this.viewerCount = 0;
 		this.stopping = false;
 		void sharesState.reload();

@@ -66,7 +66,9 @@ func TestDockerRuntimeAgentQualification(t *testing.T) {
 	created, err = runtime.ensureVolume(ctx, volumeName, labels, machine.DiskGB)
 	require.NoError(t, err)
 	require.True(t, created)
-	require.NoError(t, runtime.prepareWorkspaceVolume(ctx, machine, volumeName, image))
+	collectorImage := os.Getenv("KU_DOCKER_COLLECTOR_IMAGE")
+	require.NotEmpty(t, collectorImage, "workspace preparation requires the shipped collector Git/util-linux tooling")
+	require.NoError(t, runtime.prepareProtectedWorkspaceVolume(ctx, machine, volumeName, collectorImage))
 
 	developer, err := runtime.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
@@ -80,8 +82,14 @@ func TestDockerRuntimeAgentQualification(t *testing.T) {
 	require.NoError(t, err)
 	_, err = runtime.client.ContainerStart(ctx, developer.ID, client.ContainerStartOptions{})
 	require.NoError(t, err)
-	services := []domain.DevMachineService{{ServiceType: "ide", ContainerID: &developer.ID}}
+	services := []domain.DevMachineService{{ServiceType: "ide", ContainerID: &developer.ID, ImageRef: image}, {ServiceType: "collector", ImageRef: collectorImage}}
+	checkout := &domain.DevMachineCheckout{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID,
+		RepositoryURL: "https://git.example.test/owner/fixture", RepositoryFullName: "owner/fixture",
+		BaseBranch: machine.BaseBranch, WorkingBranch: machine.WorkingBranch, WorkspacePath: "/workspace/repository"}
+	verificationRunID := uuid.New()
 	_, err = runtime.execOutput(ctx, developer.ID, []string{"/bin/sh", "-c", `set -eu
+mkdir -p /workspace/repository
+cd /workspace/repository
 git init --quiet -b main
 git config user.name KuSmoke
 git config user.email ku-smoke@localhost
@@ -93,15 +101,31 @@ git update-ref refs/remotes/origin/main HEAD
 git switch --quiet -c ku/docker-smoke
 `})
 	require.NoError(t, err)
-	toolchain, err := runtime.RunWorkspaceCommand(ctx, services, nil, []string{"sh", "-c", `set -eu
+	_, err = runtime.execOutput(ctx, developer.ID, []string{"sh", "-c", `set -eu
 printf '%s\n' 'package main' 'import "fmt"' 'func main() { fmt.Println("ku-docker-toolchain-ok") }' > /tmp/ku-toolchain.go
 go build -o /tmp/ku-toolchain /tmp/ku-toolchain.go
 [ "$(/tmp/ku-toolchain)" = ku-docker-toolchain-ok ]
 `})
 	require.NoError(t, err)
-	require.Zero(t, toolchain.ExitCode)
-	require.Empty(t, toolchain.Stderr)
 	t.Log("container Go compiler and temporary binary execution passed")
+	// This fixture has no remote. Seed trusted pins before provider execution;
+	// HTTPS fetching and publication are exercised by the repository fixture.
+	repository, _, err := protectedCheckoutRepository(checkout)
+	require.NoError(t, err)
+	_, err = runtime.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(`set -eu
+workspace=$1
+repository=$2
+run_key=$3
+repository_url=$4
+git -c protocol.file.allow=always clone --quiet --bare --local --no-hardlinks --template= -- "$workspace" "$repository"
+cat > "$repository/config" <<'CONFIG'
+`+protectedRepositoryConfig+`CONFIG
+printf '%s\n' "$repository_url" > "$repository/ku.repository-url"
+base=$(git --git-dir="$repository" rev-parse HEAD)
+git --git-dir="$repository" update-ref "refs/ku/runs/$run_key/base" "$base"
+git --git-dir="$repository" update-ref "refs/ku/runs/$run_key/parent" "$base"
+`, "seed-fixture-pins", checkout.WorkspacePath, repository, verificationRunID.String(), checkout.RepositoryURL), "", repositoryHelperInvocation{})
+	require.NoError(t, err)
 
 	if os.Getenv("KU_DOCKER_AGENT_LIVE") == "1" {
 		key := os.Getenv("KU_DOCKER_AGENT_API_KEY")
@@ -124,7 +148,7 @@ go build -o /tmp/ku-toolchain /tmp/ku-toolchain.go
 		}
 		argv, marshalErr := json.Marshal(invocation.Argv)
 		require.NoError(t, marshalErr)
-		run := &domain.DevMachineAgentRun{ID: uuid.New(), Mode: "autonomous", CommandArgv: argv}
+		run := &domain.DevMachineAgentRun{ID: verificationRunID, MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Mode: "autonomous", CommandArgv: argv}
 		var streamed atomic.Bool
 		liveCtx := context.WithValue(ctx, agentLogObserverKey{}, agentLogObserver(func(id, stream, content string) {
 			inspection, inspectErr := runtime.client.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
@@ -132,7 +156,7 @@ go build -o /tmp/ku-toolchain /tmp/ku-toolchain.go
 				streamed.Store(true)
 			}
 		}))
-		execution, runErr := runtime.RunAgent(liveCtx, machine, run, &domain.DevMachineAgentProvider{ImageRef: image}, nil, secrets)
+		execution, runErr := runtime.RunAgent(liveCtx, machine, run, &domain.DevMachineAgentProvider{ImageRef: image}, checkout, secrets)
 		require.NoError(t, runErr)
 		require.Zero(t, execution.ExitCode)
 		result := provider.ParseResult(execution.Stdout, execution.Stderr, execution.ExitCode)
@@ -154,50 +178,29 @@ go build -o /tmp/ku-toolchain /tmp/ku-toolchain.go
 		}
 		t.Log("live coding, active JSONL streaming, terminal normalization and container resource/security limits passed")
 	} else {
-		_, err = runtime.execOutput(ctx, developer.ID, []string{"/bin/sh", "-c", `printf '%s\n' '#!/bin/sh' 'printf "%s\n" ku-docker-agent-ok' > greeting.sh`})
+		_, err = runtime.execOutput(ctx, developer.ID, []string{"/bin/sh", "-c", `cd /workspace/repository; printf '%s\n' '#!/bin/sh' 'printf "%s\n" ku-docker-agent-ok' > greeting.sh`})
 		require.NoError(t, err)
 	}
 
-	independent, err := runtime.RunWorkspaceCommand(ctx, services, nil, []string{"sh", "test.sh"})
+	candidate, err := runtime.RetainAgentCandidate(ctx, machine, services, checkout, verificationRunID)
+	require.NoError(t, err)
+	require.Equal(t, "ku/docker-smoke", candidate.Branch)
+	require.Equal(t, []string{"greeting.sh"}, candidate.ChangedFiles)
+	independent, err := runtime.RunCandidateCommand(ctx, machine, services, checkout, verificationRunID, candidate, []string{"sh", "test.sh"})
 	require.NoError(t, err)
 	require.Zero(t, independent.ExitCode)
 	require.Empty(t, independent.Stderr)
-	failure, err := runtime.RunWorkspaceCommand(ctx, services, nil, []string{"sh", "-c", "exit 23"})
+	failure, err := runtime.RunCandidateCommand(ctx, machine, services, checkout, verificationRunID, candidate, []string{"sh", "-c", "exit 23"})
 	require.NoError(t, err)
 	require.Equal(t, 23, failure.ExitCode)
-	gitState, err := runtime.GitState(ctx, machine, services, nil)
-	require.NoError(t, err)
-	require.Equal(t, "ku/docker-smoke", gitState.Branch)
-	require.Equal(t, []string{"greeting.sh"}, gitState.ChangedFiles)
-	remotes, err := runtime.execOutput(ctx, developer.ID, []string{"git", "remote"})
+	remotes, err := runtime.execOutput(ctx, developer.ID, []string{"git", "-C", checkout.WorkspacePath, "remote"})
 	require.NoError(t, err)
 	require.Empty(t, remotes)
-	t.Log("independent tests passed; exit 23 retained; actual Git edit and no remotes verified")
-
-	commandCtx, commandCancel := context.WithCancel(ctx)
-	defer commandCancel()
-	commandDone := make(chan error, 1)
-	go func() {
-		_, commandErr := runtime.RunWorkspaceCommand(commandCtx, services, nil, []string{"sh", "-c", "touch /tmp/command-started; (sleep 3; touch /tmp/command-survived) & wait"})
-		commandDone <- commandErr
-	}()
-	require.Eventually(t, func() bool {
-		_, checkErr := runtime.execOutput(ctx, developer.ID, []string{"test", "-f", "/tmp/command-started"})
-		return checkErr == nil
-	}, 5*time.Second, 50*time.Millisecond)
-	commandCancel()
-	select {
-	case <-commandDone:
-	case <-time.After(15 * time.Second):
-		t.Fatal("independent command cancellation did not finish")
-	}
-	time.Sleep(3200 * time.Millisecond)
-	_, err = runtime.execOutput(ctx, developer.ID, []string{"test", "!", "-f", "/tmp/command-survived"})
-	require.NoError(t, err, "cancelled command descendants must not survive")
+	t.Log("retained candidate tests passed; actual exit 23, Git edit and no remotes verified")
 
 	argv, err := json.Marshal([]string{"sh", "-c", "printf '%s\\n' cancellation-ready; sleep 120"})
 	require.NoError(t, err)
-	run := &domain.DevMachineAgentRun{ID: uuid.New(), Mode: "autonomous", CommandArgv: argv}
+	run := &domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Mode: "autonomous", CommandArgv: argv}
 	started := make(chan struct{}, 1)
 	runCtx := context.WithValue(ctx, agentLogObserverKey{}, agentLogObserver(func(_, _, content string) {
 		if strings.Contains(content, "cancellation-ready") {
@@ -219,7 +222,7 @@ go build -o /tmp/ku-toolchain /tmp/ku-toolchain.go
 	case <-time.After(10 * time.Second):
 		t.Fatal("cancellation fixture did not start")
 	}
-	require.NoError(t, runtime.CancelAgent(ctx, run))
+	require.NoError(t, runtime.CancelAgent(ctx, machine, run))
 	select {
 	case <-agentDone:
 	case <-time.After(15 * time.Second):

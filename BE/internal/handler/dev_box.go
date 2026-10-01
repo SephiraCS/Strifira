@@ -20,7 +20,9 @@ import (
 const (
 	devBoxUserBodyLimit      = 128 << 10
 	devBoxHeartbeatBodyLimit = 8 << 10
-	devBoxLogBodyLimit       = 70 << 10
+	// JSON can encode each decoded byte as a six-byte Unicode escape. Leave
+	// room for the immutable lease, sequence and envelope as well.
+	devBoxLogBodyLimit = 6*service.DevBoxMaxLogEntryBytes + 1024
 )
 
 type devBoxService interface {

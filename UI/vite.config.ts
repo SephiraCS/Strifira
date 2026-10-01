@@ -1,14 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type ConfigEnv } from 'vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 
-export default defineConfig(({ mode }) => {
-	const env = loadEnv(mode, '..', 'KU_DEV_');
+export function createViteConfig({ mode }: ConfigEnv, envDir = '..') {
+	const env = loadEnv(mode, envDir, 'KU_DEV_');
 	const apiUrl = env.KU_DEV_API_URL || 'http://localhost:8080';
 
 	return {
-		envDir: '..',
+		envDir,
 		plugins: [
 			tailwindcss(),
 			paraglideVitePlugin({
@@ -37,4 +37,6 @@ export default defineConfig(({ mode }) => {
 			}
 		}
 	};
-});
+}
+
+export default defineConfig((configEnv) => createViteConfig(configEnv));

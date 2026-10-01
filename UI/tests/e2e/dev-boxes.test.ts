@@ -201,6 +201,57 @@ test('delegates to an online installed provider with independent test arguments 
 	]);
 });
 
+for (const succeeds of [true, false]) {
+	test(`pending delegation blocks dismissal and ${succeeds ? 'opens its only created job' : 'restores the form after failure'}`, async ({
+		page
+	}) => {
+		const started = deferred();
+		const response = deferred();
+		const requests: unknown[] = [];
+		await mockWorkspace(page, async (route, url) => {
+			if (url.pathname === `/api/workspaces/test/dev-boxes/${boxId}/jobs`) {
+				requests.push(route.request().postDataJSON());
+				started.resolve();
+				await response.promise;
+				return succeeds ? reply(route, job, 201) : reply(route, { message: 'Temporary delegation failure' }, 503);
+			}
+			if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`) return reply(route, job);
+			if (url.pathname.endsWith('/logs')) return reply(route, []);
+			return false;
+		});
+		await page.goto('/test/issue/ENG-1');
+		await page.getByRole('button', { name: 'Issue actions' }).click();
+		await page.getByRole('button', { name: 'Delegate to dev box' }).click();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+		await dialog.getByLabel('Test command').fill('["go", "test", "./..."]');
+		await dialog.getByRole('button', { name: 'Delegate issue', exact: true }).click();
+		await started.promise;
+		await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+		await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toHaveCount(0);
+		await expect(dialog.getByRole('button', { name: 'Delegating…', exact: true })).toBeDisabled();
+		await page.keyboard.press('Escape');
+		await expect(dialog).toBeVisible();
+		await page.mouse.click(2, 2);
+		await expect(dialog).toBeVisible();
+		await dialog.locator('form').dispatchEvent('submit');
+		expect(requests).toHaveLength(1);
+		response.resolve();
+		if (succeeds) {
+			await expect(page).toHaveURL(`/test/dev-box-jobs/${jobId}`);
+			await expect(dialog).toHaveCount(0);
+		} else {
+			await expect(dialog.getByRole('button', { name: 'Delegate issue', exact: true })).toBeEnabled();
+			await expect(dialog.getByLabel('Test command')).toHaveValue('["go", "test", "./..."]');
+			await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeEnabled();
+			await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
+			await page.keyboard.press('Escape');
+			await expect(dialog).toHaveCount(0);
+		}
+		expect(requests).toHaveLength(1);
+	});
+}
+
 test('polls incremental logs, cancels work and renders result patches as plain text', async ({ page }) => {
 	let cancelled = false;
 	let cancelRequests = 0;
@@ -301,6 +352,76 @@ test('guest navigation omits registration and issue delegation controls', async 
 	await expect(page.getByRole('link', { name: 'Dev boxes', exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Issue actions' }).click();
 	await expect(page.getByRole('button', { name: 'Delegate to dev box' })).toHaveCount(0);
+});
+
+for (const { role, sysadmin, visible } of [
+	{ role: 'member', sysadmin: false, visible: false },
+	{ role: 'member', sysadmin: true, visible: true },
+	{ role: 'guest', sysadmin: true, visible: false }
+]) {
+	test(`demo dev-box navigation respects the ${sysadmin ? 'sysadmin' : 'ordinary'} ${role} guard in sidebar and settings`, async ({
+		page
+	}) => {
+		await page.route('**/_app/env.js', (route) =>
+			route.fulfill({ contentType: 'application/javascript', body: 'export const env = { PUBLIC_DEMO_MODE: "true" };' })
+		);
+		await mockWorkspace(
+			page,
+			async (route, url) => {
+				if (url.pathname === '/api/auth/me') {
+					return reply(route, {
+						id: 'u1',
+						name: 'Test User',
+						email: 'test@example.com',
+						is_sysadmin: sysadmin
+					});
+				}
+				return false;
+			},
+			role
+		);
+		await page.goto('/test/issue/ENG-1');
+		await expect(page.getByRole('button', { name: 'Issue actions' })).toBeVisible();
+		const link = page.getByRole('link', { name: 'Dev boxes', exact: true });
+		await expect(link).toHaveCount(visible ? 1 : 0);
+		if (visible) await expect(link).toHaveAttribute('href', '/test/dev-boxes');
+		await page.goto('/test/settings/profile');
+		await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
+		await expect(link).toHaveCount(visible ? 1 : 0);
+		if (visible) await expect(link).toHaveAttribute('href', '/test/dev-boxes');
+	});
+}
+
+test('command validation rejects oversized UTF-8 arguments before delegation and accepts the exact boundary', async ({
+	page
+}) => {
+	const requests: unknown[] = [];
+	await mockWorkspace(page, async (route, url) => {
+		if (url.pathname === `/api/workspaces/test/dev-boxes/${boxId}/jobs`) {
+			requests.push(route.request().postDataJSON());
+			return reply(route, job, 201);
+		}
+		if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`) return reply(route, job);
+		if (url.pathname.endsWith('/logs')) return reply(route, []);
+		return false;
+	});
+	await page.goto('/test/issue/ENG-1');
+	await page.getByRole('button', { name: 'Issue actions' }).click();
+	await page.getByRole('button', { name: 'Delegate to dev box' }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+	const command = dialog.getByLabel('Test command');
+	await command.fill(JSON.stringify(['runner', 'é'.repeat(2049)]));
+	await dialog.getByRole('button', { name: 'Delegate issue', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('Enter the test command as a nonempty JSON list of strings.');
+	await expect(command).toHaveAttribute('aria-invalid', 'true');
+	expect(requests).toEqual([]);
+	const accepted = ['runner', 'é'.repeat(2048)];
+	await command.fill(JSON.stringify(accepted));
+	await dialog.getByRole('button', { name: 'Delegate issue', exact: true }).click();
+	await expect(page).toHaveURL(`/test/dev-box-jobs/${jobId}`);
+	expect(requests).toHaveLength(1);
+	expect((requests[0] as { test_command: string[] }).test_command).toEqual(accepted);
 });
 
 for (const operation of ['register', 'rotate'] as const) {
