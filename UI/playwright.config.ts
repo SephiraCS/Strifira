@@ -20,8 +20,9 @@ export default defineConfig({
 	},
 	use: {
 		baseURL: 'http://localhost:4174',
-		trace: 'retain-on-failure',
+		// Preserve full diagnostics on CI retries without tracing every passing test.
+		trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
 		screenshot: 'only-on-failure',
-		video: 'retain-on-failure'
+		video: process.env.CI ? 'on-first-retry' : 'retain-on-failure'
 	}
 });

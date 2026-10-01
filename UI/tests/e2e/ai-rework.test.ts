@@ -9,7 +9,12 @@ const issue = {
 	title: 'Issue with AI',
 	description: '<p>Short description</p>',
 	status: 'todo',
-	status_info: { id: 'todo', name: 'Todo', category: 'unstarted', color: '#888888' },
+	status_info: {
+		id: 'todo',
+		name: 'Todo',
+		category: 'unstarted',
+		color: '#888888'
+	},
 	priority: 0,
 	labels: [],
 	assignees: [],
@@ -29,7 +34,10 @@ type MockOptions = {
 };
 
 async function mockWorkspace(page: Page, opts: MockOptions) {
-	let currentIssue = { ...issue, description: opts.description ?? issue.description };
+	let currentIssue = {
+		...issue,
+		description: opts.description ?? issue.description
+	};
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', (route) => {
 		const url = new URL(route.request().url());
@@ -38,7 +46,12 @@ async function mockWorkspace(page: Page, opts: MockOptions) {
 
 		if (path === '/api/auth/me') {
 			return route.fulfill({
-				json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User' }
+				json: {
+					id: 'u1',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User'
+				}
 			});
 		}
 		if (path === '/api/preferences') {
@@ -57,10 +70,19 @@ async function mockWorkspace(page: Page, opts: MockOptions) {
 			});
 		}
 		if (path === '/api/workspaces') {
-			return route.fulfill({ json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }] });
+			return route.fulfill({
+				json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }]
+			});
 		}
 		if (path === '/api/workspaces/test') {
-			return route.fulfill({ json: { id: 'w1', name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
+			return route.fulfill({
+				json: {
+					id: 'w1',
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
 		}
 		if (path === '/api/workspaces/test/ai-settings') {
 			return route.fulfill({
@@ -92,7 +114,15 @@ async function mockWorkspace(page: Page, opts: MockOptions) {
 		}
 		if (path === '/api/workspaces/test/teams') {
 			return route.fulfill({
-				json: [{ id: teamId, name: 'Engineering', key: 'ENG', color: '#6366f1', icon: 'layers' }]
+				json: [
+					{
+						id: teamId,
+						name: 'Engineering',
+						key: 'ENG',
+						color: '#6366f1',
+						icon: 'layers'
+					}
+				]
 			});
 		}
 		if (
@@ -121,7 +151,10 @@ async function mockWorkspace(page: Page, opts: MockOptions) {
 					: currentIssue
 			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${path}` } }
+		});
 	});
 }
 
@@ -171,18 +204,30 @@ test.describe('AI rework', () => {
 
 	test('generates an empty existing issue description from the issue title', async ({ page }) => {
 		const reworkRequests: string[] = [];
-		await mockWorkspace(page, { aiConfigured: true, description: '', reworkRequests });
+		await mockWorkspace(page, {
+			aiConfigured: true,
+			description: '',
+			reworkRequests
+		});
 		await page.goto('/test/issue/ENG-1');
-		const generate = page.getByRole('button', { name: 'Generate description with AI', exact: true });
+		const generate = page.getByRole('button', {
+			name: 'Generate description with AI',
+			exact: true
+		});
 		await expect(generate).toHaveAttribute('title', 'Generate description with AI');
 		await generate.click();
 		await expect.poll(() => reworkRequests.length).toBe(1);
-		expect(JSON.parse(reworkRequests[0].slice(5))).toEqual({ selected_text: '' });
+		expect(JSON.parse(reworkRequests[0].slice(5))).toEqual({
+			selected_text: ''
+		});
 		const description = page.locator('.rich-editor .tiptap').first();
 		await expect(description).toHaveText('Expanded by AI');
 		await expect(generate).toBeHidden();
 		await expect(page.getByRole('button', { name: 'Improve with AI', exact: true }).first()).toBeVisible();
-		await description.fill('');
+		await description.click();
+		await description.press('ControlOrMeta+a');
+		await description.press('Backspace');
+		await expect(description).toBeEmpty();
 		await expect(generate).toBeVisible();
 		await description.fill('A local draft');
 		await expect(generate).toBeHidden();
@@ -248,9 +293,25 @@ test.describe('AI rework', () => {
 		});
 		await page.goto('/test/issue/ENG-1');
 		const description = page.locator('.rich-editor .tiptap').first();
+		await page.getByRole('button', { name: 'Improve with AI', exact: true }).first().waitFor();
 		await description.click();
-		await page.keyboard.press('Control+Home');
-		await page.keyboard.press('Control+Shift+ArrowRight');
+		await expect(description).toBeFocused();
+		await description.press('Control+Home');
+		await expect
+			.poll(() =>
+				description.evaluate((element) => {
+					const selection = window.getSelection();
+					return (
+						!!selection?.anchorNode &&
+						element.contains(selection.anchorNode) &&
+						selection.anchorOffset === 0 &&
+						selection.isCollapsed
+					);
+				})
+			)
+			.toBe(true);
+		await description.press('Control+Shift+ArrowRight');
+		await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('Short');
 		await page.getByRole('button', { name: 'Rework with AI', exact: true }).click();
 		await expect.poll(() => reworkRequests.length).toBe(1);
 		expect(JSON.parse(reworkRequests[0].slice(5)).selected_text).toBe('Short');
@@ -277,7 +338,10 @@ test.describe('AI rework', () => {
 		await page.keyboard.press('Control+z');
 		await expect(comment).toHaveText('Please review this implementation');
 		expect(textRequests).toEqual([
-			{ text: 'Please review this implementation', context: 'Comment on issue ENG-1: Issue with AI' }
+			{
+				text: 'Please review this implementation',
+				context: 'Comment on issue ENG-1: Issue with AI'
+			}
 		]);
 	});
 
@@ -288,7 +352,10 @@ test.describe('AI rework', () => {
 		await expect(page.getByRole('button', { name: 'Improve with AI', exact: true }).first()).toBeVisible();
 		await page.getByTitle('New issue', { exact: true }).click();
 		const dialog = page.getByRole('dialog');
-		const generate = dialog.getByRole('button', { name: 'Generate description with AI', exact: true });
+		const generate = dialog.getByRole('button', {
+			name: 'Generate description with AI',
+			exact: true
+		});
 		await expect(generate).toBeDisabled();
 		await page.locator('#create-issue-title').fill('   ');
 		await expect(generate).toBeDisabled();
@@ -324,10 +391,17 @@ test.describe('AI rework', () => {
 				if (attempts === 1) {
 					await route.fulfill({
 						status: 502,
-						json: { error: { code: 'AI_PROVIDER_ERROR', message: 'AI provider is temporarily unavailable' } }
+						json: {
+							error: {
+								code: 'AI_PROVIDER_ERROR',
+								message: 'AI provider is temporarily unavailable'
+							}
+						}
 					});
 				} else {
-					await route.fulfill({ json: { description: '<p>Expanded after retry</p>' } });
+					await route.fulfill({
+						json: { description: '<p>Expanded after retry</p>' }
+					});
 				}
 			}
 		});
@@ -347,7 +421,11 @@ test.describe('AI rework', () => {
 		await page.goto('/test/issue/ENG-1');
 		const commentControls = page.locator('.rich-editor').last().locator('..');
 		await commentControls.getByRole('button', { name: 'Improve with AI', exact: true }).click();
-		await expect(page.getByText('Write some text before improving it with AI.', { exact: true })).toBeVisible();
+		await expect(
+			page.getByText('Write some text before improving it with AI.', {
+				exact: true
+			})
+		).toBeVisible();
 		expect(textRequests).toEqual([]);
 	});
 });
@@ -367,23 +445,51 @@ for (const remoteDescription of ['<p>Remote newer description</p>', '']) {
 			reworkRequests,
 			expand: async (route) => {
 				await pending;
-				await route.fulfill({ json: { description: '<p>Obsolete AI suggestion</p>' } });
+				await route.fulfill({
+					json: { description: '<p>Obsolete AI suggestion</p>' }
+				});
 			}
 		});
 		await page.goto('/test/issue/ENG-1');
 		const description = page.locator('.rich-editor .tiptap').first();
+		await page.getByRole('button', { name: 'Improve with AI', exact: true }).first().waitFor();
 		await description.click();
-		await page.keyboard.press('Control+Home');
-		await page.keyboard.press('Control+Shift+ArrowRight');
+		await expect(description).toBeFocused();
+		await description.press('Control+Home');
+		await expect
+			.poll(() =>
+				description.evaluate((element) => {
+					const selection = window.getSelection();
+					return (
+						!!selection?.anchorNode &&
+						element.contains(selection.anchorNode) &&
+						selection.anchorOffset === 0 &&
+						selection.isCollapsed
+					);
+				})
+			)
+			.toBe(true);
+		await description.press('Control+Shift+ArrowRight');
+		await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe('Short');
 		await page.getByRole('button', { name: 'Rework with AI', exact: true }).click();
 		await expect.poll(() => reworkRequests.length).toBe(1);
 		const writes: unknown[] = [];
 		await page.route('**/api/workspaces/test/issues/ENG-1', async (route) => {
 			if (route.request().method() === 'PATCH') writes.push(route.request().postDataJSON());
-			await route.fulfill({ json: { ...issue, title: 'Issue updated remotely', description: remoteDescription } });
+			await route.fulfill({
+				json: {
+					...issue,
+					title: 'Issue updated remotely',
+					description: remoteDescription
+				}
+			});
 		});
 		await page.evaluate(() =>
-			window.dispatchEvent(new CustomEvent('ws:issue-updated', { detail: { identifier: 'ENG-1' } }))
+			window.dispatchEvent(
+				new CustomEvent('ws:issue-updated', {
+					detail: { identifier: 'ENG-1' }
+				})
+			)
 		);
 		await expect(page.getByText('Issue updated remotely', { exact: true })).toBeVisible();
 		await expect(description).toHaveText('Short description');
@@ -409,7 +515,9 @@ test('changing a new issue title during generation preserves the old-title respo
 		textRequests,
 		rework: async (route) => {
 			await pending;
-			await route.fulfill({ json: { text: '<p>Description for the original title</p>' } });
+			await route.fulfill({
+				json: { text: '<p>Description for the original title</p>' }
+			});
 		}
 	});
 	await page.goto('/test/issue/ENG-1');

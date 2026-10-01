@@ -42,7 +42,9 @@ async function mockTeamPage(page: Page, opts: { patchStatus?: number; patchBody?
 		if (!path.startsWith('/api/')) return route.continue();
 
 		if (path === '/api/auth/me') {
-			return route.fulfill({ json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User' } });
+			return route.fulfill({
+				json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User' }
+			});
 		}
 		if (path === '/api/preferences') {
 			return route.fulfill({
@@ -79,7 +81,18 @@ async function mockTeamPage(page: Page, opts: { patchStatus?: number; patchBody?
 		if (path === `/api/workspaces/test/teams/${teamId}/statuses`) {
 			return route.fulfill({
 				json: [
-					{ id: todoStatus, team_id: teamId, name: 'Todo', slug: 'todo', category: 'unstarted', color: null, position: 0, is_default: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+					{
+						id: todoStatus,
+						team_id: teamId,
+						name: 'Todo',
+						slug: 'todo',
+						category: 'unstarted',
+						color: null,
+						position: 0,
+						is_default: true,
+						created_at: '2026-01-01T00:00:00Z',
+						updated_at: '2026-01-01T00:00:00Z'
+					}
 				]
 			});
 		}
@@ -92,7 +105,15 @@ async function mockTeamPage(page: Page, opts: { patchStatus?: number; patchBody?
 		if (path === '/api/workspaces/test/dev-machine-environments') {
 			return route.fulfill({ json: [] });
 		}
-		if (['/api/workspaces/test/projects', '/api/workspaces/test/labels', '/api/workspaces/test/members', '/api/workspaces/test/views', `/api/workspaces/test/teams/${teamId}/cycles`].includes(path)) {
+		if (
+			[
+				'/api/workspaces/test/projects',
+				'/api/workspaces/test/labels',
+				'/api/workspaces/test/members',
+				'/api/workspaces/test/views',
+				`/api/workspaces/test/teams/${teamId}/cycles`
+			].includes(path)
+		) {
 			return route.fulfill({ json: [] });
 		}
 		if (path === '/api/notifications') {
@@ -118,6 +139,7 @@ test('rename team and change identifier sends name + key and confirms the cascad
 	const patchBodies = await mockTeamPage(page);
 
 	await page.goto(`/test/teams/${teamId}`);
+	await page.getByText('First issue').waitFor();
 	await expect(page.getByText('First issue')).toBeVisible();
 
 	await page.getByRole('button', { name: 'Rename team / change identifier' }).click();
@@ -142,7 +164,9 @@ test('rename team and change identifier sends name + key and confirms the cascad
 test('identifier collision keeps the dialog open with a clear message', async ({ page }) => {
 	const patchBodies = await mockTeamPage(page, {
 		patchStatus: 409,
-		patchBody: { error: { code: 'TEAM_KEY_COLLISION', message: 'Another team already uses identifiers under this key' } }
+		patchBody: {
+			error: { code: 'TEAM_KEY_COLLISION', message: 'Another team already uses identifiers under this key' }
+		}
 	});
 
 	await page.goto(`/test/teams/${teamId}`);
@@ -186,7 +210,9 @@ test('settings team page edit changes the identifier through the same endpoint',
 test('settings team page identifier collision keeps the form open', async ({ page }) => {
 	const patchBodies = await mockTeamPage(page, {
 		patchStatus: 409,
-		patchBody: { error: { code: 'TEAM_KEY_COLLISION', message: 'Another team already uses identifiers under this key' } }
+		patchBody: {
+			error: { code: 'TEAM_KEY_COLLISION', message: 'Another team already uses identifiers under this key' }
+		}
 	});
 
 	await page.goto(`/test/settings/teams/${teamId}`);

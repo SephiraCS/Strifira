@@ -19,7 +19,13 @@ async function mockIssue(page: Page) {
 			description: originalDescription,
 			status: 'todo',
 			status_id: 'status-todo',
-			status_info: { id: 'status-todo', name: 'Todo', category: 'unstarted', color: '#888888', position: 0 },
+			status_info: {
+				id: 'status-todo',
+				name: 'Todo',
+				category: 'unstarted',
+				color: '#888888',
+				position: 0
+			},
 			priority: 0,
 			labels: [],
 			assignees: [],
@@ -43,7 +49,12 @@ async function mockIssue(page: Page) {
 		const path = new URL(route.request().url()).pathname;
 		if (path === '/api/auth/me')
 			return route.fulfill({
-				json: { id: 'user-one', name: 'Test User', display_name: 'Test User', email: 'test@example.com' }
+				json: {
+					id: 'user-one',
+					name: 'Test User',
+					display_name: 'Test User',
+					email: 'test@example.com'
+				}
 			});
 		if (path === '/api/preferences')
 			return route.fulfill({
@@ -69,17 +80,43 @@ async function mockIssue(page: Page) {
 		if (path === '/api/workspaces/test') return route.fulfill({ json: workspace });
 		if (path === '/api/workspaces/test/teams')
 			return route.fulfill({
-				json: [{ id: teamId, name: 'Engineering', key: 'ENG', icon: 'layers', color: '#6366f1' }]
+				json: [
+					{
+						id: teamId,
+						name: 'Engineering',
+						key: 'ENG',
+						icon: 'layers',
+						color: '#6366f1'
+					}
+				]
 			});
 		if (path === `/api/workspaces/test/teams/${teamId}/statuses`)
-			return route.fulfill({ json: [{ ...state.issue.status_info, team_id: teamId, slug: 'todo', is_default: true }] });
+			return route.fulfill({
+				json: [
+					{
+						...state.issue.status_info,
+						team_id: teamId,
+						slug: 'todo',
+						is_default: true
+					}
+				]
+			});
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		if (path === '/api/workspaces/test/forgejo/status')
 			return route.fulfill({ json: { configured: false, connected: false } });
 		if (path === '/api/workspaces/test/ai-settings')
-			return route.fulfill({ json: { provider: 'openai_compatible', base_url: '', model: '', has_api_key: false } });
+			return route.fulfill({
+				json: {
+					provider: 'openai_compatible',
+					base_url: '',
+					model: '',
+					has_api_key: false
+				}
+			});
 		if (path === '/api/workspaces/test/issues')
-			return route.fulfill({ json: { data: [state.issue], total_count: 1, page: 1, has_more: false } });
+			return route.fulfill({
+				json: { data: [state.issue], total_count: 1, page: 1, has_more: false }
+			});
 		if (path === '/api/workspaces/test/issues/ENG-1') {
 			if (route.request().method() === 'PATCH') {
 				const html = route.request().postDataJSON().description as string;
@@ -92,7 +129,10 @@ async function mockIssue(page: Page) {
 					if (held) await held;
 					if (state.failNextPatch) {
 						state.failNextPatch = false;
-						return await route.fulfill({ status: 503, json: { error: { message: 'Description save unavailable' } } });
+						return await route.fulfill({
+							status: 503,
+							json: { error: { message: 'Description save unavailable' } }
+						});
 					}
 					state.issue = { ...state.issue, description: html };
 					return await route.fulfill({ json: state.issue });
@@ -119,6 +159,7 @@ async function mockIssue(page: Page) {
 async function openIssue(page: Page) {
 	await page.clock.install();
 	await page.goto('/test/issue/ENG-1');
+	await page.getByText('No activity yet', { exact: true }).waitFor();
 	await expect(page.getByText('No activity yet', { exact: true })).toBeVisible();
 	const description = page.locator('.rich-editor .tiptap').first();
 	await expect(description).toHaveText('Short description');

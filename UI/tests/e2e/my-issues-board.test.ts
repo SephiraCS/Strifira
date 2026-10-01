@@ -37,7 +37,12 @@ async function mockMyIssuesBoard(page: Page) {
 
 		if (path === '/api/auth/me') {
 			return route.fulfill({
-				json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User' }
+				json: {
+					id: 'u1',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User'
+				}
 			});
 		}
 		if (path === '/api/preferences') {
@@ -57,16 +62,37 @@ async function mockMyIssuesBoard(page: Page) {
 			});
 		}
 		if (path === '/api/workspaces') {
-			return route.fulfill({ json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }] });
+			return route.fulfill({
+				json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }]
+			});
 		}
 		if (path === '/api/workspaces/test') {
-			return route.fulfill({ json: { id: 'w1', name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
+			return route.fulfill({
+				json: {
+					id: 'w1',
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
 		}
 		if (path === '/api/workspaces/test/teams') {
 			return route.fulfill({
 				json: [
-					{ id: teamA, name: 'Alpha', key: 'ALP', color: '#6366f1', icon: 'layers' },
-					{ id: teamB, name: 'Beta', key: 'BET', color: '#22c55e', icon: 'layers' }
+					{
+						id: teamA,
+						name: 'Alpha',
+						key: 'ALP',
+						color: '#6366f1',
+						icon: 'layers'
+					},
+					{
+						id: teamB,
+						name: 'Beta',
+						key: 'BET',
+						color: '#22c55e',
+						icon: 'layers'
+					}
 				]
 			});
 		}
@@ -133,7 +159,10 @@ async function mockMyIssuesBoard(page: Page) {
 		}
 		if (/^\/api\/workspaces\/test\/issues\/[^/]+$/.test(path) && route.request().method() === 'PATCH') {
 			patches.push(JSON.parse(route.request().postData() ?? '{}'));
-			return route.fulfill({ status: 400, json: { error: { message: 'Unexpected issue update' } } });
+			return route.fulfill({
+				status: 400,
+				json: { error: { message: 'Unexpected issue update' } }
+			});
 		}
 		if (path === '/api/workspaces/test/issues') {
 			issueRequests.push(`${requestUrl.searchParams.get('page') ?? '1'}`);
@@ -164,15 +193,23 @@ async function mockMyIssuesBoard(page: Page) {
 		}
 
 		unhandled.push(path);
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${path}` } }
+		});
 	});
 	return { issueRequests, unhandled, patches };
+}
+
+async function openMyIssuesBoard(page: Page) {
+	await page.goto('/test/my-issues');
+	await page.locator('[data-issue-drop-zone]').first().waitFor();
 }
 
 test('my issues board renders one section per team and never hides orphaned statuses', async ({ page }) => {
 	const { unhandled, issueRequests } = await mockMyIssuesBoard(page);
 
-	await page.goto('/test/my-issues');
+	await openMyIssuesBoard(page);
 
 	// One board section per team, each issue under its own team's section.
 	const alphaSection = page.locator('section').filter({ hasText: 'Alpha todo issue' });
@@ -196,7 +233,7 @@ test('my issues board renders one section per team and never hides orphaned stat
 test('app.refresh bursts coalesce into one background reload and never blank the board', async ({ page }) => {
 	const { issueRequests } = await mockMyIssuesBoard(page);
 
-	await page.goto('/test/my-issues');
+	await openMyIssuesBoard(page);
 	await expect(page.getByText('Alpha todo issue')).toBeVisible();
 
 	const requestsBefore = issueRequests.length;
@@ -235,10 +272,12 @@ for (const foreign of [false, true]) {
 	}) => {
 		await page.setViewportSize({ width: 1920, height: 1600 });
 		const { patches, unhandled } = await mockMyIssuesBoard(page);
-		await page.goto('/test/my-issues');
+		await openMyIssuesBoard(page);
 		const source = page.locator('button', { hasText: 'Alpha todo issue' }).first();
 		const target = page
-			.locator('button', { hasText: foreign ? 'Beta in-progress issue' : 'Orphaned status issue' })
+			.locator('button', {
+				hasText: foreign ? 'Beta in-progress issue' : 'Orphaned status issue'
+			})
 			.first();
 		await expect(target).toBeVisible();
 		const from = await source.boundingBox();

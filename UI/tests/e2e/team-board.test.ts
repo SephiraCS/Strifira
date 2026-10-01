@@ -917,6 +917,21 @@ test('a stationary cursor preserves the displayed insertion when column scrollin
 });
 
 test('dragging at a clipped column edge scrolls forward and persists the final order', async ({ page }) => {
+	// Auto-scroll may advance between separate protocol calls. Snapshot the
+	// displayed order at mouseup before the board resolves its drop target.
+	await page.addInitScript((statusId) => {
+		window.addEventListener(
+			'mouseup',
+			() => {
+				const zone = document.querySelector(`[data-issue-drop-zone="${statusId}"]`);
+				sessionStorage.setItem(
+					'release-order',
+					JSON.stringify(Array.from(zone?.querySelectorAll('p.line-clamp-2') ?? []).map((title) => title.textContent))
+				);
+			},
+			{ capture: true, once: true }
+		);
+	}, statusValidation);
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
 	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
@@ -937,10 +952,15 @@ test('dragging at a clipped column edge scrolls forward and persists the final o
 	await page.waitForTimeout(200);
 	expect(await columnTitles(page, 'In Validation')).toEqual(hovering);
 	await page.mouse.up();
+	const released = await page.evaluate(() => JSON.parse(sessionStorage.getItem('release-order') ?? '[]'));
+	// The release snapshot must include the dragged card and every destination card.
+	expect(released).toHaveLength(hovering.length);
+	expect(released).toContain(VICTIM_TITLE);
 	await expect.poll(() => allPatches.length).toBe(1);
 	expect(allPatches[0].body.status_id).toBe(statusValidation);
+	await expect.poll(() => columnTitles(page, 'In Validation')).toEqual(released);
 	await refreshBoard(page, issueRequests);
-	expect(await columnTitles(page, 'In Validation')).toEqual(hovering);
+	expect(await columnTitles(page, 'In Validation')).toEqual(released);
 });
 
 test('list drag hover keeps child targets stable and cross-group drops persist', async ({ page }) => {

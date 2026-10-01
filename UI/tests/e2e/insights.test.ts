@@ -54,7 +54,7 @@ async function expectPlottedChart(page: Page, name: string, minimumPixels = 100)
 	return canvas;
 }
 
-test('shows workspace analytics and opens the explorer', async ({ page }) => {
+async function mockInsights(page: Page) {
 	const teamId = '00000000-0000-0000-0000-000000000010';
 	let scopedOverviewRequests = 0;
 	const issueListQueries: URLSearchParams[] = [];
@@ -222,9 +222,24 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 					from: '2026-04-14',
 					to: '2026-07-12',
 					points: [
-						{ date: '2026-06-22', total_created: 24, total_completed: 12, scope: 12 },
-						{ date: '2026-06-29', total_created: 32, total_completed: 18, scope: 14 },
-						{ date: '2026-07-06', total_created: 42, total_completed: 24, scope: 18 }
+						{
+							date: '2026-06-22',
+							total_created: 24,
+							total_completed: 12,
+							scope: 12
+						},
+						{
+							date: '2026-06-29',
+							total_created: 32,
+							total_completed: 18,
+							scope: 14
+						},
+						{
+							date: '2026-07-06',
+							total_created: 42,
+							total_completed: 24,
+							scope: 18
+						}
 					]
 				}
 			});
@@ -271,8 +286,20 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 					],
 					points: duration
 						? [
-								{ issue_id: 'issue-1', identifier: 'ENG-1', title: 'First issue', slice_key: group.key, value: 24 },
-								{ issue_id: 'issue-2', identifier: 'ENG-2', title: 'Second issue', slice_key: group.key, value: 48 }
+								{
+									issue_id: 'issue-1',
+									identifier: 'ENG-1',
+									title: 'First issue',
+									slice_key: group.key,
+									value: 24
+								},
+								{
+									issue_id: 'issue-2',
+									identifier: 'ENG-2',
+									title: 'Second issue',
+									slice_key: group.key,
+									value: 48
+								}
 							]
 						: []
 				}
@@ -280,12 +307,29 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 		}
 		if (path === '/api/workspaces/test/issues') {
 			issueListQueries.push(requestUrl.searchParams);
-			return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${path}` } }
+		});
 	});
 
+	return {
+		teamId,
+		issueListQueries,
+		pageErrors,
+		chartErrors,
+		scopedOverviewRequests: () => scopedOverviewRequests
+	};
+}
+
+test('shows workspace analytics and switches team scope', async ({ page }) => {
+	const { teamId, scopedOverviewRequests, pageErrors, chartErrors } = await mockInsights(page);
 	await page.goto('/test/insights');
+	await page.getByRole('heading', { name: 'Insights' }).waitFor();
 	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
 	await expect(page.getByText('Total issues')).toBeVisible();
 	await expect(page.getByText('42', { exact: true })).toBeVisible();
@@ -296,7 +340,7 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await page.getByLabel('Team scope').click();
 	await page.getByRole('option', { name: 'Engineering' }).click();
 	await expect(page).toHaveURL(new RegExp(`team=${teamId}`));
-	await expect.poll(() => scopedOverviewRequests).toBeGreaterThan(0);
+	await expect.poll(scopedOverviewRequests).toBeGreaterThan(0);
 	await expect(page.getByText('Using Engineering custom statuses')).toBeVisible();
 
 	await page.getByRole('tab', { name: 'Explore' }).click();
@@ -311,6 +355,12 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await expect(page.getByText('In progress', { exact: true })).toBeVisible();
 	await expectPlottedChart(page, 'insights-chart');
 
+	await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
+	expect(chartErrors).toEqual([]);
+});
+
+test('renders duration and segmented explorer charts', async ({ page }) => {
+	const { pageErrors, chartErrors } = await mockInsights(page);
 	await page.goto('/test/insights?tab=explore&measure=lead_time&slice=status_type');
 	const scatter = await expectPlottedChart(page, 'insights-chart', 10);
 	const scatterPoint = (await plottedPixels(scatter)).point!;
@@ -319,9 +369,17 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 
 	await page.goto('/test/insights?tab=explore&slice=status_type&segment=priority');
 	const segmentedBars = await expectPlottedChart(page, 'insights-chart');
-	await segmentedBars.hover({ position: (await plottedPixels(segmentedBars)).point! });
+	await segmentedBars.hover({
+		position: (await plottedPixels(segmentedBars)).point!
+	});
 	await expect(page.getByText('High priority', { exact: false })).toBeVisible();
 
+	await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
+	expect(chartErrors).toEqual([]);
+});
+
+test('drills down from cycle, status and team groups', async ({ page }) => {
+	const { teamId, issueListQueries, pageErrors, chartErrors } = await mockInsights(page);
 	await page.goto('/test/insights?tab=explore&slice=cycle');
 	await expect(page.getByText('No cycle', { exact: true })).toBeVisible();
 	await page.getByText('No cycle', { exact: true }).click();
@@ -335,7 +393,9 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await page.goto('/test/insights?tab=explore&slice=status_type');
 	const statusTypeQueryCount = issueListQueries.length;
 	const statusBars = await expectPlottedChart(page, 'insights-chart');
-	await statusBars.click({ position: (await plottedPixels(statusBars)).point! });
+	await statusBars.click({
+		position: (await plottedPixels(statusBars)).point!
+	});
 	await expect(page).toHaveURL('/test/my-issues?status_type=started');
 	await expect.poll(() => issueListQueries.length).toBeGreaterThan(statusTypeQueryCount);
 	const statusTypeQuery = issueListQueries.at(-1)!;
@@ -350,6 +410,12 @@ test('shows workspace analytics and opens the explorer', async ({ page }) => {
 	await expect.poll(() => issueListQueries.length).toBeGreaterThan(teamQueryCount);
 	expect(issueListQueries.at(-1)!.get('team')).toBe(teamId);
 
+	await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
+	expect(chartErrors).toEqual([]);
+});
+
+test('renders the explorer on mobile', async ({ page }) => {
+	const { pageErrors, chartErrors } = await mockInsights(page);
 	await page.setViewportSize({ width: 390, height: 844 });
 	await page.goto('/test/insights?tab=explore');
 	await expect(page.getByRole('tab', { name: 'Explore' })).toBeVisible();

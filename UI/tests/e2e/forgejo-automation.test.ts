@@ -35,8 +35,20 @@ async function mockForgejo(
 		...options.initialRules?.find((rule) => rule.event === event)
 	}));
 	const teams = [
-		{ id: engineeringId, name: 'Engineering', key: 'ENG', icon: 'layers', color: '#6366f1' },
-		{ id: operationsId, name: 'Operations', key: 'OPS', icon: 'layers', color: '#888888' }
+		{
+			id: engineeringId,
+			name: 'Engineering',
+			key: 'ENG',
+			icon: 'layers',
+			color: '#6366f1'
+		},
+		{
+			id: operationsId,
+			name: 'Operations',
+			key: 'OPS',
+			icon: 'layers',
+			color: '#888888'
+		}
 	];
 	const statuses = (teamId: string) => [
 		{
@@ -88,7 +100,13 @@ async function mockForgejo(
 		created_at: '2026-09-30T00:00:00Z',
 		updated_at: '2026-09-30T00:00:00Z'
 	};
-	const calls = { updates: [] as Rule[], status: 0, rules: 0, issueReads: 0, issueWrites: 0 };
+	const calls = {
+		updates: [] as Rule[],
+		status: 0,
+		rules: 0,
+		issueReads: 0,
+		issueWrites: 0
+	};
 	let seeded = false;
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', async (route) => {
@@ -96,7 +114,12 @@ async function mockForgejo(
 		const path = url.pathname;
 		if (path === '/api/auth/me')
 			return route.fulfill({
-				json: { id: 'user-one', name: 'Test User', display_name: 'Test User', email: 'test@example.com' }
+				json: {
+					id: 'user-one',
+					name: 'Test User',
+					display_name: 'Test User',
+					email: 'test@example.com'
+				}
 			});
 		if (path === '/api/preferences')
 			return route.fulfill({
@@ -124,16 +147,30 @@ async function mockForgejo(
 		if (path === '/api/workspaces/test/teams') return route.fulfill({ json: teams });
 		if (path === '/api/workspaces/test/members')
 			return route.fulfill({
-				json: [{ user_id: 'user-one', name: 'Test User', email: 'test@example.com', role: 'owner' }]
+				json: [
+					{
+						user_id: 'user-one',
+						name: 'Test User',
+						email: 'test@example.com',
+						role: 'owner'
+					}
+				]
 			});
 		if (path.endsWith('/statuses')) {
 			const teamId = path.split('/').at(-2)!;
-			return route.fulfill({ json: seeded ? statuses(teamId) : statuses(teamId).slice(0, 1) });
+			return route.fulfill({
+				json: seeded ? statuses(teamId) : statuses(teamId).slice(0, 1)
+			});
 		}
 		if (path === '/api/workspaces/test/forgejo/status') {
 			calls.status++;
 			if (options.statusErrorOnce && calls.status === 1)
-				return route.fulfill({ status: 503, json: { error: { message: 'Forgejo connection could not be checked' } } });
+				return route.fulfill({
+					status: 503,
+					json: {
+						error: { message: 'Forgejo connection could not be checked' }
+					}
+				});
 			seeded = true;
 			return route.fulfill({
 				json: {
@@ -159,7 +196,10 @@ async function mockForgejo(
 			}
 			calls.rules++;
 			if (options.rulesErrorOnce && calls.rules === 1)
-				return route.fulfill({ status: 503, json: { error: { message: 'Automation rules could not be loaded' } } });
+				return route.fulfill({
+					status: 503,
+					json: { error: { message: 'Automation rules could not be loaded' } }
+				});
 			return route.fulfill({ json: rules });
 		}
 		if (path === '/api/workspaces/test/forgejo/user-mappings') return route.fulfill({ json: [] });
@@ -176,19 +216,41 @@ async function mockForgejo(
 			});
 		}
 		if (path === '/api/workspaces/test/issues')
-			return route.fulfill({ json: { data: [currentIssue], total_count: 1, page: 1, has_more: false } });
+			return route.fulfill({
+				json: {
+					data: [currentIssue],
+					total_count: 1,
+					page: 1,
+					has_more: false
+				}
+			});
 		if (path === '/api/workspaces/test/issues/ENG-1/forgejo')
-			return route.fulfill({ json: { pull_requests: [], branches: [], commits: [] } });
+			return route.fulfill({
+				json: { pull_requests: [], branches: [], commits: [] }
+			});
 		return route.fulfill({ json: [] });
 	});
 	return { rules, currentIssue, calls };
+}
+
+async function openForgejoIssue(page: Page, url = '/test/issue/ENG-1') {
+	await page.goto(url);
+	await page.getByRole('button', { name: 'Issue actions', exact: true }).waitFor();
+}
+
+async function openForgejoSettings(page: Page, statusError = false) {
+	await page.goto('/test/settings/forgejo');
+	const ready = statusError
+		? page.getByText('Forgejo connection could not be checked', { exact: true })
+		: page.locator('[data-forgejo-rule]').first();
+	await ready.waitFor({ state: 'visible' });
 }
 
 test('configures an inactive blank rule before enabling it and resolves shared custom status slugs', async ({
 	page
 }) => {
 	const { calls } = await mockForgejo(page);
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	const rule = page.locator('[data-forgejo-rule="pr_opened"]');
 	await expect(rule.getByRole('switch')).toBeDisabled();
 	await expect(rule.getByLabel('Target status', { exact: true })).toBeEnabled();
@@ -230,20 +292,22 @@ test('serializes edits to one rule and keeps rejected changes visible and retrya
 				await released;
 				return route.fulfill({
 					status: 400,
-					json: { error: { message: 'The selected workflow status is unavailable' } }
+					json: {
+						error: { message: 'The selected workflow status is unavailable' }
+					}
 				});
 			}
 			return route.fulfill({ json: { status: 'updated' } });
 		}
 	});
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	const rule = page.locator('[data-forgejo-rule="branch_created"]');
 	await rule.getByLabel('Target status', { exact: true }).selectOption('review');
 	await expect(rule.getByLabel('Target status', { exact: true })).toBeDisabled();
 	await expect(rule.getByLabel('Assign to', { exact: true })).toBeDisabled();
 	await expect(rule.getByRole('switch')).toBeDisabled();
 	await expect(rule).toContainText('Saving rule…');
-	expect(calls.updates).toHaveLength(1);
+	await expect.poll(() => calls.updates).toHaveLength(1);
 	release();
 	await expect(rule.getByRole('alert')).toHaveText('The selected workflow status is unavailable');
 	await expect(rule.getByLabel('Target status', { exact: true })).toHaveValue('');
@@ -258,13 +322,17 @@ test('shows invalid saved targets and lets the owner disable the rule', async ({
 	const { calls } = await mockForgejo(page, {
 		initialRules: [{ event: 'pr_merged', target_status: 'removed-status', is_active: true }]
 	});
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	const rule = page.locator('[data-forgejo-rule="pr_merged"]');
 	await expect(rule).toContainText('This status is no longer available. Choose a team workflow status.');
 	await rule.getByRole('switch').click();
 	await expect.poll(() => calls.updates).toHaveLength(1);
 	await expect(rule.getByRole('switch')).not.toBeChecked();
-	expect(calls.updates[0]).toMatchObject({ event: 'pr_merged', target_status: 'removed-status', is_active: false });
+	expect(calls.updates[0]).toMatchObject({
+		event: 'pr_merged',
+		target_status: 'removed-status',
+		is_active: false
+	});
 });
 
 for (const role of ['admin', 'member', 'guest']) {
@@ -273,7 +341,7 @@ for (const role of ['admin', 'member', 'guest']) {
 			role,
 			initialRules: [{ event: 'pr_opened', target_status: 'review', is_active: true }]
 		});
-		await page.goto('/test/settings/forgejo');
+		await openForgejoSettings(page);
 		const rule = page.locator('[data-forgejo-rule="pr_opened"]');
 		await expect(rule.getByLabel('Target status', { exact: true })).toBeDisabled();
 		await expect(rule.getByRole('switch')).toBeDisabled();
@@ -287,7 +355,7 @@ for (const role of ['admin', 'member', 'guest']) {
 
 test('retries status and automation load errors without displaying a false disconnected form', async ({ page }) => {
 	await mockForgejo(page, { statusErrorOnce: true, rulesErrorOnce: true });
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page, true);
 	await expect(page.getByText('Forgejo connection could not be checked', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0);
 	await page.getByRole('button', { name: 'Try again', exact: true }).click();
@@ -298,7 +366,7 @@ test('retries status and automation load errors without displaying a false disco
 
 test('refreshes an automation status update received immediately after a local title save', async ({ page }) => {
 	const { currentIssue, calls } = await mockForgejo(page);
-	await page.goto('/test/issue/ENG-1');
+	await openForgejoIssue(page);
 	await expect(issueStatusButton(page, 'Todo')).toBeVisible();
 	await page.clock.install();
 	await page.getByRole('button', { name: 'Forgejo linked issue', exact: true }).click();
@@ -312,7 +380,9 @@ test('refreshes an automation status update received immediately after a local t
 	currentIssue.status_id = `${engineeringId}-review`;
 	await page.evaluate(() =>
 		window.dispatchEvent(
-			new CustomEvent('ws:issue-updated', { detail: { id: 'issue-one', identifier: 'ENG-1', status: 'review' } })
+			new CustomEvent('ws:issue-updated', {
+				detail: { id: 'issue-one', identifier: 'ENG-1', status: 'review' }
+			})
 		)
 	);
 	await page.clock.fastForward(500);
@@ -326,7 +396,7 @@ test('refreshes an automation status update received immediately after a local t
 
 test('refreshes the current issue after reconnecting and explains unmatched code activity', async ({ page }) => {
 	const { currentIssue, calls } = await mockForgejo(page);
-	await page.goto('/test/issue/ENG-1');
+	await openForgejoIssue(page);
 	await expect(issueStatusButton(page, 'Todo')).toBeVisible();
 	await expect(
 		page.getByText(
@@ -340,7 +410,11 @@ test('refreshes the current issue after reconnecting and explains unmatched code
 	currentIssue.status = 'review';
 	currentIssue.status_id = `${engineeringId}-review`;
 	await page.evaluate(() =>
-		window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug: 'other-workspace' } }))
+		window.dispatchEvent(
+			new CustomEvent('ws:reconnected', {
+				detail: { workspaceSlug: 'other-workspace' }
+			})
+		)
 	);
 	await page.clock.fastForward(250);
 	expect(calls.issueReads).toBe(initialReads);
@@ -371,7 +445,9 @@ test('uses stable issue identity when an old URL returns its canonical identifie
 	currentIssue.status_id = `${engineeringId}-review`;
 	await page.evaluate(() =>
 		window.dispatchEvent(
-			new CustomEvent('ws:issue-updated', { detail: { id: 'issue-one', identifier: 'ENG-1', status: 'review' } })
+			new CustomEvent('ws:issue-updated', {
+				detail: { id: 'issue-one', identifier: 'ENG-1', status: 'review' }
+			})
 		)
 	);
 	await page.clock.fastForward(250);
@@ -382,7 +458,7 @@ test('uses stable issue identity when an old URL returns its canonical identifie
 
 test('offers the built-in PR status for every team and explains its automatic creation', async ({ page }) => {
 	const { calls } = await mockForgejo(page);
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	const rule = page.locator('[data-forgejo-rule="pr_opened"]');
 	await rule.getByLabel('Target status', { exact: true }).selectOption('pr');
 	await expect(rule.getByRole('switch')).toBeEnabled();
@@ -422,7 +498,9 @@ for (const resource of ['user-mappings', 'members']) {
 				if (requests === 1)
 					return route.fulfill({
 						status: 503,
-						json: { error: { message: 'Mapping data is temporarily unavailable' } }
+						json: {
+							error: { message: 'Mapping data is temporarily unavailable' }
+						}
 					});
 				await released;
 				return route.fallback();
@@ -431,7 +509,11 @@ for (const resource of ['user-mappings', 'members']) {
 		await page.getByRole('link', { name: 'Forgejo', exact: true }).click();
 		const login = page.getByLabel('Forgejo login', { exact: true });
 		const member = page.getByLabel('Ku member', { exact: true });
-		await expect(page.getByText('Mapping data is temporarily unavailable', { exact: true })).toBeVisible();
+		await expect(
+			page.getByText('Mapping data is temporarily unavailable', {
+				exact: true
+			})
+		).toBeVisible();
 		await expect(login).toBeDisabled();
 		await expect(member).toBeDisabled();
 		await page.getByRole('button', { name: 'Try again', exact: true }).click();
@@ -443,7 +525,11 @@ for (const resource of ['user-mappings', 'members']) {
 		release();
 		await expect(login).toBeEnabled();
 		await expect(member).toBeEnabled();
-		await expect(page.getByText('Mapping data is temporarily unavailable', { exact: true })).toHaveCount(0);
+		await expect(
+			page.getByText('Mapping data is temporarily unavailable', {
+				exact: true
+			})
+		).toHaveCount(0);
 		await login.fill('mario');
 		await member.selectOption('user-one');
 		await expect(page.getByRole('button', { name: 'Add mapping', exact: true })).toBeEnabled();
@@ -452,8 +538,18 @@ for (const resource of ['user-mappings', 'members']) {
 
 test('clears old repository selections before rediscovery and blocks saves after discovery fails', async ({ page }) => {
 	await mockForgejo(page);
-	const oldRepo = { forgejo_repo_id: 41, full_name: 'team/legacy', private: false, linked: false };
-	const freshRepo = { forgejo_repo_id: 73, full_name: 'team/current', private: false, linked: false };
+	const oldRepo = {
+		forgejo_repo_id: 41,
+		full_name: 'team/legacy',
+		private: false,
+		linked: false
+	};
+	const freshRepo = {
+		forgejo_repo_id: 73,
+		full_name: 'team/current',
+		private: false,
+		linked: false
+	};
 	let discoveries = 0;
 	const additions: number[][] = [];
 	await page.route('**/api/workspaces/test/forgejo/repos', (route) => {
@@ -463,10 +559,13 @@ test('clears old repository selections before rediscovery and blocks saves after
 		}
 		discoveries++;
 		if (discoveries === 2)
-			return route.fulfill({ status: 503, json: { error: { message: 'Could not load repositories' } } });
+			return route.fulfill({
+				status: 503,
+				json: { error: { message: 'Could not load repositories' } }
+			});
 		return route.fulfill({ json: [discoveries === 1 ? oldRepo : freshRepo] });
 	});
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	await page.getByRole('button', { name: 'Manage', exact: true }).click();
 	await page.getByRole('button', { name: oldRepo.full_name, exact: true }).click();
 	await expect(page.getByText('1 selected', { exact: true })).toBeVisible();
@@ -490,8 +589,18 @@ test('clears old repository selections before rediscovery and blocks saves after
 
 test('requires fresh discovery after client navigation to another workspace and Forgejo instance', async ({ page }) => {
 	await mockForgejo(page);
-	const oldRepo = { forgejo_repo_id: 41, full_name: 'team/legacy', private: false, linked: false };
-	const freshRepo = { forgejo_repo_id: 73, full_name: 'other/current', private: false, linked: false };
+	const oldRepo = {
+		forgejo_repo_id: 41,
+		full_name: 'team/legacy',
+		private: false,
+		linked: false
+	};
+	const freshRepo = {
+		forgejo_repo_id: 73,
+		full_name: 'other/current',
+		private: false,
+		linked: false
+	};
 	const otherWorkspace = {
 		id: 'workspace-other',
 		name: 'Other Workspace',
@@ -507,26 +616,40 @@ test('requires fresh discovery after client navigation to another workspace and 
 		if (path === '/api/workspaces/other') return route.fulfill({ json: otherWorkspace });
 		if (path === '/api/workspaces/other/forgejo/status')
 			return route.fulfill({
-				json: { configured: true, connected: true, instance_url: 'https://git.other.example.com', repos: [] }
+				json: {
+					configured: true,
+					connected: true,
+					instance_url: 'https://git.other.example.com',
+					repos: []
+				}
 			});
 		if (path === '/api/workspaces/other/forgejo/repos') {
 			if (route.request().method() === 'POST') {
-				additions.push({ workspace: 'other', ids: route.request().postDataJSON().forgejo_repo_ids });
+				additions.push({
+					workspace: 'other',
+					ids: route.request().postDataJSON().forgejo_repo_ids
+				});
 				return route.fulfill({ json: { status: 'linked' } });
 			}
 			discoveries++;
 			if (discoveries === 1)
-				return route.fulfill({ status: 503, json: { error: { message: 'Could not load repositories' } } });
+				return route.fulfill({
+					status: 503,
+					json: { error: { message: 'Could not load repositories' } }
+				});
 			return route.fulfill({ json: [freshRepo] });
 		}
 		return route.fulfill({ json: [] });
 	});
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	await page.getByRole('button', { name: 'Manage', exact: true }).click();
 	await page.getByRole('button', { name: oldRepo.full_name, exact: true }).click();
 	await page.getByPlaceholder('Search repositories…').fill('legacy');
 	await page.evaluate(() => {
-		Object.defineProperty(window, 'kuDiscoveryNavigationMarker', { configurable: true, value: 'retained' });
+		Object.defineProperty(window, 'kuDiscoveryNavigationMarker', {
+			configurable: true,
+			value: 'retained'
+		});
 		const link = document.createElement('a');
 		link.href = '/other/settings/forgejo';
 		link.textContent = 'Other Forgejo settings';
@@ -553,7 +676,13 @@ test('requires fresh discovery after client navigation to another workspace and 
 
 test('requires repository rediscovery after a save cannot reconcile connection status', async ({ page }) => {
 	await mockForgejo(page);
-	const repo = { id: 'linked-one', forgejo_repo_id: 41, full_name: 'team/current', private: false, linked: true };
+	const repo = {
+		id: 'linked-one',
+		forgejo_repo_id: 41,
+		full_name: 'team/current',
+		private: false,
+		linked: true
+	};
 	let linked = true;
 	let statusReads = 0;
 	let discoveries = 0;
@@ -563,10 +692,17 @@ test('requires repository rediscovery after a save cannot reconcile connection s
 		if (statusReads === 2)
 			return route.fulfill({
 				status: 503,
-				json: { error: { message: 'Connection status is temporarily unavailable' } }
+				json: {
+					error: { message: 'Connection status is temporarily unavailable' }
+				}
 			});
 		return route.fulfill({
-			json: { configured: true, connected: true, instance_url: 'https://git.example.com', repos: linked ? [repo] : [] }
+			json: {
+				configured: true,
+				connected: true,
+				instance_url: 'https://git.example.com',
+				repos: linked ? [repo] : []
+			}
 		});
 	});
 	await page.route('**/api/workspaces/test/forgejo/repos', (route) => {
@@ -578,11 +714,15 @@ test('requires repository rediscovery after a save cannot reconcile connection s
 		linked = false;
 		return route.fulfill({ json: { status: 'deleted' } });
 	});
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	await page.getByRole('button', { name: 'Manage', exact: true }).click();
 	await page.getByRole('button', { name: repo.full_name, exact: true }).click();
 	await page.getByRole('button', { name: 'Save', exact: true }).click();
-	await expect(page.getByText('Connection status is temporarily unavailable', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Connection status is temporarily unavailable', {
+			exact: true
+		})
+	).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0);
 	await expect(page.getByRole('button', { name: repo.full_name, exact: true })).toHaveCount(0);
 	expect(removals).toEqual([repo.id]);
@@ -634,11 +774,14 @@ test('attempts every selected unlink, reports failed repositories, and retries o
 		removals.push(id);
 		if (id === 'linked-first' && fail) await released;
 		if (id !== 'linked-second' && fail)
-			return route.fulfill({ status: 503, json: { error: { message: 'Temporary unlink failure' } } });
+			return route.fulfill({
+				status: 503,
+				json: { error: { message: 'Temporary unlink failure' } }
+			});
 		linked.delete(id);
 		return route.fulfill({ json: { status: 'deleted' } });
 	});
-	await page.goto('/test/settings/forgejo');
+	await openForgejoSettings(page);
 	await page.getByRole('button', { name: 'Manage', exact: true }).click();
 	await page.getByRole('button', { name: 'Select all (3)', exact: true }).click();
 	const save = page.getByRole('button', { name: 'Save', exact: true });
@@ -661,7 +804,12 @@ test('attempts every selected unlink, reports failed repositories, and retries o
 
 async function mockActivityConnection(page: Page) {
 	await mockForgejo(page);
-	const connection = { configured: true, connected: true, instance_url: 'https://git.example.com', repos: [] };
+	const connection = {
+		configured: true,
+		connected: true,
+		instance_url: 'https://git.example.com',
+		repos: []
+	};
 	const activity = {
 		pull_requests: [],
 		branches: [
@@ -682,7 +830,10 @@ async function mockActivityConnection(page: Page) {
 	await page.route('**/api/workspaces/test/issues/ENG-1/forgejo', (route) => {
 		calls.activity++;
 		return faults.activity
-			? route.fulfill({ status: 503, json: { error: { message: 'Activity is temporarily unavailable' } } })
+			? route.fulfill({
+					status: 503,
+					json: { error: { message: 'Activity is temporarily unavailable' } }
+				})
 			: route.fulfill({ json: activity });
 	});
 	return { connection, activity, calls, faults };
@@ -692,7 +843,7 @@ test('manually refreshes connection status and clears stale activity after insta
 	page
 }) => {
 	const { connection, activity, calls, faults } = await mockActivityConnection(page);
-	await page.goto('/test/issue/ENG-1');
+	await openForgejoIssue(page);
 	await expect(page.getByText('feature/ENG-1-initial', { exact: true })).toBeVisible();
 	connection.instance_url = 'https://git.changed.example.com';
 	faults.activity = true;
@@ -718,13 +869,17 @@ test('revalidates cached connection on activity events and refreshes missed acti
 	page
 }) => {
 	const { connection, activity, calls } = await mockActivityConnection(page);
-	await page.goto('/test/issue/ENG-1');
+	await openForgejoIssue(page);
 	await expect(page.getByText('feature/ENG-1-initial', { exact: true })).toBeVisible();
 	await page.clock.install();
 	connection.connected = false;
 	await page.clock.fastForward(31000);
 	await page.evaluate(() =>
-		window.dispatchEvent(new CustomEvent('ws:forgejo:pr_updated', { detail: { issue_id: 'issue-one' } }))
+		window.dispatchEvent(
+			new CustomEvent('ws:forgejo:pr_updated', {
+				detail: { issue_id: 'issue-one' }
+			})
+		)
 	);
 	await page.clock.fastForward(250);
 	await expect(page.getByText('feature/ENG-1-initial', { exact: true })).toHaveCount(0);
@@ -733,7 +888,11 @@ test('revalidates cached connection on activity events and refreshes missed acti
 	activity.branches[0].name = 'feature/ENG-1-missed';
 	activity.branches[0].html_url = 'https://git.example.com/team/repo/src/branch/feature%2FENG-1-missed';
 	await page.evaluate(() =>
-		window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug: 'other-workspace' } }))
+		window.dispatchEvent(
+			new CustomEvent('ws:reconnected', {
+				detail: { workspaceSlug: 'other-workspace' }
+			})
+		)
 	);
 	await page.clock.fastForward(250);
 	expect(calls.status).toBe(2);
