@@ -130,12 +130,9 @@ func defaultResult(stdout, stderr string, exitCode int) RunResult {
 	if summary == "" {
 		summary = strings.TrimSpace(stderr)
 	}
-	if len(summary) > 4000 {
-		summary = summary[:4000]
-	}
 	return RunResult{
 		Status:       status,
-		Summary:      summary,
+		Summary:      boundedSummary(summary),
 		ChangedFiles: []string{},
 		Commits:      []string{},
 		TestsRun:     []string{},

@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"testing"
@@ -33,7 +34,7 @@ func drainEvents(t *testing.T, c *Client) []Event {
 }
 
 func TestHub_SharePresenceCountsDistinctViewers(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
@@ -42,10 +43,10 @@ func TestHub_SharePresenceCountsDistinctViewers(t *testing.T) {
 	viewer2 := h.Register(nil, wsID, viewer1.userID)
 	viewer3 := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
-	h.SharePresence(viewer1, shareID, "viewer", "join")
-	h.SharePresence(viewer2, shareID, "viewer", "join")
-	h.SharePresence(viewer3, shareID, "viewer", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), viewer1, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), viewer2, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), viewer3, shareID, "viewer", "join", "")
 
 	viewers, online := h.ShareState(shareID)
 	assert.Equal(t, 2, viewers, "same user on two connections counts once")
@@ -53,13 +54,13 @@ func TestHub_SharePresenceCountsDistinctViewers(t *testing.T) {
 }
 
 func TestHub_SharePresenceBroadcastsSummary(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 	observer := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
 
 	events := drainEvents(t, observer)
 	if assert.Len(t, events, 1) {
@@ -73,14 +74,14 @@ func TestHub_SharePresenceBroadcastsSummary(t *testing.T) {
 }
 
 func TestHub_UnregisterEndsPresenterPresence(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 	viewer := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
-	h.SharePresence(viewer, shareID, "viewer", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
 
 	h.Unregister(presenter)
 
@@ -102,22 +103,23 @@ func TestHub_UnregisterEndsPresenterPresence(t *testing.T) {
 }
 
 func TestHub_ShareSignalRelaysToTargetUserOnly(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 	viewer := h.Register(nil, wsID, uuid.New())
 	bystander := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
-	h.SharePresence(viewer, shareID, "viewer", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
 	drainEvents(t, viewer)
 	drainEvents(t, bystander)
 
 	h.handleShareSignal(presenter, ShareSignalPayload{
-		ShareID: shareID.String(),
-		To:      viewer.userID.String(),
-		Data:    json.RawMessage(`{"type":"answer"}`),
+		ShareID:       shareID.String(),
+		ToPeer:        viewer.peerID.String(),
+		NegotiationID: uuid.NewString(),
+		Data:          json.RawMessage(`{"type":"answer"}`),
 	})
 
 	events := drainEvents(t, viewer)
@@ -132,34 +134,35 @@ func TestHub_ShareSignalRelaysToTargetUserOnly(t *testing.T) {
 }
 
 func TestHub_ShareSignalRejectsNonMembers(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 	outsider := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
 	drainEvents(t, presenter)
 
 	// The outsider is in the workspace but never joined the share.
 	h.handleShareSignal(outsider, ShareSignalPayload{
-		ShareID: shareID.String(),
-		To:      presenter.userID.String(),
-		Data:    json.RawMessage(`{"type":"offer"}`),
+		ShareID:       shareID.String(),
+		To:            presenter.userID.String(),
+		NegotiationID: uuid.NewString(),
+		Data:          json.RawMessage(`{"type":"offer"}`),
 	})
 
 	assert.Empty(t, drainEvents(t, presenter), "signals from share non-members are dropped")
 }
 
 func TestHub_ClearShareDropsMembership(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 	viewer := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
-	h.SharePresence(viewer, shareID, "viewer", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
 
 	h.ClearShare(shareID)
 
@@ -169,15 +172,16 @@ func TestHub_ClearShareDropsMembership(t *testing.T) {
 }
 
 func TestHub_BroadcastDoesNotBlockOnFullBuffers(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	sender := h.Register(nil, wsID, uuid.New())
 	full := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(sender, shareID, "presenter", "join")
+	h.SharePresence(t.Context(), sender, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), full, shareID, "viewer", "join", "")
 	// Fill the target's send buffer past capacity.
-	for i := 0; i < 300; i++ {
+	for range 300 {
 		select {
 		case full.send <- []byte("{}"):
 		default:
@@ -187,9 +191,10 @@ func TestHub_BroadcastDoesNotBlockOnFullBuffers(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		h.handleShareSignal(sender, ShareSignalPayload{
-			ShareID: shareID.String(),
-			To:      full.userID.String(),
-			Data:    json.RawMessage(`{"type":"candidate"}`),
+			ShareID:       shareID.String(),
+			ToPeer:        full.peerID.String(),
+			NegotiationID: uuid.NewString(),
+			Data:          json.RawMessage(`{"type":"candidate"}`),
 		})
 		close(done)
 	}()
@@ -201,12 +206,12 @@ func TestHub_BroadcastDoesNotBlockOnFullBuffers(t *testing.T) {
 }
 
 func TestHub_PresenterSeenSurvivesPresenterDisconnect(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
 	h.Unregister(presenter)
 
 	if _, online := h.ShareState(shareID); online {
@@ -218,20 +223,20 @@ func TestHub_PresenterSeenSurvivesPresenterDisconnect(t *testing.T) {
 }
 
 func TestHub_PresenterSeenDroppedOnClearShare(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
 	h.ClearShare(shareID)
 
 	_, ok := h.PresenterSeenAt(shareID)
 	assert.False(t, ok, "an ended share must not keep sighting state")
 }
 
-func TestHub_OnPresenterSeenFiresForPresenterJoinsOnly(t *testing.T) {
-	h := NewHub()
+func TestHub_OnPresenterSeenRecordsJoinAndDeparture(t *testing.T) {
+	h := newShareTestHub()
 	wsID := uuid.New()
 	shareID := uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
@@ -240,16 +245,16 @@ func TestHub_OnPresenterSeenFiresForPresenterJoinsOnly(t *testing.T) {
 	var seen []uuid.UUID
 	h.OnPresenterSeen = func(id uuid.UUID) { seen = append(seen, id) }
 
-	h.SharePresence(viewer, shareID, "viewer", "join")
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
 	assert.Empty(t, seen, "viewer joins must not fire the presenter-seen callback")
 
-	h.SharePresence(presenter, shareID, "presenter", "join")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
 	if assert.Len(t, seen, 1) {
 		assert.Equal(t, shareID, seen[0])
 	}
 
-	h.SharePresence(presenter, shareID, "presenter", "leave")
-	assert.Len(t, seen, 1, "leaves must not fire the callback again")
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "leave", "")
+	assert.Len(t, seen, 2, "presenter departures persist a fresh reconnect grace window")
 }
 
 // Regression: broadcasts used to iterate h.clients after releasing the read
@@ -259,7 +264,7 @@ func TestHub_OnPresenterSeenFiresForPresenterJoinsOnly(t *testing.T) {
 // WebSocket mid-negotiation. Run under -race this test fails on the old
 // code and must stay clean.
 func TestHub_BroadcastSurvivesConcurrentUnregisterStorm(t *testing.T) {
-	h := NewHub()
+	h := newShareTestHub()
 	wsID := uuid.New()
 
 	stop := make(chan struct{})
@@ -280,14 +285,12 @@ func TestHub_BroadcastSurvivesConcurrentUnregisterStorm(t *testing.T) {
 	}()
 
 	// Churn: clients register, draw a share broadcast, and unregister.
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		c := h.Register(nil, wsID, uuid.New())
-		wg.Add(1)
-		go func(c *Client) {
-			defer wg.Done()
+		wg.Go(func() {
 			h.BroadcastToUser(wsID, c.userID, Event{Type: "share.signal", Payload: map[string]string{}})
 			h.Unregister(c)
-		}(c)
+		})
 	}
 
 	wg.Wait()
@@ -298,4 +301,191 @@ func TestHub_BroadcastSurvivesConcurrentUnregisterStorm(t *testing.T) {
 	h.Broadcast(wsID, Event{Type: "share.ended", Payload: map[string]string{}})
 	assert.NotEmpty(t, drainEvents(t, survivor))
 	h.Unregister(survivor)
+}
+
+// Most membership tests focus on hub behavior; access policy is exercised
+// separately with the service-backed authorizer.
+func newShareTestHub() *Hub {
+	h := NewHub()
+	h.AuthorizeSharePresence = func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, string) bool { return true }
+	return h
+}
+
+func TestHub_ShareSignalsIsolateViewerTabs(t *testing.T) {
+	h := newShareTestHub()
+	wsID, shareID := uuid.New(), uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+	presenterOtherTab := h.Register(nil, wsID, presenter.userID)
+	viewer1 := h.Register(nil, wsID, uuid.New())
+	viewer2 := h.Register(nil, wsID, viewer1.userID)
+	bystander := h.Register(nil, wsID, viewer1.userID)
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), viewer1, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), viewer2, shareID, "viewer", "join", "")
+	for _, client := range []*Client{presenter, presenterOtherTab, viewer1, viewer2, bystander} {
+		drainEvents(t, client)
+	}
+	negotiation := uuid.NewString()
+	for _, viewer := range []*Client{viewer1, viewer2} {
+		h.handleShareSignal(viewer, ShareSignalPayload{ShareID: shareID.String(), To: presenter.userID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"offer"}`)})
+	}
+	events := drainEvents(t, presenter)
+	assert.Len(t, events, 2)
+	assert.Equal(t, viewer1.peerID.String(), events[0].Payload.(map[string]any)["from_peer"])
+	assert.Equal(t, viewer2.peerID.String(), events[1].Payload.(map[string]any)["from_peer"])
+	assert.Empty(t, drainEvents(t, presenterOtherTab), "a presenter's unrelated tab gets no offers")
+	for _, signalType := range []string{"answer", "candidate"} {
+		h.handleShareSignal(presenter, ShareSignalPayload{ShareID: shareID.String(), ToPeer: viewer1.peerID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"` + signalType + `"}`)})
+		assert.Len(t, drainEvents(t, viewer1), 1)
+		assert.Empty(t, drainEvents(t, viewer2))
+		assert.Empty(t, drainEvents(t, bystander))
+	}
+	h.Unregister(viewer1)
+	for _, client := range []*Client{presenter, viewer2, bystander} {
+		drainEvents(t, client)
+	}
+	h.handleShareSignal(presenter, ShareSignalPayload{ShareID: shareID.String(), ToPeer: viewer2.peerID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"candidate"}`)})
+	assert.Len(t, drainEvents(t, viewer2), 1, "the surviving tab keeps its own connection")
+}
+
+func TestHub_SharePresenceRejectsHijackAndForeignWorkspace(t *testing.T) {
+	h := newShareTestHub()
+	wsID, shareID := uuid.New(), uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+	otherTab := h.Register(nil, wsID, presenter.userID)
+	otherUser := h.Register(nil, wsID, uuid.New())
+	foreign := h.Register(nil, uuid.New(), uuid.New())
+	token := uuid.NewString()
+	h.AuthorizeSharePresence = func(_ context.Context, workspaceID, userID, id uuid.UUID, role, suppliedToken string) bool {
+		if role == "viewer" {
+			return true // The hub must still enforce the share's workspace.
+		}
+		return workspaceID == wsID && userID == presenter.userID && id == shareID && suppliedToken == token
+	}
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", token)
+	h.SharePresence(t.Context(), otherTab, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), otherTab, shareID, "presenter", "join", uuid.NewString())
+	h.SharePresence(t.Context(), otherUser, shareID, "presenter", "join", token)
+	h.SharePresence(t.Context(), foreign, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), otherTab, shareID, "presenter", "leave", "")
+	assert.True(t, h.shares[shareID].presenters[presenter])
+	assert.False(t, h.shares[shareID].presenters[otherTab])
+	assert.False(t, h.shares[shareID].presenters[otherUser])
+	assert.False(t, h.shares[shareID].viewers[foreign])
+}
+
+func TestHub_AuthorizedPresenterReconnectReplacesHalfOpenSocket(t *testing.T) {
+	h := NewHub()
+	wsID, shareID := uuid.New(), uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+	replacement := h.Register(nil, wsID, presenter.userID)
+	viewer := h.Register(nil, wsID, uuid.New())
+	otherViewer := h.Register(nil, wsID, uuid.New())
+	token := uuid.NewString()
+	h.AuthorizeSharePresence = func(_ context.Context, workspaceID, userID, id uuid.UUID, role, suppliedToken string) bool {
+		return workspaceID == wsID && id == shareID && (role == "viewer" || (userID == presenter.userID && suppliedToken == token))
+	}
+	var sightings int
+	h.OnPresenterSeen = func(uuid.UUID) { sightings++ }
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", token)
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), otherViewer, shareID, "viewer", "join", "")
+	for _, client := range []*Client{presenter, replacement, viewer, otherViewer} {
+		drainEvents(t, client)
+	}
+
+	// The old socket has not unregistered when the authorized reconnect joins.
+	h.SharePresence(t.Context(), replacement, shareID, "presenter", "join", token)
+	viewers, online := h.ShareState(shareID)
+	assert.Equal(t, 2, viewers, "reconnecting preserves every viewer")
+	assert.True(t, online)
+	assert.Equal(t, 2, sightings, "the reconnect records a fresh presenter contact")
+	for _, client := range []*Client{presenter, replacement, viewer, otherViewer} {
+		events := drainEvents(t, client)
+		if assert.Len(t, events, 1) {
+			payload := events[0].Payload.(map[string]any)
+			assert.Equal(t, "share.presence", events[0].Type)
+			assert.Equal(t, true, payload["presenter_online"])
+			assert.Equal(t, replacement.peerID.String(), payload["presenter_peer"])
+			assert.Equal(t, float64(2), payload["viewers"])
+		}
+	}
+
+	negotiation := uuid.NewString()
+	offer := ShareSignalPayload{ShareID: shareID.String(), To: presenter.userID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"offer"}`)}
+	h.handleShareSignal(viewer, offer)
+	assert.Len(t, drainEvents(t, replacement), 1, "user-addressed offers reach only the new presenter socket")
+	assert.Empty(t, drainEvents(t, presenter))
+	offer.ToPeer = presenter.peerID.String()
+	h.handleShareSignal(viewer, offer)
+	assert.Empty(t, drainEvents(t, presenter), "the old peer is no longer a signal recipient")
+	assert.Empty(t, drainEvents(t, replacement))
+	answer := ShareSignalPayload{ShareID: shareID.String(), ToPeer: viewer.peerID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"answer"}`)}
+	h.handleShareSignal(presenter, answer)
+	assert.Empty(t, drainEvents(t, viewer), "the old socket cannot send presenter signals")
+	h.handleShareSignal(replacement, answer)
+	assert.Len(t, drainEvents(t, viewer), 1)
+	assert.Empty(t, drainEvents(t, otherViewer))
+
+	h.Unregister(presenter)
+	viewers, online = h.ShareState(shareID)
+	assert.Equal(t, 2, viewers)
+	assert.True(t, online, "late cleanup of the old socket must preserve the replacement")
+	assert.Equal(t, 2, sightings, "old socket cleanup is no longer a presenter departure")
+	assert.Empty(t, drainEvents(t, viewer), "late cleanup must not announce the presenter as offline")
+	offer.ToPeer = replacement.peerID.String()
+	h.handleShareSignal(viewer, offer)
+	assert.Len(t, drainEvents(t, replacement), 1, "the replacement keeps receiving signals after old socket cleanup")
+}
+
+func TestHub_ShareSignalRejectsNonMemberRecipientsAndSameRole(t *testing.T) {
+	h := newShareTestHub()
+	wsID, shareID := uuid.New(), uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+	viewer := h.Register(nil, wsID, uuid.New())
+	otherViewer := h.Register(nil, wsID, uuid.New())
+	outsider := h.Register(nil, wsID, uuid.New())
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), otherViewer, shareID, "viewer", "join", "")
+	for _, client := range []*Client{presenter, viewer, otherViewer, outsider} {
+		drainEvents(t, client)
+	}
+	for _, recipient := range []*Client{otherViewer, outsider} {
+		h.handleShareSignal(viewer, ShareSignalPayload{ShareID: shareID.String(), ToPeer: recipient.peerID.String(), NegotiationID: uuid.NewString(), Data: json.RawMessage(`{"type":"offer"}`)})
+		assert.Empty(t, drainEvents(t, recipient))
+	}
+	h.handleShareSignal(presenter, ShareSignalPayload{ShareID: shareID.String(), ToPeer: outsider.peerID.String(), NegotiationID: uuid.NewString(), Data: json.RawMessage(`{"type":"answer"}`)})
+	assert.Empty(t, drainEvents(t, outsider))
+}
+
+func TestHub_PresenterDisconnectStartsNewGraceWindow(t *testing.T) {
+	h := newShareTestHub()
+	shareID := uuid.New()
+	presenter := h.Register(nil, uuid.New(), uuid.New())
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	h.presenterSeen[shareID] = time.Now().Add(-time.Hour)
+	h.Unregister(presenter)
+	seen, ok := h.PresenterSeenAt(shareID)
+	assert.True(t, ok)
+	assert.WithinDuration(t, time.Now(), seen, time.Second)
+}
+
+func TestHub_ClearShareInvalidatesInFlightAuthorization(t *testing.T) {
+	h := NewHub()
+	shareID := uuid.New()
+	client := h.Register(nil, uuid.New(), uuid.New())
+	entered, resume, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	h.AuthorizeSharePresence = func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, string) bool {
+		close(entered)
+		<-resume
+		return true
+	}
+	go func() { defer close(done); h.SharePresence(t.Context(), client, shareID, "presenter", "join", "") }()
+	<-entered
+	h.ClearShare(shareID)
+	close(resume)
+	<-done
+	_, online := h.ShareState(shareID)
+	assert.False(t, online, "a stale authorization result cannot resurrect an ended share")
 }

@@ -88,3 +88,44 @@ export interface ForgejoUserMapping {
 	forgejo_login: string;
 	user_id: string;
 }
+
+export interface ForgejoActionsPage<T> {
+	data: T[];
+	total_count: number;
+	page: number;
+	per_page: number;
+	has_more: boolean;
+}
+
+export interface ForgejoActionRun {
+	id: number;
+	name: string;
+	title: string;
+	run_number: number;
+	event: string;
+	status: string;
+	conclusion: string;
+	workflow_id: string;
+	head_branch: string;
+	head_sha: string;
+	html_url: string;
+	created_at: string | null;
+	updated_at: string | null;
+	started_at: string | null;
+	completed_at: string | null;
+}
+
+export interface ForgejoActionJob {
+	id: number;
+	run_id: number;
+	name: string;
+	status: string;
+	conclusion: string;
+	attempt: number;
+}
+
+export interface ForgejoActionLogs {
+	content: string;
+	truncated: boolean;
+	max_bytes: number;
+}

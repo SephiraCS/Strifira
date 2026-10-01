@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,8 @@ type managerStoreFake struct {
 	desired                   []domain.DevMachineStatus
 	actions                   []domain.DevMachineOperationAction
 	checkout                  *domain.DevMachineCheckout
+	pinnedRepository          *domain.DevMachineCheckout
+	pinRepositoryError        error
 	checkoutStatus            string
 	checkoutError             *string
 	terminalSession           *domain.DevMachineTerminalSession
@@ -46,6 +50,7 @@ type managerStoreFake struct {
 	agentRun                  *domain.DevMachineAgentRun
 	provider                  *domain.DevMachineAgentProvider
 	completedRun              *domain.DevMachineAgentRun
+	completeAgentRunErr       error
 	runtimeCredentials        []domain.DevMachineRuntimeCredential
 	purgedCredentialNow       *time.Time
 	purgedAccessLogBefore     *time.Time
@@ -63,6 +68,8 @@ type managerStoreFake struct {
 	updateAgentRunStarted     func() error
 	envVarListCalls           int
 	runtimeServicesCreated    int
+	timedOutRuns              []domain.DevMachineAgentRun
+	logChunks                 []domain.DevMachineLogChunk
 }
 
 func (f *managerStoreFake) LeaseOperations(context.Context, string, int, time.Duration) ([]domain.DevMachineOperation, error) {
@@ -92,6 +99,17 @@ func (f *managerStoreFake) GetProvider(context.Context, uuid.UUID, uuid.UUID, st
 }
 func (f *managerStoreFake) GetAgentRunInternal(context.Context, uuid.UUID) (*domain.DevMachineAgentRun, error) {
 	return f.agentRun, nil
+}
+func (f *managerStoreFake) GetAgentRunRepository(context.Context, uuid.UUID) (*domain.DevMachineCheckout, error) {
+	return f.pinnedRepository, nil
+}
+func (f *managerStoreFake) PinAgentRunRepository(_ context.Context, _ uuid.UUID, checkout *domain.DevMachineCheckout) error {
+	if f.pinRepositoryError != nil {
+		return f.pinRepositoryError
+	}
+	copy := *checkout
+	f.pinnedRepository = &copy
+	return nil
 }
 func (f *managerStoreFake) ListServices(context.Context, uuid.UUID, uuid.UUID) ([]domain.DevMachineService, error) {
 	return f.services, nil
@@ -132,16 +150,26 @@ func (f *managerStoreFake) CreateRuntimeService(context.Context, *domain.DevMach
 	f.runtimeServicesCreated++
 	return nil
 }
-func (f *managerStoreFake) UpdateAgentRunStarted(context.Context, uuid.UUID) error {
+func (f *managerStoreFake) StartAgentRun(context.Context, uuid.UUID) (time.Time, error) {
 	if f.updateAgentRunStarted != nil {
-		return f.updateAgentRunStarted()
+		if err := f.updateAgentRunStarted(); err != nil {
+			return time.Time{}, err
+		}
 	}
 	if f.agentRun != nil {
 		f.agentRun.Status = domain.DevMachineAgentRunStatusRunning
+		if f.agentRun.StartedAt == nil {
+			f.agentRun.StartedAt = new(time.Now())
+		}
+		return *f.agentRun.StartedAt, nil
 	}
-	return nil
+	return time.Now(), nil
 }
+
 func (f *managerStoreFake) CompleteAgentRun(_ context.Context, run *domain.DevMachineAgentRun) error {
+	if f.completeAgentRunErr != nil {
+		return f.completeAgentRunErr
+	}
 	copy := *run
 	f.completedRun = &copy
 	return nil
@@ -150,7 +178,8 @@ func (f *managerStoreFake) CreateEvent(_ context.Context, event *domain.DevMachi
 	f.events = append(f.events, *event)
 	return nil
 }
-func (f *managerStoreFake) CreateLogChunk(context.Context, *domain.DevMachineLogChunk) error {
+func (f *managerStoreFake) CreateLogChunk(_ context.Context, chunk *domain.DevMachineLogChunk) error {
+	f.logChunks = append(f.logChunks, *chunk)
 	return nil
 }
 func (f *managerStoreFake) RevokeMachineAccess(_ context.Context, machineID uuid.UUID) error {
@@ -161,7 +190,16 @@ func (f *managerStoreFake) ListExpiredMachines(context.Context, int) ([]domain.D
 	return nil, nil
 }
 func (f *managerStoreFake) ListTimedOutAgentRuns(context.Context, int) ([]domain.DevMachineAgentRun, error) {
+	return f.timedOutRuns, nil
+}
+func (f *managerStoreFake) LeaseAgentRunCleanup(context.Context, string, time.Duration) (*domain.DevMachineAgentRun, error) {
 	return nil, nil
+}
+func (f *managerStoreFake) CompleteAgentRunCleanup(context.Context, uuid.UUID, string) error {
+	return nil
+}
+func (f *managerStoreFake) RetryAgentRunCleanup(context.Context, uuid.UUID, string, string) error {
+	return nil
 }
 func (f *managerStoreFake) ListRuntimeMachines(context.Context, int, int) ([]domain.DevMachine, error) {
 	return nil, nil
@@ -303,9 +341,12 @@ func (f *managerStoreFake) PurgeAccessLogs(_ context.Context, before time.Time, 
 	return 0, nil
 }
 
-type forgejoAPIFake struct{}
+type forgejoAPIFake struct{ pullRequestErr error }
 
-func (forgejoAPIFake) CreatePullRequest(string, string, string, string, string, string, string, string) (*forgejoclient.PullRequest, error) {
+func (f forgejoAPIFake) CreatePullRequest(string, string, string, string, string, string, string, string) (*forgejoclient.PullRequest, error) {
+	if f.pullRequestErr != nil {
+		return nil, f.pullRequestErr
+	}
 	return &forgejoclient.PullRequest{HTMLURL: "https://git.example.com/ku/api/pull/1", Number: 1}, nil
 }
 
@@ -320,11 +361,36 @@ type runtimeFake struct {
 	deleteEnvironmentImageErr          error
 	environmentDeleteAttempts          int
 	onSpawn                            func()
+	spawnProvision                     *RepositoryProvision
 	agentExecution                     *AgentExecution
+	workspaceExecution                 *CommandExecution
+	workspaceCommandErr                error
+	workspaceCommands                  [][]string
+	candidate                          RepositoryCandidate
+	retainCandidateErr                 error
+	prepareRepositoryErr               error
+	publishCandidateErr                error
+	repositoryCalls                    []string
+	testedCandidate                    RepositoryCandidate
+	publishedCandidate                 RepositoryCandidate
+	synchronizedCandidate              RepositoryCandidate
+	sourceSyncResult                   RepositorySourceSync
+	sourceSyncErr                      error
+	preparedRunID                      uuid.UUID
+	testedRunID                        uuid.UUID
+	publishedRunID                     uuid.UUID
+	onCandidateCommand                 func()
+	onCandidateCommandContext          func(context.Context)
+	agentCheckout                      *domain.DevMachineCheckout
+	publishedBranches                  int
+	agentSecrets                       map[string]string
+	onAgentRun                         func(context.Context)
+	onCancelAgent                      func(context.Context, *domain.DevMachine, *domain.DevMachineAgentRun) error
 }
 
-func (f *runtimeFake) Spawn(_ context.Context, _ *domain.DevMachine, services []domain.DevMachineService, _ map[string]map[string]string) (string, string, map[string]string, error) {
+func (f *runtimeFake) Spawn(_ context.Context, _ *domain.DevMachine, services []domain.DevMachineService, _ map[string]map[string]string, provision *RepositoryProvision) (string, string, map[string]string, error) {
 	f.spawned++
+	f.spawnProvision = provision
 	if f.onSpawn != nil {
 		f.onSpawn()
 	}
@@ -349,11 +415,26 @@ func (f *runtimeFake) Teardown(context.Context, *domain.DevMachine, []domain.Dev
 	f.tornDown++
 	return nil
 }
-func (f *runtimeFake) RunAgent(context.Context, *domain.DevMachine, *domain.DevMachineAgentRun, *domain.DevMachineAgentProvider, *domain.DevMachineCheckout, map[string]string) (*AgentExecution, error) {
+func (f *runtimeFake) RunAgent(ctx context.Context, _ *domain.DevMachine, _ *domain.DevMachineAgentRun, _ *domain.DevMachineAgentProvider, checkout *domain.DevMachineCheckout, secrets map[string]string) (*AgentExecution, error) {
+	f.agentCheckout = checkout
+	f.repositoryCalls = append(f.repositoryCalls, "agent")
 	f.agentRuns++
+	f.agentSecrets = maps.Clone(secrets)
+	if f.onAgentRun != nil {
+		f.onAgentRun(ctx)
+	}
 	return f.agentExecution, nil
 }
-func (f *runtimeFake) CancelAgent(context.Context, *domain.DevMachineAgentRun) error { return nil }
+func (f *runtimeFake) CancelAgent(ctx context.Context, machine *domain.DevMachine, run *domain.DevMachineAgentRun) error {
+	if f.onCancelAgent != nil {
+		return f.onCancelAgent(ctx, machine, run)
+	}
+	return nil
+}
+
+func (f *runtimeFake) CleanupAgentRun(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout, *domain.DevMachineAgentRun) (RepositorySourceSync, error) {
+	return RepositorySourceSync{Status: "unchanged"}, nil
+}
 func (f *runtimeFake) TerminateTerminal(_ context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, session *domain.DevMachineTerminalSession) error {
 	f.terminatedTerminals++
 	f.terminatedSession = session
@@ -365,8 +446,50 @@ func (f *runtimeFake) Inspect(context.Context, *domain.DevMachine, []domain.DevM
 func (f *runtimeFake) Stats(context.Context, *domain.DevMachine, []domain.DevMachineService) (ResourceUsage, error) {
 	return ResourceUsage{}, nil
 }
-func (f *runtimeFake) GitState(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout) (GitState, error) {
-	return GitState{}, nil
+func (f *runtimeFake) PrepareAgentRepository(_ context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, _ *domain.DevMachineCheckout, runID uuid.UUID, _ string) error {
+	f.repositoryCalls = append(f.repositoryCalls, "prepare")
+	f.preparedRunID = runID
+	return f.prepareRepositoryErr
+}
+func (f *runtimeFake) RetainAgentCandidate(_ context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, _ *domain.DevMachineCheckout, _ uuid.UUID) (RepositoryCandidate, error) {
+	f.repositoryCalls = append(f.repositoryCalls, "retain")
+	return f.candidate, f.retainCandidateErr
+}
+func (f *runtimeFake) RunCandidateCommand(ctx context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, _ *domain.DevMachineCheckout, runID uuid.UUID, candidate RepositoryCandidate, argv []string) (*CommandExecution, error) {
+	f.repositoryCalls = append(f.repositoryCalls, "test")
+	f.workspaceCommands = append(f.workspaceCommands, argv)
+	f.testedRunID, f.testedCandidate = runID, candidate
+	if f.onCandidateCommandContext != nil {
+		f.onCandidateCommandContext(ctx)
+	}
+	if f.onCandidateCommand != nil {
+		f.onCandidateCommand()
+	}
+	return f.workspaceExecution, f.workspaceCommandErr
+}
+func (f *runtimeFake) RunWorkspaceCommand(ctx context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, runID uuid.UUID, argv []string) (*CommandExecution, error) {
+	f.repositoryCalls = append(f.repositoryCalls, "workspace-test")
+	f.workspaceCommands = append(f.workspaceCommands, argv)
+	f.testedRunID = runID
+	if f.onCandidateCommandContext != nil {
+		f.onCandidateCommandContext(ctx)
+	}
+	return f.workspaceExecution, f.workspaceCommandErr
+}
+func (f *runtimeFake) PublishAgentCandidate(_ context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, _ *domain.DevMachineCheckout, runID uuid.UUID, candidate RepositoryCandidate, _ string) error {
+	f.repositoryCalls = append(f.repositoryCalls, "publish")
+	f.publishedBranches++
+	f.publishedRunID, f.publishedCandidate = runID, candidate
+	return f.publishCandidateErr
+}
+func (f *runtimeFake) SynchronizeAgentCandidate(_ context.Context, _ *domain.DevMachine, _ []domain.DevMachineService, _ *domain.DevMachineCheckout, _ uuid.UUID, candidate RepositoryCandidate) (RepositorySourceSync, error) {
+	f.repositoryCalls = append(f.repositoryCalls, "sync")
+	f.synchronizedCandidate = candidate
+	result := f.sourceSyncResult
+	if result.Status == "" {
+		result.Status = "updated"
+	}
+	return result, f.sourceSyncErr
 }
 func (f *runtimeFake) PrepareCheckout(context.Context, *domain.DevMachine, []domain.DevMachineService, *domain.DevMachineCheckout, string) error {
 	return nil
@@ -684,6 +807,15 @@ func TestForgejoCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T
 	require.NotContains(t, string(encoded), token)
 }
 
+func TestForgejoCredentialRejectsRepositoryLinkedToAnotherInstance(t *testing.T) {
+	store := &managerStoreFake{machine: &domain.DevMachine{ID: uuid.New(), WorkspaceID: uuid.New(), RepoOwner: "octo", RepoName: "repo"}, linkedRepository: &domain.ForgejoRepoModel{InstanceURL: "https://old.example.com"}}
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "must-not-be-returned"}, make([]byte, 32), nil, "test")
+	_, token, err := manager.forgejoCredential(t.Context(), store.machine, "octo/repo")
+	require.ErrorContains(t, err, "different Forgejo instance")
+	require.Empty(t, token)
+	require.Empty(t, store.runtimeCredentials)
+}
+
 func TestReconcilePurgesExpiredRuntimeCredentials(t *testing.T) {
 	store := &managerStoreFake{orphanedEnvironmentCount: 2, orphanedCheckoutCount: 3}
 	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
@@ -938,9 +1070,14 @@ func TestWorkspaceMountDisablesImageCopyUp(t *testing.T) {
 
 	hostConfig := runtime.secureHostConfig(machine, "ide", "machine-network", "workspace-volume")
 
-	require.Len(t, hostConfig.Mounts, 1)
-	require.NotNil(t, hostConfig.Mounts[0].VolumeOptions)
-	require.True(t, hostConfig.Mounts[0].VolumeOptions.NoCopy)
+	require.Len(t, hostConfig.Mounts, 2)
+	for _, mounted := range hostConfig.Mounts {
+		require.NotNil(t, mounted.VolumeOptions)
+		require.True(t, mounted.VolumeOptions.NoCopy)
+	}
+	require.Equal(t, "workspace", hostConfig.Mounts[0].VolumeOptions.Subpath)
+	require.Equal(t, "repositories", hostConfig.Mounts[1].VolumeOptions.Subpath)
+	require.True(t, hostConfig.Mounts[1].ReadOnly)
 	require.Equal(t, "json-file", hostConfig.LogConfig.Type)
 	require.Equal(t, "10m", hostConfig.LogConfig.Config["max-size"])
 }
@@ -959,4 +1096,64 @@ func TestUniqueContainerIDsDeduplicatesSharedDeveloperServices(t *testing.T) {
 		{ServiceType: "terminal", ServiceKey: "terminal", ContainerID: &containerID},
 	})
 	require.Equal(t, []string{containerID}, ids)
+}
+
+func TestManagerTimeoutReconciliationCancelsContextAndWaitsForOwnedCleanup(t *testing.T) {
+	for _, mode := range []string{"success", "cleanup-error", "completion-error"} {
+		t.Run(mode, func(t *testing.T) {
+			machine := fixtureHelperMachine()
+			run := domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Status: domain.DevMachineAgentRunStatusRunning}
+			store := &managerStoreFake{machine: machine, agentRun: &run, timedOutRuns: []domain.DevMachineAgentRun{run}}
+			if mode == "completion-error" {
+				store.completeAgentRunErr = errors.New("database unavailable")
+			}
+			runtime := &runtimeFake{}
+			manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+			active, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			manager.registerActiveRun(machine.ID, run.ID, cancel)
+			otherRun := uuid.New()
+			other, otherCancel := context.WithCancel(t.Context())
+			defer otherCancel()
+			manager.registerActiveRun(machine.ID, otherRun, otherCancel)
+			runtime.onCancelAgent = func(_ context.Context, actualMachine *domain.DevMachine, actualRun *domain.DevMachineAgentRun) error {
+				require.Equal(t, machine.ID, actualMachine.ID)
+				require.Equal(t, run.ID, actualRun.ID)
+				require.ErrorIs(t, active.Err(), context.Canceled)
+				require.Nil(t, other.Err(), "an expired run must not cancel another active run")
+				require.Nil(t, store.completedRun, "terminal completion must follow successful cleanup")
+				if mode == "cleanup-error" {
+					return errors.New("daemon unavailable")
+				}
+				return nil
+			}
+			require.NoError(t, manager.reconcile(t.Context()))
+			if mode == "success" {
+				require.NotNil(t, store.completedRun)
+				require.Equal(t, domain.DevMachineAgentRunStatusTimeout, store.completedRun.Status)
+				require.True(t, slices.ContainsFunc(store.events, func(event domain.DevMachineEvent) bool { return event.EventType == "agent_run.timeout" }))
+			} else {
+				require.Nil(t, store.completedRun)
+				require.False(t, slices.ContainsFunc(store.events, func(event domain.DevMachineEvent) bool { return event.EventType == "agent_run.timeout" }))
+			}
+		})
+	}
+}
+
+func TestManagerAgentRetryKeepsOriginalDeadline(t *testing.T) {
+	machine := fixtureHelperMachine()
+	machine.DesiredStatus = domain.DevMachineStatusRunning
+	machine.Generation = 1
+	started := time.Now().Add(-15 * time.Second)
+	run := &domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, ProviderID: "opencode", Mode: "autonomous", Status: domain.DevMachineAgentRunStatusRunning, MaxRuntimeSeconds: 30, StartedAt: &started}
+	store := &managerStoreFake{machine: machine, agentRun: run, provider: &domain.DevMachineAgentProvider{MachineID: machine.ID, ProviderID: "opencode", ImageRef: "ku/opencode:test", Enabled: true}}
+	runtime := &runtimeFake{agentExecution: &AgentExecution{ExitCode: 0}}
+	runtime.onAgentRun = func(ctx context.Context) {
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok)
+		require.Equal(t, started.Add(30*time.Second), deadline, "retry must not grant another full runtime")
+	}
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	require.NoError(t, manager.runAgent(t.Context(), machine, &domain.DevMachineOperation{AgentRunID: &run.ID, MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Generation: 1}))
+	require.Equal(t, started, *run.StartedAt)
 }

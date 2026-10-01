@@ -1,10 +1,5 @@
 import { api } from './client';
-import type {
-	CreateScreenShareRequest,
-	ScreenShare,
-	ScreenShareJoin,
-	ScreenShareList
-} from '$lib/types/share';
+import type { CreateScreenShareRequest, ScreenShare, ScreenShareJoin, ScreenShareList } from '$lib/types/share';
 
 export function listShares(slug: string): Promise<ScreenShareList> {
 	return api.get<ScreenShareList>(`/api/workspaces/${slug}/shares`);
@@ -18,6 +13,6 @@ export function createShare(slug: string, data: CreateScreenShareRequest): Promi
 	return api.post<ScreenShareJoin>(`/api/workspaces/${slug}/shares`, data);
 }
 
-export function endShare(slug: string, id: string): Promise<void> {
-	return api.post<void>(`/api/workspaces/${slug}/shares/${id}/end`);
+export function endShare(slug: string, id: string, presenterToken: string): Promise<void> {
+	return api.post<void>(`/api/workspaces/${slug}/shares/${id}/end`, { presenter_token: presenterToken });
 }

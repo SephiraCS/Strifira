@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,8 +14,9 @@ import (
 )
 
 var (
-	ErrScreenShareNotFound  = errors.New("screen share not found")
-	ErrScreenShareForbidden = errors.New("only the presenter or a workspace admin can end this share")
+	ErrScreenShareNotFound      = errors.New("screen share not found")
+	ErrScreenShareForbidden     = errors.New("only the presenter or a workspace admin can end this share")
+	ErrScreenShareAlreadyActive = repository.ErrScreenShareAlreadyActive
 )
 
 // recentEndedLimit bounds the history section of the share list.
@@ -41,24 +43,27 @@ func NewScreenShareService(shareRepo repository.ScreenShareRepo, userRepo reposi
 	}
 }
 
-// Create starts a share for the requesting user, or returns their existing
-// active share in the workspace (idempotent for reloads and double-clicks).
-// Media is peer-to-peer WebRTC; the share record only anchors presence and
-// lifecycle — no server-side room or token exists.
+// Create starts a share for the capturing tab. An existing share belongs to
+// its original tab and cannot be claimed by a second capture.
+// Media is peer-to-peer WebRTC; the private token binds presence and Stop to
+// the original capturing tab. Expired sources are retired before a new start.
 func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uuid.UUID, req dto.CreateScreenShareRequest) (*domain.ScreenShare, error) {
 	existing, err := s.shareRepo.GetActiveByPresenter(ctx, workspaceID, userID)
 	if err != nil {
 		return nil, err
 	}
 	if existing != nil {
-		return existing, nil
+		if err := s.retirePreviousCapture(ctx, existing); err != nil {
+			return nil, err
+		}
 	}
 
 	share := &domain.ScreenShare{
-		ID:          uuid.New(),
-		WorkspaceID: workspaceID,
-		StartedBy:   userID,
-		Status:      domain.ScreenShareStatusActive,
+		ID:             uuid.New(),
+		WorkspaceID:    workspaceID,
+		StartedBy:      userID,
+		Status:         domain.ScreenShareStatusActive,
+		PresenterToken: uuid.New(),
 	}
 	if err := s.shareRepo.Create(ctx, share); err != nil {
 		return nil, err
@@ -70,6 +75,33 @@ func (s *ScreenShareService) Create(ctx context.Context, workspaceID, userID uui
 	})
 
 	return share, nil
+}
+
+func (s *ScreenShareService) retirePreviousCapture(ctx context.Context, previous *domain.ScreenShare) error {
+	retired := false
+	err := s.hub.WithShareLock(previous.ID, func() error {
+		current, err := s.shareRepo.GetByID(ctx, previous.ID)
+		if err != nil {
+			return err
+		}
+		if current == nil || current.Status != domain.ScreenShareStatusActive {
+			return nil
+		}
+		_, online := s.hub.ShareState(current.ID)
+		if online || s.presenterUnreachableFor(*current) <= noSourceGraceSeconds*time.Second {
+			return ErrScreenShareAlreadyActive
+		}
+		if err := s.shareRepo.MarkEnded(ctx, current.ID); err != nil {
+			return err
+		}
+		s.hub.ClearShare(current.ID)
+		retired = true
+		return nil
+	})
+	if retired {
+		s.broadcast(previous.WorkspaceID, "share.ended", map[string]string{"id": previous.ID.String()})
+	}
+	return err
 }
 
 // List returns active shares — lazily ending any whose presenter has been
@@ -87,25 +119,43 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 		return resp, err
 	}
 
-	var ended []*domain.ScreenShare
 	for i := range active {
 		share := &active[i]
-		viewers, presenterOnline := s.hub.ShareState(share.ID)
-		if !presenterOnline && s.presenterUnreachableFor(*share) > noSourceGraceSeconds*time.Second {
-			// The presenter has been unreachable for longer than a reload
-			// or reconnect takes; the share has no source and must not
-			// linger on the wall. Drop the membership state and close the
-			// share.
-			s.hub.ClearShare(share.ID)
-			if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
-				return resp, err
+		var viewers int
+		removed := false
+		gcEnded := false
+		if err := s.hub.WithShareLock(share.ID, func() error {
+			// The list query precedes the lifecycle lock. An explicit End may
+			// already have committed, so reconcile the row before treating it
+			// as active or deciding whether to collect its presenter.
+			current, err := s.shareRepo.GetByID(ctx, share.ID)
+			if err != nil {
+				return err
 			}
-			ended = append(ended, share)
-			// Parked viewers (and the presenter's own tile) learn the share
-			// is over instead of waiting for their next list load.
-			s.broadcast(share.WorkspaceID, "share.ended", map[string]string{
-				"id": share.ID.String(),
-			})
+			if current == nil || current.WorkspaceID != workspaceID || current.Status != domain.ScreenShareStatusActive {
+				removed = true
+				return nil
+			}
+			share = current
+			var presenterOnline bool
+			viewers, presenterOnline = s.hub.ShareState(share.ID)
+			if presenterOnline || s.presenterUnreachableFor(*share) <= noSourceGraceSeconds*time.Second {
+				return nil
+			}
+			if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
+				return err
+			}
+			s.hub.ClearShare(share.ID)
+			removed = true
+			gcEnded = true
+			return nil
+		}); err != nil {
+			return resp, err
+		}
+		if removed {
+			if gcEnded {
+				s.broadcast(share.WorkspaceID, "share.ended", map[string]string{"id": share.ID.String()})
+			}
 			continue
 		}
 		decorated, err := s.decorate(ctx, *share, viewers)
@@ -119,20 +169,20 @@ func (s *ScreenShareService) List(ctx context.Context, workspaceID uuid.UUID) (d
 	if err != nil {
 		return resp, err
 	}
-	for _, share := range ended {
-		decorated, err := s.decorate(ctx, *share, 0)
-		if err != nil {
-			return resp, err
-		}
-		resp.Recent = append([]dto.ScreenShareResponse{decorated}, resp.Recent...)
-	}
+	endedIDs := make(map[string]bool, len(recent))
 	for _, share := range recent {
 		decorated, err := s.decorate(ctx, share, 0)
 		if err != nil {
 			return resp, err
 		}
 		resp.Recent = append(resp.Recent, decorated)
+		endedIDs[decorated.ID] = true
 	}
+	// End may commit after an active row's lock is released and before the
+	// recent query. The later ended snapshot wins within this response.
+	resp.Active = slices.DeleteFunc(resp.Active, func(share dto.ScreenShareResponse) bool {
+		return endedIDs[share.ID]
+	})
 
 	return resp, nil
 }
@@ -168,31 +218,52 @@ func (s *ScreenShareService) Get(ctx context.Context, id uuid.UUID) (*domain.Scr
 // End closes the share. The presenter may end their own share; workspace
 // admins may end any (force). Viewers learn through the share.ended event;
 // peer connections collapse on their own once signaling stops.
-func (s *ScreenShareService) End(ctx context.Context, shareID, userID uuid.UUID, force bool) (*domain.ScreenShare, error) {
-	share, err := s.shareRepo.GetByID(ctx, shareID)
+func (s *ScreenShareService) End(ctx context.Context, workspaceID, shareID, userID, presenterToken uuid.UUID, force bool) (*domain.ScreenShare, error) {
+	var share *domain.ScreenShare
+	changed := false
+	err := s.hub.WithShareLock(shareID, func() error {
+		var err error
+		share, err = s.shareRepo.GetByID(ctx, shareID)
+		if err != nil {
+			return err
+		}
+		if share == nil || share.WorkspaceID != workspaceID {
+			return ErrScreenShareNotFound
+		}
+		if !force && (share.StartedBy != userID || presenterToken == uuid.Nil || share.PresenterToken != presenterToken) {
+			return ErrScreenShareForbidden
+		}
+		if share.Status != domain.ScreenShareStatusActive {
+			return nil
+		}
+		if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
+			return err
+		}
+		s.hub.ClearShare(share.ID)
+		changed = true
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if share == nil {
-		return nil, ErrScreenShareNotFound
+	if changed {
+		s.broadcast(share.WorkspaceID, "share.ended", map[string]string{"id": share.ID.String()})
 	}
-	if share.Status != domain.ScreenShareStatusActive {
-		return share, nil
-	}
-	if share.StartedBy != userID && !force {
-		return nil, ErrScreenShareForbidden
-	}
-
-	s.hub.ClearShare(share.ID)
-	if err := s.shareRepo.MarkEnded(ctx, share.ID); err != nil {
-		return nil, err
-	}
-
-	s.broadcast(share.WorkspaceID, "share.ended", map[string]string{
-		"id": share.ID.String(),
-	})
-
 	return share, nil
+}
+
+// AuthorizePresence binds signaling membership to an active share in this
+// workspace. Only the capturing tab holds the token needed to present.
+func (s *ScreenShareService) AuthorizePresence(ctx context.Context, workspaceID, userID, shareID uuid.UUID, role, token string) bool {
+	share, err := s.shareRepo.GetByID(ctx, shareID)
+	if err != nil || share == nil || share.WorkspaceID != workspaceID || share.Status != domain.ScreenShareStatusActive {
+		return false
+	}
+	if role == "viewer" {
+		return true
+	}
+	presenterToken, err := uuid.Parse(token)
+	return role == "presenter" && err == nil && presenterToken != uuid.Nil && share.StartedBy == userID && share.PresenterToken == presenterToken
 }
 
 func (s *ScreenShareService) decorate(ctx context.Context, share domain.ScreenShare, viewerCount int) (dto.ScreenShareResponse, error) {

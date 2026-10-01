@@ -2,28 +2,21 @@
 	import { onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import * as echarts from 'echarts';
+	import { init, type ECharts } from '$lib/charts/echarts';
 	import type { AnalyticsDistribution } from '$lib/api/analytics';
 	import { getPriorityLabel, type IssuePriority } from '$lib/types/issue';
 	import { getCategoryLabel, type StatusCategory } from '$lib/types/team-status';
-	import {
-		getAnalyticsChartTheme,
-		observeAnalyticsTheme,
-		priorityChartColor,
-		statusChartColor
-	} from './chart-theme';
+	import { getAnalyticsChartTheme, observeAnalyticsTheme, priorityChartColor, statusChartColor } from './chart-theme';
 
-	let {
-		distribution,
-		teamScoped = false
-	}: { distribution: AnalyticsDistribution | null; teamScoped?: boolean } = $props();
+	let { distribution, teamScoped = false }: { distribution: AnalyticsDistribution | null; teamScoped?: boolean } =
+		$props();
 
 	type Tab = 'status' | 'priority';
 	let activeTab = $state<Tab>('status');
 
 	// svelte-ignore non_reactive_update
 	let container: HTMLDivElement;
-	let chart: echarts.ECharts | null = null;
+	let chart: ECharts | null = null;
 
 	const statusData = $derived.by(() => {
 		const groups = new Map<string, NonNullable<AnalyticsDistribution['by_status']>[number]>();
@@ -74,7 +67,14 @@
 			backgroundColor: 'transparent',
 			animationDuration: 250,
 			tooltip: tooltipTheme(theme),
-			grid: { left: 12, right: 12, top: 16, bottom: 12, containLabel: true },
+			grid: {
+				left: 12,
+				right: 12,
+				top: 16,
+				bottom: 12,
+				outerBoundsMode: 'same' as const,
+				outerBoundsContain: 'axisLabel' as const
+			},
 			xAxis: {
 				type: 'category' as const,
 				data: names,
@@ -119,7 +119,14 @@
 			backgroundColor: 'transparent',
 			animationDuration: 250,
 			tooltip: tooltipTheme(theme),
-			grid: { left: 12, right: 12, top: 16, bottom: 12, containLabel: true },
+			grid: {
+				left: 12,
+				right: 12,
+				top: 16,
+				bottom: 12,
+				outerBoundsMode: 'same' as const,
+				outerBoundsContain: 'axisLabel' as const
+			},
 			xAxis: {
 				type: 'category' as const,
 				data: names,
@@ -167,7 +174,7 @@
 
 	onMount(() => {
 		if (container) {
-			chart = echarts.init(container, undefined, { renderer: 'canvas' });
+			chart = init(container, undefined, { renderer: 'canvas' });
 			renderChart();
 		}
 		const resizeObserver = new ResizeObserver(() => chart?.resize());
@@ -201,5 +208,5 @@
 			{m['insights.by_priority']()}
 		</button>
 	</div>
-	<div bind:this={container} class="h-60 w-full"></div>
+	<div data-testid="distribution-chart" bind:this={container} class="h-60 w-full"></div>
 </div>

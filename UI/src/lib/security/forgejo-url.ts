@@ -48,10 +48,15 @@ function parseRepositoryUrl(
 		return null;
 	}
 
-	const path = url.pathname
-		.split('/')
-		.slice(1)
-		.map((part) => decodeURIComponent(part));
+	let path: string[];
+	try {
+		path = url.pathname
+			.split('/')
+			.slice(1)
+			.map((part) => decodeURIComponent(part));
+	} catch {
+		return null;
+	}
 	if (
 		path.length < 2 ||
 		path[0].toLowerCase() !== repository[0].toLowerCase() ||
@@ -63,11 +68,19 @@ function parseRepositoryUrl(
 	return { url, path };
 }
 
-export function safeForgejoRepositoryUrl(value: unknown, repositoryFullName: string, instanceURL: string): string | null {
+export function safeForgejoRepositoryUrl(
+	value: unknown,
+	repositoryFullName: string,
+	instanceURL: string
+): string | null {
 	return parseRepositoryUrl(value, repositoryFullName, instanceURL)?.url.href ?? null;
 }
 
-export function safeForgejoPullRequestUrl(value: unknown, repositoryFullName: string, instanceURL: string): string | null {
+export function safeForgejoPullRequestUrl(
+	value: unknown,
+	repositoryFullName: string,
+	instanceURL: string
+): string | null {
 	const parsed = parseRepositoryUrl(value, repositoryFullName, instanceURL);
 	if (
 		!parsed ||
@@ -105,4 +118,18 @@ export function forgejoRepositoryHomeUrl(repositoryFullName: string, instanceURL
 	const origin = forgejoOrigin(instanceURL);
 	if (!origin) return null;
 	return safeForgejoRepositoryUrl(`${origin}/${repositoryFullName}`, repositoryFullName, instanceURL);
+}
+
+export function safeForgejoActionsUrl(value: unknown, repositoryFullName: string, instanceURL: string): string | null {
+	const parsed = parseRepositoryUrl(value, repositoryFullName, instanceURL);
+	if (
+		!parsed ||
+		parsed.path.length !== 5 ||
+		parsed.path[2] !== 'actions' ||
+		parsed.path[3] !== 'runs' ||
+		!/^[1-9]\d*$/.test(parsed.path[4])
+	) {
+		return null;
+	}
+	return parsed.url.href;
 }

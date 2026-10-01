@@ -42,6 +42,7 @@ type ForgejoPullRequest struct {
 	ForgejoRepoID   uuid.UUID  `json:"forgejo_repo_id" db:"forgejo_repo_id"`
 	Number          int        `json:"number" db:"number"`
 	Title           string     `json:"title" db:"title"`
+	Body            string     `json:"-" db:"body"`
 	State           string     `json:"state" db:"state"`
 	ChecksGreen     bool       `json:"checks_green" db:"checks_green"`
 	AuthorLogin     string     `json:"author_login" db:"author_login"`

@@ -11,7 +11,6 @@ ARG TTYD_VERSION=1.7.7
 ARG TTYD_AMD64_SHA256=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55
 ARG TTYD_ARM64_SHA256=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165
 ARG NPM_VERSION=12.0.1
-ARG BRACE_EXPANSION_VERSION=5.0.8
 ARG CLAUDE_CODE_VERSION=2.1.218
 ARG OPENCODE_VERSION=1.18.4
 ARG CODEX_VERSION=0.145.0
@@ -20,13 +19,12 @@ COPY --from=node-stage /usr/local /usr/local
 COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
 COPY ide/start.sh /usr/local/bin/ku-ide-start
 COPY ide/shell.sh /usr/local/bin/ku-shell
-COPY ide/checkout.sh /usr/local/bin/ku-checkout
 COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
 COPY ide/command-event.js /usr/local/lib/ku-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
 # VS Code's npm support extension is not the npm CLI package; keep its manifest identity unambiguous.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep sudo tmux xz-utils \
+    && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep sudo tmux util-linux xz-utils \
     && case "${TARGETARCH}" in \
          amd64) package_arch=amd64; code_server_sha="$CODE_SERVER_AMD64_SHA256"; ttyd_arch=x86_64; ttyd_sha="$TTYD_AMD64_SHA256" ;; \
          arm64) package_arch=arm64; code_server_sha="$CODE_SERVER_ARM64_SHA256"; ttyd_arch=aarch64; ttyd_sha="$TTYD_ARM64_SHA256" ;; \
@@ -42,7 +40,7 @@ RUN apt-get update \
     && npm install -g --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
     && npm install -g --allow-scripts=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \
-    && for pair in "brace-expansion@5.0.9" "ip-address@10.3.1" "js-yaml@4.3.2" "tar@7.5.21" "undici@7.29.0"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
+    && for pair in "brace-expansion@5.0.11" "ip-address@10.3.1" "js-yaml@4.3.2" "tar@7.5.21" "undici@7.29.1"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
     && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
          "js-yaml@4.3.2" "shell-quote@1.9.0" "tar@7.5.21" \
@@ -53,12 +51,12 @@ RUN apt-get update \
     && cp -a /tmp/code-server-patches/node_modules/shell-quote /usr/lib/code-server/lib/vscode/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/tar /usr/lib/code-server/lib/vscode/node_modules/ \
     && node -e 'const fs=require("fs"),path="/usr/lib/code-server/lib/vscode/extensions/npm/package.json",manifest=JSON.parse(fs.readFileSync(path));manifest.name="npm-support";fs.writeFileSync(path,JSON.stringify(manifest,null,2)+"\n")' \
-    && rm -rf /root/.npm /tmp/npm-patches /tmp/code-server-patches /var/lib/apt/lists/* \
+    && rm -rf /root/.npm /tmp/npmpatch /tmp/code-server-patches /var/lib/apt/lists/* \
     && rm -f /tmp/code-server.deb \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku \
-    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-checkout /usr/local/bin/ku-terminal-session \
+    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-terminal-session \
     && code-server --version \
     && node --version \
     && npm --version \

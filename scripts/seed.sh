@@ -16,10 +16,10 @@ fi
 
 refuse_production() {
     case "${1:-}" in
-    [Pp][Rr][Oo][Dd]|[Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn])
+    [Pp][Rr][Oo][Dd] | [Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn])
         echo "FATAL: Refusing to seed the production database!" >&2
         exit 1
-    ;;
+        ;;
     esac
 }
 
@@ -34,7 +34,7 @@ PSQL=(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 echo "Generating bcrypt hash for Password123!..."
 HASHGEN_FILE="$(mktemp "${TMPDIR:-/tmp}/ku-hashgen.XXXXXX.go")"
 trap 'rm -f "$HASHGEN_FILE"' EXIT
-cat > "$HASHGEN_FILE" <<'GOEOF'
+cat >"$HASHGEN_FILE" <<'GOEOF'
 package main
 import (
     "fmt"
@@ -68,7 +68,7 @@ echo "Seeding database in a single transaction..."
 BEGIN;
 
 -- ==========================================================================
--- TRUNCATE all tables (v33-comprehensive).  CASCADE handles FK dependencies.
+-- TRUNCATE development data. CASCADE handles workspace/user FK dependencies.
 -- ==========================================================================
 TRUNCATE TABLE
     dev_machine_access_logs,
@@ -94,13 +94,14 @@ TRUNCATE TABLE
     dev_machine_tokens,
     dev_machine_volumes,
     dev_machine_workspace_policies,
-    github_auto_transitions,
-    github_branches,
-    github_commits,
-    github_installations,
-    github_app_configs,
-    github_pull_requests,
-    github_repos,
+    forgejo_auto_transitions,
+    forgejo_branches,
+    forgejo_commits,
+    forgejo_connections,
+    forgejo_pull_request_issues,
+    forgejo_pull_requests,
+    forgejo_repos,
+    forgejo_user_mappings,
     assets,
     ai_settings,
     issue_lifecycle_events,

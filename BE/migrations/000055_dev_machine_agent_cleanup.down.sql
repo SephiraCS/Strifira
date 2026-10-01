@@ -1,0 +1,3 @@
+DROP TRIGGER dev_machine_agent_run_cleanup_terminal ON dev_machine_agent_runs;
+DROP FUNCTION enqueue_dev_machine_agent_run_cleanup();
+DROP TABLE dev_machine_agent_run_cleanup;

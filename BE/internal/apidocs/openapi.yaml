@@ -9,7 +9,7 @@ openapi: 3.1.0
 
 info:
   title: Ku API
-  version: 0.2.13
+  version: 0.3.0
   summary: Issue tracker REST API behind ku.mariogk.com
   description: |
     Ku is a Linear-style issue tracker. This document describes the REST API
@@ -29,6 +29,11 @@ info:
     The MCP endpoint is different: it authenticates with a **personal API
     key** (`Authorization: Bearer ku_...`) created under
     Settings → Personal → API Keys.
+
+    Dev-box workers authenticate with a dedicated **registration token**
+    (`Authorization: Bearer kub_...`) on `/api/dev-box-worker` only. These
+    tokens carry no personal API/MCP access. Job mutations also require a
+    separate expiring lease token in the request body.
 
     ## Authorization
 
@@ -102,9 +107,11 @@ tags:
   - name: AI
     description: "Workspace AI settings and text rework endpoints (OpenAI-compatible providers)."
   - name: Forgejo
-    description: "Forgejo integration: connection, repo linking, user mappings, automation rules, and the inbound webhook."
+    description: "Forgejo integration: connection, repo linking, user mappings, automation rules, Actions runs/jobs/logs, and the inbound webhook."
   - name: Dev Machines
     description: "Ephemeral development machines (agent/IDE host integration). Guarded by dev_machine:* permissions."
+  - name: Dev Boxes
+    description: "Creator-scoped outbound development workers and issue jobs, with dedicated tokens and expiring leases."
   - name: Uploads
     description: "Issue attachment uploads and asset delivery."
   - name: Avatars
@@ -1861,11 +1868,15 @@ paths:
       tags: [Screen Shares]
       summary: Start a screen share
       description: |
-        Requires: share:create. Creates the share session; the presenter's
-        browser then captures screen + tab audio and signals viewers
-        peer-to-peer over the workspace WebSocket (`share.presence` /
-        `share.signal`). Shares are restart-surviving and GC'd only after
-        the presenter stops announcing presence.
+        Requires: share:create. Capture screen and audio before creating the
+        session, then signal viewers over the workspace WebSocket. The returned
+        presenter_token belongs to the capturing tab: include it in presenter
+        presence and when ending the share. It is never returned by list/get.
+        One active capture per presenter per workspace; a second tab receives
+        409 instead of claiming the existing source. Reconnects retain the token.
+        A disconnected presenter has 45 seconds to return. Expired sources are
+        collected by listing shares or starting a replacement capture, so a
+        reloaded tab can start again without a prior list refresh.
       requestBody:
         content:
           application/json:
@@ -1875,7 +1886,14 @@ paths:
           description: Created share.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/ScreenShare" }
+              schema:
+                type: object
+                required: [share, presenter_token]
+                properties:
+                  share: { $ref: "#/components/schemas/ScreenShare" }
+                  presenter_token: { type: string, format: uuid }
+        "409":
+          description: Presenter already has an active share in this workspace.
 
   /api/workspaces/{slug}/shares/{id}:
     parameters:
@@ -1901,9 +1919,23 @@ paths:
       operationId: endScreenShare
       tags: [Screen Shares]
       summary: End a screen share
-      description: Broadcasts `share.ended` so parked viewer walls update.
+      description: |
+        The capturing tab must provide its presenter_token. Workspace owners
+        and admins may explicitly send force=true to end any share in this
+        workspace. Broadcasts share.ended so viewer walls update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                presenter_token: { type: string, format: uuid }
+                force: { type: boolean, default: false }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /api/workspaces/{slug}/analytics/overview:
     parameters:
@@ -2054,6 +2086,30 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AISettings" }
+
+  /api/workspaces/{slug}/ai-settings/test:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: testAIConnection
+      tags: [AI]
+      summary: Test saved AI provider configuration
+      description: |
+        Requires: owner. Sends a short HTML completion request using only
+        the saved base URL, model, and encrypted API key. Times out after
+        15 seconds. Never returns the key or generated content.
+      responses:
+        "200":
+          description: Saved provider completed the request successfully.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AIConnectionTestResponse" }
+        "400":
+          description: AI_NOT_CONFIGURED; save a base URL, model, and API key first.
+        "403":
+          description: Only the workspace owner can test AI settings.
+        "502":
+          description: AI_PROVIDER_ERROR; the completion failed or returned invalid content.
 
   /api/workspaces/{slug}/ai-settings/issue-copy-prompt:
     parameters:
@@ -2219,6 +2275,216 @@ paths:
       description: "Requires: workspace:manage."
       responses:
         "200": { $ref: "#/components/responses/Ok" }
+
+
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+    get:
+      operationId: forgejoListActionRuns
+      tags: [Forgejo]
+      summary: List workflow runs for a linked repository
+      description: |
+        Requires: issue:read. Only active repository links in this workspace
+        can be queried. Filters are forwarded to Forgejo; `queued` maps to
+        Forgejo's `waiting` status. Filter strings are limited to 512 bytes
+        and cannot contain NUL, CR, or LF. Repeated filter and pagination
+        parameters are rejected.
+      parameters:
+        - $ref: "#/components/parameters/ForgejoActionsPage"
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [unknown, waiting, queued, running, success, failure, cancelled, skipped, blocked]
+        - name: ref
+          in: query
+          schema: { type: string, maxLength: 512 }
+        - name: event
+          in: query
+          schema: { type: string, maxLength: 512 }
+        - name: head_sha
+          in: query
+          schema: { type: string, maxLength: 512 }
+        - name: workflow_id
+          in: query
+          schema: { type: string, maxLength: 512 }
+        - name: run_number
+          in: query
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Paginated workflow runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgejoActionRunList" }
+        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ForgejoActionsNotFound" }
+        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
+        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
+        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
+        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
+
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
+    get:
+      operationId: forgejoGetActionRun
+      tags: [Forgejo]
+      summary: Get a workflow run
+      description: "Requires: issue:read. The repository must be actively linked in this workspace."
+      responses:
+        "200":
+          description: Workflow run details.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgejoActionRun" }
+        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ForgejoActionsNotFound" }
+        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
+        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
+        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
+        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
+
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/jobs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
+    get:
+      operationId: forgejoListActionJobs
+      tags: [Forgejo]
+      summary: List jobs in a workflow run
+      description: "Requires: issue:read. Forgejo's job array is paginated by Ku."
+      parameters:
+        - $ref: "#/components/parameters/ForgejoActionsPage"
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+      responses:
+        "200":
+          description: Paginated workflow jobs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgejoActionJobList" }
+        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ForgejoActionsNotFound" }
+        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
+        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
+        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
+        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
+
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
+      - $ref: "#/components/parameters/ForgejoActionJobId"
+    get:
+      operationId: forgejoGetActionJob
+      tags: [Forgejo]
+      summary: Get a workflow job in its run
+      description: |
+        Requires: issue:read. Ku resolves the job from Forgejo 16.0.5's
+        repository-scoped run-jobs list and verifies its run ID. A missing
+        job or a job belonging to another run returns `ACTION_NOT_FOUND`.
+        The native API provides job metadata and attempt; step details,
+        job timestamps, and job URLs are available in the Forgejo UI.
+      responses:
+        "200":
+          description: Workflow job details.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgejoActionJob" }
+        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ForgejoActionsNotFound" }
+        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
+        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
+        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
+        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
+
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/jobs/{jobId}/logs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
+      - $ref: "#/components/parameters/ForgejoActionJobId"
+    get:
+      operationId: forgejoGetActionJobLogs
+      tags: [Forgejo]
+      summary: Read a bounded workflow job log
+      description: |
+        Requires: issue:read. Ku first verifies that the job belongs to
+        this run through Forgejo's repository-scoped run-jobs list. A
+        missing job or mismatched run returns `ACTION_NOT_FOUND` before
+        requesting any log. The upstream job logs API requires Forgejo 16
+        or newer. Omit `attempt` to request the current attempt. At most
+        2 MiB of log content is returned; `truncated` signals additional
+        upstream content. A missing log or unsupported API returns
+        `ACTION_LOGS_UNAVAILABLE` without exposing upstream response bodies.
+      parameters:
+        - name: attempt
+          in: query
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        "200":
+          description: Log content and truncation metadata.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForgejoActionLog" }
+        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404":
+          description: Repository is not linked (`NOT_FOUND`), the job is absent from the run (`ACTION_NOT_FOUND`), or logs are absent/the upstream log API is unsupported (`ACTION_LOGS_UNAVAILABLE`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
+        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
+        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
+        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
+
+  /api/workspaces/{slug}/forgejo/repos/{repoId}/actions/runs/{runId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - $ref: "#/components/parameters/ForgejoLinkedRepoId"
+      - $ref: "#/components/parameters/ForgejoActionRunId"
+    post:
+      operationId: forgejoCancelActionRun
+      tags: [Forgejo]
+      summary: Cancel an active workflow run
+      description: |
+        Requires: workspace:manage (workspace owner only). Ku checks the
+        upstream run state before requesting the action. Allowed states:
+        `waiting`, `running`, or `blocked`. This operation uses the configured workspace
+        Forgejo token and accepts no caller-supplied token or repository URL.
+      responses:
+        "202":
+          description: Forgejo accepted the request; refresh the run to observe the new state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [accepted] }
+        "400": { $ref: "#/components/responses/ForgejoActionsBadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/ForgejoActionsNotFound" }
+        "409": { $ref: "#/components/responses/ForgejoActionsConflict" }
+        "502": { $ref: "#/components/responses/ForgejoActionsUpstreamError" }
+        "503": { $ref: "#/components/responses/ForgejoActionsRateLimited" }
+        "504": { $ref: "#/components/responses/ForgejoActionsTimeout" }
 
   /api/workspaces/{slug}/forgejo/user-mappings:
     parameters:
@@ -2400,6 +2666,20 @@ paths:
         pings every 20s with a 30s pong deadline; clients reconnect with
         jittered exponential backoff. Authenticate with the access-token
         cookie or `?token=` query parameter.
+
+        Screen-share presence carries share_id, role (presenter/viewer), and
+        action (join/leave). Presenter joins also require the private
+        presenter_token. Only active shares in this workspace may be joined.
+        The membership summary includes presenter_peer, viewer_peers, and a
+        distinct user viewer count; peer IDs identify individual sockets/tabs.
+
+        share.signal carries share_id, negotiation_id (a new UUID per viewer
+        attempt), data (offer/answer/candidate), and a recipient. Initial viewer
+        offers may address to (presenter user UUID); replies and ICE use to_peer
+        (socket UUID). Relays contain server-authenticated from (user UUID),
+        from_peer (socket UUID), and the negotiation_id. Only opposite-role
+        members receive relays. A reconnect gets a new peer ID and renegotiates;
+        receivers discard SDP/ICE belonging to older negotiations.
       responses:
         "101":
           description: WebSocket upgrade.
@@ -3285,6 +3565,443 @@ paths:
               schema: { type: object, additionalProperties: true }
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /api/workspaces/{slug}/dev-boxes:
+    get:
+      operationId: listDevBoxes
+      tags:
+      - Dev Boxes
+      summary: List your dev-box registrations
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/DevBox'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+    post:
+      operationId: createDevBox
+      tags:
+      - Dev Boxes
+      summary: Register a dev box
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. The dedicated kub_ token is returned once. Store it in a protected local token file; Ku stores
+        only its hash.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateDevBoxRequest'}
+      responses:
+        '201':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxTokenResponse'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+  /api/workspaces/{slug}/dev-boxes/{boxId}:
+    patch:
+      operationId: updateDevBox
+      tags:
+      - Dev Boxes
+      summary: Update a dev-box registration
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. Disabling the box cancels its queued and active jobs.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateDevBoxRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBox'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+    delete:
+      operationId: revokeDevBox
+      tags:
+      - Dev Boxes
+      summary: Revoke a dev-box registration
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. Revocation invalidates the worker token and cancels queued and active jobs.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxId'}
+      responses:
+        '204': {description: Success.}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/workspaces/{slug}/dev-boxes/{boxId}/rotate-token:
+    post:
+      operationId: rotateDevBoxToken
+      tags:
+      - Dev Boxes
+      summary: Rotate a dev-box worker token
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. The previous token is invalidated and queued and active jobs are cancelled. The replacement token
+        is returned once.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxId'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxTokenResponse'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/workspaces/{slug}/dev-boxes/{boxId}/jobs:
+    post:
+      operationId: createDevBoxJob
+      tags:
+      - Dev Boxes
+      summary: Queue an issue development job
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. Resolves the issue/project/team/workspace Forgejo repository default to an active linked repository
+        and an assigned unique working branch. Provider, repository, and runtime policy applies independently of Docker dev-machine
+        availability. The worker uses a preconfigured local repository and does not receive clone credentials or push changes.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateDevBoxJobRequest'}
+      responses:
+        '202':
+          description: Job queued.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxJob'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+  /api/workspaces/{slug}/dev-box-jobs:
+    get:
+      operationId: listDevBoxJobs
+      tags:
+      - Dev Boxes
+      summary: List your dev-box jobs
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/Page'}
+      - {$ref: '#/components/parameters/PerPage'}
+      - name: issue_id
+        in: query
+        schema: {type: string, format: uuid}
+      - name: box_id
+        in: query
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxJobList'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/workspaces/{slug}/dev-box-jobs/{jobId}:
+    get:
+      operationId: getDevBoxJob
+      tags:
+      - Dev Boxes
+      summary: Read a dev-box job
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxJob'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/workspaces/{slug}/dev-box-jobs/{jobId}/cancel:
+    post:
+      operationId: cancelDevBoxJob
+      tags:
+      - Dev Boxes
+      summary: Cancel a dev-box job
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. Queued jobs terminate immediately; an active worker observes cancellation during its lease heartbeat.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxJob'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/workspaces/{slug}/dev-box-jobs/{jobId}/logs:
+    get:
+      operationId: listDevBoxJobLogs
+      tags:
+      - Dev Boxes
+      summary: Read incremental dev-box job logs
+      description: Requires current workspace membership and development permissions. Only the registration creator can access
+        this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
+        development features. Ordered by increasing log ID. Storage is bounded to 4 MiB per job; logs_truncated records omitted
+        output.
+      parameters:
+      - {$ref: '#/components/parameters/Slug'}
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      - name: after_id
+        in: query
+        schema: {type: integer, format: int64, minimum: 0, default: 0}
+      - name: limit
+        in: query
+        schema: {type: integer, minimum: 1, maximum: 500, default: 100}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/DevBoxJobLog'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/dev-box-worker/heartbeat:
+    post:
+      operationId: heartbeatDevBoxWorker
+      tags:
+      - Dev Boxes
+      summary: Report dev-box capabilities
+      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+        and whether its creator still has current workspace development permissions. Heartbeats update the online indicator
+        and installed provider list.
+      security:
+      - devBoxWorkerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DevBoxHeartbeatRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxHeartbeatResponse'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+  /api/dev-box-worker/claim:
+    post:
+      operationId: claimDevBoxJob
+      tags:
+      - Dev Boxes
+      summary: Claim one eligible dev-box job
+      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+        and whether its creator still has current workspace development permissions. Claiming is atomic; each box can hold only
+        one active job. The 60-second lease token is separate from the box token.
+      security:
+      - devBoxWorkerToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DevBoxClaimRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxClaimResponse'}
+        '204': {description: No eligible queued job is available.}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+  /api/dev-box-worker/jobs/{jobId}/start:
+    post:
+      operationId: startDevBoxWorkerJob
+      tags:
+      - Dev Boxes
+      summary: Start a claimed dev-box job
+      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+        and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
+        Cancel and deadline state wins over further execution. Renew before lease expiry, normally every 15 seconds.
+      security:
+      - devBoxWorkerToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DevBoxLeaseRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxLeaseResponse'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+  /api/dev-box-worker/jobs/{jobId}/renew:
+    post:
+      operationId: renewDevBoxWorkerJob
+      tags:
+      - Dev Boxes
+      summary: Renew a dev-box job lease
+      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+        and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
+        Cancel and deadline state wins over further execution. Renew before lease expiry, normally every 15 seconds.
+      security:
+      - devBoxWorkerToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DevBoxLeaseRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxLeaseResponse'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+  /api/dev-box-worker/jobs/{jobId}/logs:
+    post:
+      operationId: appendDevBoxWorkerLog
+      tags:
+      - Dev Boxes
+      summary: Append a bounded dev-box job log chunk
+      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+        and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
+        Sequence numbers are idempotent; duplicate retries acknowledge the previously accepted chunk without storing it again. Each content chunk is at most 64 KiB and total
+        stored output is at most 4 MiB.
+      security:
+      - devBoxWorkerToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DevBoxAppendLogRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxAppendLogResponse'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+  /api/dev-box-worker/jobs/{jobId}/complete:
+    post:
+      operationId: completeDevBoxWorkerJob
+      tags:
+      - Dev Boxes
+      summary: Complete a dev-box job
+      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+        and whether its creator still has current workspace development permissions. Requires the matching lease token; retries
+        are idempotent. The server validates the assigned branch and independent test report. Failed harness exits or missing/failed
+        required tests cannot produce success. Expiry, cancellation, and deadline state override a late success. The patch is
+        bounded to 1 MiB; the worker never pushes.
+      security:
+      - devBoxWorkerToken: []
+      parameters:
+      - {$ref: '#/components/parameters/DevBoxJobId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DevBoxCompleteRequest'}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DevBoxJob'}
+        '400': {$ref: '#/components/responses/DevBoxBadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/DevBoxConflict'}
+        '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
+
+
 components:
   securitySchemes:
     jwtAuth:
@@ -3305,7 +4022,23 @@ components:
       scheme: bearer
       description: Dev-machine ingest token issued when the machine is created. Internal.
 
+    devBoxWorkerToken:
+      type: http
+      scheme: bearer
+      description: Dedicated kub_ dev-box registration token; only the worker API accepts it. Creator membership and development permissions are rechecked on every request.
+
   parameters:
+    DevBoxId:
+      name: boxId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    DevBoxJobId:
+      name: jobId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+
     Slug:
       name: slug
       in: path
@@ -3388,6 +4121,26 @@ components:
       in: path
       required: true
       schema: { type: string }
+    ForgejoLinkedRepoId:
+      name: repoId
+      in: path
+      required: true
+      description: UUID of an active Ku repository link in this workspace (not the upstream numeric repository ID).
+      schema: { type: string, format: uuid }
+    ForgejoActionRunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    ForgejoActionJobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+    ForgejoActionsPage:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
     Page:
       name: page
       in: query
@@ -3428,6 +4181,55 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    ForgejoActionsBadRequest:
+      description: Invalid ID, pagination, or filters (`BAD_REQUEST`), or Forgejo rejected the request (`FORGEJO_ACTION_REJECTED`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ForgejoActionsNotFound:
+      description: Repository is not linked in this workspace (`NOT_FOUND`), or upstream run/job/API is absent (`ACTION_NOT_FOUND`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ForgejoActionsConflict:
+      description: Workspace connection does not match the linked repository (`FORGEJO_CONNECTION_UNAVAILABLE`), or the run state forbids this action (`ACTION_STATE_CONFLICT`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ForgejoActionsUpstreamError:
+      description: The configured token cannot access Actions (`FORGEJO_ACCESS_DENIED`), or Forgejo is unavailable (`FORGEJO_UNAVAILABLE`). Upstream bodies and credentials are never returned.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ForgejoActionsRateLimited:
+      description: Forgejo is rate limiting requests (`FORGEJO_RATE_LIMITED`); retry later.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ForgejoActionsTimeout:
+      description: Forgejo did not respond in time (`FORGEJO_TIMEOUT`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    DevBoxBadRequest:
+      description: Invalid IDs, query, or body (BAD_REQUEST), or invalid fields (VALIDATION_ERROR).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    DevBoxConflict:
+      description: Registration/job conflict (DEV_BOX_CONFLICT), or the lease is invalid, stale, or belongs to another worker
+        (LEASE_LOST).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    DevBoxBodyTooLarge:
+      description: The request exceeds the bounded body size (BODY_TOO_LARGE).
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+
 
   schemas:
     ErrorDetail:
@@ -4148,6 +4950,12 @@ components:
         default_issue_copy_prompt: { type: string }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    AIConnectionTestResponse:
+      type: object
+      required: [model, latency_ms]
+      properties:
+        model: { type: string }
+        latency_ms: { type: integer, format: int64, minimum: 0 }
     UpdateAISettingsRequest:
       type: object
       properties:
@@ -4181,6 +4989,58 @@ components:
         instance_url: { type: string }
         default_branch: { type: string }
         is_active: { type: boolean }
+    ForgejoActionRun:
+      type: object
+      required: [id, name, title, run_number, event, status, conclusion, workflow_id, head_branch, head_sha, html_url, created_at, updated_at, started_at, completed_at]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string, description: Workflow file ID. }
+        title: { type: string }
+        run_number: { type: integer, format: int64 }
+        event: { type: string }
+        status: { type: string, examples: [waiting, running, success, failure] }
+        conclusion: { type: string, description: "Terminal status, or an empty string while active." }
+        workflow_id: { type: string }
+        head_branch: { type: string, description: Forgejo prettyref. }
+        head_sha: { type: string }
+        html_url: { type: string, description: Upstream URL on the configured instance; empty when the upstream URL has another origin. }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        started_at: { type: [string, 'null'], format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+    ForgejoActionRunList:
+      allOf:
+        - $ref: "#/components/schemas/PaginationMeta"
+        - type: object
+          required: [data, total_count, page, per_page, has_more]
+          properties:
+            data: { type: array, items: { $ref: "#/components/schemas/ForgejoActionRun" } }
+    ForgejoActionJob:
+      type: object
+      description: Native Forgejo 16.0.5 metadata, resolved through the run-jobs list.
+      required: [id, run_id, name, status, conclusion, attempt]
+      properties:
+        id: { type: integer, format: int64, minimum: 1 }
+        run_id: { type: integer, format: int64, minimum: 1 }
+        name: { type: string }
+        status: { type: string }
+        conclusion: { type: string, description: "Terminal status, or an empty string while active." }
+        attempt: { type: integer, format: int64 }
+    ForgejoActionJobList:
+      allOf:
+        - $ref: "#/components/schemas/PaginationMeta"
+        - type: object
+          required: [data, total_count, page, per_page, has_more]
+          properties:
+            data: { type: array, items: { $ref: "#/components/schemas/ForgejoActionJob" } }
+    ForgejoActionLog:
+      type: object
+      required: [content, truncated, max_bytes]
+      properties:
+        content: { type: string, description: "Plain text log content, limited to max_bytes upstream bytes." }
+        truncated: { type: boolean }
+        max_bytes: { type: integer, enum: [2097152] }
+
     ForgejoUserMapping:
       type: object
       properties:
@@ -4260,3 +5120,350 @@ components:
           type: string
           format: binary
           description: Workspace export archive produced by the export endpoint.
+
+    DevBoxProvider:
+      type: object
+      required:
+      - id
+      - version
+      properties:
+        id:
+          type: string
+          enum:
+          - claude-code
+          - codex
+          - opencode
+        version: {type: string, maxLength: 100}
+    DevBox:
+      type: object
+      required:
+      - id
+      - workspace_id
+      - created_by_user_id
+      - name
+      - enabled
+      - token_prefix
+      - providers
+      - created_at
+      - updated_at
+      - online
+      properties:
+        id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        created_by_user_id: {type: string, format: uuid}
+        name: {type: string}
+        enabled: {type: boolean}
+        token_prefix: {type: string, description: Non-secret prefix used to identify the registration token.}
+        hostname: {type: string}
+        os: {type: string}
+        arch: {type: string}
+        version: {type: string}
+        providers:
+          type: array
+          items: {$ref: '#/components/schemas/DevBoxProvider'}
+        last_seen_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        online: {type: boolean, description: 'True when enabled, unrevoked, and last seen within 90 seconds.'}
+    CreateDevBoxRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+    UpdateDevBoxRequest:
+      type: object
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        enabled: {type: boolean}
+    DevBoxTokenResponse:
+      type: object
+      required:
+      - box
+      - token
+      properties:
+        box: {$ref: '#/components/schemas/DevBox'}
+        token: {type: string, pattern: '^kub_[0-9a-f]{64}$', description: Shown only by registration or rotation. Not a JWT or
+            personal API key.}
+    CreateDevBoxJobRequest:
+      type: object
+      required:
+      - issue_id
+      - provider
+      properties:
+        issue_id: {type: string, format: uuid}
+        repository_full_name:
+          type: string
+          maxLength: 500
+          description: Optional active linked repository in this workspace, in owner/name form. Overrides saved development defaults for this job only. No repository URL or credentials are accepted.
+        base_branch:
+          type: string
+          maxLength: 255
+          description: Optional Git branch for this job. Requires repository_full_name. When selecting a repository without a branch, its linked default branch is used. Omitting both selection fields uses saved development defaults.
+        provider:
+          type: string
+          enum:
+          - claude-code
+          - codex
+          - opencode
+        prompt: {type: string, maxLength: 50000, description: Additional instructions. The server includes issue context and the
+            no-push contract.}
+        test_command:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 4096}
+          maxItems: 32
+          description: Argument vector for independent verification after the AI harness exits.
+        acceptance_criteria:
+          type: array
+          items: {type: string, maxLength: 2000}
+          maxItems: 50
+        max_runtime_seconds: {type: integer, minimum: 30, maximum: 86400, default: 3600}
+    DevBoxJobResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum:
+          - succeeded
+          - failed
+          - cancelled
+          - timeout
+        exit_code: {type: integer}
+        summary: {type: string, description: At most 8192 UTF-8 bytes.}
+        changed_files:
+          type: array
+          items: {type: string, maxLength: 4096}
+          maxItems: 500
+        branch: {type: string, description: 'When present, must equal the assigned working branch.'}
+        patch: {type: string, description: Unified Git patch; at most 1 MiB of UTF-8 content.}
+        test_status:
+          type: string
+          enum:
+          - passed
+          - failed
+          - not_run
+        test_exit_code: {type: integer}
+        tests_run:
+          type: array
+          items: {type: string, maxLength: 4096}
+          maxItems: 100
+        risk_notes:
+          type: array
+          items: {type: string, maxLength: 4096}
+          maxItems: 100
+    DevBoxJob:
+      type: object
+      required:
+      - id
+      - workspace_id
+      - box_id
+      - requested_by_user_id
+      - issue_id
+      - forgejo_repo_id
+      - provider
+      - repository_url
+      - working_branch
+      - status
+      - cancel_requested
+      - created_at
+      - updated_at
+      - logs_bytes
+      - logs_truncated
+      properties:
+        id: {type: string, format: uuid}
+        workspace_id: {type: string, format: uuid}
+        box_id: {type: string, format: uuid}
+        requested_by_user_id: {type: string, format: uuid}
+        issue_id: {type: string, format: uuid}
+        issue_identifier: {type: string}
+        forgejo_repo_id: {type: string, format: uuid}
+        provider:
+          type: string
+          enum:
+          - claude-code
+          - codex
+          - opencode
+        prompt: {type: string}
+        repository_url: {type: string, format: uri, description: Canonical linked Forgejo URL without credentials.}
+        repository_full_name: {type: string}
+        base_branch: {type: string}
+        working_branch: {type: string}
+        test_command:
+          type: array
+          items: {type: string}
+        acceptance_criteria:
+          type: array
+          items: {type: string}
+        max_runtime_seconds: {type: integer}
+        status:
+          type: string
+          enum:
+          - queued
+          - leased
+          - running
+          - succeeded
+          - failed
+          - cancelled
+          - timeout
+        cancel_requested: {type: boolean}
+        lease_expires_at: {type: string, format: date-time}
+        deadline_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        result: {$ref: '#/components/schemas/DevBoxJobResult'}
+        logs_bytes: {type: integer, format: int64}
+        logs_truncated: {type: boolean}
+    DevBoxJobList:
+      type: object
+      required:
+      - data
+      - total_count
+      - page
+      - per_page
+      - has_more
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/DevBoxJob'}
+        total_count: {type: integer}
+        page: {type: integer}
+        per_page: {type: integer}
+        has_more: {type: boolean}
+    DevBoxJobLog:
+      type: object
+      required:
+      - id
+      - job_id
+      - sequence
+      - stream
+      - content
+      - created_at
+      properties:
+        id: {type: integer, format: int64}
+        job_id: {type: string, format: uuid}
+        sequence: {type: integer, format: int64, minimum: 1}
+        stream:
+          type: string
+          enum:
+          - stdout
+          - stderr
+          - system
+        content: {type: string}
+        created_at: {type: string, format: date-time}
+    DevBoxHeartbeatRequest:
+      type: object
+      required:
+      - hostname
+      - os
+      - arch
+      - version
+      - providers
+      properties:
+        hostname: {type: string, maxLength: 255}
+        os: {type: string, maxLength: 64}
+        arch: {type: string, maxLength: 64}
+        version: {type: string, maxLength: 100}
+        providers:
+          type: array
+          items: {$ref: '#/components/schemas/DevBoxProvider'}
+          maxItems: 3
+    DevBoxHeartbeatResponse:
+      type: object
+      required:
+      - box
+      - server_time
+      - heartbeat_interval_seconds
+      properties:
+        box: {$ref: '#/components/schemas/DevBox'}
+        server_time: {type: string, format: date-time}
+        heartbeat_interval_seconds: {type: integer, const: 15}
+    DevBoxClaimRequest:
+      type: object
+      properties: {}
+    DevBoxClaimResponse:
+      type: object
+      required:
+      - job
+      - lease_token
+      - lease_expires_at
+      - server_time
+      - heartbeat_interval_seconds
+      properties:
+        job: {$ref: '#/components/schemas/DevBoxJob'}
+        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+            never the registration token.}
+        lease_expires_at: {type: string, format: date-time}
+        server_time: {type: string, format: date-time}
+        heartbeat_interval_seconds: {type: integer, const: 15}
+    DevBoxLeaseRequest:
+      type: object
+      required:
+      - lease_token
+      properties:
+        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+            never the registration token.}
+    DevBoxLeaseResponse:
+      type: object
+      required:
+      - status
+      - cancel_requested
+      - server_time
+      properties:
+        status:
+          type: string
+          enum:
+          - queued
+          - leased
+          - running
+          - succeeded
+          - failed
+          - cancelled
+          - timeout
+        cancel_requested: {type: boolean}
+        lease_expires_at: {type: string, format: date-time}
+        deadline_at: {type: string, format: date-time}
+        server_time: {type: string, format: date-time}
+    DevBoxAppendLogRequest:
+      type: object
+      required:
+      - lease_token
+      - sequence
+      - stream
+      - content
+      properties:
+        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+            never the registration token.}
+        sequence: {type: integer, format: int64, minimum: 1}
+        stream:
+          type: string
+          enum:
+          - stdout
+          - stderr
+          - system
+        content: {type: string, minLength: 1, description: At most 65536 UTF-8 bytes.}
+    DevBoxAppendLogResponse:
+      type: object
+      required:
+      - accepted
+      - logs_truncated
+      properties:
+        accepted: {type: boolean}
+        logs_truncated: {type: boolean}
+    DevBoxCompletionResult:
+      allOf:
+        - {$ref: '#/components/schemas/DevBoxJobResult'}
+        - type: object
+          required: [status, test_status]
+    DevBoxCompleteRequest:
+      type: object
+      required:
+      - lease_token
+      - result
+      properties:
+        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+            never the registration token.}
+        result: {$ref: '#/components/schemas/DevBoxCompletionResult'}

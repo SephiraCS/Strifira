@@ -20,6 +20,11 @@ type IssueCopyPromptResponse struct {
 	DefaultIssueCopyPrompt string `json:"default_issue_copy_prompt"`
 }
 
+type AIConnectionTestResponse struct {
+	Model     string `json:"model"`
+	LatencyMS int64  `json:"latency_ms"`
+}
+
 type UpdateAISettingsRequest struct {
 	Provider                *string        `json:"provider" validate:"omitempty,oneof=openai_compatible"`
 	BaseURL                 *string        `json:"base_url" validate:"omitempty,max=500"`

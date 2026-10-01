@@ -7,7 +7,7 @@ import (
 )
 
 type DevMachineRepoInput struct {
-	Provider string `json:"provider" validate:"required,oneof=github"`
+	Provider string `json:"provider" validate:"required,oneof=forgejo"`
 	Owner    string `json:"owner" validate:"required,max=255"`
 	Name     string `json:"name" validate:"required,max=255"`
 	URL      string `json:"url" validate:"required,url"`

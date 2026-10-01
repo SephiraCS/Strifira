@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import * as echarts from 'echarts';
+	import { init, graphic, color, type ECharts, type ChartOption } from '$lib/charts/echarts';
 	import type { AnalyticsBurnup } from '$lib/api/analytics';
 	import { getAnalyticsChartTheme, observeAnalyticsTheme } from './chart-theme';
 
@@ -10,9 +10,9 @@
 
 	// svelte-ignore non_reactive_update
 	let container: HTMLDivElement;
-	let chart: echarts.ECharts | null = null;
+	let chart: ECharts | null = null;
 
-	function buildOption(): echarts.EChartsOption | null {
+	function buildOption(): ChartOption | null {
 		if (!burnup?.points || burnup.points.length === 0) return null;
 
 		const theme = getAnalyticsChartTheme();
@@ -47,7 +47,14 @@
 				itemGap: 18,
 				textStyle: { fontSize: 10, color: theme.textSecondary }
 			},
-			grid: { left: 12, right: 16, top: 44, bottom: 12, containLabel: true },
+			grid: {
+				left: 12,
+				right: 16,
+				top: 44,
+				bottom: 12,
+				outerBoundsMode: 'same' as const,
+				outerBoundsContain: 'axisLabel' as const
+			},
 			xAxis: {
 				type: 'category' as const,
 				data: dates,
@@ -81,9 +88,9 @@
 					lineStyle: { color: theme.accentLight, width: 2 },
 					itemStyle: { color: theme.accentLight },
 					areaStyle: {
-						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-							{ offset: 0, color: echarts.color.modifyAlpha(theme.accentLight, 0.14) },
-							{ offset: 1, color: echarts.color.modifyAlpha(theme.accentLight, 0.01) }
+						color: new graphic.LinearGradient(0, 0, 0, 1, [
+							{ offset: 0, color: color.modifyAlpha(theme.accentLight, 0.14) },
+							{ offset: 1, color: color.modifyAlpha(theme.accentLight, 0.01) }
 						])
 					}
 				},
@@ -98,9 +105,9 @@
 					lineStyle: { color: theme.success, width: 2 },
 					itemStyle: { color: theme.success },
 					areaStyle: {
-						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-							{ offset: 0, color: echarts.color.modifyAlpha(theme.success, 0.1) },
-							{ offset: 1, color: echarts.color.modifyAlpha(theme.success, 0.01) }
+						color: new graphic.LinearGradient(0, 0, 0, 1, [
+							{ offset: 0, color: color.modifyAlpha(theme.success, 0.1) },
+							{ offset: 1, color: color.modifyAlpha(theme.success, 0.01) }
 						])
 					}
 				},
@@ -136,7 +143,7 @@
 
 	onMount(() => {
 		if (container) {
-			chart = echarts.init(container, undefined, { renderer: 'canvas' });
+			chart = init(container, undefined, { renderer: 'canvas' });
 			renderChart();
 		}
 		const resizeObserver = new ResizeObserver(() => chart?.resize());
@@ -155,7 +162,11 @@
 	<div class="border-b border-[var(--app-border)] px-3 py-2">
 		<span class="text-xs font-medium text-[var(--color-text-secondary)]">{m['insights.burnup']()}</span>
 	</div>
-	<div bind:this={container} class="h-72 w-full {burnup?.points?.length ? '' : 'invisible'}"></div>
+	<div
+		data-testid="burnup-chart"
+		bind:this={container}
+		class="h-72 w-full {burnup?.points?.length ? '' : 'invisible'}"
+	></div>
 	{#if !burnup?.points?.length}
 		<div class="absolute inset-x-0 bottom-0 flex h-72 items-center justify-center">
 			<p class="text-sm text-[var(--color-text-tertiary)]">{m['insights.no_burnup_data']()}</p>

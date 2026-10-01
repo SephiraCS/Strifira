@@ -147,17 +147,18 @@ func TestMachineNameExistsForUserScopesByCreator(t *testing.T) {
 	require.Equal(t, "builder-01", args[2].Value)
 }
 
-func TestUpdateAgentRunStartedRequiresStateTransition(t *testing.T) {
-	repo, conn := newCaptureDevMachineRepository(t, 0)
-
-	err := repo.UpdateAgentRunStarted(context.Background(), uuid.New())
-
-	require.ErrorIs(t, err, sql.ErrNoRows)
+func TestStartAgentRunReturnsPersistedExecutionStart(t *testing.T) {
+	repo, conn := newCaptureDevMachineRepository(t, 1)
+	started := time.Now().Add(-time.Minute).Truncate(time.Microsecond)
+	conn.queryColumns = []string{"started_at"}
+	conn.queryValues = []driver.Value{started}
+	actual, err := repo.StartAgentRun(t.Context(), uuid.New())
+	require.NoError(t, err)
+	require.Equal(t, started, actual)
 	query, _ := conn.captured()
-	require.Contains(t, query, "status IN ('queued','starting')")
-
-	repo, _ = newCaptureDevMachineRepository(t, 1)
-	require.NoError(t, repo.UpdateAgentRunStarted(context.Background(), uuid.New()))
+	require.Contains(t, query, "started_at=COALESCE(started_at,NOW())")
+	require.Contains(t, query, "status IN ('queued','starting','running')")
+	require.Contains(t, query, "RETURNING started_at")
 }
 
 func TestCreateAccessTicketQueryRevalidatesCreatorAndTuple(t *testing.T) {
@@ -1749,4 +1750,50 @@ func TestPurgeAccessLogsAppliesAgeAndBatchBounds(t *testing.T) {
 	require.Equal(t, 1, count)
 	require.NoError(t, db.Select(&remaining, `SELECT id FROM dev_machine_access_logs WHERE id=ANY($1) ORDER BY created_at,id`, ids))
 	require.Equal(t, []int64{ids[2]}, remaining)
+}
+
+func TestStartAgentRunDatabaseKeepsDeadlineAndRefusesTerminalRuns(t *testing.T) {
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("DATABASE_URL is not configured")
+	}
+	db, err := sqlx.ConnectContext(t.Context(), "pgx", databaseURL)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	fixture := newEnvironmentRaceFixture(t, db)
+	repo := NewDevMachineRepository(db)
+	for _, status := range []string{"queued", "starting", "running", "cancelled", "timeout", "succeeded", "failed"} {
+		t.Run(status, func(t *testing.T) {
+			machineID := fixture.insertMachine(t, domain.DevMachineStatusRunning, domain.DevMachineStatusRunning, false)
+			runID := uuid.New()
+			oldStart := time.Now().Add(-time.Minute).Truncate(time.Microsecond)
+			var priorStart *time.Time
+			if status != "queued" {
+				priorStart = &oldStart
+			}
+			_, err := db.ExecContext(t.Context(), `INSERT INTO dev_machine_agent_runs (id,machine_id,workspace_id,requested_by_user_id,provider_id,mode,status,prompt,command_argv,max_runtime_seconds,started_at)
+   VALUES ($1,$2,$3,$4,'opencode','autonomous',$5,'deadline recovery','["true"]',120,$6)`, runID, machineID, fixture.workspaceID, fixture.userID, status, priorStart)
+			require.NoError(t, err)
+			started, err := repo.StartAgentRun(t.Context(), runID)
+			if status == "queued" || status == "starting" || status == "running" {
+				require.NoError(t, err)
+				if priorStart != nil {
+					require.True(t, started.Equal(oldStart))
+				}
+				again, err := repo.StartAgentRun(t.Context(), runID)
+				require.NoError(t, err)
+				require.True(t, started.Equal(again), "retry must not reset the original timer")
+				var actualStatus string
+				require.NoError(t, db.GetContext(t.Context(), &actualStatus, "SELECT status FROM dev_machine_agent_runs WHERE id=$1", runID))
+				require.Equal(t, "running", actualStatus)
+			} else {
+				require.ErrorIs(t, err, sql.ErrNoRows)
+				var actualStatus string
+				require.NoError(t, db.GetContext(t.Context(), &actualStatus, "SELECT status FROM dev_machine_agent_runs WHERE id=$1", runID))
+				require.Equal(t, status, actualStatus)
+			}
+		})
+	}
+	_, err = repo.StartAgentRun(t.Context(), uuid.New())
+	require.ErrorIs(t, err, sql.ErrNoRows)
 }

@@ -20,16 +20,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateRepositoryRequiresMatchingGitHubIdentity(t *testing.T) {
-	require.NoError(t, validateRepository(dto.DevMachineRepoInput{
-		Provider: "github", Owner: "ku", Name: ".github", URL: "https://github.com/ku/.github.git",
-	}))
-	require.Error(t, validateRepository(dto.DevMachineRepoInput{
-		Provider: "github", Owner: "other", Name: "repo", URL: "https://github.com/ku/repo",
-	}))
-	require.Error(t, validateRepository(dto.DevMachineRepoInput{
-		Provider: "github", Owner: "ku", Name: "repo", URL: "https://github.com:444/ku/repo",
-	}))
+func TestValidateRepositoryRequiresMatchingForgejoIdentity(t *testing.T) {
+	require.NoError(t, validateRepository(dto.DevMachineRepoInput{Provider: "forgejo", Owner: "ku-team", Name: "repo", URL: "https://git.example.com:8443/ku-team/repo.git"}))
+	for _, input := range []dto.DevMachineRepoInput{
+		{Provider: "github", Owner: "ku", Name: "repo", URL: "https://github.com/ku/repo"},
+		{Provider: "forgejo", Owner: "other", Name: "repo", URL: "https://git.example.com/ku/repo"},
+		{Provider: "forgejo", Owner: "ku", Name: "repo", URL: "https://user:token@git.example.com/ku/repo"},
+		{Provider: "forgejo", Owner: "ku", Name: "repo", URL: "https://git.example.com/ku/repo?token=secret"},
+		{Provider: "forgejo", Owner: "ku", Name: "repo", URL: "http://git.example.com/ku/repo"},
+	} {
+		require.Error(t, validateRepository(input))
+	}
 }
 
 func TestValidGitRefRejectsOptionAndTraversalForms(t *testing.T) {
@@ -420,7 +421,7 @@ func TestCreateResolvesScopedRepositoryAndEnvironment(t *testing.T) {
 		policy:       testPolicy(workspaceID),
 		issues:       map[uuid.UUID]*domain.Issue{issueID: {ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, ProjectID: &projectID, Identifier: "ENG-42"}},
 		projects:     map[uuid.UUID]*domain.Project{projectID: {ID: projectID, WorkspaceID: workspaceID, TeamID: &teamID}},
-		reposByID:    map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "Ku/API", DefaultBranch: "main", IsActive: true}},
+		reposByID:    map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "Ku/API", InstanceURL: "https://git.example.com", DefaultBranch: "main", IsActive: true}},
 		environments: map[uuid.UUID]*domain.DevMachineEnvironment{envID: {ID: envID, WorkspaceID: workspaceID, Name: "base", ImageRef: immutableEnvRef, ImageDigest: &immutableEnvRef, Status: "ready"}},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{
 			scopeKey(nil, nil, &issueID):   {WorkspaceID: workspaceID, ForgejoRepoID: &repoID, BaseBranch: dmStrPtr("issue-base")},
@@ -438,8 +439,35 @@ func TestCreateResolvesScopedRepositoryAndEnvironment(t *testing.T) {
 	require.Equal(t, &repoID, machine.RepositoryAffinityID)
 	require.Equal(t, &envID, machine.EnvironmentID)
 	require.Equal(t, "Ku/API", machine.RepoOwner+"/"+machine.RepoName)
+	require.Equal(t, "forgejo", machine.RepoProvider)
+	require.Equal(t, "https://git.example.com/Ku/API", machine.RepoURL)
 	require.Equal(t, "issue-base", machine.BaseBranch)
 	require.Equal(t, "ku/eng-42", machine.WorkingBranch)
+}
+
+func TestCreateDirectForgejoRepositoryRequiresTheLinkedInstance(t *testing.T) {
+	for _, test := range []struct {
+		name, url string
+		wantError bool
+	}{
+		{"linked instance", "https://git.example.com:8443/ku.team/api.git", false},
+		{"foreign instance", "https://foreign.example/ku.team/api", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workspaceID, userID, repoID := uuid.New(), uuid.New(), uuid.New()
+			store := &devMachineStoreFake{policy: testPolicy(workspaceID), reposByID: map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku.team/api", InstanceURL: "https://git.example.com:8443", DefaultBranch: "main", IsActive: true}}}
+			machine, _, err := newTestDevMachineService(store).Create(t.Context(), workspaceID, userID, dto.CreateDevMachineRequest{Name: "direct-forgejo", Size: "small", Repo: &dto.DevMachineRepoInput{Provider: "forgejo", Owner: "ku.team", Name: "api", URL: test.url}})
+			if test.wantError {
+				require.ErrorContains(t, err, "must match the linked Forgejo instance")
+				require.Nil(t, machine)
+				require.Nil(t, store.createdMachine)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, "forgejo", machine.RepoProvider)
+				require.Equal(t, "https://git.example.com:8443/ku.team/api", machine.RepoURL)
+			}
+		})
+	}
 }
 
 func TestCreateUsesImmutableEnvironmentDigestForDeveloperServices(t *testing.T) {
@@ -474,7 +502,7 @@ func TestCheckoutIssueEnforcesRepositoryAffinityAndIsIdempotent(t *testing.T) {
 	store := &devMachineStoreFake{
 		policy: testPolicy(workspaceID), machine: readyMachine,
 		issues:        map[uuid.UUID]*domain.Issue{issueID: issue},
-		reposByID:     map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true}, otherRepoID: {ID: otherRepoID, WorkspaceID: workspaceID, FullName: "ku/other", DefaultBranch: "main", IsActive: true}},
+		reposByID:     map[uuid.UUID]*domain.ForgejoRepoModel{repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", InstanceURL: "https://git.example.com", DefaultBranch: "main", IsActive: true}, otherRepoID: {ID: otherRepoID, WorkspaceID: workspaceID, FullName: "ku/other", InstanceURL: "https://git.example.com", DefaultBranch: "main", IsActive: true}},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, ForgejoRepoID: &repoID}},
 		checkouts:     []domain.DevMachineCheckout{existing},
 	}
@@ -501,7 +529,7 @@ func TestCheckoutIssueRetriesFailedCheckout(t *testing.T) {
 		machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, CreatedByUserID: &userID, Status: domain.DevMachineStatusRunning, DesiredStatus: domain.DevMachineStatusRunning, Generation: 3, RepositoryAffinityID: &repoID, ExpiresAt: time.Now().Add(time.Hour)},
 		issues:  map[uuid.UUID]*domain.Issue{issueID: {ID: issueID, WorkspaceID: workspaceID, TeamID: teamID, Identifier: "ENG-7"}},
 		reposByID: map[uuid.UUID]*domain.ForgejoRepoModel{
-			repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", DefaultBranch: "main", IsActive: true},
+			repoID: {ID: repoID, WorkspaceID: workspaceID, FullName: "ku/api", InstanceURL: "https://git.example.com", DefaultBranch: "main", IsActive: true},
 		},
 		scopeSettings: map[string]*domain.DevMachineScopeSetting{scopeKey(nil, nil, &issueID): {WorkspaceID: workspaceID, ForgejoRepoID: &repoID}},
 		checkouts:     []domain.DevMachineCheckout{{ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID, ForgejoRepoID: repoID, Status: "failed", LastError: &message}},

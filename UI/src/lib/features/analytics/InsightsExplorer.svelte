@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import * as echarts from 'echarts';
+	import { init, type ECharts, type ChartOption } from '$lib/charts/echarts';
 	import CircleDashed from '@lucide/svelte/icons/circle-dashed';
 	import Flag from '@lucide/svelte/icons/flag';
 	import FolderKanban from '@lucide/svelte/icons/folder-kanban';
@@ -51,7 +51,7 @@
 
 	// svelte-ignore non_reactive_update
 	let container: HTMLDivElement;
-	let chart: echarts.ECharts | null = null;
+	let chart: ECharts | null = null;
 
 	const searchParams = $derived(new URLSearchParams(page.url.search));
 
@@ -238,7 +238,7 @@
 		return result?.measure !== 'issue_count';
 	}
 
-	function buildChartOption(): echarts.EChartsOption | null {
+	function buildChartOption(): ChartOption | null {
 		const groups = result?.groups;
 		if (!groups || groups.length === 0) return null;
 
@@ -290,7 +290,14 @@
 					itemHeight: 8,
 					textStyle: { fontSize: 10, color: theme.textSecondary }
 				},
-				grid: { left: 12, right: 12, top: 16, bottom: 44, containLabel: true },
+				grid: {
+					left: 12,
+					right: 12,
+					top: 16,
+					bottom: 44,
+					outerBoundsMode: 'same' as const,
+					outerBoundsContain: 'axisLabel' as const
+				},
 				xAxis: {
 					type: 'category' as const,
 					data: names,
@@ -363,7 +370,14 @@
 						return `${name}<br/>${result?.unit ?? ''}: ${fmtValue(yValue)}`;
 					}
 				},
-				grid: { left: 12, right: 12, top: 16, bottom: 12, containLabel: true },
+				grid: {
+					left: 12,
+					right: 12,
+					top: 16,
+					bottom: 12,
+					outerBoundsMode: 'same' as const,
+					outerBoundsContain: 'axisLabel' as const
+				},
 				xAxis: {
 					type: 'category' as const,
 					data: names,
@@ -401,7 +415,14 @@
 		return {
 			backgroundColor: 'transparent',
 			tooltip,
-			grid: { left: 12, right: 12, top: 16, bottom: 12, containLabel: true },
+			grid: {
+				left: 12,
+				right: 12,
+				top: 16,
+				bottom: 12,
+				outerBoundsMode: 'same' as const,
+				outerBoundsContain: 'axisLabel' as const
+			},
 			xAxis: {
 				type: 'category' as const,
 				data: names,
@@ -463,7 +484,7 @@
 
 	onMount(() => {
 		if (container) {
-			chart = echarts.init(container, undefined, { renderer: 'canvas' });
+			chart = init(container, undefined, { renderer: 'canvas' });
 			chart.on('click', handleChartClick);
 			renderChart();
 		}
@@ -616,10 +637,14 @@
 	<!-- Aggregate -->
 	{#if result}
 		<div class="flex gap-4 text-xs text-[var(--color-text-secondary)]">
-			<span>{m['insights.total_label']()} <strong class="text-[var(--color-text-primary)]">{result.total_count ?? '-'}</strong></span>
+			<span
+				>{m['insights.total_label']()}
+				<strong class="text-[var(--color-text-primary)]">{result.total_count ?? '-'}</strong></span
+			>
 			{#if result.aggregate != null}
 				<span
-					>{m['insights.aggregate']()} <strong class="text-[var(--color-text-primary)]">{fmtValue(result.aggregate)}</strong>
+					>{m['insights.aggregate']()}
+					<strong class="text-[var(--color-text-primary)]">{fmtValue(result.aggregate)}</strong>
 					{unitLabel()}</span
 				>
 			{/if}
@@ -629,6 +654,7 @@
 	<!-- Chart -->
 	<div class="relative min-h-72 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
 		<div
+			data-testid="insights-chart"
 			bind:this={container}
 			class="h-72 w-full {loading || error || !result || (!result.groups?.length && !result.points?.length)
 				? 'invisible'
@@ -665,7 +691,9 @@
 							<th class="px-3 py-2 text-right font-medium text-[var(--color-text-secondary)]">{m['insights.p75']()}</th>
 							<th class="px-3 py-2 text-right font-medium text-[var(--color-text-secondary)]">{m['insights.p95']()}</th>
 						{:else}
-							<th class="px-3 py-2 text-right font-medium text-[var(--color-text-secondary)]">{m['insights.count']()}</th>
+							<th class="px-3 py-2 text-right font-medium text-[var(--color-text-secondary)]"
+								>{m['insights.count']()}</th
+							>
 						{/if}
 					</tr>
 				</thead>
@@ -722,14 +750,22 @@
 		{#if (result.points ?? []).length > 0}
 			<div class="rounded-lg border border-[var(--app-border)]">
 				<div class="border-b border-[var(--app-border)] bg-[var(--color-bg-tertiary)]/40 px-3 py-1.5">
-					<span class="text-xs font-medium text-[var(--color-text-secondary)]">{m['insights.issues_count']({ count: result.points?.length ?? 0 })}</span>
+					<span class="text-xs font-medium text-[var(--color-text-secondary)]"
+						>{m['insights.issues_count']({ count: result.points?.length ?? 0 })}</span
+					>
 				</div>
 				<table class="w-full text-xs">
 					<thead>
 						<tr class="border-b border-[var(--app-border)]">
-							<th class="px-3 py-1.5 text-left font-medium text-[var(--color-text-tertiary)]">{m['insights.issue']()}</th>
-							<th class="px-3 py-1.5 text-left font-medium text-[var(--color-text-tertiary)]">{m['insights.issue_title']()}</th>
-							<th class="px-3 py-1.5 text-right font-medium text-[var(--color-text-tertiary)]">{m['insights.value']()}</th>
+							<th class="px-3 py-1.5 text-left font-medium text-[var(--color-text-tertiary)]"
+								>{m['insights.issue']()}</th
+							>
+							<th class="px-3 py-1.5 text-left font-medium text-[var(--color-text-tertiary)]"
+								>{m['insights.issue_title']()}</th
+							>
+							<th class="px-3 py-1.5 text-right font-medium text-[var(--color-text-tertiary)]"
+								>{m['insights.value']()}</th
+							>
 						</tr>
 					</thead>
 					<tbody>

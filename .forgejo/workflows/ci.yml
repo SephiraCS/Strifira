@@ -68,15 +68,16 @@ jobs:
         run: |
           set -euo pipefail
           for _ in $(seq 1 30); do
-            podman exec ku-postgres pg_isready -U ku >/dev/null 2>&1 && break
+            podman exec ku-postgres pg_isready -h 127.0.0.1 -U ku -d ku_test >/dev/null 2>&1 && break
             sleep 2
           done
-          podman exec ku-postgres pg_isready -U ku
+          podman exec ku-postgres pg_isready -h 127.0.0.1 -U ku -d ku_test
           podman exec ku-redis redis-cli ping
 
       - name: Apply migrations and run tests with coverage
         env:
           DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
+          TEST_DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
           REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret-that-is-at-least-32-characters-long
         run: |
@@ -105,7 +106,7 @@ jobs:
           persist-credentials: false
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Svelte check
         run: npm run check
@@ -130,7 +131,7 @@ jobs:
           persist-credentials: false
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       # Installs only what the job image lacks for this Playwright version
       # (a no-op once the baked browsers match), then runs the browser tests;
@@ -138,7 +139,7 @@ jobs:
       - name: Browser tests
         run: |
           npx playwright install chromium ffmpeg
-          npm run test:e2e
+          npm run test:e2e -- --workers=2
 
   web-check:
     name: Marketing Site Checks
@@ -155,7 +156,7 @@ jobs:
           persist-credentials: false
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Svelte check
         run: npm run check

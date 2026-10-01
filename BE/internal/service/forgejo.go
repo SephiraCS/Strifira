@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -23,12 +24,13 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var issueIdentifierRegex = regexp.MustCompile(`(?i)([A-Z][A-Z0-9]+-\d+)`)
+var issueIdentifierRegex = regexp.MustCompile(`(?i)([A-Z][A-Z0-9]*-\d+)`)
 var forgejoLoginRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,99}$`)
+var ErrForgejoNotConnected = errors.New("Forgejo is not connected")
 
 // issueKeywordRegex matches closing keywords followed by an issue identifier,
 // e.g. "Fixes KUA-12" or "resolves kua-3 and closes TS-4".
-var issueKeywordRegex = regexp.MustCompile(`(?i)\b(?:fix(?:es|ed)?|clos(?:es|ed)?|resolv(?:es|ed)?)\s+([A-Z][A-Z0-9]+-\d+)`)
+var issueKeywordRegex = regexp.MustCompile(`(?i)\b(?:fix(?:es|ed)?|clos(?:es|ed)?|resolv(?:es|ed)?)\s+([A-Z][A-Z0-9]*-\d+)`)
 
 // forgejoLifecycleEvents is the closed set of auto-transition events.
 var forgejoLifecycleEvents = map[string]bool{
@@ -47,11 +49,10 @@ type GlobalForgejoConfig struct {
 }
 
 type ForgejoService struct {
-	fRepo          *repository.ForgejoRepository
+	fRepo          forgejoStore
 	issueRepo      repository.IssueRepo
 	teamRepo       repository.TeamRepo
 	teamStatusRepo repository.TeamStatusRepo
-	historyRepo    repository.IssueHistoryRepo
 	encryptionKey  []byte
 	hub            *realtime.Hub
 	frontendURL    string
@@ -71,7 +72,6 @@ func NewForgejoService(
 	issueRepo repository.IssueRepo,
 	teamRepo repository.TeamRepo,
 	teamStatusRepo repository.TeamStatusRepo,
-	historyRepo repository.IssueHistoryRepo,
 	encryptionKey []byte,
 	hub *realtime.Hub,
 	frontendURL string,
@@ -83,7 +83,6 @@ func NewForgejoService(
 		issueRepo:      issueRepo,
 		teamRepo:       teamRepo,
 		teamStatusRepo: teamStatusRepo,
-		historyRepo:    historyRepo,
 		encryptionKey:  encryptionKey,
 		hub:            hub,
 		frontendURL:    frontendURL,
@@ -109,7 +108,7 @@ func (s *ForgejoService) resolveConnection(ctx context.Context, workspaceID uuid
 		return nil, err
 	}
 	if conn == nil {
-		return nil, fmt.Errorf("Forgejo is not connected")
+		return nil, ErrForgejoNotConnected
 	}
 	token, err := crypto.Decrypt(conn.Token, s.encryptionKey)
 	if err != nil {
@@ -127,16 +126,25 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 	if s.global != nil {
 		return nil, fmt.Errorf("Forgejo is centrally managed — per-workspace setup is not available")
 	}
-	instanceURL = strings.TrimRight(strings.TrimSpace(instanceURL), "/")
-	if instanceURL == "" || token == "" {
+	if strings.TrimSpace(instanceURL) == "" || strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("instance URL and token are required")
 	}
-	parsed, err := url.Parse(instanceURL)
-	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" {
+	instanceURL, err := fj.NormalizeInstanceURL(instanceURL)
+	if err != nil {
 		return nil, fmt.Errorf("invalid instance URL")
 	}
+	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	for _, repo := range repos {
+		linkedURL, err := fj.NormalizeInstanceURL(repo.InstanceURL)
+		if err != nil || linkedURL != instanceURL {
+			return nil, fmt.Errorf("unlink existing repositories before changing the Forgejo instance")
+		}
+	}
 
-	user, err := fj.NewClient(instanceURL, token).GetCurrentUser()
+	user, err := fj.NewClient(instanceURL, token).GetCurrentUser(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("token validation failed: %w", err)
 	}
@@ -158,12 +166,17 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 	return &dto.ForgejoAccountResponse{Login: user.Login, AvatarURL: user.AvatarURL}, nil
 }
 
-// Disconnect removes the connection and unlinks every repo (webhooks on the
-// Forgejo side are removed best-effort).
+// Disconnect unlinks every repo before removing the connection. Local cleanup
+// failures retain the credentials for retry; Forgejo webhooks are best-effort.
 func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) error {
-	repos, _ := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
-	for i := range repos {
-		_ = s.UnlinkRepo(ctx, workspaceID, repos[i].ID)
+	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("listing linked Forgejo repositories: %w", err)
+	}
+	for _, repo := range repos {
+		if err := s.UnlinkRepo(ctx, workspaceID, repo.ID); err != nil {
+			return fmt.Errorf("unlinking Forgejo repository %s: %w", repo.FullName, err)
+		}
 	}
 	return s.fRepo.DeleteConnection(ctx, workspaceID)
 }
@@ -171,10 +184,19 @@ func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) 
 // seedDefaultsIfMissing seeds transition rules once (never overwrites user customizations).
 func (s *ForgejoService) seedDefaultsIfMissing(ctx context.Context, workspaceID uuid.UUID) {
 	existing, err := s.fRepo.ListAutoTransitions(ctx, workspaceID)
-	if err != nil || len(existing) > 0 {
+	if err != nil {
 		return
 	}
-	s.seedDefaults(ctx, workspaceID)
+	if len(existing) == 0 {
+		s.seedDefaults(ctx, workspaceID)
+		return
+	}
+	for _, rule := range existing {
+		if rule.IsActive && rule.TargetStatus == "pr" {
+			s.ensureReviewStatuses(ctx, workspaceID)
+			return
+		}
+	}
 }
 
 // seedDefaults creates the auto-transition rules and PR review state.
@@ -196,25 +218,42 @@ func (s *ForgejoService) seedDefaults(ctx context.Context, workspaceID uuid.UUID
 		})
 	}
 
+	s.ensureReviewStatuses(ctx, workspaceID)
+}
+
+func (s *ForgejoService) ensureReviewStatuses(ctx context.Context, workspaceID uuid.UUID) {
+	if s.teamRepo == nil {
+		return
+	}
 	teams, err := s.teamRepo.ListByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return
 	}
 	for i := range teams {
-		existing, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, teams[i].ID, "pr")
-		if err != nil || existing != nil {
-			continue
+		if _, err := s.ensureReviewStatus(ctx, teams[i].ID); err != nil {
+			log.WithError(err).WithField("team_id", teams[i].ID).Warn("failed to create Forgejo review status")
 		}
-		position, err := s.teamStatusRepo.NextPosition(ctx, teams[i].ID)
-		if err != nil {
-			continue
-		}
-		color := "#8b5cf6"
-		_ = s.teamStatusRepo.Create(ctx, &domain.TeamStatus{
-			ID: uuid.New(), TeamID: teams[i].ID, Name: "PR", Slug: "pr",
-			Category: domain.StatusCategoryStarted, Color: &color, Position: position,
-		})
 	}
+}
+
+func (s *ForgejoService) ensureReviewStatus(ctx context.Context, teamID uuid.UUID) (*domain.TeamStatus, error) {
+	status, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, teamID, "pr")
+	if err != nil || status != nil {
+		return status, err
+	}
+	position, err := s.teamStatusRepo.NextPosition(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	status = &domain.TeamStatus{ID: uuid.New(), TeamID: teamID, Name: "PR", Slug: "pr", Category: domain.StatusCategoryStarted, Color: new("#8b5cf6"), Position: position}
+	if err := s.teamStatusRepo.Create(ctx, status); err != nil {
+		// Another concurrent delivery may have created the same status.
+		if existing, lookupErr := s.teamStatusRepo.GetByTeamAndSlug(ctx, teamID, "pr"); lookupErr == nil && existing != nil {
+			return existing, nil
+		}
+		return nil, err
+	}
+	return status, nil
 }
 
 // webhookTargetURL derives the URL webhook deliveries should be sent to.
@@ -226,18 +265,41 @@ func (s *ForgejoService) webhookTargetURL() string {
 	return strings.TrimRight(base, "/") + "/api/forgejo/webhook"
 }
 
+// ListLinkedRepos reads active workspace links without resolving credentials,
+// contacting Forgejo, or initializing integration defaults.
+func (s *ForgejoService) ListLinkedRepos(ctx context.Context, workspaceID uuid.UUID) ([]dto.ForgejoRepoResponse, error) {
+	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dto.ForgejoRepoResponse, 0, len(repos))
+	for _, repo := range repos {
+		if !repo.IsActive || repo.WorkspaceID != workspaceID {
+			continue
+		}
+		result = append(result, dto.ForgejoRepoResponse{
+			ID: repo.ID.String(), ForgejoRepoID: repo.ForgejoRepoID, FullName: repo.FullName,
+			InstanceURL: repo.InstanceURL, DefaultBranch: repo.DefaultBranch, IsActive: repo.IsActive,
+		})
+	}
+	return result, nil
+}
+
 // GetStatus returns the integration status for a workspace.
 func (s *ForgejoService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (*dto.ForgejoStatusResponse, error) {
 	resp := &dto.ForgejoStatusResponse{Repos: []dto.ForgejoRepoResponse{}}
 
 	conn, err := s.resolveConnection(ctx, workspaceID)
+	if err != nil && !errors.Is(err, ErrForgejoNotConnected) {
+		return nil, err
+	}
 	if err == nil && conn != nil {
 		resp.Configured = true
-		resp.Connected = true
 		resp.GlobalConfig = conn.Global
 		resp.InstanceURL = conn.InstanceURL
 
-		if account, err := conn.client().GetCurrentUser(); err == nil {
+		if account, err := conn.client().GetCurrentUser(ctx); err == nil {
+			resp.Connected = true
 			resp.Account = &dto.ForgejoAccountResponse{Login: account.Login, AvatarURL: account.AvatarURL}
 		}
 
@@ -265,7 +327,7 @@ func (s *ForgejoService) ListAvailableRepos(ctx context.Context, workspaceID uui
 	if err != nil {
 		return nil, fmt.Errorf("Forgejo is not connected")
 	}
-	remote, err := conn.client().ListRepos()
+	remote, err := conn.client().ListRepos(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("listing repos: %w", err)
 	}
@@ -291,13 +353,16 @@ func (s *ForgejoService) ListAvailableRepos(ctx context.Context, workspaceID uui
 
 // LinkRepos links selected repos and creates a signed webhook on each.
 func (s *ForgejoService) LinkRepos(ctx context.Context, workspaceID uuid.UUID, req dto.LinkForgejoReposRequest) error {
+	if len(req.ForgejoRepoIDs) == 0 || len(req.ForgejoRepoIDs) > 100 {
+		return fmt.Errorf("select between 1 and 100 repositories")
+	}
 	conn, err := s.resolveConnection(ctx, workspaceID)
 	if err != nil {
 		return err
 	}
 	client := conn.client()
 
-	remote, err := client.ListRepos()
+	remote, err := client.ListRepos(ctx)
 	if err != nil {
 		return fmt.Errorf("listing repos: %w", err)
 	}
@@ -310,9 +375,12 @@ func (s *ForgejoService) LinkRepos(ctx context.Context, workspaceID uuid.UUID, r
 	for _, id := range req.ForgejoRepoIDs {
 		remoteRepo, ok := remoteMap[id]
 		if !ok {
-			continue
+			return fmt.Errorf("repository is not available to the Forgejo connection")
 		}
-		existing, _ := s.fRepo.GetRepoByForgejoID(ctx, workspaceID, id)
+		existing, err := s.fRepo.GetRepoByForgejoID(ctx, workspaceID, id)
+		if err != nil {
+			return err
+		}
 		if existing != nil {
 			continue
 		}
@@ -331,7 +399,7 @@ func (s *ForgejoService) LinkRepos(ctx context.Context, workspaceID uuid.UUID, r
 		if !ok {
 			continue
 		}
-		hook, err := client.CreateWebhook(owner, name, target, secret, nil)
+		hook, err := client.CreateWebhook(ctx, owner, name, target, secret, nil)
 		if err != nil {
 			log.WithError(err).WithField("repo", remoteRepo.FullName).Warn("failed to create Forgejo webhook")
 			return fmt.Errorf("creating webhook on %s failed: %w", remoteRepo.FullName, err)
@@ -345,6 +413,16 @@ func (s *ForgejoService) LinkRepos(ctx context.Context, workspaceID uuid.UUID, r
 		}
 		if err := s.fRepo.CreateRepo(ctx, repo); err != nil {
 			log.WithError(err).WithField("repo", remoteRepo.FullName).Warn("failed to link repo")
+			// Persisting the link can fail (for example, another workspace
+			// already linked the repo). Do not leave an orphaned webhook.
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+			cleanupErr := client.DeleteWebhook(cleanupCtx, owner, name, hook.ID)
+			cancel()
+			if cleanupErr != nil {
+				log.WithError(cleanupErr).WithField("repo", remoteRepo.FullName).Warn("failed to remove unpersisted Forgejo webhook")
+				return fmt.Errorf("repository link could not be saved; its webhook could not be removed")
+			}
+			return fmt.Errorf("repository link could not be saved")
 		}
 	}
 	return nil
@@ -363,9 +441,11 @@ func (s *ForgejoService) UnlinkRepo(ctx context.Context, workspaceID, repoID uui
 	if repo.WebhookID != nil {
 		conn, err := s.resolveConnection(ctx, workspaceID)
 		if err == nil {
+			instance, instanceErr := fj.NormalizeInstanceURL(conn.InstanceURL)
+			linkedInstance, linkedErr := fj.NormalizeInstanceURL(repo.InstanceURL)
 			owner, name, ok := splitRepoOwnerName(repo.FullName)
-			if ok {
-				_ = conn.client().DeleteWebhook(owner, name, *repo.WebhookID)
+			if ok && instanceErr == nil && linkedErr == nil && instance == linkedInstance {
+				_ = conn.client().DeleteWebhook(ctx, owner, name, *repo.WebhookID)
 			}
 		}
 	}
@@ -442,7 +522,11 @@ func (s *ForgejoService) VerifyWebhookSignature(ctx context.Context, payload []b
 func (s *ForgejoService) HandleWebhookEvent(ctx context.Context, eventType string, payload []byte, repo *domain.ForgejoRepoModel) error {
 	switch eventType {
 	case "pull_request":
-		return s.processPullRequestEvent(ctx, payload, repo)
+		err := s.processPullRequestEvent(ctx, payload, repo)
+		if errors.Is(err, repository.ErrForgejoStalePullRequest) {
+			return nil
+		}
+		return err
 	case "push":
 		return s.processPushEvent(ctx, payload, repo)
 	case "create":
@@ -477,8 +561,13 @@ func (s *ForgejoService) broadcastRealtimeEvent(workspaceID uuid.UUID, event rea
 }
 
 type fjWebhookPR struct {
-	Action      string `json:"action"`
-	Number      int    `json:"number"`
+	Action  string `json:"action"`
+	Number  int    `json:"number"`
+	Changes struct {
+		Title *struct {
+			From string `json:"from"`
+		} `json:"title"`
+	} `json:"changes"`
 	PullRequest struct {
 		Number    int        `json:"number"`
 		Title     string     `json:"title"`
@@ -526,9 +615,15 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 	}
 
 	state := prStateFromEvent(event)
-	referenced := s.resolveIssuesFromRefs(ctx, repo.WorkspaceID,
+	referenced, err := s.resolveIssuesFromRefs(ctx, repo.WorkspaceID,
 		event.PullRequest.Head.Ref, event.PullRequest.Title, event.PullRequest.Body)
-	keywordIssues := s.resolveKeywordIssues(ctx, repo.WorkspaceID, event.PullRequest.Title, event.PullRequest.Body)
+	if err != nil {
+		return err
+	}
+	keywordIssues, err := s.resolveKeywordIssues(ctx, repo.WorkspaceID, event.PullRequest.Title, event.PullRequest.Body)
+	if err != nil {
+		return err
+	}
 
 	linkedIssues := referenced
 	for _, issue := range keywordIssues {
@@ -551,7 +646,7 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 
 	pr := &domain.ForgejoPullRequest{
 		ID: uuid.New(), WorkspaceID: repo.WorkspaceID, ForgejoRepoID: repo.ID,
-		Number: event.PullRequest.Number, Title: event.PullRequest.Title, State: state,
+		Number: event.PullRequest.Number, Title: event.PullRequest.Title, Body: event.PullRequest.Body, State: state,
 		AuthorLogin: event.PullRequest.User.Login, AuthorAvatarURL: &avatarURL,
 		HTMLURL: event.PullRequest.HTMLURL, HeadBranch: &headRef, HeadSHA: &headSHA,
 		BaseBranch: &baseRef, Additions: event.PullRequest.Additions,
@@ -559,6 +654,9 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 		MergedAt:  event.PullRequest.MergedAt, ClosedAt: event.PullRequest.ClosedAt,
 	}
 	if err := s.fRepo.UpsertPullRequest(ctx, pr); err != nil {
+		if errors.Is(err, repository.ErrForgejoStalePullRequest) {
+			return nil
+		}
 		return fmt.Errorf("upserting PR: %w", err)
 	}
 
@@ -570,21 +668,55 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 	for _, issue := range linkedIssues {
 		issueIDs = append(issueIDs, issue.ID)
 	}
-	if err := s.fRepo.ReplacePRIssueLinks(ctx, pr.ID, issueIDs); err != nil {
+	currentGreen := pr.State == "open" && pr.ChecksGreen && headSHA != ""
+	if currentGreen {
+		existing, err := s.fRepo.ListIssueIDsForPR(ctx, pr.ID)
+		if err != nil {
+			return err
+		}
+		for _, issue := range linkedIssues {
+			alreadyLinked := false
+			for _, id := range existing {
+				if id == issue.ID {
+					alreadyLinked = true
+					break
+				}
+			}
+			if alreadyLinked {
+				continue
+			}
+			// Persist the new link after its inherited green transition succeeds,
+			// so failed automation remains retryable on the next delivery.
+			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, "pr_checks_green", issue, pr.AuthorLogin, pr); err != nil {
+				return err
+			}
+		}
+	}
+	if err := s.fRepo.ReplacePRIssueLinks(ctx, pr, issueIDs); err != nil {
 		return fmt.Errorf("linking PR to issues: %w", err)
 	}
 
 	mergeRule, mergeRuleErr := s.fRepo.GetAutoTransitionByEvent(ctx, repo.WorkspaceID, "pr_merged")
+	if mergeRuleErr != nil {
+		return mergeRuleErr
+	}
+	ready := event.Action == "edited" && event.Changes.Title != nil && isDraftTitle(event.Changes.Title.From)
 	for _, issue := range linkedIssues {
 		switch {
-		case event.Action == "opened" || event.Action == "ready_for_review":
-			s.applyAutoTransition(ctx, repo.WorkspaceID, "pr_opened", issue, event.PullRequest.User.Login)
+		case !currentGreen && pr.State == "open" && (event.Action == "opened" || event.Action == "reopened" || ready):
+			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, "pr_opened", issue, event.PullRequest.User.Login, pr); err != nil {
+				return err
+			}
 		case event.PullRequest.Merged:
-			if mergeRuleErr == nil && mergeRule != nil {
-				s.applyAutoTransition(ctx, repo.WorkspaceID, "pr_merged", issue, event.PullRequest.User.Login)
+			if mergeRule != nil {
+				if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, "pr_merged", issue, event.PullRequest.User.Login, pr); err != nil {
+					return err
+				}
 			} else if keywordSet[issue.ID] {
 				// Closing keyword with no configured rule still closes.
-				s.moveIssueToCompleted(ctx, repo.WorkspaceID, issue, map[uuid.UUID]bool{})
+				if err := s.moveIssueToCompleted(ctx, repo.WorkspaceID, issue, map[uuid.UUID]bool{}, pr); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -597,6 +729,11 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 		s.broadcastAppRefresh(repo.WorkspaceID, "issues")
 	}
 	return nil
+}
+
+func isDraftTitle(title string) bool {
+	title = strings.ToUpper(strings.TrimSpace(title))
+	return strings.HasPrefix(title, "WIP:") || strings.HasPrefix(title, "[WIP]") || strings.HasPrefix(title, "DRAFT:") || strings.HasPrefix(title, "[DRAFT]")
 }
 
 type fjWebhookPush struct {
@@ -634,7 +771,10 @@ func (s *ForgejoService) processPushEvent(ctx context.Context, payload []byte, r
 			commitURL = fmt.Sprintf("%s/%s/commit/%s", repo.InstanceURL, repo.FullName, sha)
 		}
 
-		issue := s.resolveIssueFromRef(ctx, repo.WorkspaceID, c.Message)
+		issue, err := s.resolveIssueFromRef(ctx, repo.WorkspaceID, c.Message)
+		if err != nil {
+			return err
+		}
 		var issueID *uuid.UUID
 		if issue != nil {
 			id := issue.ID
@@ -685,14 +825,16 @@ func (s *ForgejoService) processCreateEvent(ctx context.Context, payload []byte,
 	// Forgejo sends the full ref (refs/heads/<name>) in create events.
 	event.Ref = strings.TrimPrefix(event.Ref, "refs/heads/")
 
-	issue := s.resolveIssueFromRef(ctx, repo.WorkspaceID, event.Ref)
+	issues, err := s.resolveIssuesFromRefs(ctx, repo.WorkspaceID, event.Ref)
+	if err != nil {
+		return err
+	}
 	var issueID *uuid.UUID
-	if issue != nil {
-		id := issue.ID
-		issueID = &id
+	if len(issues) > 0 {
+		issueID = &issues[0].ID
 	}
 
-	branchURL := fmt.Sprintf("%s/src/branch/%s", repo.InstanceURL, event.Ref)
+	branchURL := fmt.Sprintf("%s/%s/src/branch/%s", strings.TrimRight(repo.InstanceURL, "/"), repo.FullName, url.PathEscape(event.Ref))
 	branch := &domain.ForgejoBranch{
 		ID: uuid.New(), WorkspaceID: repo.WorkspaceID, IssueID: issueID,
 		ForgejoRepoID: repo.ID, Name: event.Ref, HTMLURL: &branchURL,
@@ -701,8 +843,10 @@ func (s *ForgejoService) processCreateEvent(ctx context.Context, payload []byte,
 		return fmt.Errorf("upserting branch: %w", err)
 	}
 
-	if issue != nil {
-		s.applyAutoTransition(ctx, repo.WorkspaceID, "branch_created", issue, event.Sender.Login)
+	for _, issue := range issues {
+		if err := s.applyAutoTransition(ctx, repo.WorkspaceID, "branch_created", issue, event.Sender.Login); err != nil {
+			return err
+		}
 		s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
 			Type:    "forgejo:branch_created",
 			Payload: map[string]any{"issue_id": issue.ID, "branch": event.Ref},
@@ -754,7 +898,7 @@ func actionRunHeadSHA(payload []byte) (string, error) {
 	if err := json.Unmarshal(payload, &event); err != nil {
 		return "", fmt.Errorf("unmarshaling action run event: %w", err)
 	}
-	if event.Run.TriggerEvent == "pull_request" {
+	if event.Run.TriggerEvent == "pull_request" || event.Run.TriggerEvent == "pull_request_target" {
 		var trigger struct {
 			PullRequest struct {
 				Head struct {
@@ -784,15 +928,19 @@ func (s *ForgejoService) processActionRunEvent(ctx context.Context, payload []by
 }
 
 func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.ForgejoRepoModel, sha string) error {
-
+	// Keep these versions from before the external fetch. Reloading afterward
+	// would let an older response borrow a newer observation's version token.
 	openPRs, err := s.fRepo.ListOpenPRsByHeadSHA(ctx, repo.ID, sha)
-	if err != nil || len(openPRs) == 0 {
+	if err != nil {
+		return err
+	}
+	if len(openPRs) == 0 {
 		return nil
 	}
 
 	conn, err := s.resolveConnection(ctx, repo.WorkspaceID)
 	if err != nil {
-		return nil
+		return err
 	}
 	owner, name, ok := splitRepoOwnerName(repo.FullName)
 	if !ok {
@@ -800,7 +948,7 @@ func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.F
 	}
 	var combined *fj.CombinedStatus
 	for attempt := 0; attempt < 3; attempt++ {
-		combined, err = conn.client().GetCombinedStatus(owner, name, sha)
+		combined, err = conn.client().GetCombinedStatus(ctx, owner, name, sha)
 		if err == nil && (combined.AllChecksPassed() || combined.State == "failure" || combined.State == "error") {
 			break
 		}
@@ -814,25 +962,97 @@ func (s *ForgejoService) refreshChecksForSHA(ctx context.Context, repo *domain.F
 	}
 	if err != nil {
 		log.WithError(err).WithField("repo", repo.FullName).Warn("failed to fetch combined status")
-		return nil
+		return err
 	}
 	allGreen := combined.AllChecksPassed()
 
 	for i := range openPRs {
-		pr := openPRs[i]
-		if pr.ChecksGreen == allGreen {
+		pr := &openPRs[i]
+		if err := s.relinkPullRequestReferences(ctx, repo, pr, allGreen); err != nil {
+			if errors.Is(err, repository.ErrForgejoStalePullRequest) {
+				continue
+			}
+			return err
+		}
+		checksChanged := pr.ChecksGreen != allGreen
+		if checksChanged && allGreen && pr.State != "draft" {
+			if err := s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr); err != nil {
+				if errors.Is(err, repository.ErrForgejoStalePullRequest) {
+					continue
+				}
+				return err
+			}
+		}
+		// Advance the version even when the flag is unchanged: a fresh failure
+		// must supersede an older in-flight success without replaying transitions.
+		if err := s.fRepo.UpdatePullRequestChecks(ctx, pr, allGreen); err != nil {
+			if errors.Is(err, repository.ErrForgejoStalePullRequest) {
+				continue
+			}
+			return err
+		}
+		if !checksChanged {
 			continue
 		}
-		if err := s.fRepo.UpdatePullRequestChecks(ctx, repo.ID, pr.Number, allGreen); err != nil {
+		ids, err := s.fRepo.ListIssueIDsForPR(ctx, pr.ID)
+		if err != nil {
+			return err
+		}
+		for _, issueID := range ids {
+			s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
+				Type:    "forgejo:pr_updated",
+				Payload: map[string]any{"issue_id": issueID, "pr_number": pr.Number, "checks_green": allGreen},
+			})
+		}
+	}
+	return nil
+}
+
+// Catch up references that became resolvable after an audited identifier
+// restore. Legacy snapshots may lack the body, so this pass only adds links;
+// full webhook payloads still replace links with all current references.
+// New links are saved after their transition succeeds to keep retries usable.
+func (s *ForgejoService) relinkPullRequestReferences(ctx context.Context, repo *domain.ForgejoRepoModel, pr *domain.ForgejoPullRequest, green bool) error {
+	texts := []string{pr.Title, pr.Body}
+	if pr.HeadBranch != nil {
+		texts = append(texts, *pr.HeadBranch)
+	}
+	references, err := s.resolveIssuesFromRefs(ctx, repo.WorkspaceID, texts...)
+	if err != nil {
+		return err
+	}
+	if len(references) == 0 {
+		return nil
+	}
+	existing, err := s.fRepo.ListIssueIDsForPR(ctx, pr.ID)
+	if err != nil {
+		return err
+	}
+	ids := append([]uuid.UUID{}, existing...)
+	for _, issue := range references {
+		found := false
+		for _, id := range existing {
+			if id == issue.ID {
+				found = true
+				break
+			}
+		}
+		if found {
 			continue
 		}
-		if allGreen {
-			s.applyChecksGreenTransition(ctx, repo.WorkspaceID, pr.ID, pr.AuthorLogin)
+		event := "pr_opened"
+		if green {
+			event = "pr_checks_green"
 		}
-		s.broadcastRealtimeEvent(repo.WorkspaceID, realtime.Event{
-			Type:    "forgejo:pr_updated",
-			Payload: map[string]any{"pr_number": pr.Number, "checks_green": allGreen},
-		})
+		if pr.State != "draft" {
+			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, event, issue, pr.AuthorLogin, pr); err != nil {
+				return err
+			}
+		}
+		ids = append(ids, issue.ID)
+	}
+	if len(ids) != len(existing) {
+		return s.fRepo.ReplacePRIssueLinks(ctx, pr, ids)
 	}
 	return nil
 }
@@ -857,7 +1077,7 @@ func (s *ForgejoService) ReconcileWebhookEvents(ctx context.Context) {
 			continue
 		}
 		client := conn.client()
-		hook, err := client.GetWebhook(owner, name, *repo.WebhookID)
+		hook, err := client.GetWebhook(ctx, owner, name, *repo.WebhookID)
 		if err != nil {
 			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to inspect Forgejo hook")
 			continue
@@ -876,17 +1096,17 @@ func (s *ForgejoService) ReconcileWebhookEvents(ctx context.Context) {
 			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to decrypt Forgejo hook secret")
 			continue
 		}
-		newHook, err := client.CreateWebhook(owner, name, hook.URL, secret, nil)
+		newHook, err := client.CreateWebhook(ctx, owner, name, hook.URL, secret, nil)
 		if err != nil {
 			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to create Forgejo Actions hook")
 			continue
 		}
 		if err := s.fRepo.UpdateWebhookID(ctx, repo.ID, newHook.ID); err != nil {
 			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to save Forgejo Actions hook")
-			_ = client.DeleteWebhook(owner, name, newHook.ID)
+			_ = client.DeleteWebhook(ctx, owner, name, newHook.ID)
 			continue
 		}
-		if err := client.DeleteWebhook(owner, name, *repo.WebhookID); err != nil {
+		if err := client.DeleteWebhook(ctx, owner, name, *repo.WebhookID); err != nil {
 			log.WithError(err).WithField("repo", repo.FullName).Warn("failed to remove old Forgejo hook")
 		}
 	}
@@ -931,17 +1151,20 @@ func (s *ForgejoService) syncOpenPRChecks(ctx context.Context) {
 	}
 }
 
-func (s *ForgejoService) applyChecksGreenTransition(ctx context.Context, workspaceID, prID uuid.UUID, authorLogin string) {
-	issues, err := s.issuesForPR(ctx, prID)
+func (s *ForgejoService) applyChecksGreenTransition(ctx context.Context, workspaceID uuid.UUID, pr *domain.ForgejoPullRequest) error {
+	issues, err := s.issuesForPR(ctx, pr.ID)
 	if err != nil {
-		return
+		return err
 	}
 	for _, issue := range issues {
-		s.applyAutoTransition(ctx, workspaceID, "pr_checks_green", issue, authorLogin)
+		if err := s.applyAutoTransitionForPR(ctx, workspaceID, "pr_checks_green", issue, pr.AuthorLogin, pr); err != nil {
+			return err
+		}
 	}
 	if len(issues) > 0 {
 		s.broadcastAppRefresh(workspaceID, "issues")
 	}
+	return nil
 }
 
 // issuesForPR lists the issues linked to a PR row.
@@ -955,7 +1178,10 @@ func (s *ForgejoService) issuesForPR(ctx context.Context, prID uuid.UUID) ([]*do
 	issues := make([]*domain.Issue, 0, len(ids))
 	for _, id := range ids {
 		issue, err := s.issueRepo.GetByID(ctx, id)
-		if err == nil && issue != nil {
+		if err != nil {
+			return nil, err
+		}
+		if issue != nil {
 			issues = append(issues, issue)
 		}
 	}
@@ -964,93 +1190,127 @@ func (s *ForgejoService) issuesForPR(ctx context.Context, prID uuid.UUID) ([]*do
 
 // --- Issue linking ---
 
-func (s *ForgejoService) resolveIssueFromRef(ctx context.Context, workspaceID uuid.UUID, texts ...string) *domain.Issue {
-	for _, text := range texts {
-		matches := issueIdentifierRegex.FindAllString(text, -1)
-		for _, m := range matches {
-			issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, strings.ToUpper(m))
-			if err == nil && issue != nil {
-				return issue
-			}
-		}
+func (s *ForgejoService) resolveIssueFromRef(ctx context.Context, workspaceID uuid.UUID, texts ...string) (*domain.Issue, error) {
+	issues, err := s.resolveIssuesFromRefs(ctx, workspaceID, texts...)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if len(issues) == 0 {
+		return nil, nil
+	}
+	return issues[0], nil
 }
 
-// resolveIssuesFromRefs links every referenced issue, not just the first.
-func (s *ForgejoService) resolveIssuesFromRefs(ctx context.Context, workspaceID uuid.UUID, texts ...string) []*domain.Issue {
-	seen := make(map[string]bool)
-	var issues []*domain.Issue
+func (s *ForgejoService) resolveIssuesFromRefs(ctx context.Context, workspaceID uuid.UUID, texts ...string) ([]*domain.Issue, error) {
+	identifiers := make([]string, 0)
 	for _, text := range texts {
-		matches := issueIdentifierRegex.FindAllString(text, -1)
-		for _, m := range matches {
-			if seen[m] {
-				continue
-			}
-			seen[m] = true
-			issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, strings.ToUpper(m))
-			if err == nil && issue != nil {
-				issues = append(issues, issue)
-			}
-		}
+		identifiers = append(identifiers, issueIdentifierRegex.FindAllString(text, -1)...)
 	}
-	return issues
+	return s.resolveIssueIdentifiers(ctx, workspaceID, identifiers)
 }
 
-// resolveKeywordIssues returns issues referenced via closing keywords
-// ("Fixes KUA-1") in the given texts.
-func (s *ForgejoService) resolveKeywordIssues(ctx context.Context, workspaceID uuid.UUID, texts ...string) []*domain.Issue {
-	seen := make(map[string]bool)
-	var issues []*domain.Issue
+func (s *ForgejoService) resolveKeywordIssues(ctx context.Context, workspaceID uuid.UUID, texts ...string) ([]*domain.Issue, error) {
+	identifiers := make([]string, 0)
 	for _, text := range texts {
-		matches := issueKeywordRegex.FindAllStringSubmatch(text, -1)
-		for _, m := range matches {
-			identifier := strings.ToUpper(m[1])
-			if seen[identifier] {
-				continue
-			}
-			seen[identifier] = true
-			issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, identifier)
-			if err == nil && issue != nil {
-				issues = append(issues, issue)
-			}
+		for _, match := range issueKeywordRegex.FindAllStringSubmatch(text, -1) {
+			identifiers = append(identifiers, match[1])
 		}
 	}
-	return issues
+	return s.resolveIssueIdentifiers(ctx, workspaceID, identifiers)
+}
+
+func (s *ForgejoService) resolveIssueIdentifiers(ctx context.Context, workspaceID uuid.UUID, identifiers []string) ([]*domain.Issue, error) {
+	seen := make(map[string]bool)
+	issueIDs := make(map[uuid.UUID]bool)
+	var issues []*domain.Issue
+	for _, identifier := range identifiers {
+		identifier = strings.ToUpper(identifier)
+		if seen[identifier] {
+			continue
+		}
+		seen[identifier] = true
+		issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, identifier)
+		if err != nil {
+			return nil, err
+		}
+		if issue != nil && !issueIDs[issue.ID] {
+			issueIDs[issue.ID] = true
+			issues = append(issues, issue)
+		}
+	}
+	return issues, nil
 }
 
 // --- Auto-Transitions ---
 
-func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uuid.UUID, event string, issue *domain.Issue, forgejoLogin string) {
-	rule, err := s.fRepo.GetAutoTransitionByEvent(ctx, workspaceID, event)
-	if err != nil || rule == nil {
-		return
-	}
+func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uuid.UUID, event string, issue *domain.Issue, forgejoLogin string) error {
+	return s.applyAutoTransitionForPR(ctx, workspaceID, event, issue, forgejoLogin, nil)
+}
 
+func (s *ForgejoService) applyAutoTransitionForPR(ctx context.Context, workspaceID uuid.UUID, event string, issue *domain.Issue, forgejoLogin string, expectedPR *domain.ForgejoPullRequest) error {
+	for range 3 {
+		err := s.applyAutoTransitionOnce(ctx, workspaceID, event, issue, forgejoLogin, expectedPR)
+		if !errors.Is(err, repository.ErrForgejoAutomationConflict) {
+			return err
+		}
+		fresh, loadErr := s.issueRepo.GetByID(ctx, issue.ID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if fresh == nil {
+			return nil
+		}
+		*issue = *fresh
+	}
+	return repository.ErrForgejoAutomationConflict
+}
+
+func (s *ForgejoService) applyAutoTransitionOnce(ctx context.Context, workspaceID uuid.UUID, event string, issue *domain.Issue, forgejoLogin string, expectedPR *domain.ForgejoPullRequest) error {
+	if issue == nil || issue.WorkspaceID != workspaceID {
+		return fmt.Errorf("issue does not belong to the automation workspace")
+	}
+	rule, err := s.fRepo.GetAutoTransitionByEvent(ctx, workspaceID, event)
+	if err != nil {
+		return err
+	}
+	if rule == nil || !rule.IsActive {
+		return nil
+	}
+	category, err := s.issueStatusCategory(ctx, issue)
+	if err != nil {
+		return err
+	}
+	if category == domain.StatusCategoryCompleted {
+		return s.applyStatusAutomation(ctx, workspaceID, issue, map[uuid.UUID]bool{}, expectedPR)
+	}
+	if category == domain.StatusCategoryCancelled {
+		return nil
+	}
+	targetStatus, err := s.automationTargetStatus(ctx, workspaceID, issue.TeamID, rule)
+	if err != nil {
+		return err
+	}
 	oldStatus := string(issue.Status)
-	newStatus := rule.TargetStatus
-	statusChanged := newStatus != "" && oldStatus != newStatus
+	newStatus := oldStatus
+	statusChanged := false
+	if targetStatus != nil {
+		newStatus = targetStatus.Slug
+		statusChanged = oldStatus != newStatus || issue.StatusID == nil || *issue.StatusID != targetStatus.ID
+	}
 	targetAssigneeID := rule.TargetAssigneeID
 	if rule.AssignForgejoUser && strings.TrimSpace(forgejoLogin) != "" {
 		matched, err := s.fRepo.MatchWorkspaceMemberByName(ctx, workspaceID, strings.TrimSpace(forgejoLogin))
 		if err != nil {
-			log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to match Forgejo user")
-		} else {
-			targetAssigneeID = matched
+			return err
 		}
+		targetAssigneeID = matched
 	}
-	// Assignment is additive: the rule target joins the assignee set; existing
-	// assignees are never removed (replacing them kicked issues out of other
-	// assignees' filtered views, which looked like tickets disappearing).
 	assigneeToAdd := false
-	var currentAssignees []uuid.UUID
 	if targetAssigneeID != nil {
 		assignees, err := s.issueRepo.GetAssignees(ctx, issue.ID)
 		if err != nil {
-			log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to read issue assignees")
-			return
+			return err
 		}
-		currentAssignees = assignees
 		alreadyAssigned := issue.AssigneeID != nil && *issue.AssigneeID == *targetAssigneeID
 		for _, a := range assignees {
 			if a == *targetAssigneeID {
@@ -1059,151 +1319,200 @@ func (s *ForgejoService) applyAutoTransition(ctx context.Context, workspaceID uu
 			}
 		}
 		assigneeToAdd = !alreadyAssigned
+		if assigneeToAdd {
+			member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, *targetAssigneeID)
+			if err != nil {
+				return err
+			}
+			if !member {
+				assigneeToAdd = false
+			}
+		}
 	}
 	if !statusChanged && !assigneeToAdd {
-		return
+		return nil
 	}
-
+	candidate := *issue
 	if statusChanged {
-		if rule.TargetStatusID != nil {
-			issue.StatusID = rule.TargetStatusID
-		} else {
-			ts, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, issue.TeamID, newStatus)
-			if err != nil || ts == nil {
-				return
-			}
-			issue.StatusID = &ts.ID
-		}
-	}
-	// A former workspace member must not void the status transition; only the
-	// assignee part of the rule is skipped.
-	if assigneeToAdd {
-		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, *targetAssigneeID)
-		if err != nil || !member {
-			log.WithField("issue_id", issue.ID).WithField("target_user_id", *targetAssigneeID).
-				Warn("forgejo automation target is not a workspace member; applying status only")
-			assigneeToAdd = false
-		}
-	}
-
-	if statusChanged {
-		issue.Status = domain.IssueStatus(newStatus)
+		candidate.Status = domain.IssueStatus(newStatus)
+		candidate.StatusID = &targetStatus.ID
 	}
 	var addTarget *uuid.UUID
 	if assigneeToAdd {
 		addTarget = targetAssigneeID
 	}
-	if err := s.fRepo.ApplyIssueAutomation(ctx, issue, addTarget); err != nil {
-		log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to auto-transition issue")
-		return
+	if err := s.fRepo.ApplyIssueAutomation(ctx, &candidate, addTarget, expectedPR); err != nil {
+		return err
 	}
-	if assigneeToAdd {
-		if issue.CreatorID != uuid.Nil {
-			newAssignees := make([]uuid.UUID, 0, len(currentAssignees)+1)
-			newAssignees = append(newAssignees, currentAssignees...)
-			newAssignees = append(newAssignees, *targetAssigneeID)
-			oldValue := uuidListString(currentAssignees)
-			newValue := uuidListString(newAssignees)
-			_ = s.historyRepo.Create(ctx, issue.ID, issue.CreatorID, "assignees", &oldValue, &newValue)
+	*issue = candidate
+	s.broadcastRealtimeEvent(workspaceID, realtime.Event{Type: "issue.updated", Payload: issue})
+	if statusChanged {
+		return s.applyStatusAutomation(ctx, workspaceID, issue, map[uuid.UUID]bool{}, expectedPR)
+	}
+	return nil
+}
+
+// Rule IDs identify a selected workflow status, while each issue must use the
+// equivalent slug from its own team's workflow. An ID never crosses teams.
+func (s *ForgejoService) automationTargetStatus(ctx context.Context, workspaceID, teamID uuid.UUID, rule *domain.ForgejoAutoTransition) (*domain.TeamStatus, error) {
+	slug := strings.TrimSpace(rule.TargetStatus)
+	if rule.TargetStatusID != nil {
+		selected, err := s.teamStatusRepo.GetByID(ctx, *rule.TargetStatusID)
+		if err != nil {
+			return nil, err
 		}
+		if selected == nil {
+			return nil, fmt.Errorf("automation target status no longer exists")
+		}
+		if selected.TeamID != teamID {
+			team, err := s.teamRepo.GetByID(ctx, selected.TeamID)
+			if err != nil {
+				return nil, err
+			}
+			if team == nil || team.WorkspaceID != workspaceID {
+				return nil, fmt.Errorf("automation target status is outside this workspace")
+			}
+		}
+		slug = selected.Slug
 	}
-
-	if statusChanged {
-		s.recordAutomationHistory(ctx, issue, oldStatus, newStatus)
+	if slug == "" {
+		return nil, nil
 	}
-
-	s.broadcastRealtimeEvent(workspaceID, realtime.Event{
-		Type:    "issue.updated",
-		Payload: issue,
-	})
-	if statusChanged {
-		s.applyStatusAutomation(ctx, workspaceID, issue, map[uuid.UUID]bool{})
+	status, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, teamID, slug)
+	if err != nil {
+		return nil, err
 	}
+	if status == nil && slug == "pr" {
+		return s.ensureReviewStatus(ctx, teamID)
+	}
+	if status == nil {
+		return nil, fmt.Errorf("automation target status %q is missing from the issue's team", slug)
+	}
+	return status, nil
 }
 
-// recordAutomationHistory writes the status-change entry attributed to the
-// issue creator (issue_history.user_id is NOT NULL with an FK to users;
-// uuid.Nil inserts used to fail silently).
-func (s *ForgejoService) recordAutomationHistory(ctx context.Context, issue *domain.Issue, oldStatus, newStatus string) {
-	if issue.CreatorID == uuid.Nil {
-		return
-	}
-	_ = s.historyRepo.Create(ctx, issue.ID, issue.CreatorID, "status", &oldStatus, &newStatus)
-}
-
-func (s *ForgejoService) applyStatusAutomation(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool) {
+func (s *ForgejoService) applyStatusAutomation(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool, expectedPR *domain.ForgejoPullRequest) error {
 	if issue == nil || visited[issue.ID] || s.teamRepo == nil {
-		return
+		return nil
 	}
 	visited[issue.ID] = true
 
-	category := s.issueStatusCategory(ctx, issue)
+	category, err := s.issueStatusCategory(ctx, issue)
+	if err != nil {
+		return err
+	}
 	if category == domain.StatusCategoryCompleted {
 		team, err := s.teamRepo.GetByID(ctx, issue.TeamID)
-		if err == nil && team != nil && team.SubIssueAutoCloseEnabled {
-			s.autoCloseSubIssues(ctx, workspaceID, issue.ID, visited)
+		if err != nil {
+			return err
+		}
+		if team != nil && team.SubIssueAutoCloseEnabled {
+			if err := s.autoCloseSubIssues(ctx, workspaceID, issue.ID, visited, expectedPR); err != nil {
+				return err
+			}
 		}
 	}
 	if issue.ParentID != nil {
-		s.maybeAutoCloseParent(ctx, workspaceID, *issue.ParentID, visited)
+		return s.maybeAutoCloseParent(ctx, workspaceID, *issue.ParentID, visited, expectedPR)
 	}
+	return nil
 }
 
-func (s *ForgejoService) maybeAutoCloseParent(ctx context.Context, workspaceID, parentID uuid.UUID, visited map[uuid.UUID]bool) {
+func (s *ForgejoService) maybeAutoCloseParent(ctx context.Context, workspaceID, parentID uuid.UUID, visited map[uuid.UUID]bool, expectedPR *domain.ForgejoPullRequest) error {
 	parent, err := s.issueRepo.GetByID(ctx, parentID)
-	if err != nil || parent == nil || parent.WorkspaceID != workspaceID || visited[parent.ID] || s.teamRepo == nil {
-		return
+	if err != nil {
+		return err
+	}
+	if parent == nil || parent.WorkspaceID != workspaceID || visited[parent.ID] || s.teamRepo == nil {
+		return nil
 	}
 	team, err := s.teamRepo.GetByID(ctx, parent.TeamID)
-	if err != nil || team == nil || !team.ParentAutoCloseEnabled {
-		return
+	if err != nil {
+		return err
+	}
+	if team == nil || !team.ParentAutoCloseEnabled {
+		return nil
 	}
 	total, done, err := s.issueRepo.CountSubIssues(ctx, parent.ID)
-	if err != nil || total == 0 || total != done {
-		return
+	if err != nil {
+		return err
 	}
-	s.moveIssueToCompleted(ctx, workspaceID, parent, visited)
+	if total == 0 || total != done {
+		return nil
+	}
+	return s.moveIssueToCompleted(ctx, workspaceID, parent, visited, expectedPR)
 }
 
-func (s *ForgejoService) autoCloseSubIssues(ctx context.Context, workspaceID, parentID uuid.UUID, visited map[uuid.UUID]bool) {
+func (s *ForgejoService) autoCloseSubIssues(ctx context.Context, workspaceID, parentID uuid.UUID, visited map[uuid.UUID]bool, expectedPR *domain.ForgejoPullRequest) error {
 	subIssues, err := s.issueRepo.ListSubIssues(ctx, parentID)
 	if err != nil {
-		return
+		return err
 	}
 	for i := range subIssues {
 		sub := subIssues[i]
-		if sub.WorkspaceID != workspaceID || s.isTerminalStatus(ctx, &sub) {
+		if sub.WorkspaceID != workspaceID {
 			continue
 		}
-		s.moveIssueToCompleted(ctx, workspaceID, &sub, visited)
+		if err := s.moveIssueToCompleted(ctx, workspaceID, &sub, visited, expectedPR); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (s *ForgejoService) moveIssueToCompleted(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool) {
-	if issue == nil || s.isTerminalStatus(ctx, issue) {
-		return
+func (s *ForgejoService) moveIssueToCompleted(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool, expectedPR *domain.ForgejoPullRequest) error {
+	if issue == nil || visited[issue.ID] {
+		return nil
 	}
-	completedStatus, err := s.completedStatusForTeam(ctx, issue.TeamID)
-	if err != nil || completedStatus == nil {
-		return
+	for range 3 {
+		category, err := s.issueStatusCategory(ctx, issue)
+		if err != nil {
+			return err
+		}
+		if category == domain.StatusCategoryCancelled {
+			return nil
+		}
+		if category == domain.StatusCategoryCompleted {
+			return s.applyStatusAutomation(ctx, workspaceID, issue, visited, expectedPR)
+		}
+		completedStatus, err := s.completedStatusForTeam(ctx, issue.TeamID)
+		if err != nil {
+			return err
+		}
+		if completedStatus == nil {
+			return fmt.Errorf("completed status is missing from the issue's team")
+		}
+		candidate := *issue
+		candidate.Status = domain.IssueStatus(completedStatus.Slug)
+		candidate.StatusID = &completedStatus.ID
+		err = s.fRepo.ApplyIssueAutomation(ctx, &candidate, nil, expectedPR)
+		if errors.Is(err, repository.ErrForgejoAutomationConflict) {
+			fresh, err := s.issueRepo.GetByID(ctx, issue.ID)
+			if err != nil {
+				return err
+			}
+			if fresh == nil {
+				return nil
+			}
+			*issue = *fresh
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		*issue = candidate
+		s.broadcastRealtimeEvent(workspaceID, realtime.Event{Type: "issue.updated", Payload: issue})
+		return s.applyStatusAutomation(ctx, workspaceID, issue, visited, expectedPR)
 	}
-
-	old := string(issue.Status)
-	issue.Status = domain.IssueStatus(completedStatus.Slug)
-	issue.StatusID = &completedStatus.ID
-	if err := s.issueRepo.Update(ctx, issue); err != nil {
-		log.WithError(err).WithField("issue_id", issue.ID).Warn("failed to auto-close issue")
-		return
-	}
-	newVal := completedStatus.Slug
-	s.recordAutomationHistory(ctx, issue, old, newVal)
-	s.broadcastRealtimeEvent(workspaceID, realtime.Event{Type: "issue.updated", Payload: issue})
-	s.applyStatusAutomation(ctx, workspaceID, issue, visited)
+	return repository.ErrForgejoAutomationConflict
 }
 
 func (s *ForgejoService) completedStatusForTeam(ctx context.Context, teamID uuid.UUID) (*domain.TeamStatus, error) {
 	status, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, teamID, string(domain.IssueStatusDone))
-	if err == nil && status != nil {
+	if err != nil {
+		return nil, err
+	}
+	if status != nil {
 		return status, nil
 	}
 	statuses, err := s.teamStatusRepo.ListByTeam(ctx, teamID)
@@ -1218,29 +1527,27 @@ func (s *ForgejoService) completedStatusForTeam(ctx context.Context, teamID uuid
 	return nil, nil
 }
 
-func (s *ForgejoService) isTerminalStatus(ctx context.Context, issue *domain.Issue) bool {
-	category := s.issueStatusCategory(ctx, issue)
-	return category == domain.StatusCategoryCompleted || category == domain.StatusCategoryCancelled
-}
-
-func (s *ForgejoService) issueStatusCategory(ctx context.Context, issue *domain.Issue) domain.StatusCategory {
+func (s *ForgejoService) issueStatusCategory(ctx context.Context, issue *domain.Issue) (domain.StatusCategory, error) {
 	if issue.StatusID != nil {
 		status, err := s.teamStatusRepo.GetByID(ctx, *issue.StatusID)
-		if err == nil && status != nil {
-			return status.Category
+		if err != nil {
+			return "", err
+		}
+		if status != nil && status.TeamID == issue.TeamID && status.Slug == string(issue.Status) {
+			return status.Category, nil
 		}
 	}
 	switch issue.Status {
 	case domain.IssueStatusDone:
-		return domain.StatusCategoryCompleted
+		return domain.StatusCategoryCompleted, nil
 	case domain.IssueStatusCancelled:
-		return domain.StatusCategoryCancelled
+		return domain.StatusCategoryCancelled, nil
 	case domain.IssueStatusInProgress, domain.IssueStatusInReview:
-		return domain.StatusCategoryStarted
+		return domain.StatusCategoryStarted, nil
 	case domain.IssueStatusTodo:
-		return domain.StatusCategoryUnstarted
+		return domain.StatusCategoryUnstarted, nil
 	default:
-		return domain.StatusCategoryBacklog
+		return domain.StatusCategoryBacklog, nil
 	}
 }
 
@@ -1402,10 +1709,16 @@ func (s *ForgejoService) ListAutoTransitions(ctx context.Context, workspaceID uu
 }
 
 func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID uuid.UUID, req dto.UpdateAutoTransitionsRequest) error {
+	if len(req.Transitions) == 0 || len(req.Transitions) > len(forgejoLifecycleEvents) {
+		return fmt.Errorf("provide between one and four transition rules")
+	}
+	seen := make(map[string]bool)
+	validated := make([]*domain.ForgejoAutoTransition, 0, len(req.Transitions))
 	for _, rule := range req.Transitions {
-		if !forgejoLifecycleEvents[rule.Event] {
+		if !forgejoLifecycleEvents[rule.Event] || seen[rule.Event] {
 			return fmt.Errorf("unknown transition event %q", rule.Event)
 		}
+		seen[rule.Event] = true
 		if rule.AssignForgejoUser && rule.TargetAssigneeID != nil {
 			return fmt.Errorf("event %q cannot select both a fixed assignee and a Forgejo user", rule.Event)
 		}
@@ -1419,6 +1732,40 @@ func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID 
 				return fmt.Errorf("invalid target_status_id: %w", err)
 			}
 			statusID = &parsed
+			selected, err := s.teamStatusRepo.GetByID(ctx, parsed)
+			if err != nil {
+				return err
+			}
+			if selected == nil {
+				return fmt.Errorf("target status does not exist")
+			}
+			team, err := s.teamRepo.GetByID(ctx, selected.TeamID)
+			if err != nil {
+				return err
+			}
+			if team == nil || team.WorkspaceID != workspaceID {
+				return fmt.Errorf("target status is not in this workspace")
+			}
+			if strings.TrimSpace(rule.TargetStatus) != "" && rule.TargetStatus != selected.Slug {
+				return fmt.Errorf("target status and ID identify different workflow states")
+			}
+			rule.TargetStatus = selected.Slug
+		} else if slug := strings.TrimSpace(rule.TargetStatus); rule.IsActive && slug != "" && slug != "pr" {
+			teams, err := s.teamRepo.ListByWorkspace(ctx, workspaceID)
+			if err != nil {
+				return err
+			}
+			found := false
+			for _, team := range teams {
+				status, err := s.teamStatusRepo.GetByTeamAndSlug(ctx, team.ID, slug)
+				if err != nil {
+					return err
+				}
+				found = found || status != nil
+			}
+			if !found {
+				return fmt.Errorf("target status %q is not in this workspace", slug)
+			}
 		}
 		var assigneeID *uuid.UUID
 		if rule.TargetAssigneeID != nil {
@@ -1441,7 +1788,10 @@ func (s *ForgejoService) UpdateAutoTransitions(ctx context.Context, workspaceID 
 			TargetStatusID: statusID, TargetAssigneeID: assigneeID,
 			AssignForgejoUser: rule.AssignForgejoUser, IsActive: rule.IsActive,
 		}
-		if err := s.fRepo.UpsertAutoTransition(ctx, t); err != nil {
+		validated = append(validated, t)
+	}
+	for _, rule := range validated {
+		if err := s.fRepo.UpsertAutoTransition(ctx, rule); err != nil {
 			return err
 		}
 	}

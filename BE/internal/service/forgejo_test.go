@@ -19,8 +19,9 @@ func TestResolveIssueFromRefIsCaseInsensitive(t *testing.T) {
 		Return(&domain.Issue{ID: uuid.New(), WorkspaceID: workspaceID, Identifier: "KUA-1"}, nil).Once()
 
 	svc := &ForgejoService{issueRepo: issueRepo}
-	issue := svc.resolveIssueFromRef(context.Background(), workspaceID, "feature/kua-1-login-fix")
+	issue, err := svc.resolveIssueFromRef(context.Background(), workspaceID, "feature/kua-1-login-fix")
 
+	require.NoError(t, err)
 	require.NotNil(t, issue)
 	assert.Equal(t, "KUA-1", issue.Identifier)
 	issueRepo.AssertExpectations(t)
@@ -35,8 +36,9 @@ func TestResolveIssuesFromRefsLinksAllReferences(t *testing.T) {
 	issueRepo.On("GetByIdentifier", mock.Anything, workspaceID, "TS-9").Return(second, nil).Once()
 
 	svc := &ForgejoService{issueRepo: issueRepo}
-	issues := svc.resolveIssuesFromRefs(context.Background(), workspaceID, "feat(KUA-1): also touches TS-9", "see KUA-1 again")
+	issues, err := svc.resolveIssuesFromRefs(context.Background(), workspaceID, "feat(KUA-1): also touches TS-9", "see KUA-1 again")
 
+	require.NoError(t, err)
 	require.Len(t, issues, 2)
 	issueRepo.AssertExpectations(t)
 }
@@ -74,8 +76,9 @@ func TestResolveKeywordIssues(t *testing.T) {
 	issueRepo.On("GetByIdentifier", mock.Anything, workspaceID, "KUA-7").Return(keywordIssue, nil).Once()
 
 	svc := &ForgejoService{issueRepo: issueRepo}
-	issues := svc.resolveKeywordIssues(context.Background(), workspaceID, "Add avatars\n\nFixes KUA-7")
+	issues, err := svc.resolveKeywordIssues(context.Background(), workspaceID, "Add avatars\n\nFixes KUA-7")
 
+	require.NoError(t, err)
 	require.Len(t, issues, 1)
 	assert.Equal(t, "KUA-7", issues[0].Identifier)
 	issueRepo.AssertExpectations(t)
@@ -149,6 +152,10 @@ func TestForgejoBranchCreateSenderParsing(t *testing.T) {
 
 func TestActionRunHeadSHAUsesPRHead(t *testing.T) {
 	sha, err := actionRunHeadSHA([]byte(`{"run":{"trigger_event":"pull_request","commit_sha":"merge-sha","event_payload":"{\"pull_request\":{\"head\":{\"sha\":\"head-sha\"}}}"}}`))
+	require.NoError(t, err)
+	assert.Equal(t, "head-sha", sha)
+
+	sha, err = actionRunHeadSHA([]byte(`{"run":{"trigger_event":"pull_request_target","commit_sha":"base-sha","event_payload":"{\"pull_request\":{\"head\":{\"sha\":\"head-sha\"}}}"}}`))
 	require.NoError(t, err)
 	assert.Equal(t, "head-sha", sha)
 
