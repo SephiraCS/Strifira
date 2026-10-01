@@ -20,6 +20,7 @@
 set -eu
 
 root=/cache/ci-tmp
+root=$(realpath -m -- "$root")
 
 validate_store() {
 	[ ! -L "$1" ] || { echo "refusing to remove symlink: $1" >&2; return 1; }
@@ -40,12 +41,12 @@ validate_store() {
 }
 
 # Deletes a store, first detaching any overlay mounts a build or container
-# left behind (rm -rf alone fails with EBUSY on them). Failures only warn:
-# a leftover store must not fail the job, and the sweep retries it later.
+# left behind (rm -rf alone fails with EBUSY on them). Return deletion
+# failures so create can fail, while remove and stale sweeps only warn.
 delete_store() {
 	resolved=$(validate_store "$1" "${2:-}") || return 1
 	awk -v p="$resolved/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
-	rm -rf -- "$resolved" || echo "warning: could not delete $resolved" >&2
+	rm -rf -- "$resolved"
 }
 
 case "${1:-}" in
@@ -59,12 +60,19 @@ create)
 	*[!0-9]*) echo "invalid GITHUB_RUN_ID" >&2; exit 2 ;;
 	esac
 	mkdir -p "$root"
-	find "$root" -mindepth 1 -maxdepth 1 -type d -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
-		delete_store "$stale" owned || echo "warning: could not sweep $stale" >&2
+	find "$root" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
+		if [ -L "$stale" ]; then
+			rm -f -- "$stale" || echo "warning: could not unlink $stale" >&2
+		else
+			delete_store "$stale" owned || echo "warning: could not sweep $stale" >&2
+		fi
 	done
 	store="$root/ku-${GITHUB_RUN_ID:?}-$2"
 	# A re-run reuses the run ID; never build on a cancelled attempt's store.
-	if [ -e "$store" ] || [ -L "$store" ]; then
+	if [ -L "$store" ]; then
+		rm -f -- "$store" || { echo "could not unlink $store" >&2; exit 1; }
+	fi
+	if [ -e "$store" ]; then
 		delete_store "$store" owned || { echo "could not reset $store" >&2; exit 1; }
 	fi
 	[ ! -e "$store" ] || { echo "could not reset $store" >&2; exit 1; }
@@ -91,7 +99,7 @@ remove)
 	store=$(validate_store "$store")
 	CONTAINERS_STORAGE_CONF="$store/storage.conf" CONTAINERS_CONF_OVERRIDE="$store/containers.conf" \
 		podman rm --all --force --time 0 >/dev/null 2>&1 || true
-	delete_store "$store"
+	delete_store "$store" || echo "warning: could not delete $store" >&2
 	;;
 *)
 	echo "usage: $0 create <name> | remove" >&2

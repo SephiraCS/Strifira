@@ -1,5 +1,6 @@
 #!/bin/sh
-# Run the committed cleanup logic against private directories; never /cache.
+# Test cleanup against private directories, and enforce job timeout policy.
+# The committed deletion logic never touches /cache during these checks.
 set -eu
 repo=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 sandbox=$(mktemp -d)
@@ -8,8 +9,9 @@ root="$sandbox/stores"
 mkdir -p "$root" "$sandbox/bin" "$sandbox/outside"
 # Substitute only the fixed root in a private copy, without adding a runtime
 # override to the production deletion script.
-test "$(sed -n '/^root=/p' "$repo/scripts/ci/podman-store.sh")" = 'root=/cache/ci-tmp'
-sed "s@^root=/cache/ci-tmp\$@root=$root@" "$repo/scripts/ci/podman-store.sh" > "$sandbox/store.sh"
+test "$(sed -n '/^root=\/cache\/ci-tmp$/p' "$repo/scripts/ci/podman-store.sh")" = 'root=/cache/ci-tmp'
+ln -s "$root" "$sandbox/store-alias"
+sed "s@^root=/cache/ci-tmp\$@root=$sandbox/store-alias@" "$repo/scripts/ci/podman-store.sh" > "$sandbox/store.sh"
 cat > "$sandbox/bin/podman" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$CONTAINERS_STORAGE_CONF" >> "$PODMAN_TEST_CALLS"
@@ -40,6 +42,16 @@ test -d "$root/ku-young"
 test ! -e "$root/ku-unmarked"
 mkdir -p "$root/ku-unmarked"
 touch "$sandbox/outside/keep"
+rm -rf -- "$store"
+ln -s "$sandbox/outside" "$store"
+sh "$sandbox/store.sh" create test
+test ! -L "$store"
+test -f "$sandbox/outside/keep"
+ln -s "$sandbox/outside" "$root/ku-stale-link"
+touch -h -d '7 hours ago' "$root/ku-stale-link"
+sh "$sandbox/store.sh" create sweep
+test ! -L "$root/ku-stale-link"
+test -f "$sandbox/outside/keep"
 ln -s "$sandbox/outside" "$root/ku-link"
 mkdir -p "$store/nested"
 for unsafe in "$sandbox/outside" "$store/../../outside" "$root/ku-link" "$store/nested" "$root/ku-unmarked"; do
@@ -53,13 +65,34 @@ for name in '../escape' 'name/subdir' '.' '..'; do
     if sh "$sandbox/store.sh" create "$name"; then echo 'accepted unsafe name' >&2; exit 1; fi
 done
 if GITHUB_RUN_ID='../escape' sh "$sandbox/store.sh" create test; then exit 1; fi
+# Remove is warn-only on actual deletion failures; create must refuse reset.
+PODMAN_TEST_REAL_RM=$(command -v rm)
+export PODMAN_TEST_REAL_RM
+cat > "$sandbox/bin/rm" <<'STUB'
+#!/bin/sh
+for argument do
+    [ "$argument" != "${PODMAN_TEST_FAIL_DELETE:-}" ] || exit 9
+done
+exec "$PODMAN_TEST_REAL_RM" "$@"
+STUB
+chmod +x "$sandbox/bin/rm"
+PODMAN_TEST_FAIL_DELETE="$store" PODMAN_STORE="$store" sh "$sandbox/store.sh" remove
+test -d "$store"
+if PODMAN_TEST_FAIL_DELETE="$store" sh "$sandbox/store.sh" create test; then
+    echo 'create accepted a failed store reset' >&2; exit 1
+fi
 PODMAN_STORE="$store" sh "$sandbox/store.sh" remove
 test ! -e "$store"
 grep -Fx "$store/storage.conf" "$PODMAN_TEST_CALLS"
 # Every job must declare a timeout below the cancellation sweep grace.
+set --
+for workflow in "$repo"/.forgejo/workflows/*.yml "$repo"/.forgejo/workflows/*.yaml; do
+    [ ! -f "$workflow" ] || set -- "$@" "$workflow"
+done
+[ "$#" -gt 0 ] || { echo 'no workflows found' >&2; exit 1; }
 awk '
-    /^[[:space:]]*runs-on:/ { jobs[FILENAME]++ }
-    /^[[:space:]]*timeout-minutes:/ {
+    /^    runs-on:/ { jobs[FILENAME]++ }
+    /^    timeout-minutes:/ {
         limits[FILENAME]++
         if ($2 !~ /^[0-9]+$/ || $2 >= 360) {
             printf "invalid timeout-minutes %s in %s: expected a number below 360\n", $2, FILENAME > "/dev/stderr"
@@ -73,5 +106,5 @@ awk '
         }
         exit failed
     }
-' "$repo"/.forgejo/workflows/*.yml
+' "$@"
 echo 'podman store cleanup checks passed'
