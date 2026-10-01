@@ -381,12 +381,12 @@ for (const { role, sysadmin, visible } of [
 			role
 		);
 		await page.goto('/test/issue/ENG-1');
-		await expect(page.getByRole('button', { name: 'Issue actions' })).toBeVisible();
+		await page.getByRole('button', { name: 'Issue actions' }).waitFor({ state: 'visible' });
 		const link = page.getByRole('link', { name: 'Dev boxes', exact: true });
 		await expect(link).toHaveCount(visible ? 1 : 0);
 		if (visible) await expect(link).toHaveAttribute('href', '/test/dev-boxes');
 		await page.goto('/test/settings/profile');
-		await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
+		await page.getByRole('heading', { name: 'Profile', exact: true }).waitFor({ state: 'visible' });
 		await expect(link).toHaveCount(visible ? 1 : 0);
 		if (visible) await expect(link).toHaveAttribute('href', '/test/dev-boxes');
 	});
@@ -546,6 +546,7 @@ test('completed jobs drain successful log pages past one poll batch', async ({ p
 		return false;
 	});
 	await page.goto(`/test/dev-box-jobs/${jobId}`);
+	await page.getByRole('region', { name: 'Live logs', exact: true }).waitFor({ state: 'visible' });
 	await expect(page.getByTestId('dev-box-logs')).toContainText('Output 3000');
 	await expect.poll(() => cursors.length).toBe(7);
 	expect(cursors).toEqual([0, 500, 1000, 1500, 2000, 2500, 3000]);

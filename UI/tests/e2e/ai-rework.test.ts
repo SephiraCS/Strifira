@@ -294,7 +294,11 @@ test.describe('AI rework', () => {
 		await expect(generate).toBeDisabled();
 		await dialog.locator('.rich-editor .tiptap').fill('A description without a title');
 		await expect(dialog.getByRole('button', { name: 'Improve with AI', exact: true })).toBeEnabled();
-		await dialog.locator('.rich-editor .tiptap').fill('');
+		// Use the editor's keyboard commands so ProseMirror owns the selection
+		// and deletion together; fill('') can race its selectionchange handler.
+		await dialog.locator('.rich-editor .tiptap').press('ControlOrMeta+a');
+		await page.keyboard.press('Backspace');
+		await expect(dialog.locator('.rich-editor .tiptap')).toHaveText('');
 		await expect(generate).toBeDisabled();
 		expect(textRequests).toEqual([]);
 		await page.locator('#create-issue-title').fill('Make screen sharing resilient');

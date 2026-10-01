@@ -289,12 +289,19 @@ async function mockTeamBoard(
 	return { issueRequests, patches, allPatches, bulkPatches, store };
 }
 
+async function openTeamBoard(page: Page) {
+	await page.goto(`/test/teams/${teamId}`);
+	// The document load event precedes Svelte's async auth, pagination and
+	// drag-zone mount. Wait for that surface before testing card behavior.
+	await page.locator('[data-issue-drop-zone]').first().waitFor({ state: 'visible' });
+}
+
 test.use({ viewport: { width: 1920, height: 1080 } });
 
 test('team board initial load follows every page of the team issues', async ({ page }) => {
 	const { issueRequests } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 
 	// The victim (rank 1) renders immediately…
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
@@ -308,7 +315,7 @@ test('team board initial load follows every page of the team issues', async ({ p
 test('identical background refreshes cause no DOM churn on the board', async ({ page }) => {
 	const { issueRequests } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	// Every WS event, webhook burst, and reconcile tick ends in an
@@ -347,7 +354,7 @@ test('identical background refreshes cause no DOM churn on the board', async ({ 
 test('moving a card to In Progress keeps it visible through the background refresh', async ({ page }) => {
 	const { issueRequests, patches } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	// Drag the victim card from Backlog into In Progress — the exact
@@ -454,7 +461,7 @@ test('a cross-column drop saves only the dropped card and keeps its place after 
 	// with the dropped card's stale sort_order and sending it to the bottom.
 	const MOVED = 'Done issue 20';
 	const { issueRequests, allPatches, store } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 1')).toBeVisible();
 	await page.locator('button', { hasText: MOVED }).first().scrollIntoViewIfNeeded();
 
@@ -483,7 +490,7 @@ test('a cross-column drop saves only the dropped card and keeps its place after 
 
 test('reordering inside a column saves only the moved card', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 3')).toBeVisible();
 
 	await dragCard(page, 'Progress issue 3', await cardCenter(page, 'Progress issue 0'));
@@ -503,7 +510,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 	test(`issue drag uses short transform motion with reduced motion ${reducedMotion}`, async ({ page }) => {
 		await page.emulateMedia({ reducedMotion });
 		const { issueRequests, allPatches } = await mockTeamBoard(page);
-		await page.goto(`/test/teams/${teamId}`);
+		await openTeamBoard(page);
 		await expect(page.getByText('Progress issue 3')).toBeVisible();
 		await page.evaluate(() => {
 			const probe = {
@@ -574,7 +581,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 
 test('keyboard issue reordering keeps focus and persists through refresh', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	const card = page.getByRole('listitem', { name: 'DSH-2003: Progress issue 3', exact: true });
 	await expect(card).toBeVisible();
 	await card.focus();
@@ -604,7 +611,7 @@ for (const retarget of [false, true]) {
 			page
 		}) => {
 			const { issueRequests, allPatches } = await mockTeamBoard(page);
-			await page.goto(`/test/teams/${teamId}`);
+			await openTeamBoard(page);
 			await expect(page.getByText('Progress issue 1')).toBeVisible();
 			const progress = await cardCenter(page, 'Progress issue 1');
 			await beginCardDrag(page, VICTIM_TITLE);
@@ -631,7 +638,7 @@ for (const retarget of [false, true]) {
 
 test('off-center issue grabs use the cursor for hover and final insertion', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	const source = await page.locator('button', { hasText: VICTIM_TITLE }).first().boundingBox();
 	if (!source) throw new Error('Missing drag source');
 	const target = await cardCenter(page, 'Progress issue 1');
@@ -660,7 +667,7 @@ for (const cancel of [false, true]) {
 		});
 		const { store, issueRequests, allPatches } = await mockTeamBoard(page, { patchGate });
 		try {
-			await page.goto(`/test/teams/${teamId}`);
+			await openTeamBoard(page);
 			await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 			const visited = await cardCenter(page, 'Filler issue 1');
 			const intermediate = await cardCenter(page, 'Progress issue 1');
@@ -724,7 +731,7 @@ for (const cancel of [false, true]) {
 
 test('cancelling before the first hover change removes the source shadow', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 	const original = await columnTitles(page, 'Backlog');
 	await beginCardDrag(page, VICTIM_TITLE);
@@ -743,7 +750,7 @@ test('cancelling before the first hover change removes the source shadow', async
 for (const sorted of [false, true]) {
 	test(`release ${sorted ? 'on a sorted column' : 'outside the board'} cancels the complete move`, async ({ page }) => {
 		const { issueRequests, allPatches } = await mockTeamBoard(page);
-		await page.goto(`/test/teams/${teamId}`);
+		await openTeamBoard(page);
 		await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 		const original = await columnTitles(page, 'Backlog');
 		if (sorted) {
@@ -773,7 +780,7 @@ for (const cancel of [false, true]) {
 		page
 	}) => {
 		const { allPatches } = await mockTeamBoard(page);
-		await page.goto(`/test/teams/${teamId}`);
+		await openTeamBoard(page);
 		await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 		const original = await columnTitles(page, 'Backlog');
 		const source = await cardCenter(page, VICTIM_TITLE);
@@ -798,7 +805,7 @@ for (const cancel of [false, true]) {
 
 test('leaving board layout during a drag cleans up without saving and allows the next drag', async ({ page }) => {
 	const { allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 	const target = await cardCenter(page, 'Progress issue 1');
 	await beginCardDrag(page, VICTIM_TITLE);
@@ -817,7 +824,7 @@ test('leaving board layout during a drag cleans up without saving and allows the
 
 test('rapid reversals and sustained card-gap hover keep the displayed drop order', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 3')).toBeVisible();
 	const first = await cardCenter(page, 'Progress issue 0');
 	const last = await cardCenter(page, 'Progress issue 3');
@@ -847,7 +854,7 @@ test('a stationary cursor preserves the displayed insertion when column scrollin
 	page
 }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 	const zone = page.getByRole('list', { name: 'In Validation issues', exact: true });
 	const bounds = await zone.boundingBox();
@@ -911,7 +918,7 @@ test('a stationary cursor preserves the displayed insertion when column scrollin
 
 test('dragging at a clipped column edge scrolls forward and persists the final order', async ({ page }) => {
 	const { issueRequests, allPatches } = await mockTeamBoard(page);
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 	const zone = page.getByRole('list', { name: 'In Validation issues', exact: true });
 	const bounds = await zone.boundingBox();
@@ -993,7 +1000,7 @@ test('a drop between cards that share a sort_order keeps its place after a refre
 	// neighbours gives the dropped card the same value, and the server's
 	// tie-break (created_at, id) then moves it after the next refresh.
 	const { issueRequests } = await mockTeamBoard(page, { progressSorts: [1000, 1000, 1000, 1000] });
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText('Progress issue 2')).toBeVisible();
 
 	await dragCard(page, VICTIM_TITLE, await cardCenter(page, 'Progress issue 2'));
@@ -1009,7 +1016,7 @@ test('a drop between cards that share a sort_order keeps its place after a refre
 test('team header button archives every done issue in one bulk request', async ({ page }) => {
 	const { bulkPatches, store } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	const doneIds = store.filter((it) => it.status_info?.category === 'completed').map((it) => it.id);
@@ -1031,7 +1038,7 @@ test('team header button archives every done issue in one bulk request', async (
 test('done column ... menu archives the whole column', async ({ page }) => {
 	const { bulkPatches, store } = await mockTeamBoard(page);
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(DEEP_TAIL_TITLE)).toBeVisible();
 
 	const doneIds = store.filter((it) => it.status_info?.category === 'completed').map((it) => it.id);
@@ -1062,7 +1069,7 @@ test('column sort button reorders one column display-only', async ({ page }) => 
 		}
 	}
 
-	await page.goto(`/test/teams/${teamId}`);
+	await openTeamBoard(page);
 	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
 
 	const backlog = page.locator('div[aria-label="Backlog"]');
