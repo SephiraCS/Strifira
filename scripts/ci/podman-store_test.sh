@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run the committed cleanup logic against private directories; never /cache.
 set -eu
-repo=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
+repo=$(CDPATH='' cd -- "$(dirname "$0")/../.." && pwd)
 sandbox=$(mktemp -d)
 trap 'rm -rf -- "$sandbox"' EXIT
 root="$sandbox/stores"
