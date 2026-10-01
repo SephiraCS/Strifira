@@ -39,6 +39,7 @@
 	import FileText from '@lucide/svelte/icons/file-text';
 	import ImagePlus from '@lucide/svelte/icons/image-plus';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import Sparkles from '@lucide/svelte/icons/sparkles';
 	import { reworkText, isAINotConfiguredError } from '$lib/api/ai-settings';
 	import { appToast } from '$lib/features/toast/toast';
 
@@ -129,10 +130,31 @@
 	let labelsOpen = $state(false);
 	let cycleOpen = $state(false);
 
-	let descriptionEditor = $state<{ insertFiles: (files: File[]) => void } | null>(null);
+	let descriptionEditor = $state<RichEditor | null>(null);
+	let aiDescriptionBusy = $state(false);
+	const hasDescriptionText = $derived(
+		description
+			.replace(/<[^>]*>/g, '')
+			.replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
+			.trim().length > 0
+	);
+	const canImproveDescription = $derived(!!title.trim() || hasDescriptionText);
+	const descriptionAIButtonLabel = $derived(
+		hasDescriptionText ? m['issue.ai.improve_description']() : m['sharedComponents.create_issue.generate_description']()
+	);
 	const uploadUrl = $derived(slug ? `/api/workspaces/${slug}/upload` : undefined);
 	// Uploads started in the description editor that have not been inserted yet.
 	let pendingUploads = $state(0);
+
+	async function improveDescriptionWithAI() {
+		if (!descriptionEditor || aiDescriptionBusy || pendingUploads > 0 || !canImproveDescription) return;
+		aiDescriptionBusy = true;
+		try {
+			await descriptionEditor.reworkWholeDocument();
+		} finally {
+			aiDescriptionBusy = false;
+		}
+	}
 
 	function validTeam(id: string | undefined): string | undefined {
 		if (!id) return undefined;
@@ -431,14 +453,31 @@
 			<div
 				class="mt-4 max-h-[calc(60vh-120px)] overflow-y-auto max-sm:flex-1 max-sm:[max-height:none] max-sm:overflow-y-auto"
 			>
+				<div class="mb-1 flex justify-end">
+					<button
+						type="button"
+						onpointerdown={(event) => event.preventDefault()}
+						onclick={improveDescriptionWithAI}
+						disabled={!canImproveDescription ||
+							aiDescriptionBusy ||
+							descriptionEditor?.isReworking() ||
+							pendingUploads > 0}
+						class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+						title={descriptionAIButtonLabel}
+						aria-label={descriptionAIButtonLabel}
+						aria-busy={aiDescriptionBusy || descriptionEditor?.isReworking() || false}
+					>
+						<Sparkles size={13} class={aiDescriptionBusy || descriptionEditor?.isReworking() ? 'animate-pulse' : ''} />
+						{descriptionAIButtonLabel}
+					</button>
+				</div>
+
 				{#key descriptionVersion}
 					<RichEditor
 						bind:this={descriptionEditor}
+						showAIButton={false}
 						allowEmptyAI={!!title.trim()}
 						aiContextKey={title}
-						aiButtonLabel={description.replace(/<[^>]*>/g, '').trim()
-							? m['issue.ai.improve_description']()
-							: m['sharedComponents.create_issue.generate_description']()}
 						content={description}
 						workspaceSlug={slug}
 						{members}

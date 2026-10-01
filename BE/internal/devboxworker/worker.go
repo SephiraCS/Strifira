@@ -7,12 +7,14 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 )
@@ -21,7 +23,23 @@ var (
 	ErrLeaseLost          = errors.New("job lease lost; execution stopped")
 	ErrRemoteCancellation = errors.New("job cancellation requested")
 	ErrRuntimeExceeded    = errors.New("job runtime exceeded")
+	versionANSI           = regexp.MustCompile("\x1b\\[[0-?]*[ -/]*[@-~]")
 )
+
+func normalizeProviderVersion(value string) string {
+	value = versionANSI.ReplaceAllString(value, "")
+	value = strings.Map(func(character rune) rune {
+		if unicode.IsControl(character) {
+			return ' '
+		}
+		return character
+	}, strings.ToValidUTF8(value, "�"))
+	characters := []rune(strings.Join(strings.Fields(value), " "))
+	if len(characters) == 0 {
+		return "unknown"
+	}
+	return string(characters[:min(len(characters), 100)])
+}
 
 type Worker struct {
 	Config    Config
@@ -60,7 +78,7 @@ func New(config Config, api API) (*Worker, error) {
 		if err != nil {
 			return nil, fmt.Errorf("provider %s version check failed: %w", id, err)
 		}
-		heartbeat.Providers = append(heartbeat.Providers, ProviderInfo{ID: id, Version: boundedText(strings.TrimSpace(output.String()), 200)})
+		heartbeat.Providers = append(heartbeat.Providers, ProviderInfo{ID: id, Version: normalizeProviderVersion(output.String())})
 	}
 	return &Worker{Config: config, API: api, Executor: &LocalExecutor{Config: config}, Logger: slog.Default(), Heartbeat: heartbeat}, nil
 }
@@ -266,10 +284,14 @@ func (w *Worker) RunLease(parent context.Context, lease Lease) error {
 				}
 				leaseTimer.Reset(lifetime)
 				if err := w.API.Heartbeat(ctx, w.Heartbeat); err != nil {
-					if ctx.Err() == nil {
-						stopLease()
+					if ctx.Err() != nil {
+						return
 					}
-					return
+					if fatalHTTP(err) {
+						stopLease()
+						return
+					}
+					w.Logger.Warn("worker heartbeat failed during job", "job_id", lease.Job.ID, "error", err)
 				}
 			}
 		}

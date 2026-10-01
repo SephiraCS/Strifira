@@ -50,6 +50,7 @@
 	let reposError = $state('');
 	let automationsError = $state('');
 	let mappingsError = $state('');
+	let loadingMappings = $state(false);
 	let workflowLoadFailed = $state(false);
 	let savingEvents = $state<Set<string>>(new Set());
 	let ruleErrors = $state<Record<string, string>>({});
@@ -133,6 +134,7 @@
 		workflowLoadFailed = false;
 		connecting = false;
 		savingMappings = false;
+		loadingMappings = false;
 		savingRepos = false;
 		loadingRepos = false;
 		automationsError = '';
@@ -159,20 +161,30 @@
 
 	async function loadConfiguration(workspaceSlug: string, requestGeneration: number) {
 		automationsError = '';
-		mappingsError = '';
-		const [rules, mappings, workspaceMembers] = await Promise.allSettled([
+		const [rules] = await Promise.allSettled([
 			listAutoTransitions(workspaceSlug),
-			listUserMappings(workspaceSlug),
-			listMembers(workspaceSlug),
+			loadMappings(workspaceSlug, requestGeneration),
 			loadWorkflowStates(workspaceSlug, requestGeneration)
 		]);
 		if (!isCurrent(workspaceSlug, requestGeneration)) return;
 		if (rules.status === 'fulfilled') transitions = rules.value;
 		else automationsError = errorMessage(rules.reason, m['settings.forgejo.failed_load_automations']());
+	}
+
+	async function loadMappings(workspaceSlug: string, requestGeneration: number) {
+		if (!isCurrent(workspaceSlug, requestGeneration) || loadingMappings || savingMappings) return;
+		loadingMappings = true;
+		const [mappings, workspaceMembers] = await Promise.allSettled([
+			listUserMappings(workspaceSlug),
+			listMembers(workspaceSlug)
+		]);
+		if (!isCurrent(workspaceSlug, requestGeneration)) return;
+		mappingsError = '';
 		if (mappings.status === 'fulfilled') userMappings = mappings.value;
 		else mappingsError = errorMessage(mappings.reason, m['settings.forgejo.failed_load_mappings']());
 		if (workspaceMembers.status === 'fulfilled') members = workspaceMembers.value;
 		else mappingsError ||= errorMessage(workspaceMembers.reason, m['settings.forgejo.failed_load_mappings']());
+		loadingMappings = false;
 	}
 
 	// A workspace rule uses a slug resolved against each issue's own team.
@@ -288,24 +300,34 @@
 		const desiredIds = new Set(selectedRepoIds);
 		savingRepos = true;
 		reposError = '';
-		let failed = false;
+		const failedNames: string[] = [];
 		const removals = availableRepos
 			.filter((repo) => repo.linked && !desiredIds.has(repo.forgejo_repo_id))
 			.flatMap((repo) => {
 				const linked = status?.repos.find((item) => item.forgejo_repo_id === repo.forgejo_repo_id);
-				return linked ? [linked.id] : [];
+				return linked ? [{ id: linked.id, name: repo.full_name }] : [];
 			});
-		try {
-			const newIds = [...desiredIds].filter(
-				(id) => !availableRepos.some((repo) => repo.forgejo_repo_id === id && repo.linked)
-			);
-			if (newIds.length) await linkForgejoRepos(workspaceSlug, newIds);
-			for (const id of removals) await unlinkForgejoRepo(workspaceSlug, id);
-		} catch (error) {
-			failed = true;
-			if (isCurrent(workspaceSlug, requestGeneration))
-				reposError = errorMessage(error, m['settings.forgejo.failed_save_repos']());
+		const additions = availableRepos.filter((repo) => desiredIds.has(repo.forgejo_repo_id) && !repo.linked);
+		if (additions.length) {
+			try {
+				await linkForgejoRepos(
+					workspaceSlug,
+					additions.map((repo) => repo.forgejo_repo_id)
+				);
+			} catch {
+				failedNames.push(...additions.map((repo) => repo.full_name));
+			}
 		}
+		for (const repo of removals) {
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			try {
+				await unlinkForgejoRepo(workspaceSlug, repo.id);
+			} catch {
+				failedNames.push(repo.name);
+			}
+		}
+		if (!isCurrent(workspaceSlug, requestGeneration)) return;
+		if (failedNames.length) reposError = `${m['settings.forgejo.failed_save_repos']()} ${failedNames.join(', ')}`;
 		try {
 			const connection = await getForgejoStatus(workspaceSlug);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
@@ -314,7 +336,7 @@
 				...repo,
 				linked: connection.repos.some((linked) => linked.forgejo_repo_id === repo.forgejo_repo_id)
 			}));
-			if (!failed) {
+			if (!failedNames.length) {
 				showRepoSelector = false;
 				repoSearch = '';
 				appToast.success(m['settings.forgejo.repos_saved']());
@@ -399,7 +421,7 @@
 	}
 
 	async function saveMappings(next: ForgejoUserMapping[]): Promise<boolean> {
-		if (!canManage || savingMappings) return false;
+		if (!canManage || savingMappings || loadingMappings || mappingsError) return false;
 		const workspaceSlug = slug;
 		const requestGeneration = generation;
 		savingMappings = true;
@@ -682,7 +704,9 @@
 			<div>
 				<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.user_mappings']()}</h3>
 				<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.user_mappings_desc']()}</p>
-				{#if mappingsError}<p role="alert" class="mt-3 text-xs text-red-500">{mappingsError}</p>{/if}
+				{#if mappingsError}<div class="mt-3">
+						<ErrorState message={mappingsError} onretry={() => loadMappings(slug, generation)} />
+					</div>{/if}
 				<div class="mt-3 space-y-2">
 					{#each userMappings as mapping (mapping.forgejo_login)}
 						<div class="flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] px-3 py-2">
@@ -692,7 +716,7 @@
 							>
 							<button
 								aria-label={m['settings.forgejo.remove_mapping']({ login: mapping.forgejo_login })}
-								disabled={!canManage || savingMappings}
+								disabled={!canManage || savingMappings || loadingMappings || !!mappingsError}
 								onclick={() =>
 									saveMappings(userMappings.filter((item) => item.forgejo_login !== mapping.forgejo_login))}
 								class="shrink-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
@@ -706,7 +730,7 @@
 						aria-label={m['settings.forgejo.forgejo_login']()}
 						placeholder={m['settings.forgejo.forgejo_login']()}
 						bind:value={mappingLogin}
-						disabled={!canManage || savingMappings || !!mappingsError}
+						disabled={!canManage || savingMappings || loadingMappings || !!mappingsError}
 						class="h-8 min-w-32 flex-1 text-sm"
 						maxlength={100}
 					/>
@@ -714,7 +738,7 @@
 						aria-label={m['settings.forgejo.ku_member']()}
 						class="h-8 min-w-36 flex-1 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
 						bind:value={mappingUserID}
-						disabled={!canManage || savingMappings || !!mappingsError}
+						disabled={!canManage || savingMappings || loadingMappings || !!mappingsError}
 					>
 						<option value="">{m['settings.forgejo.ku_member']()}</option>
 						{#each members as member (member.user_id)}
@@ -724,7 +748,12 @@
 					<Button
 						size="sm"
 						onclick={addMapping}
-						disabled={!canManage || !!mappingsError || savingMappings || !mappingLogin.trim() || !mappingUserID}
+						disabled={!canManage ||
+							!!mappingsError ||
+							loadingMappings ||
+							savingMappings ||
+							!mappingLogin.trim() ||
+							!mappingUserID}
 					>
 						<Plus size={14} />
 						{m['settings.forgejo.add_mapping']()}

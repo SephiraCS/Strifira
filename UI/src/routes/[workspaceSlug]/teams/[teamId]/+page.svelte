@@ -393,9 +393,7 @@
 	// on: a completed-category workflow status (legacy: status === 'done').
 	const doneIssueIds = $derived(
 		issuesState.issues
-			.filter((issue) =>
-				issue.status_info ? issue.status_info.category === 'completed' : issue.status === 'done'
-			)
+			.filter((issue) => (issue.status_info ? issue.status_info.category === 'completed' : issue.status === 'done'))
 			.map((issue) => issue.id)
 	);
 
@@ -561,9 +559,7 @@
 			{#if !issuesState.loading && issuesState.issues.length === 0}
 				<EmptyState
 					title="No issues found"
-					description={hasActiveFilters
-						? 'Try adjusting your filters'
-						: 'Create your first issue to get started'}
+					description={hasActiveFilters ? 'Try adjusting your filters' : 'Create your first issue to get started'}
 					action={{ label: 'New Issue', onclick: openCreateIssue }}
 				/>
 			{:else if issuesState.groupBy}
@@ -571,9 +567,10 @@
 					{@const dropKey = group.key}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
-						class="group/drop transition-all {dragOverGroup === dropKey && dragSourceGroup !== dropKey
-							? 'border border-[var(--app-accent)]'
-							: ''}"
+						class="group/drop outline-1 -outline-offset-1 transition-colors duration-100 motion-reduce:transition-none {dragOverGroup ===
+							dropKey && dragSourceGroup !== dropKey
+							? 'outline-[var(--app-accent)]'
+							: 'outline-transparent'}"
 						ondragstart={() => {
 							dragSourceGroup = dropKey;
 						}}
@@ -624,8 +621,10 @@
 										const midY = rect.top + rect.height / 2;
 										dropPosition = e.clientY < midY ? 'above' : 'below';
 									}}
-									ondragleave={() => {
-										dragOverIssueId = null;
+									ondragleave={(e) => {
+										if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+											dragOverIssueId = null;
+										}
 									}}
 									ondrop={(e) => {
 										e.preventDefault();
@@ -638,7 +637,7 @@
 								>
 									{#if dragOverIssueId === issue.id && dragSourceGroup === dropKey}
 										<div
-											class="absolute {dropPosition === 'above'
+											class="pointer-events-none absolute {dropPosition === 'above'
 												? 'top-0'
 												: 'bottom-0'} left-0 right-0 h-px bg-[var(--app-accent)] z-10"
 										></div>
@@ -687,29 +686,31 @@
 				onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
 			/>
 		</div>
-		{:else if issuesState.issues.length > 0 || !issuesState.loading}
-			<div class="flex-1 overflow-hidden">
-				<KanbanBoard
-					issuesByStatus={issuesState.issuesByStatus}
-					{slug}
-					{members}
-					{labels}
-					onissueclick={handleIssueClick}
-					onquickadd={(statusId) => {
-						// Board columns always represent statuses, independent of list group-by.
-						quickAddDefaults = { statusId };
-						showCreateIssue = true;
-					}}
-				/>
-			</div>
-		{:else}
-			<!-- First load only; later refetches keep the current board on screen
+	{:else if issuesState.issues.length > 0 || !issuesState.loading}
+		<div class="flex-1 overflow-hidden">
+			<KanbanBoard
+				issuesByStatus={issuesState.issuesByStatus}
+				{slug}
+				{members}
+				{labels}
+				onissueclick={handleIssueClick}
+				onquickadd={(statusId) => {
+					// Board columns always represent statuses, independent of list group-by.
+					quickAddDefaults = { statusId };
+					showCreateIssue = true;
+				}}
+			/>
+		</div>
+	{:else}
+		<!-- First load only; later refetches keep the current board on screen
 				instead of blanking it (the old blank-flash). -->
-			<div class="flex flex-1 items-center justify-center">
-				<div class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-text-tertiary)] border-t-transparent"></div>
-			</div>
-		{/if}
-	</div>
+		<div class="flex flex-1 items-center justify-center">
+			<div
+				class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-text-tertiary)] border-t-transparent"
+			></div>
+		</div>
+	{/if}
+</div>
 
 {#if issuesState.selectedIssue}
 	<IssueDetail issue={issuesState.selectedIssue} {slug} onclose={() => issuesState.select(null)} />

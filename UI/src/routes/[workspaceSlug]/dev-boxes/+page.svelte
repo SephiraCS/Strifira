@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import Server from '@lucide/svelte/icons/server';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -42,6 +42,22 @@
 	let hasMoreJobs = $state(false);
 	let requestVersion = 0;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let refreshWhenReady = false;
+
+	function isVisible() {
+		return document.visibilityState !== 'hidden';
+	}
+
+	onMount(() => {
+		function visibilityChanged() {
+			clearTimeout(timer);
+			if (!isVisible()) return;
+			if (busyBoxId) refreshWhenReady = true;
+			else void refresh();
+		}
+		document.addEventListener('visibilitychange', visibilityChanged);
+		return () => document.removeEventListener('visibilitychange', visibilityChanged);
+	});
 
 	$effect(() => {
 		const currentSlug = slug;
@@ -52,6 +68,7 @@
 			jobs = [];
 			loading = true;
 			busyBoxId = '';
+			refreshWhenReady = false;
 			registrationOpen = false;
 			removalOpen = false;
 			void refresh(currentSlug, currentIssueId);
@@ -64,6 +81,8 @@
 
 	async function refresh(currentSlug = slug, currentIssueId = issueId) {
 		clearTimeout(timer);
+		if (!isVisible() || busyBoxId || slug !== currentSlug || issueId !== currentIssueId) return;
+		refreshWhenReady = false;
 		const version = ++requestVersion;
 		const currentPage = jobsPage;
 		const [boxResult, jobResult] = await Promise.allSettled([
@@ -79,7 +98,13 @@
 			hasMoreJobs = jobResult.value.has_more;
 		}
 		loading = false;
-		timer = setTimeout(() => void refresh(currentSlug, currentIssueId), 5000);
+		scheduleRefresh(currentSlug, currentIssueId);
+	}
+
+	function scheduleRefresh(currentSlug = slug, currentIssueId = issueId) {
+		clearTimeout(timer);
+		if (!isVisible() || busyBoxId || slug !== currentSlug || issueId !== currentIssueId) return;
+		timer = setTimeout(() => void refresh(currentSlug, currentIssueId), refreshWhenReady ? 0 : 5000);
 	}
 
 	function showRegistration(box: DevBox | null = null) {
@@ -91,7 +116,7 @@
 		requestVersion++;
 		clearTimeout(timer);
 		boxes = [box, ...boxes.filter((item) => item.id !== box.id)];
-		timer = setTimeout(() => void refresh(), 5000);
+		scheduleRefresh();
 	}
 
 	async function setEnabled(box: DevBox, enabled: boolean) {
@@ -109,7 +134,7 @@
 		} finally {
 			if (version === requestVersion) {
 				busyBoxId = '';
-				timer = setTimeout(() => void refresh(), 5000);
+				scheduleRefresh();
 			}
 		}
 	}
@@ -132,7 +157,7 @@
 		} finally {
 			if (version === requestVersion) {
 				busyBoxId = '';
-				timer = setTimeout(() => void refresh(), 5000);
+				scheduleRefresh();
 			}
 		}
 	}

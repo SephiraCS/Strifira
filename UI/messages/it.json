@@ -1867,5 +1867,9 @@
 	"forgejo_actions.rerun_in_forgejo": "Riesegui in Forgejo",
 	"forgejo_actions.rerun_handoff": "Accedi a Forgejo nella pagina dell'esecuzione e usa i comandi per rieseguirla. Si applicano i permessi del tuo repository Forgejo.",
 	"forgejo_actions.steps_in_forgejo": "Visualizza i passaggi del workflow in Forgejo",
-	"forgejo_actions.failed_job": "Impossibile aggiornare questo job."
+	"forgejo_actions.failed_job": "Impossibile aggiornare questo job.",
+	"dev_boxes.failed_logs_terminal": "Impossibile caricare l’output rimanente. Seleziona Aggiorna per riprovare.",
+	"dev_boxes.criteria_count_invalid": "Usa al massimo 50 requisiti non vuoti. Rimuovi o unisci alcune righe.",
+	"dev_boxes.criteria_length_invalid": "Il requisito {line} supera 2.000 byte UTF-8. Abbrevialo; i caratteri accentati e le emoji occupano più byte.",
+	"dev_boxes.criteria_nul_invalid": "Il requisito {line} contiene un carattere nullo. Rimuovilo o riscrivi il requisito."
 }

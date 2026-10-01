@@ -21,7 +21,6 @@ const (
 	devBoxUserBodyLimit      = 128 << 10
 	devBoxHeartbeatBodyLimit = 8 << 10
 	devBoxLogBodyLimit       = 70 << 10
-	devBoxCompleteBodyLimit  = 2 << 20
 )
 
 type devBoxService interface {
@@ -291,7 +290,7 @@ func (h *DevBoxHandler) Complete(c echo.Context) error {
 		return err
 	}
 	var request dto.DevBoxCompleteRequest
-	if ok, err := bindDevBoxRequest(c, &request, devBoxCompleteBodyLimit); !ok {
+	if ok, err := bindDevBoxRequest(c, &request, dto.DevBoxCompleteBodyLimit); !ok {
 		return err
 	}
 	job, err := h.service.Complete(c.Request().Context(), box, jobID, request)

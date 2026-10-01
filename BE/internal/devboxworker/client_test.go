@@ -2,15 +2,21 @@ package devboxworker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +60,7 @@ func TestCompletionRequestAndRedirectErrorsArePermanent(t *testing.T) {
 			var err error
 			switch scenario {
 			case "encoding":
-				_, err = client.call(t.Context(), "/complete", func() {}, nil)
+				_, err = client.call(t.Context(), "/complete", func() {}, nil, 0)
 			case "request construction":
 				client.baseURL = "http://[invalid"
 				err = (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{}, Result{})
@@ -170,6 +176,97 @@ func TestCompletionUntrustedTLSCertificateIsPermanent(t *testing.T) {
 	require.False(t, retryableCompletion(err))
 	require.Equal(t, int32(1), attempts.Load())
 	require.Zero(t, requests.Load(), "worker request must not reach the untrusted endpoint")
+}
+
+func TestCompletionPreservesMaximumEscapedResultAndIdenticalRetry(t *testing.T) {
+	result := Result{Status: "succeeded", ExitCode: 0, Summary: strings.Repeat("<", 8192), Branch: "ku/" + strings.Repeat("b", 252),
+		Patch: strings.Repeat("<", maxPatchBytes), TestStatus: "passed", TestExitCode: new(0)}
+	for range 500 {
+		result.ChangedFiles = append(result.ChangedFiles, strings.Repeat("<", 4096))
+	}
+	for range 100 {
+		result.TestsRun = append(result.TestsRun, strings.Repeat("<", 4096))
+		result.RiskNotes = append(result.RiskNotes, strings.Repeat("<", 4096))
+	}
+	type observation struct {
+		length int
+		hash   [32]byte
+		result domain.DevBoxJobResult
+	}
+	bodies := make(chan observation, 3)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, dto.DevBoxCompleteBodyLimit))
+		require.NoError(t, err)
+		var request dto.DevBoxCompleteRequest
+		require.NoError(t, json.Unmarshal(body, &request))
+		bodies <- observation{length: len(body), hash: sha256.Sum256(body), result: request.Result}
+		if requests.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	client := NewClient(Config{ServerURL: server.URL}, "kub_"+strings.Repeat("a", 64))
+	require.NoError(t, (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{Token: "kl_" + strings.Repeat("b", 64)}, result))
+	require.Equal(t, int32(2), requests.Load())
+	first, replay := <-bodies, <-bodies
+	require.Greater(t, first.length, 2<<20, "the old body cap rejected a valid escaped review artifact")
+	require.LessOrEqual(t, first.length, dto.DevBoxCompleteBodyLimit)
+	require.Equal(t, first.hash, replay.hash, "retry must preserve the full encoded result")
+	for _, received := range []observation{first, replay} {
+		require.True(t, reflect.DeepEqual(domain.DevBoxJobResult(result), received.result), "complete patch and metadata must arrive unchanged")
+	}
+}
+
+func completionRequestLength(t *testing.T, lease string, result Result) int {
+	t.Helper()
+	body, err := json.Marshal(dto.DevBoxCompleteRequest{LeaseToken: lease, Result: domain.DevBoxJobResult(result)})
+	require.NoError(t, err)
+	return len(body)
+}
+
+func TestCompletionEncodedBodyLimitUsesFinalRedactedBytes(t *testing.T) {
+	for _, scenario := range []string{"exact limit", "limit plus one", "redaction brings body to exact limit"} {
+		t.Run(scenario, func(t *testing.T) {
+			var requests atomic.Int32
+			var received atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				n, err := io.Copy(io.Discard, r.Body)
+				require.NoError(t, err)
+				received.Store(n)
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			token, lease := "kub_"+strings.Repeat("a", 64), "kl_"+strings.Repeat("b", 64)
+			result := Result{Status: "failed", ExitCode: -1, TestStatus: "not_run"}
+			base := completionRequestLength(t, lease, result)
+			switch scenario {
+			case "exact limit":
+				result.Patch = strings.Repeat("x", dto.DevBoxCompleteBodyLimit-base)
+			case "limit plus one":
+				result.Patch = strings.Repeat("x", dto.DevBoxCompleteBodyLimit-base+1)
+			case "redaction brings body to exact limit":
+				result.Patch = token + strings.Repeat("x", dto.DevBoxCompleteBodyLimit-base-len("[REDACTED]"))
+				require.Greater(t, completionRequestLength(t, lease, result), dto.DevBoxCompleteBodyLimit)
+			}
+			original := result.Patch
+			client := NewClient(Config{ServerURL: server.URL}, token)
+			err := (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{Token: lease}, result)
+			if scenario == "limit plus one" {
+				require.ErrorContains(t, err, fmt.Sprintf("%d-byte encoded body limit", dto.DevBoxCompleteBodyLimit))
+				require.False(t, retryableCompletion(err))
+				require.Zero(t, requests.Load(), "oversized results must fail before any HTTP request or retry")
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, int32(1), requests.Load())
+				require.Equal(t, int64(dto.DevBoxCompleteBodyLimit), received.Load())
+			}
+			require.True(t, original == result.Patch, "size checks must never truncate or mutate the review artifact")
+		})
+	}
 }
 
 func TestClientIdleClaimAndLeaseError(t *testing.T) {

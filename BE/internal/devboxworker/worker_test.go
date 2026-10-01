@@ -1,18 +1,27 @@
 package devboxworker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/dto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,6 +89,140 @@ func leasedWorker(executor Executor) (*Worker, *fakeAPI, Lease) {
 	lease := Lease{Job: Job{ID: uuid.NewString(), MaxRuntimeSeconds: 30}, Token: "immutable-lease", HeartbeatIntervalSeconds: 1}
 	api := &fakeAPI{start: state, renew: state}
 	return &Worker{API: api, Executor: executor, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}, api, lease
+}
+
+func TestProviderVersionNormalizationAllowsContractHeartbeatAndClaim(t *testing.T) {
+	for _, test := range []struct {
+		name, output, expected string
+	}{
+		{name: "ASCII banner over100", output: strings.Repeat("v", 101), expected: strings.Repeat("v", 100)},
+		{name: "Unicode rune limit", output: strings.Repeat("é", 101), expected: strings.Repeat("é", 100)},
+		{name: "multiline ANSI wrapper", output: "\x1b[32mClaude Code1.2.3\x1b[0m\nWrapper ready\r\n", expected: "Claude Code1.2.3 Wrapper ready"},
+		{name: "NUL and Unicode controls", output: "\x00\t\x7f\u0085\v", expected: "unknown"},
+		{name: "empty output", expected: "unknown"},
+		{name: "invalid UTF8", output: "\xff1.2.3", expected: "�1.2.3"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var claims atomic.Int32
+			versions := make(chan string, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/claim") {
+					claims.Add(1)
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
+				var request dto.DevBoxHeartbeatRequest
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if err := validator.New().Struct(request); err != nil || len(request.Providers) != 1 {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				version := request.Providers[0].Version
+				if version == "" || utf8.RuneCountInString(version) > 100 || strings.ContainsFunc(version, unicode.IsControl) {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				versions <- version
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			config := testConfig(t)
+			config.ServerURL, config.LocalhostHTTP = server.URL, true
+			output := filepath.Join(t.TempDir(), "version-output")
+			require.NoError(t, os.WriteFile(output, []byte(test.output), 0600))
+			provider := filepath.Join(t.TempDir(), "provider")
+			script := "#!/bin/sh\ncat -- '" + strings.ReplaceAll(output, "'", "'\\''") + "'\n"
+			require.NoError(t, os.WriteFile(provider, []byte(script), 0700))
+			config.Providers["claude-code"] = provider
+			worker, err := New(config, NewClient(config, "kub_"+strings.Repeat("a", 64)))
+			require.NoError(t, err)
+			require.NoError(t, worker.Run(t.Context(), true))
+			require.Equal(t, int32(1), claims.Load(), "valid normalized heartbeat must allow the next claim")
+			require.Equal(t, test.expected, <-versions)
+		})
+	}
+}
+
+type isolatedHeartbeatAPI struct {
+	*fakeAPI
+	err       error
+	heartbeat atomic.Int32
+	renewals  atomic.Int32
+	renewed   chan struct{}
+}
+
+func (a *isolatedHeartbeatAPI) Heartbeat(ctx context.Context, body Heartbeat) error {
+	if a.heartbeat.Add(1) == 1 {
+		return a.err
+	}
+	return a.fakeAPI.Heartbeat(ctx, body)
+}
+
+func (a *isolatedHeartbeatAPI) Renew(ctx context.Context, id, token string) (LeaseState, error) {
+	state, err := a.fakeAPI.Renew(ctx, id, token)
+	if err != nil {
+		return state, err
+	}
+	lifetime := state.ExpiresAt.Sub(state.ServerTime)
+	state.ServerTime = time.Now().UTC()
+	state.ExpiresAt = state.ServerTime.Add(lifetime)
+	if a.renewals.Add(1) == 2 {
+		close(a.renewed)
+	}
+	return state, nil
+}
+
+func TestIsolatedHeartbeatFailurePreservesRenewedLeaseAndCompletion(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{name: "service unavailable", err: &HTTPError{Status: http.StatusServiceUnavailable}},
+		{name: "rate limited", err: &HTTPError{Status: http.StatusTooManyRequests}},
+		{name: "transport failure", err: &transportError{err: io.EOF}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			renewed := make(chan struct{})
+			worker, api, lease := leasedWorker(executorFunc(func(ctx context.Context, _ Job, _ func(string, string)) Result {
+				select {
+				case <-ctx.Done():
+					return Result{Status: "failed", Summary: "valid lease was stopped"}
+				case <-renewed:
+					return Result{Status: "succeeded", Summary: "completed under renewed lease"}
+				}
+			}))
+			calls := &isolatedHeartbeatAPI{fakeAPI: api, err: test.err, renewed: renewed}
+			worker.API = calls
+			var warnings bytes.Buffer
+			worker.Logger = slog.New(slog.NewTextHandler(&warnings, nil))
+			require.NoError(t, worker.RunLease(t.Context(), lease))
+			require.GreaterOrEqual(t, calls.renewals.Load(), int32(2))
+			require.Len(t, api.completed, 1)
+			require.Equal(t, "succeeded", api.completed[0].Status)
+			require.Contains(t, warnings.String(), "worker heartbeat failed during job")
+		})
+	}
+}
+
+func TestHeartbeatAuthorityFailureStillStopsLeaseAndCompletion(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+			worker, api, lease := leasedWorker(executorFunc(func(ctx context.Context, _ Job, _ func(string, string)) Result {
+				<-ctx.Done()
+				return Result{Status: "succeeded"}
+			}))
+			calls := &isolatedHeartbeatAPI{fakeAPI: api, err: &HTTPError{Status: status}, renewed: make(chan struct{})}
+			worker.API = calls
+			require.ErrorIs(t, worker.RunLease(t.Context(), lease), ErrLeaseLost)
+			require.Equal(t, int32(1), calls.renewals.Load())
+			require.Empty(t, api.completed)
+		})
+	}
 }
 
 func TestLeaseLossStopsExecutionAndDoesNotPublishCompletion(t *testing.T) {

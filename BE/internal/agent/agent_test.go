@@ -22,7 +22,7 @@ func TestBuiltinProvidersBuildArgvWithoutShell(t *testing.T) {
 func TestAutonomousProvidersHaveExplicitHeadlessPolicy(t *testing.T) {
 	claude, err := NewClaudeCodeProvider("").BuildInvocation(RunInput{Mode: ModeAutonomous, Prompt: "fix"})
 	require.NoError(t, err)
-	require.Equal(t, []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk", "--allowedTools", "Bash,Edit,Write", "-p", "fix"}, claude.Argv)
+	require.Equal(t, []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk", "--allowedTools", "Bash,Read,Grep,Glob,Edit,Write", "-p", "fix"}, claude.Argv)
 	codex, err := NewCodexProvider("").BuildInvocation(RunInput{Mode: ModeAutonomous, Prompt: "fix"})
 	require.NoError(t, err)
 	require.Equal(t, []string{"codex", "exec", "--json", "--sandbox", "danger-full-access", "-c", `approval_policy="never"`, "fix"}, codex.Argv)

@@ -21,7 +21,7 @@ async function mockActions(
 		workflow_id: 'build.yaml',
 		head_branch: 'main',
 		head_sha: 'abcdef0123456789',
-		html_url: 'https://git.example.com/TerraScale/ku/actions/42',
+		html_url: 'https://git.example.com/TerraScale/ku/actions/runs/42',
 		created_at: '2026-09-30T12:00:00Z',
 		updated_at: '2026-09-30T12:01:00Z',
 		started_at: '2026-09-30T12:00:00Z',
@@ -164,15 +164,13 @@ test('reads native job logs, hands reruns to Forgejo, and cancels active runs as
 	page.on('pageerror', (error) => pageErrors.push(error));
 	await page.goto('/test/actions');
 	await page.getByRole('button', { name: /Build application/ }).click();
-	await expect(page.getByRole('link', { name: 'Open in Forgejo' })).toHaveAttribute(
-		'href',
-		'https://git.example.com/TerraScale/ku/actions/42'
-	);
+	const nativeRunLink = page.getByRole('link', { name: 'Open in Forgejo' });
+	await expect(nativeRunLink).toBeVisible();
+	await expect(nativeRunLink).toHaveAttribute('href', 'https://git.example.com/TerraScale/ku/actions/runs/42');
 	await page.getByRole('button', { name: /Linux checks/ }).click();
-	await expect(page.getByRole('link', { name: 'View workflow steps in Forgejo', exact: true })).toHaveAttribute(
-		'href',
-		'https://git.example.com/TerraScale/ku/actions/42'
-	);
+	const nativeStepsLink = page.getByRole('link', { name: 'View workflow steps in Forgejo', exact: true });
+	await expect(nativeStepsLink).toBeVisible();
+	await expect(nativeStepsLink).toHaveAttribute('href', 'https://git.example.com/TerraScale/ku/actions/runs/42');
 	await expect(page.locator('pre')).toHaveText('All tests passed\n<script>plain text</script>\n');
 	await expect(page.getByText('Logs are limited to the first 2 MB.', { exact: true })).toBeVisible();
 	expect(calls.logs[0].searchParams.get('attempt')).toBe('2');
@@ -180,7 +178,8 @@ test('reads native job logs, hands reruns to Forgejo, and cancels active runs as
 	await page.getByRole('button', { name: 'Download logs' }).click();
 	expect((await downloaded).suggestedFilename()).toBe('forgejo-run-101-job-201-attempt-2.log');
 	const handoff = page.getByRole('link', { name: 'Rerun in Forgejo', exact: true });
-	await expect(handoff).toHaveAttribute('href', 'https://git.example.com/TerraScale/ku/actions/42');
+	await expect(handoff).toBeVisible();
+	await expect(handoff).toHaveAttribute('href', 'https://git.example.com/TerraScale/ku/actions/runs/42');
 	await expect(handoff).toHaveAttribute('target', '_blank');
 	await expect(handoff).toHaveAttribute('rel', 'noopener noreferrer');
 	await expect(
@@ -191,13 +190,13 @@ test('reads native job logs, hands reruns to Forgejo, and cancels active runs as
 	).toBeVisible();
 	await page
 		.context()
-		.route('https://git.example.com/TerraScale/ku/actions/42', (route) =>
+		.route('https://git.example.com/TerraScale/ku/actions/runs/42', (route) =>
 			route.fulfill({ contentType: 'text/html', body: '<h1>Forgejo workflow run</h1>' })
 		);
 	const opened = page.waitForEvent('popup');
 	await handoff.click();
 	const forgejoPage = await opened;
-	await expect(forgejoPage).toHaveURL('https://git.example.com/TerraScale/ku/actions/42');
+	await expect(forgejoPage).toHaveURL('https://git.example.com/TerraScale/ku/actions/runs/42');
 	await expect(forgejoPage.getByRole('heading', { name: 'Forgejo workflow run' })).toBeVisible();
 	await forgejoPage.close();
 	expect(calls.actions).toEqual([]);
@@ -444,4 +443,344 @@ test('keeps an earlier attempt unavailable for download while newer job logs are
 	const path = await download.path();
 	expect(path).not.toBeNull();
 	expect(await readFile(path!, 'utf8')).toBe('attempt 3 logs\n');
+});
+
+for (const failure of [
+	{
+		name: 'run lists',
+		path: `${actionsPath}/runs`,
+		pattern: `**${actionsPath}/runs?**`,
+		region: 'Forgejo Actions',
+		message: 'Could not load Forgejo Actions.'
+	},
+	{
+		name: 'run details',
+		path: `${actionsPath}/runs/101`,
+		pattern: `**${actionsPath}/runs/101`,
+		region: 'Jobs',
+		message: 'Could not load this run.'
+	},
+	{
+		name: 'same-attempt job logs',
+		path: `${actionsPath}/runs/101/jobs/201/logs`,
+		pattern: `**${actionsPath}/runs/101/jobs/201/logs?**`,
+		region: 'Jobs',
+		message: 'Could not load job logs.'
+	}
+]) {
+	test(`preserves loaded ${failure.name} on background failures and exposes foreground retry failures`, async ({
+		page
+	}) => {
+		await mockActions(page);
+		await page.clock.install();
+		await page.goto('/test/actions');
+		await page.getByRole('button', { name: /Build application/ }).click();
+		await page.getByRole('button', { name: /Linux checks/ }).click();
+		await expect(page.locator('pre')).toContainText('All tests passed');
+		let failing = true;
+		let failures = 0;
+		let release!: () => void;
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await page.route(failure.pattern, async (route) => {
+			if (!failing) return route.fallback();
+			failures++;
+			await released;
+			return route.fulfill({ status: 503, json: { error: { message: 'Temporary Forgejo outage' } } });
+		});
+		const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+		const failedResponse = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === failure.path && response.status() === 503
+		);
+		await page.clock.fastForward(15001);
+		await expect.poll(() => failures).toBe(1);
+		await expect(refresh).toBeDisabled();
+		release();
+		await failedResponse;
+		await expect(refresh).toBeEnabled();
+		await expect(page.getByRole('button', { name: /Build application/ })).toBeVisible();
+		await expect(page.getByRole('button', { name: /Deploy preview/ })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Build application', exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: /Linux checks/ })).toBeVisible();
+		await expect(page.locator('pre')).toHaveText('All tests passed\n<script>plain text</script>\n');
+		await expect(page.getByRole('button', { name: 'Download logs', exact: true })).toBeEnabled();
+		await expect(page.getByRole('link', { name: 'Rerun in Forgejo', exact: true })).toBeVisible();
+
+		await refresh.click();
+		const errors = page.getByRole('region', { name: failure.region, exact: true });
+		await expect(errors.getByText(failure.message, { exact: true })).toBeVisible();
+		await expect.poll(() => failures).toBe(2);
+		await errors.getByRole('button', { name: 'Try again', exact: true }).click();
+		await expect.poll(() => failures).toBe(3);
+		await expect(errors.getByText(failure.message, { exact: true })).toBeVisible();
+		failing = false;
+		await errors.getByRole('button', { name: 'Try again', exact: true }).click();
+		await expect(errors.getByText(failure.message, { exact: true })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: /Build application/ })).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Build application', exact: true })).toBeVisible();
+		await expect(page.locator('pre')).toContainText('All tests passed');
+	});
+}
+
+test('keeps failed run-page navigation visible and retries the requested page', async ({ page }) => {
+	const { completedRun } = await mockActions(page);
+	let failing = true;
+	const requestedPages: number[] = [];
+	await page.route(`**${actionsPath}/runs?**`, (route) => {
+		const requested = Number(new URL(route.request().url()).searchParams.get('page'));
+		requestedPages.push(requested);
+		if (requested === 2 && failing)
+			return route.fulfill({ status: 503, json: { error: { message: 'Run history unavailable' } } });
+		return route.fulfill({
+			json: {
+				data:
+					requested === 1
+						? [completedRun]
+						: [{ ...completedRun, id: 100, run_number: 41, title: 'Earlier workflow run' }],
+				total_count: 21,
+				page: requested,
+				per_page: 20,
+				has_more: requested === 1
+			}
+		});
+	});
+	await page.goto('/test/actions');
+	const runs = page.getByRole('region', { name: 'Forgejo Actions', exact: true });
+	await expect(runs.getByRole('button', { name: /Build application/ })).toBeVisible();
+	await runs.getByRole('button', { name: 'Next', exact: true }).click();
+	await expect(runs.getByText('Could not load Forgejo Actions.', { exact: true })).toBeVisible();
+	await expect(runs.getByRole('button', { name: /Build application/ })).toHaveCount(0);
+	await runs.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect.poll(() => requestedPages).toEqual([1, 2, 2]);
+	await expect(runs.getByText('Could not load Forgejo Actions.', { exact: true })).toBeVisible();
+	failing = false;
+	await runs.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(runs.getByRole('button', { name: /Earlier workflow run/ })).toBeVisible();
+	await expect(runs.getByText('Page 2', { exact: true })).toBeVisible();
+	await expect(runs.getByRole('button', { name: /Build application/ })).toHaveCount(0);
+	expect(requestedPages).toEqual([1, 2, 2, 2]);
+});
+
+test('keeps failed job-page navigation visible and retries the requested page', async ({ page }) => {
+	const { job } = await mockActions(page);
+	let failing = true;
+	const requestedPages: number[] = [];
+	await page.route(`**${actionsPath}/runs/101/jobs?**`, (route) => {
+		const requested = Number(new URL(route.request().url()).searchParams.get('page'));
+		requestedPages.push(requested);
+		if (requested === 2 && failing)
+			return route.fulfill({ status: 503, json: { error: { message: 'Job history unavailable' } } });
+		return route.fulfill({
+			json: {
+				data: requested === 1 ? [job] : [{ ...job, id: 202, name: 'Windows checks' }],
+				total_count: 101,
+				page: requested,
+				per_page: 100,
+				has_more: requested === 1
+			}
+		});
+	});
+	await page.goto('/test/actions');
+	await page.getByRole('button', { name: /Build application/ }).click();
+	const jobs = page.getByRole('region', { name: 'Jobs', exact: true });
+	await expect(jobs.getByRole('button', { name: /Linux checks/ })).toBeVisible();
+	await jobs.getByRole('button', { name: 'Next', exact: true }).click();
+	await expect(jobs.getByText('Could not load this run.', { exact: true })).toBeVisible();
+	await expect(jobs.getByRole('button', { name: /Linux checks/ })).toHaveCount(0);
+	await jobs.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect.poll(() => requestedPages).toEqual([1, 2, 2]);
+	await expect(jobs.getByText('Could not load this run.', { exact: true })).toBeVisible();
+	failing = false;
+	await jobs.getByRole('button', { name: 'Try again', exact: true }).click();
+	await expect(jobs.getByRole('button', { name: /Windows checks/ })).toBeVisible();
+	await expect(jobs.getByText('Page 2', { exact: true })).toBeVisible();
+	await expect(jobs.getByRole('button', { name: /Linux checks/ })).toHaveCount(0);
+	expect(requestedPages).toEqual([1, 2, 2, 2]);
+});
+
+for (const navigation of ['run', 'job'] as const) {
+	test(`keeps delayed ${navigation}-page navigation intact across polling and visibility changes`, async ({ page }) => {
+		const { completedRun, job } = await mockActions(page);
+		await page.clock.install();
+		const requestedPages: number[] = [];
+		let release!: () => void;
+		let markStarted!: () => void;
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		const path = navigation === 'run' ? `${actionsPath}/runs` : `${actionsPath}/runs/101/jobs`;
+		await page.route(`**${path}?**`, async (route) => {
+			const requested = Number(new URL(route.request().url()).searchParams.get('page'));
+			requestedPages.push(requested);
+			if (requested === 2) {
+				if (requestedPages.filter((number) => number === 2).length > 1)
+					return route.fulfill({ status: 503, json: { error: { message: 'Unexpected background page request' } } });
+				markStarted();
+				await released;
+			}
+			return route
+				.fulfill({
+					json: {
+						data:
+							navigation === 'run'
+								? requested === 1
+									? [
+											completedRun,
+											{ ...completedRun, id: 102, title: 'Deploy preview', status: 'running', conclusion: '' }
+										]
+									: [{ ...completedRun, id: 100, run_number: 41, title: 'Earlier workflow run' }]
+								: requested === 1
+									? [job]
+									: [{ ...job, id: 202, name: 'Windows checks' }],
+						page: requested,
+						per_page: navigation === 'run' ? 20 : 100,
+						total_count: navigation === 'run' ? 21 : 101,
+						has_more: requested === 1
+					}
+				})
+				.catch(() => undefined);
+		});
+		await page.goto('/test/actions');
+		if (navigation === 'job') await page.getByRole('button', { name: /Build application/ }).click();
+		const region = page.getByRole('region', { name: navigation === 'run' ? 'Forgejo Actions' : 'Jobs', exact: true });
+		const initialName = navigation === 'run' ? /Build application/ : /Linux checks/;
+		const nextName = navigation === 'run' ? /Earlier workflow run/ : /Windows checks/;
+		await expect(region.getByRole('button', { name: initialName })).toBeVisible();
+		await region.getByRole('button', { name: 'Next', exact: true }).click();
+		await started;
+		try {
+			await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeDisabled();
+			if (navigation === 'job') {
+				await expect(region).toHaveAttribute('aria-busy', 'true');
+				await expect(region.getByRole('button', { name: initialName })).toBeVisible();
+			}
+			await page.clock.fastForward(15001);
+			await page.evaluate(() => {
+				Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+				document.dispatchEvent(new Event('visibilitychange'));
+			});
+			await page.clock.fastForward(15001);
+			await page.evaluate(() => {
+				Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+				document.dispatchEvent(new Event('visibilitychange'));
+			});
+			await page.clock.fastForward(15001);
+			expect(requestedPages).toEqual([1, 2]);
+		} finally {
+			release();
+		}
+		await expect(region.getByRole('button', { name: nextName })).toBeVisible();
+		await expect(region.getByText('Page 2', { exact: true })).toBeVisible();
+		await expect(region.getByRole('button', { name: initialName })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+		expect(requestedPages).toEqual([1, 2]);
+	});
+}
+
+test('does not let an earlier background poll interrupt foreground job-page navigation', async ({ page }) => {
+	const { job } = await mockActions(page);
+	await page.clock.install();
+	let releasePoll!: () => void;
+	let markPollStarted!: () => void;
+	let releasePage!: () => void;
+	let markPageStarted!: () => void;
+	const pollReleased = new Promise<void>((resolve) => {
+		releasePoll = resolve;
+	});
+	const pollStarted = new Promise<void>((resolve) => {
+		markPollStarted = resolve;
+	});
+	const pageReleased = new Promise<void>((resolve) => {
+		releasePage = resolve;
+	});
+	const pageStarted = new Promise<void>((resolve) => {
+		markPageStarted = resolve;
+	});
+	const requestedPages: number[] = [];
+	await page.route(`**${actionsPath}/runs/101/jobs?**`, async (route) => {
+		const requested = Number(new URL(route.request().url()).searchParams.get('page'));
+		requestedPages.push(requested);
+		if (requested === 2) {
+			if (requestedPages.filter((number) => number === 2).length > 1)
+				return route.fulfill({ status: 503, json: { error: { message: 'Unexpected background page request' } } });
+			markPageStarted();
+			await pageReleased;
+		}
+		return route
+			.fulfill({
+				json: {
+					data: requested === 1 ? [job] : [{ ...job, id: 202, name: 'Windows checks' }],
+					page: requested,
+					per_page: 100,
+					total_count: 101,
+					has_more: requested === 1
+				}
+			})
+			.catch(() => undefined);
+	});
+	await page.goto('/test/actions');
+	await page.getByRole('button', { name: /Build application/ }).click();
+	const jobs = page.getByRole('region', { name: 'Jobs', exact: true });
+	await expect(jobs.getByRole('button', { name: /Linux checks/ })).toBeVisible();
+	await page.route(`**${actionsPath}/runs?**`, async (route) => {
+		markPollStarted();
+		await pollReleased;
+		return route.fulfill({ status: 503, json: { error: { message: 'Temporary Forgejo outage' } } });
+	});
+	await page.clock.fastForward(15001);
+	await pollStarted;
+	await jobs.getByRole('button', { name: 'Next', exact: true }).click();
+	await pageStarted;
+	try {
+		const pollResponse = page.waitForResponse(
+			(response) => new URL(response.url()).pathname === `${actionsPath}/runs` && response.status() === 503
+		);
+		releasePoll();
+		await pollResponse;
+		await expect(jobs).toHaveAttribute('aria-busy', 'true');
+		await page.clock.fastForward(15001);
+		expect(requestedPages).toEqual([1, 2]);
+	} finally {
+		releasePoll();
+		releasePage();
+	}
+	await expect(jobs.getByRole('button', { name: /Windows checks/ })).toBeVisible();
+	await expect(jobs.getByText('Page 2', { exact: true })).toBeVisible();
+	await expect(jobs.getByRole('button', { name: /Linux checks/ })).toHaveCount(0);
+	await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
+	expect(requestedPages).toEqual([1, 2]);
+});
+
+test('preserves repository query selection and unrelated URL state after switching and reloading', async ({ page }) => {
+	await mockActions(page);
+	let secondRepositoryReads = 0;
+	await page.route(`**/api/workspaces/test/forgejo/repos/${secondRepositoryId}/actions/runs?**`, (route) => {
+		secondRepositoryReads++;
+		return route.fulfill({ json: { data: [], total_count: 0, page: 1, per_page: 20, has_more: false } });
+	});
+	await page.goto(`/test/actions?repo=${repositoryId}&keep=yes#history`);
+	await expect(page.getByLabel('Repository', { exact: true })).toHaveValue(repositoryId);
+	await page.getByLabel('Repository', { exact: true }).selectOption(secondRepositoryId);
+	await expect(page.getByText('No workflow runs', { exact: true })).toBeVisible();
+	await expect(page).toHaveURL(
+		(url) =>
+			url.searchParams.get('repo') === secondRepositoryId &&
+			url.searchParams.get('keep') === 'yes' &&
+			url.hash === '#history'
+	);
+	const beforeReload = secondRepositoryReads;
+	await page.reload();
+	await expect(page.getByLabel('Repository', { exact: true })).toHaveValue(secondRepositoryId);
+	await expect(page.getByText('No workflow runs', { exact: true })).toBeVisible();
+	await expect.poll(() => secondRepositoryReads).toBe(beforeReload + 1);
+	await expect(page).toHaveURL(
+		(url) =>
+			url.searchParams.get('repo') === secondRepositoryId &&
+			url.searchParams.get('keep') === 'yes' &&
+			url.hash === '#history'
+	);
 });

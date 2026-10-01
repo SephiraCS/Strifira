@@ -96,7 +96,12 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+	<Dialog.Content
+		class="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+		showCloseButton={!busy}
+		escapeKeydownBehavior={busy ? 'ignore' : 'close'}
+		interactOutsideBehavior={busy ? 'ignore' : 'close'}
+	>
 		<Dialog.Header>
 			<Dialog.Title
 				>{registration
@@ -172,9 +177,9 @@
 					>
 				{/if}
 				<div class="flex justify-end gap-2">
-					<Button type="button" variant="outline" onclick={() => (open = false)}>{m['common.cancel']()}</Button><Button
-						type="submit"
-						disabled={busy || (!box && !name.trim())}
+					<Button type="button" variant="outline" disabled={busy} onclick={() => (open = false)}
+						>{m['common.cancel']()}</Button
+					><Button type="submit" disabled={busy || (!box && !name.trim())}
 						>{busy
 							? m['dev_boxes.registering']()
 							: box

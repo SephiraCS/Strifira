@@ -353,14 +353,89 @@ func TestHub_SharePresenceRejectsHijackAndForeignWorkspace(t *testing.T) {
 	wsID, shareID := uuid.New(), uuid.New()
 	presenter := h.Register(nil, wsID, uuid.New())
 	otherTab := h.Register(nil, wsID, presenter.userID)
+	otherUser := h.Register(nil, wsID, uuid.New())
 	foreign := h.Register(nil, uuid.New(), uuid.New())
-	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
+	token := uuid.NewString()
+	h.AuthorizeSharePresence = func(_ context.Context, workspaceID, userID, id uuid.UUID, role, suppliedToken string) bool {
+		if role == "viewer" {
+			return true // The hub must still enforce the share's workspace.
+		}
+		return workspaceID == wsID && userID == presenter.userID && id == shareID && suppliedToken == token
+	}
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", token)
 	h.SharePresence(t.Context(), otherTab, shareID, "presenter", "join", "")
+	h.SharePresence(t.Context(), otherTab, shareID, "presenter", "join", uuid.NewString())
+	h.SharePresence(t.Context(), otherUser, shareID, "presenter", "join", token)
 	h.SharePresence(t.Context(), foreign, shareID, "viewer", "join", "")
 	h.SharePresence(t.Context(), otherTab, shareID, "presenter", "leave", "")
 	assert.True(t, h.shares[shareID].presenters[presenter])
 	assert.False(t, h.shares[shareID].presenters[otherTab])
+	assert.False(t, h.shares[shareID].presenters[otherUser])
 	assert.False(t, h.shares[shareID].viewers[foreign])
+}
+
+func TestHub_AuthorizedPresenterReconnectReplacesHalfOpenSocket(t *testing.T) {
+	h := NewHub()
+	wsID, shareID := uuid.New(), uuid.New()
+	presenter := h.Register(nil, wsID, uuid.New())
+	replacement := h.Register(nil, wsID, presenter.userID)
+	viewer := h.Register(nil, wsID, uuid.New())
+	otherViewer := h.Register(nil, wsID, uuid.New())
+	token := uuid.NewString()
+	h.AuthorizeSharePresence = func(_ context.Context, workspaceID, userID, id uuid.UUID, role, suppliedToken string) bool {
+		return workspaceID == wsID && id == shareID && (role == "viewer" || (userID == presenter.userID && suppliedToken == token))
+	}
+	var sightings int
+	h.OnPresenterSeen = func(uuid.UUID) { sightings++ }
+	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", token)
+	h.SharePresence(t.Context(), viewer, shareID, "viewer", "join", "")
+	h.SharePresence(t.Context(), otherViewer, shareID, "viewer", "join", "")
+	for _, client := range []*Client{presenter, replacement, viewer, otherViewer} {
+		drainEvents(t, client)
+	}
+
+	// The old socket has not unregistered when the authorized reconnect joins.
+	h.SharePresence(t.Context(), replacement, shareID, "presenter", "join", token)
+	viewers, online := h.ShareState(shareID)
+	assert.Equal(t, 2, viewers, "reconnecting preserves every viewer")
+	assert.True(t, online)
+	assert.Equal(t, 2, sightings, "the reconnect records a fresh presenter contact")
+	for _, client := range []*Client{presenter, replacement, viewer, otherViewer} {
+		events := drainEvents(t, client)
+		if assert.Len(t, events, 1) {
+			payload := events[0].Payload.(map[string]any)
+			assert.Equal(t, "share.presence", events[0].Type)
+			assert.Equal(t, true, payload["presenter_online"])
+			assert.Equal(t, replacement.peerID.String(), payload["presenter_peer"])
+			assert.Equal(t, float64(2), payload["viewers"])
+		}
+	}
+
+	negotiation := uuid.NewString()
+	offer := ShareSignalPayload{ShareID: shareID.String(), To: presenter.userID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"offer"}`)}
+	h.handleShareSignal(viewer, offer)
+	assert.Len(t, drainEvents(t, replacement), 1, "user-addressed offers reach only the new presenter socket")
+	assert.Empty(t, drainEvents(t, presenter))
+	offer.ToPeer = presenter.peerID.String()
+	h.handleShareSignal(viewer, offer)
+	assert.Empty(t, drainEvents(t, presenter), "the old peer is no longer a signal recipient")
+	assert.Empty(t, drainEvents(t, replacement))
+	answer := ShareSignalPayload{ShareID: shareID.String(), ToPeer: viewer.peerID.String(), NegotiationID: negotiation, Data: json.RawMessage(`{"type":"answer"}`)}
+	h.handleShareSignal(presenter, answer)
+	assert.Empty(t, drainEvents(t, viewer), "the old socket cannot send presenter signals")
+	h.handleShareSignal(replacement, answer)
+	assert.Len(t, drainEvents(t, viewer), 1)
+	assert.Empty(t, drainEvents(t, otherViewer))
+
+	h.Unregister(presenter)
+	viewers, online = h.ShareState(shareID)
+	assert.Equal(t, 2, viewers)
+	assert.True(t, online, "late cleanup of the old socket must preserve the replacement")
+	assert.Equal(t, 2, sightings, "old socket cleanup is no longer a presenter departure")
+	assert.Empty(t, drainEvents(t, viewer), "late cleanup must not announce the presenter as offline")
+	offer.ToPeer = replacement.peerID.String()
+	h.handleShareSignal(viewer, offer)
+	assert.Len(t, drainEvents(t, replacement), 1, "the replacement keeps receiving signals after old socket cleanup")
 }
 
 func TestHub_ShareSignalRejectsNonMemberRecipientsAndSameRole(t *testing.T) {

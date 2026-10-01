@@ -397,11 +397,11 @@ func (h *Hub) sharePresence(ctx context.Context, client *Client, shareID uuid.UU
 			h.shares[shareID] = state
 		}
 		if role == "presenter" {
-			// A second socket must never replace a still-present capture.
-			if len(state.presenters) > 0 && !state.presenters[client] {
-				h.mu.Unlock()
-				return
-			}
+			// The private capture token authorizes a reconnect even while the
+			// old socket is half-open. Retire its membership atomically so
+			// signaling reaches this socket and its later cleanup cannot
+			// remove the replacement or announce the presenter as gone.
+			clear(state.presenters)
 			delete(state.viewers, client)
 			state.presenters[client] = true
 			h.presenterSeen[shareID] = time.Now()

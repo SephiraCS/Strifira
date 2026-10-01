@@ -3,6 +3,7 @@ package agent
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 )
 
 func parseClaudeResult(stdout, stderr string, exitCode int) RunResult {
@@ -116,9 +117,14 @@ func parseCodexResult(stdout, stderr string, exitCode int) RunResult {
 }
 
 func boundedSummary(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) > 4000 {
-		value = value[:4000]
+	value = strings.TrimSpace(strings.ToValidUTF8(value, "\uFFFD"))
+	const maxBytes = 4000
+	if len(value) > maxBytes {
+		end := maxBytes
+		for !utf8.RuneStart(value[end]) {
+			end--
+		}
+		value = value[:end]
 	}
 	return value
 }

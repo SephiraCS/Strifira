@@ -14,6 +14,7 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/middleware"
+	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
@@ -96,7 +97,7 @@ func TestDevBoxHandlerCapsCompleteStreamedBodiesIncludingTrailingBytes(t *testin
 		{name: "user request", limit: 128 << 10, call: handler.Create},
 		{name: "heartbeat", limit: 8 << 10, call: handler.Heartbeat},
 		{name: "log append", limit: 70 << 10, call: handler.AppendLog},
-		{name: "completion", limit: 2 << 20, call: handler.Complete},
+		{name: "completion", limit: dto.DevBoxCompleteBodyLimit, call: handler.Complete},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
@@ -106,6 +107,83 @@ func TestDevBoxHandlerCapsCompleteStreamedBodiesIncludingTrailingBytes(t *testin
 			require.NoError(t, devBoxAuthenticatedHandler(test.call)(c))
 			require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 			require.Contains(t, recorder.Body.String(), "BODY_TOO_LARGE")
+		})
+	}
+}
+
+func TestDevBoxCompletionPreservesMaximumEscapedResult(t *testing.T) {
+	for _, character := range []string{"<", "\x01", "\u2028"} {
+		t.Run(fmt.Sprintf("escaped %U", []rune(character)[0]), func(t *testing.T) {
+			fill := func(maxBytes int) string {
+				return strings.Repeat(character, maxBytes/len(character)) + strings.Repeat("<", maxBytes%len(character))
+			}
+			metadata := func(count int) []string {
+				values := make([]string, count)
+				for i := range count {
+					values[i] = fill(4096)
+				}
+				return values
+			}
+			box, jobID := devBoxTestWorker(), uuid.New()
+			box.TokenHash = strings.Repeat("b", 64)
+			store := &devBoxCompletionStoreFake{job: &domain.DevBoxJob{
+				ID: jobID, BoxID: box.ID, Status: domain.DevBoxJobRunning,
+				WorkingBranch: "ku/ku-27-12345678", TestCommand: json.RawMessage(`[]`),
+			}}
+			request := dto.DevBoxCompleteRequest{
+				LeaseToken: "kul_" + strings.Repeat("a", 64),
+				Result: domain.DevBoxJobResult{
+					Status: domain.DevBoxJobFailed, TestStatus: "not_run",
+					Summary: fill(8192), Patch: fill(service.DevBoxMaxPatchBytes),
+					ChangedFiles: metadata(500), TestsRun: metadata(100), RiskNotes: metadata(100),
+					Branch: store.job.WorkingBranch,
+				},
+			}
+			body, err := json.Marshal(request)
+			require.NoError(t, err)
+			require.Greater(t, len(body), 2<<20)
+			require.LessOrEqual(t, len(body), dto.DevBoxCompleteBodyLimit)
+			recorder := httptest.NewRecorder()
+			c := devBoxHandlerContext(t, http.MethodPost, "/", string(body), recorder)
+			c.SetParamNames("jobId")
+			c.SetParamValues(jobID.String())
+			c.Request().ContentLength = -1
+			handler := NewDevBoxHandler(service.NewDevBoxService(store, nil, nil, nil))
+			authenticated := middleware.DevBoxWorkerAuth(&devBoxHandlerAuthenticator{box: box})(handler.Complete)
+
+			require.NoError(t, authenticated(c))
+			require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+			require.NotNil(t, store.completed)
+			require.Equal(t, request.Result, *store.completed)
+		})
+	}
+}
+
+func TestDevBoxCompletionEncodedBodyBoundary(t *testing.T) {
+	request := dto.DevBoxCompleteRequest{
+		LeaseToken: "kul_" + strings.Repeat("a", 64),
+		Result:     domain.DevBoxJobResult{Status: domain.DevBoxJobFailed, TestStatus: "not_run"},
+	}
+	body, err := json.Marshal(request)
+	require.NoError(t, err)
+	for _, extra := range []int{0, 1} {
+		t.Run(fmt.Sprintf("limit plus %d", extra), func(t *testing.T) {
+			fake := &devBoxHandlerServiceFake{job: &domain.DevBoxJob{ID: uuid.New()}}
+			handler := NewDevBoxHandler(fake)
+			recorder := httptest.NewRecorder()
+			padded := string(body) + strings.Repeat(" ", dto.DevBoxCompleteBodyLimit-len(body)+extra)
+			c := devBoxHandlerContext(t, http.MethodPost, "/", padded, recorder)
+			c.Request().ContentLength = -1
+
+			require.NoError(t, devBoxAuthenticatedHandler(handler.Complete)(c))
+			if extra == 0 {
+				require.Equal(t, http.StatusOK, recorder.Code)
+				require.Equal(t, request, fake.completeRequest)
+			} else {
+				require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
+				require.Contains(t, recorder.Body.String(), "BODY_TOO_LARGE")
+				require.Nil(t, fake.workerBox)
+			}
 		})
 	}
 }
@@ -261,17 +339,18 @@ func TestDevBoxErrorsUseStatusCodesAndSanitizeMessages(t *testing.T) {
 
 type devBoxHandlerServiceFake struct {
 	devBoxService
-	job          *domain.DevBoxJob
-	claim        *dto.DevBoxClaimResponse
-	total        int
-	workspaceID  uuid.UUID
-	userID       uuid.UUID
-	boxID        uuid.UUID
-	jobID        uuid.UUID
-	workerBox    *domain.DevBox
-	jobRequest   dto.CreateDevBoxJobRequest
-	leaseRequest dto.DevBoxLeaseRequest
-	listParams   dto.DevBoxJobListParams
+	job             *domain.DevBoxJob
+	claim           *dto.DevBoxClaimResponse
+	total           int
+	workspaceID     uuid.UUID
+	userID          uuid.UUID
+	boxID           uuid.UUID
+	jobID           uuid.UUID
+	workerBox       *domain.DevBox
+	jobRequest      dto.CreateDevBoxJobRequest
+	leaseRequest    dto.DevBoxLeaseRequest
+	listParams      dto.DevBoxJobListParams
+	completeRequest dto.DevBoxCompleteRequest
 }
 
 func (f *devBoxHandlerServiceFake) CreateJob(_ context.Context, workspaceID, boxID, userID uuid.UUID, request dto.CreateDevBoxJobRequest) (*domain.DevBoxJob, error) {
@@ -289,9 +368,30 @@ func (f *devBoxHandlerServiceFake) Start(_ context.Context, box *domain.DevBox, 
 	return &dto.DevBoxLeaseResponse{Status: domain.DevBoxJobRunning}, nil
 }
 
+func (f *devBoxHandlerServiceFake) Complete(_ context.Context, box *domain.DevBox, jobID uuid.UUID, request dto.DevBoxCompleteRequest) (*domain.DevBoxJob, error) {
+	f.workerBox, f.jobID, f.completeRequest = box, jobID, request
+	return f.job, nil
+}
+
 func (f *devBoxHandlerServiceFake) ListJobs(_ context.Context, workspaceID, userID uuid.UUID, params dto.DevBoxJobListParams) ([]domain.DevBoxJob, int, error) {
 	f.workspaceID, f.userID, f.listParams = workspaceID, userID, params
 	return nil, f.total, nil
+}
+
+type devBoxCompletionStoreFake struct {
+	repository.DevBoxStore
+	job       *domain.DevBoxJob
+	completed *domain.DevBoxJobResult
+}
+
+func (f *devBoxCompletionStoreFake) GetWorkerJob(context.Context, uuid.UUID, uuid.UUID, string, string) (*domain.DevBoxJob, error) {
+	return f.job, nil
+}
+
+func (f *devBoxCompletionStoreFake) CompleteJob(_ context.Context, _, _ uuid.UUID, _, _ string, result *domain.DevBoxJobResult) (*domain.DevBoxJob, error) {
+	f.completed = result
+	f.job.Status = result.Status
+	return f.job, nil
 }
 
 type devBoxHandlerAuthenticator struct {

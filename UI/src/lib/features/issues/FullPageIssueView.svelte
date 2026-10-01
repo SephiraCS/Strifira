@@ -150,7 +150,9 @@
 	let relationType = $state<RelationType>('related');
 	let issueActionsOpen = $state(false);
 	let issueDelegateOpen = $state(false);
-	const canDelegate = $derived((ROLE_HIERARCHY[sidebarState.workspaceRole as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member);
+	const canDelegate = $derived(
+		(ROLE_HIERARCHY[sidebarState.workspaceRole as keyof typeof ROLE_HIERARCHY] ?? 0) >= ROLE_HIERARCHY.member
+	);
 	let issueActionsCreateOpen = $state(false);
 	let issueActionsRunOpen = $state(false);
 	let issueActionsRepositoryOpen = $state(false);
@@ -181,6 +183,23 @@
 	});
 	let descriptionSaveTimer: ReturnType<typeof setTimeout> | null = null;
 	let pendingDescriptionHtml = '';
+	let descriptionAIContent = $state('');
+	let descriptionAIExternalContent: string | undefined;
+	$effect(() => {
+		const content = issue.description ?? '';
+		if (content !== descriptionAIExternalContent) {
+			descriptionAIExternalContent = content;
+			descriptionAIContent = content;
+		}
+	});
+	const descriptionAIButtonLabel = $derived(
+		descriptionAIContent
+			.replace(/<[^>]*>/g, '')
+			.replace(/&nbsp;|&#160;|&#xA0;/gi, ' ')
+			.trim()
+			? m['issue.ai.improve_description']()
+			: m['sharedComponents.create_issue.generate_description']()
+	);
 
 	// Collapsible sidebar sections
 	let detailsExpanded = $state(true);
@@ -391,6 +410,7 @@
 	function saveDescription(html: string) {
 		lastLocalUpdate = Date.now();
 		pendingDescriptionHtml = html;
+		descriptionAIContent = html;
 		if (descriptionSaveTimer) clearTimeout(descriptionSaveTimer);
 		descriptionSaveTimer = setTimeout(() => {
 			descriptionSaveTimer = null;
@@ -726,7 +746,10 @@
 		const workspaceSlug = slug;
 		const identifier = issue.identifier;
 		try {
-			const [c, h] = await Promise.all([listComments(workspaceSlug, identifier), getIssueHistory(workspaceSlug, identifier)]);
+			const [c, h] = await Promise.all([
+				listComments(workspaceSlug, identifier),
+				getIssueHistory(workspaceSlug, identifier)
+			]);
 			if (destroyed || context !== refreshContext || request !== activityRefreshRequest) return;
 			comments = c ?? [];
 			history = h ?? [];
@@ -1078,8 +1101,20 @@
 				</Popover.Trigger>
 				<Popover.Content class="w-64 max-w-[calc(100vw-1rem)] p-1" align="end">
 					{#if canDelegate}
-						<button type="button" onclick={() => { issueActionsOpen = false; issueDelegateOpen = true; }} class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"><Server size={14} />{m['dev_boxes.delegate']()}</button>
-						<a href="/{slug}/dev-boxes?issue_id={issue.id}" class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]">{m['dev_boxes.issue_jobs']()}</a>
+						<button
+							type="button"
+							onclick={() => {
+								issueActionsOpen = false;
+								issueDelegateOpen = true;
+							}}
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+							><Server size={14} />{m['dev_boxes.delegate']()}</button
+						>
+						<a
+							href="/{slug}/dev-boxes?issue_id={issue.id}"
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
+							>{m['dev_boxes.issue_jobs']()}</a
+						>
 					{/if}
 					<IssueMachineActions
 						{slug}
@@ -1319,12 +1354,10 @@
 							aria-busy={aiDescriptionBusy}
 							disabled={aiDescriptionBusy || descriptionPendingUploads > 0}
 							class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 py-1 text-xs text-[var(--color-text-secondary)] transition-colors hover:border-[var(--app-border-hover)] hover:text-[var(--color-text-primary)] disabled:cursor-wait"
-							title={aiSettingsState.isConfigured(slug)
-								? m['issue.ai.improve_description']()
-								: m['ai.not_configured_hint']()}
+							title={aiSettingsState.isConfigured(slug) ? descriptionAIButtonLabel : m['ai.not_configured_hint']()}
 						>
 							<Sparkles size={13} class={aiDescriptionBusy ? 'animate-pulse' : ''} />
-							{m['issue.ai.improve_description']()}
+							{descriptionAIButtonLabel}
 						</button>
 					</div>
 					<RichEditor

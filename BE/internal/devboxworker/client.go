@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ku/ku-backend/internal/dto"
 )
 
 type ProviderInfo struct {
@@ -138,13 +140,16 @@ func NewClient(config Config, token string) *Client {
 	}}
 }
 
-func (c *Client) call(ctx context.Context, path string, body, response any) (bool, error) {
+func (c *Client) call(ctx context.Context, path string, body, response any, maxBodyBytes int) (bool, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		return false, fmt.Errorf("encode worker request: %w", err)
 	}
 	// A trusted tool can still accidentally echo a token; never publish it in logs/artifacts.
 	encoded = bytes.ReplaceAll(encoded, []byte(c.token), []byte("[REDACTED]"))
+	if maxBodyBytes > 0 && len(encoded) > maxBodyBytes {
+		return false, fmt.Errorf("worker request exceeds the %d-byte encoded body limit", maxBodyBytes)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(encoded))
 	if err != nil {
 		return false, fmt.Errorf("create worker request: %w", err)
@@ -178,12 +183,12 @@ func (c *Client) call(ctx context.Context, path string, body, response any) (boo
 }
 
 func (c *Client) Heartbeat(ctx context.Context, body Heartbeat) error {
-	_, err := c.call(ctx, "/heartbeat", body, nil)
+	_, err := c.call(ctx, "/heartbeat", body, nil, 0)
 	return err
 }
 func (c *Client) Claim(ctx context.Context) (*Lease, error) {
 	var lease Lease
-	ok, err := c.call(ctx, "/claim", struct{}{}, &lease)
+	ok, err := c.call(ctx, "/claim", struct{}{}, &lease, 0)
 	if err != nil || !ok {
 		return nil, err
 	}
@@ -191,7 +196,7 @@ func (c *Client) Claim(ctx context.Context) (*Lease, error) {
 }
 func (c *Client) leaseCall(ctx context.Context, jobID, token, action string) (LeaseState, error) {
 	var state LeaseState
-	_, err := c.call(ctx, "/jobs/"+jobID+"/"+action, map[string]string{"lease_token": token}, &state)
+	_, err := c.call(ctx, "/jobs/"+jobID+"/"+action, map[string]string{"lease_token": token}, &state, 0)
 	return state, err
 }
 func (c *Client) Start(ctx context.Context, id, token string) (LeaseState, error) {
@@ -202,13 +207,13 @@ func (c *Client) Renew(ctx context.Context, id, token string) (LeaseState, error
 }
 func (c *Client) Log(ctx context.Context, id string, body LogEntry) (LogResponse, error) {
 	var result LogResponse
-	_, err := c.call(ctx, "/jobs/"+id+"/logs", body, &result)
+	_, err := c.call(ctx, "/jobs/"+id+"/logs", body, &result, 0)
 	return result, err
 }
 func (c *Client) Complete(ctx context.Context, id, token string, result Result) error {
 	_, err := c.call(ctx, "/jobs/"+id+"/complete", struct {
 		LeaseToken string `json:"lease_token"`
 		Result     Result `json:"result"`
-	}{token, result}, nil)
+	}{token, result}, nil, dto.DevBoxCompleteBodyLimit)
 	return err
 }

@@ -13,8 +13,10 @@ workload scope, after other build/database acceptance jobs release the lane.
 
 import argparse
 import contextlib
+import ipaddress
 import json
 import pathlib
+import re
 import secrets
 import shlex
 import signal
@@ -56,19 +58,75 @@ def provider_key(path):
     return values[0]
 
 
-def provider_url(value):
-    parsed = urllib.parse.urlsplit(value)
+def provider_origin(value):
+    """Return the exact origin accepted by the backend operator policy."""
+    invalid = argparse.ArgumentTypeError(
+        "Provider URL must be HTTP(S) with an ASCII hostname or IP and a valid "
+        "port, without credentials, query, fragment, or whitespace"
+    )
     if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
+        not value.startswith(("http://", "https://"))
+        or any(
+            character.isspace() or ord(character) < 32 or ord(character) == 127
+            for character in value
+        )
         or "?" in value
         or "#" in value
+        or "\\" in value
     ):
-        raise argparse.ArgumentTypeError(
-            "Provider URL must be HTTP(S) without credentials, query, or fragment"
-        )
+        raise invalid
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except ValueError:
+        raise invalid from None
+    if re.search(r"%(?![0-9a-fA-F]{2})", parsed.path):
+        raise invalid
+    if parsed.netloc.startswith("["):
+        authority = re.fullmatch(r"\[([^\]]+)\](?::([0-9]+))?", parsed.netloc)
+    else:
+        authority = re.fullmatch(r"([^:@\[\]]+)(?::([0-9]+))?", parsed.netloc)
+    if authority is None:
+        raise invalid
+    host, raw_port = authority.groups()
+    if not host.isascii() or "%" in host:
+        raise invalid
+    if raw_port is None:
+        port = 80 if parsed.scheme == "http" else 443
+    else:
+        significant_port = raw_port.lstrip("0") or "0"
+        if len(significant_port) > 5:
+            raise invalid
+        port = int(significant_port)
+    if not 1 <= port <= 65535:
+        raise invalid
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        host = host.lower().removesuffix(".")
+        if (
+            not host
+            or len(host) > 253
+            or any(
+                len(label) > 63
+                or re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label) is None
+                for label in host.split(".")
+            )
+        ):
+            raise invalid
+    else:
+        if (
+            isinstance(address, ipaddress.IPv6Address)
+            and address.ipv4_mapped is not None
+        ):
+            address = address.ipv4_mapped
+        host = str(address)
+        if isinstance(address, ipaddress.IPv6Address):
+            host = "[" + host + "]"
+    return f"{parsed.scheme}://{host}:{port}"
+
+
+def provider_url(value):
+    provider_origin(value)
     return value.rstrip("/")
 
 
@@ -103,6 +161,9 @@ def html_result(value, label):
 def acceptance(args):
     ku_dir = pathlib.Path(__file__).resolve().parent.parent
     be_dir = ku_dir / "BE"
+    trusted_origins = (
+        [provider_origin(args.provider_base_url)] if args.trust_provider_origin else []
+    )
     provider = urllib.request.build_opener(
         NoRedirect(), urllib.request.ProxyHandler({})
     )
@@ -121,7 +182,10 @@ def acceptance(args):
     )
 
     with disposable_backend(
-        args.server_bin, be_dir, label="ai-provider-live"
+        args.server_bin,
+        be_dir,
+        extra_env={"AI_PROVIDER_TRUSTED_ORIGINS": ",".join(trusted_origins)},
+        label="ai-provider-live",
     ) as fixture:
         api, backend_url = fixture.api, fixture.base_url
         workspace_path = None
@@ -288,6 +352,11 @@ def acceptance(args):
             print("Verified saved provider-key removal", file=sys.stderr, flush=True)
             results["isolation"] = "disposable_database_backend_workspace"
             results["backend_sha256"] = fixture.server_sha256
+            results["ai_provider_network_policy"] = {
+                "default": "public_only",
+                "trusted_origins": trusted_origins,
+                "trust_provider_origin": args.trust_provider_origin,
+            }
             return results
         finally:
             if api is not None and workspace_path is not None:
@@ -322,6 +391,14 @@ def main():
         help="OpenAI-compatible base URL including /v1",
     )
     parser.add_argument(
+        "--trust-provider-origin",
+        action="store_true",
+        help=(
+            "Explicitly approve only the requested provider's exact origin for "
+            "the disposable backend; required for intentional private providers"
+        ),
+    )
+    parser.add_argument(
         "--model", required=True, help="Actual model ID to test (no automatic fallback)"
     )
     parser.add_argument(
@@ -343,6 +420,22 @@ def main():
     if args.dry_run:
         print(
             "Would verify the provider catalog, create disposable PostgreSQL/Ku/account/workspace, save own-provider settings, test connection and HTML generation/rewrite/rework, verify key removal, then delete the fixture."
+        )
+        print(
+            json.dumps(
+                {
+                    "ai_provider_network_policy": {
+                        "default": "public_only",
+                        "trusted_origins": (
+                            [provider_origin(args.provider_base_url)]
+                            if args.trust_provider_origin
+                            else []
+                        ),
+                        "trust_provider_origin": args.trust_provider_origin,
+                    }
+                },
+                sort_keys=True,
+            )
         )
         return 0
 

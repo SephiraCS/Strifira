@@ -23,6 +23,7 @@
 	import CreateTeamDialog from '$lib/features/teams/CreateTeamDialog.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import ShortcutHelp from '$lib/components/shared/ShortcutHelp.svelte';
+	import ErrorState from '$lib/components/shared/ErrorState.svelte';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { Button } from '$lib/components/ui/button';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
@@ -61,6 +62,8 @@
 	let confirmOpen = $state(false);
 	let confirmSubmitting = $state(false);
 	let authReady = $state(false);
+	let workspaceLoadFailed = $state(false);
+	let workspaceLoading = $state(false);
 	let workspaceLoadId = 0;
 	const isMobile = new IsMobile();
 	const terminalDock = setTerminalDock();
@@ -73,38 +76,38 @@
 
 	async function loadWorkspaceData(workspaceSlug: string) {
 		const loadId = ++workspaceLoadId;
+		workspaceLoading = true;
 		try {
-			const workspaceRequest = getWorkspace(workspaceSlug);
-			const teamsRequest = listTeams(workspaceSlug);
 			// Team icons need the icon set; fetch it alongside the teams.
 			loadLucideLibrary();
-			const renderRequest = Promise.all([workspaceRequest, teamsRequest]).then(([ws, t]) => {
-				if (loadId !== workspaceLoadId) return;
-				workspace = ws;
-				sidebarState.workspaceRole = ws.current_user_role ?? 'guest';
-				teams = t;
-				sidebarState.teams = t;
-				sharesState.setEnabled(ws.screen_sharing_enabled);
-				if (ws.screen_sharing_enabled) void sharesState.load(workspaceSlug);
-			});
-			const navigationRequest = Promise.all([
+			const [ws, t, p, l, loadedMembers, v, notifRes] = await Promise.all([
+				getWorkspace(workspaceSlug),
+				listTeams(workspaceSlug),
 				listProjects(workspaceSlug),
 				listLabels(workspaceSlug),
 				listMembers(workspaceSlug),
 				listViews(workspaceSlug),
 				listNotifications()
-			]).then(([p, l, m, v, notifRes]) => {
-				if (loadId !== workspaceLoadId) return;
-				projects = p;
-				sidebarState.projects = p;
-				labels = l;
-				members = m;
-				views = v;
-				unreadCount = notifRes.unread_count;
-			});
-			await Promise.all([renderRequest, navigationRequest]);
+			]);
+			if (loadId !== workspaceLoadId) return;
+			// Keep the previous complete snapshot when any request fails.
+			workspace = ws;
+			sidebarState.workspaceRole = ws.current_user_role ?? 'guest';
+			teams = t;
+			sidebarState.teams = t;
+			projects = p;
+			sidebarState.projects = p;
+			labels = l;
+			members = loadedMembers;
+			views = v;
+			unreadCount = notifRes.unread_count;
+			sharesState.setEnabled(ws.screen_sharing_enabled);
+			if (ws.screen_sharing_enabled) void sharesState.load(workspaceSlug);
+			workspaceLoadFailed = false;
 		} catch {
-			if (loadId === workspaceLoadId) goto('/login');
+			if (loadId === workspaceLoadId) workspaceLoadFailed = true;
+		} finally {
+			if (loadId === workspaceLoadId) workspaceLoading = false;
 		}
 	}
 
@@ -214,6 +217,7 @@
 		if (authReady && slug && slug !== loadedSlug) {
 			loadedSlug = slug;
 			workspace = null;
+			workspaceLoadFailed = false;
 			sidebarState.workspaceRole = 'guest';
 			teams = [];
 			projects = [];
@@ -464,6 +468,7 @@
 	});
 
 	onDestroy(() => {
+		workspaceLoadId++;
 		wsDestroyed = true;
 		clearWebSocketReconnect();
 		if (issuesRefreshTimer) {
@@ -688,6 +693,17 @@
 			</Sheet.Root>
 		{/if}
 		<main class="flex min-w-0 flex-1 flex-col overflow-hidden">
+			{#if workspaceLoadFailed}
+				<div
+					role="alert"
+					class="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--app-border)] px-4 py-2 text-sm"
+				>
+					<p class="text-[var(--color-error)]">{m['login.error_generic']()}</p>
+					<Button variant="outline" size="sm" disabled={workspaceLoading} onclick={() => loadWorkspaceData(slug)}>
+						{m['settings.ai.retry_load']()}
+					</Button>
+				</div>
+			{/if}
 			{#if !isSettings}
 				<div
 					class="flex h-12 shrink-0 items-center justify-between border-b border-[var(--app-border)] bg-[var(--color-bg)] px-3 md:hidden"
@@ -785,6 +801,10 @@
 	</Dialog.Root>
 
 	<ShortcutHelp bind:open={showShortcutHelp} shortcuts={shortcutDefs} />
+{:else if workspaceLoadFailed && !workspaceLoading}
+	<main class="flex h-dvh items-center justify-center bg-[var(--color-bg)]">
+		<ErrorState message={m['login.error_generic']()} onretry={() => loadWorkspaceData(slug)} />
+	</main>
 {:else}
 	<div class="flex h-screen items-center justify-center"></div>
 {/if}

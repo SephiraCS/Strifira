@@ -1839,5 +1839,9 @@
 	"forgejo_actions.rerun_in_forgejo": "在 Forgejo 中重新运行",
 	"forgejo_actions.rerun_handoff": "在运行页面登录 Forgejo，然后使用重新运行控件。此操作受你的 Forgejo 仓库权限限制。",
 	"forgejo_actions.steps_in_forgejo": "在 Forgejo 中查看工作流步骤",
-	"forgejo_actions.failed_job": "无法刷新此任务。"
+	"forgejo_actions.failed_job": "无法刷新此任务。",
+	"dev_boxes.failed_logs_terminal": "无法加载剩余输出。请选择刷新以重试。",
+	"dev_boxes.criteria_count_invalid": "最多可填写 50 条非空要求。请删除或合并部分行。",
+	"dev_boxes.criteria_length_invalid": "第 {line} 条要求超过 2,000 个 UTF-8 字节。请缩短内容；汉字和表情符号会占用多个字节。",
+	"dev_boxes.criteria_nul_invalid": "第 {line} 条要求包含空字符。请删除该字符或重新输入这条要求。"
 }

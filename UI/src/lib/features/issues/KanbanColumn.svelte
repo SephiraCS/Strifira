@@ -3,6 +3,8 @@
 	import type { TeamStatus } from '$lib/types/team-status';
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import type { Label } from '$lib/types/label';
+	import { visibleFlip } from './visible-flip';
+	import { cubicOut } from 'svelte/easing';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
@@ -12,7 +14,14 @@
 	import { issuesState } from './issues.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { COLUMN_SORT_KEYS, type ColumnSortKey } from './column-sort';
-	import { dndzone, dragHandle, TRIGGERS, type DndEvent, type DndEventInfo } from 'svelte-dnd-action';
+	import {
+		dndzone,
+		dragHandle,
+		TRIGGERS,
+		SHADOW_ITEM_MARKER_PROPERTY_NAME,
+		type DndEvent,
+		type DndEventInfo
+	} from 'svelte-dnd-action';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Archive from '@lucide/svelte/icons/archive';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
@@ -24,6 +33,7 @@
 
 	let {
 		statusId,
+		issueDndType,
 		teamStatus,
 		issues,
 		slug = '',
@@ -36,22 +46,27 @@
 		sortKey = null,
 		onsortchange,
 		onarchiveall,
-		ondragstate
+		ondragstate,
+		flipDurationMs = 100,
+		dropDisabled = false
 	}: {
 		statusId: string;
+		issueDndType: string;
 		teamStatus: TeamStatus;
 		issues: Issue[];
 		slug?: string;
 		members?: WorkspaceMember[];
 		labels?: Label[];
 		onissueclick: (issue: Issue) => void;
-		onconsider?: (statusId: string, items: Issue[]) => void;
+		onconsider?: (statusId: string, items: Issue[], info: DndEventInfo) => void;
 		onfinalize?: (statusId: string, items: Issue[], info: DndEventInfo) => void;
 		onquickadd?: (statusId: string) => void;
 		sortKey?: ColumnSortKey | null;
 		onsortchange?: (statusId: string, key: ColumnSortKey | null) => void;
 		onarchiveall?: (statusId: string) => void;
 		ondragstate?: (statusId: string, dragging: boolean) => void;
+		flipDurationMs?: number;
+		dropDisabled?: boolean;
 	} = $props();
 
 	// A sorted column is read-only ordering (like Linear): manual drag & drop
@@ -75,7 +90,7 @@
 		} else if (trigger === TRIGGERS.DRAGGED_LEFT && !dragSource) {
 			ondragstate?.(statusId, false);
 		}
-		onconsider?.(statusId, e.detail.items);
+		onconsider?.(statusId, e.detail.items, e.detail.info);
 	}
 
 	function handleFinalize(e: CustomEvent<DndEvent<Issue>>) {
@@ -122,9 +137,7 @@
 
 	async function toggleAssignee(issue: Issue, userId: string) {
 		const currentIds = assigneeIds(issue);
-		const newIds = currentIds.includes(userId)
-			? currentIds.filter((id) => id !== userId)
-			: [...currentIds, userId];
+		const newIds = currentIds.includes(userId) ? currentIds.filter((id) => id !== userId) : [...currentIds, userId];
 		try {
 			await issuesState.update(slug, issue.identifier, { assignee_ids: newIds });
 		} catch {
@@ -141,9 +154,7 @@
 			aria-label="Reorder {teamStatus.name} column"
 		>
 			<IssueStatusIcon category={teamStatus.category} color={teamStatus.color} />
-			<span class="text-sm font-medium text-[var(--color-text-primary)]"
-				>{teamStatus.name}</span
-			>
+			<span class="text-sm font-medium text-[var(--color-text-primary)]">{teamStatus.name}</span>
 			<span class="text-xs text-[var(--color-text-tertiary)]">{issues.length}</span>
 		</div>
 		{#if onquickadd}
@@ -164,8 +175,8 @@
 					title={m['board.sort.button']()}
 					aria-label={m['board.sort.button']()}
 				>
-						<ArrowDownUp size={14} />
-					</DropdownMenu.Trigger>
+					<ArrowDownUp size={14} />
+				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="start" class="w-44">
 					{#each [null, ...COLUMN_SORT_KEYS] as key, i (key ?? 'manual')}
 						{#if i === 1}
@@ -206,42 +217,63 @@
 
 	<div
 		class="flex-1 space-y-1.5 overflow-y-auto px-1 pb-4 min-h-[60px]"
-		use:dndzone={{ items: issues, type: 'issue', dropTargetStyle: {}, dragDisabled: sortingActive, dropFromOthersDisabled: sortingActive }}
+		aria-label="{teamStatus.name} issues"
+		data-issue-drop-zone={statusId}
+		data-drop-disabled={sortingActive || dropDisabled}
+		data-drag-disabled={sortingActive}
+		use:dndzone={{
+			items: issues,
+			type: issueDndType,
+			useCursorForDetection: true,
+			// Keep hit testing at its fast cadence independently of visual motion.
+			flipDurationMs: 0,
+			morphDisabled: true,
+			dropAnimationDisabled: true,
+			dropTargetStyle: {},
+			dragDisabled: sortingActive,
+			dropFromOthersDisabled: sortingActive || dropDisabled
+		}}
 		onconsider={handleConsider}
 		onfinalize={handleFinalize}
 	>
 		{#each issues as issue (issue.id)}
 			{@const assignees = displayAssignees(issue)}
-			<IssueContextMenu {issue} {slug} {members} {labels}>
-				<button
-					class="relative w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 pt-3 pb-7 text-left transition-colors hover:border-[var(--app-border-hover)]"
-					onclick={() => onissueclick(issue)}
-				>
-					<div class="flex items-center gap-2">
-						<span class="text-xs text-[var(--color-text-tertiary)]">{issue.identifier}</span>
-						<IssuePriorityIcon priority={issue.priority} size={14} />
-					</div>
-					<div class="mt-1 flex items-start gap-2">
-						<p class="line-clamp-2 min-w-0 flex-1 text-sm text-[var(--color-text-primary)]">{issue.title}</p>
-						<SubIssueCounterTag issue={issue} {slug} {members} onclickissue={onissueclick} compact />
-					</div>
-
-					<!-- Assignee (bottom-right) -->
-					<!-- svelte-ignore a11y_click_events_have_key_events -->
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<span
-						class="absolute bottom-1.5 right-1.5"
-						onclick={(e) => e.stopPropagation()}
-						onkeydown={(e) => e.stopPropagation()}
-						role="presentation"
+			<div
+				aria-label="{issue.identifier}: {issue.title}"
+				data-issue-card={issue.id}
+				data-issue-shadow={Boolean((issue as Issue & Record<string, unknown>)[SHADOW_ITEM_MARKER_PROPERTY_NAME])}
+				animate:visibleFlip={{ duration: flipDurationMs, easing: cubicOut }}
+			>
+				<IssueContextMenu {issue} {slug} {members} {labels}>
+					<button
+						class="relative w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 pt-3 pb-7 text-left transition-colors duration-100 motion-reduce:transition-none hover:border-[var(--app-border-hover)]"
+						onclick={() => onissueclick(issue)}
 					>
-						<AssigneeSelector
-							{members}
-							value={assigneeIds(issue)}
-							width="w-52"
-							align="end"
-							onchange={(userId) => toggleAssignee(issue, userId)}
+						<div class="flex items-center gap-2">
+							<span class="text-xs text-[var(--color-text-tertiary)]">{issue.identifier}</span>
+							<IssuePriorityIcon priority={issue.priority} size={14} />
+						</div>
+						<div class="mt-1 flex items-start gap-2">
+							<p class="line-clamp-2 min-w-0 flex-1 text-sm text-[var(--color-text-primary)]">{issue.title}</p>
+							<SubIssueCounterTag {issue} {slug} {members} onclickissue={onissueclick} compact />
+						</div>
+
+						<!-- Assignee (bottom-right) -->
+						<!-- svelte-ignore a11y_click_events_have_key_events -->
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span
+							class="absolute bottom-1.5 right-1.5"
+							onclick={(e) => e.stopPropagation()}
+							onkeydown={(e) => e.stopPropagation()}
+							role="presentation"
 						>
+							<AssigneeSelector
+								{members}
+								value={assigneeIds(issue)}
+								width="w-52"
+								align="end"
+								onchange={(userId) => toggleAssignee(issue, userId)}
+							>
 								{#snippet trigger()}
 									<span
 										class="flex h-5 min-w-5 cursor-pointer items-center justify-center rounded-full text-[var(--color-text-tertiary)] transition-all hover:text-[var(--color-text-primary)]"
@@ -260,10 +292,11 @@
 										{/if}
 									</span>
 								{/snippet}
-						</AssigneeSelector>
-					</span>
-				</button>
-			</IssueContextMenu>
+							</AssigneeSelector>
+						</span>
+					</button>
+				</IssueContextMenu>
+			</div>
 		{/each}
 	</div>
 </div>

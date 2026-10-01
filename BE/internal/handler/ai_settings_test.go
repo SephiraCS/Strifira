@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/middleware"
@@ -89,7 +90,9 @@ func TestAISettingsHandlerConnectionTest(t *testing.T) {
 					APIKeyEncrypted: new(encrypted),
 				}
 			}
-			svc := service.NewAISettingsService(settingsRepo, &aiHandlerWorkspaceRepo{workspace: workspace}, nil, key)
+			policy, err := aiegress.NewPolicy(provider.URL)
+			require.NoError(t, err)
+			svc := service.NewAISettingsService(settingsRepo, &aiHandlerWorkspaceRepo{workspace: workspace}, nil, key, policy)
 			handler := NewAISettingsHandler(svc)
 			e := echo.New()
 			e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -130,7 +133,7 @@ func TestAISettingsHandlerConnectionTest(t *testing.T) {
 
 func TestAISettingsHandlerConnectionTestRejectsNonownerWithoutMiddleware(t *testing.T) {
 	workspace := &domain.Workspace{ID: uuid.New(), OwnerID: uuid.New()}
-	svc := service.NewAISettingsService(nil, &aiHandlerWorkspaceRepo{workspace: workspace}, nil, nil)
+	svc := service.NewAISettingsService(nil, &aiHandlerWorkspaceRepo{workspace: workspace}, nil, nil, aiegress.Policy{})
 	handler := NewAISettingsHandler(svc)
 	e := echo.New()
 	recorder := httptest.NewRecorder()
@@ -142,7 +145,7 @@ func TestAISettingsHandlerConnectionTestRejectsNonownerWithoutMiddleware(t *test
 }
 
 func TestAISettingsHandlerReworkRejectsBlankInput(t *testing.T) {
-	handler := NewAISettingsHandler(service.NewAISettingsService(nil, nil, nil, nil))
+	handler := NewAISettingsHandler(service.NewAISettingsService(nil, nil, nil, nil, aiegress.Policy{}))
 	e := echo.New()
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/ai/rework", strings.NewReader(`{"text":" \n\t "}`))

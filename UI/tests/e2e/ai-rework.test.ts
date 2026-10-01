@@ -173,10 +173,19 @@ test.describe('AI rework', () => {
 		const reworkRequests: string[] = [];
 		await mockWorkspace(page, { aiConfigured: true, description: '', reworkRequests });
 		await page.goto('/test/issue/ENG-1');
-		await page.getByRole('button', { name: 'Improve with AI', exact: true }).first().click();
+		const generate = page.getByRole('button', { name: 'Generate description with AI', exact: true });
+		await expect(generate).toHaveAttribute('title', 'Generate description with AI');
+		await generate.click();
 		await expect.poll(() => reworkRequests.length).toBe(1);
 		expect(JSON.parse(reworkRequests[0].slice(5))).toEqual({ selected_text: '' });
-		await expect(page.locator('.rich-editor .tiptap').first()).toHaveText('Expanded by AI');
+		const description = page.locator('.rich-editor .tiptap').first();
+		await expect(description).toHaveText('Expanded by AI');
+		await expect(generate).toBeHidden();
+		await expect(page.getByRole('button', { name: 'Improve with AI', exact: true }).first()).toBeVisible();
+		await description.fill('');
+		await expect(generate).toBeVisible();
+		await description.fill('A local draft');
+		await expect(generate).toBeHidden();
 	});
 
 	test('reviews AI output containing rich content without removing images, attachments, or mentions', async ({
@@ -278,9 +287,19 @@ test.describe('AI rework', () => {
 		await page.goto('/test/issue/ENG-1');
 		await expect(page.getByRole('button', { name: 'Improve with AI', exact: true }).first()).toBeVisible();
 		await page.getByTitle('New issue', { exact: true }).click();
-		await page.locator('#create-issue-title').fill('Make screen sharing resilient');
 		const dialog = page.getByRole('dialog');
-		await dialog.getByRole('button', { name: 'Generate description with AI' }).click();
+		const generate = dialog.getByRole('button', { name: 'Generate description with AI', exact: true });
+		await expect(generate).toBeDisabled();
+		await page.locator('#create-issue-title').fill('   ');
+		await expect(generate).toBeDisabled();
+		await dialog.locator('.rich-editor .tiptap').fill('A description without a title');
+		await expect(dialog.getByRole('button', { name: 'Improve with AI', exact: true })).toBeEnabled();
+		await dialog.locator('.rich-editor .tiptap').fill('');
+		await expect(generate).toBeDisabled();
+		expect(textRequests).toEqual([]);
+		await page.locator('#create-issue-title').fill('Make screen sharing resilient');
+		await expect(generate).toBeEnabled();
+		await generate.click();
 		await expect(dialog.locator('.rich-editor .tiptap')).toHaveText('Rewritten draft by AI');
 		expect(textRequests).toEqual([
 			{

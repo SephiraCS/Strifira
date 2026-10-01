@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
@@ -38,13 +38,13 @@ type AISettingsService struct {
 	httpClient    *http.Client
 }
 
-func NewAISettingsService(aiRepo repository.AISettingsRepo, workspaceRepo repository.WorkspaceRepo, issueRepo repository.IssueRepo, encryptionKey []byte) *AISettingsService {
+func NewAISettingsService(aiRepo repository.AISettingsRepo, workspaceRepo repository.WorkspaceRepo, issueRepo repository.IssueRepo, encryptionKey []byte, providerNetworkPolicy aiegress.Policy) *AISettingsService {
 	return &AISettingsService{
 		aiRepo:        aiRepo,
 		workspaceRepo: workspaceRepo,
 		issueRepo:     issueRepo,
 		encryptionKey: encryptionKey,
-		httpClient:    &http.Client{Timeout: 45 * time.Second},
+		httpClient:    providerNetworkPolicy.NewHTTPClient(45 * time.Second),
 	}
 }
 
@@ -277,18 +277,7 @@ func ToAISettingsResponse(settings *domain.AISettings) dto.AISettingsResponse {
 }
 
 func validateAIBaseURL(rawURL string) error {
-	u, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || u.Hostname() == "" {
-		return fmt.Errorf("base URL must be a valid URL")
-	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return fmt.Errorf("base URL must be an http or https URL")
-	}
-	if u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(rawURL, "#") {
-		return fmt.Errorf("base URL must not contain credentials, query parameters, or a fragment")
-	}
-	return nil
+	return aiegress.ValidateBaseURL(rawURL)
 }
 
 type chatCompletionRequest struct {
@@ -346,6 +335,9 @@ func (s *AISettingsService) complete(ctx context.Context, baseURL, model, apiKey
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			return "", fmt.Errorf("%w: %w", ErrAIProviderRequestFailed, context.DeadlineExceeded)
+		}
+		if errors.Is(err, aiegress.ErrDestinationBlocked) {
+			return "", fmt.Errorf("%w: provider blocked by server network policy", ErrAIProviderRequestFailed)
 		}
 		return "", fmt.Errorf("%w: unable to reach provider", ErrAIProviderRequestFailed)
 	}

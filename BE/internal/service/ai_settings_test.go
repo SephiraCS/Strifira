@@ -8,12 +8,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
@@ -63,6 +65,15 @@ func (r *aiIssueTestRepo) GetByIdentifier(context.Context, uuid.UUID, string) (*
 	return r.issue, nil
 }
 
+func newAIProviderTestPolicy(t *testing.T, baseURL string) aiegress.Policy {
+	t.Helper()
+	parsed, err := url.Parse(baseURL)
+	require.NoError(t, err)
+	policy, err := aiegress.NewPolicy(parsed.Scheme + "://" + parsed.Host)
+	require.NoError(t, err)
+	return policy
+}
+
 func newAISettingsTestService(t *testing.T, baseURL string) (*AISettingsService, *aiSettingsTestRepo, *domain.Workspace) {
 	t.Helper()
 	key := crypto.DeriveKey("ai-test-encryption")
@@ -76,7 +87,7 @@ func newAISettingsTestService(t *testing.T, baseURL string) (*AISettingsService,
 		Model:           "reasoning-model",
 		APIKeyEncrypted: new(encrypted),
 	}}
-	service := NewAISettingsService(repo, &aiWorkspaceTestRepo{workspace: workspace}, &aiIssueTestRepo{issue: &domain.Issue{Title: "Fix saving issue"}}, key)
+	service := NewAISettingsService(repo, &aiWorkspaceTestRepo{workspace: workspace}, &aiIssueTestRepo{issue: &domain.Issue{Title: "Fix saving issue"}}, key, newAIProviderTestPolicy(t, baseURL))
 	return service, repo, workspace
 }
 
@@ -181,7 +192,7 @@ func TestAISettingsRejectsInvalidCompletionResponses(t *testing.T) {
 				_, _ = io.WriteString(w, test.body)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewAISettingsService(nil, nil, nil, nil)
+			svc := NewAISettingsService(nil, nil, nil, nil, newAIProviderTestPolicy(t, server.URL))
 			content, err := svc.complete(t.Context(), server.URL, "model", "test-provider-secret", "prompt")
 			assert.Empty(t, content)
 			require.ErrorIs(t, err, ErrAIProviderRequestFailed)
@@ -216,7 +227,7 @@ func TestAISettingsRejectsReadAndTransportFailures(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			svc := NewAISettingsService(nil, nil, nil, nil)
+			svc := NewAISettingsService(nil, nil, nil, nil, aiegress.Policy{})
 			svc.httpClient.Transport = test.transport
 			content, err := svc.complete(t.Context(), "http://private.example/secret", "model", "test-provider-secret", "prompt")
 			assert.Empty(t, content)
@@ -241,7 +252,7 @@ func TestAISettingsDoesNotForwardCredentialsOnRedirect(t *testing.T) {
 				http.Redirect(w, r, target.URL, code)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewAISettingsService(nil, nil, nil, nil)
+			svc := NewAISettingsService(nil, nil, nil, nil, newAIProviderTestPolicy(t, server.URL))
 			_, err := svc.complete(t.Context(), server.URL, "model", "test-provider-secret", "prompt")
 			assert.ErrorIs(t, err, ErrAIProviderRequestFailed)
 		})
@@ -260,7 +271,7 @@ func TestAISettingsCompletionCancellation(t *testing.T) {
 		}
 	}))
 	t.Cleanup(server.Close)
-	svc := NewAISettingsService(nil, nil, nil, nil)
+	svc := NewAISettingsService(nil, nil, nil, nil, newAIProviderTestPolicy(t, server.URL))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	result := make(chan error, 1)
@@ -313,11 +324,12 @@ func TestAISettingsConnectionTestUsesSavedSettings(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	svc, repo, workspace := newAISettingsTestService(t, server.URL)
+	transport := svc.httpClient.Transport
 	svc.httpClient.Transport = aiRoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		deadline, ok := r.Context().Deadline()
 		assert.True(t, ok, "connection testing must have a deadline")
 		assert.LessOrEqual(t, time.Until(deadline), 15*time.Second)
-		return http.DefaultTransport.RoundTrip(r)
+		return transport.RoundTrip(r)
 	})
 	result, err := svc.TestConnection(t.Context(), workspace.ID, workspace.OwnerID)
 	require.NoError(t, err)
@@ -372,11 +384,25 @@ func TestAISettingsConnectionTestAuthorizationAndConfiguration(t *testing.T) {
 }
 
 func TestAISettingsNoConfigurationAndBlankRework(t *testing.T) {
-	svc := NewAISettingsService(&aiSettingsTestRepo{}, nil, nil, nil)
+	svc := NewAISettingsService(&aiSettingsTestRepo{}, nil, nil, nil, aiegress.Policy{})
 	_, err := svc.ExpandIssueDescription(t.Context(), uuid.New(), "KU-1", nil)
 	assert.ErrorIs(t, err, ErrAISettingsNotConfigured)
 	_, err = svc.ReworkText(t.Context(), uuid.New(), "draft", nil)
 	assert.ErrorIs(t, err, ErrAISettingsNotConfigured)
 	_, err = svc.ReworkText(t.Context(), uuid.New(), " \n\t ", nil)
 	assert.ErrorIs(t, err, ErrAIInvalidText)
+}
+
+func TestAISettingsBlocksUnapprovedPrivateProviderWithoutLeakingDetails(t *testing.T) {
+	var calls atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	t.Cleanup(provider.Close)
+	svc := NewAISettingsService(nil, nil, nil, nil, aiegress.Policy{})
+	content, err := svc.complete(t.Context(), provider.URL+"/v1", "model", "private-provider-secret", "prompt")
+	assert.Empty(t, content)
+	require.ErrorIs(t, err, ErrAIProviderRequestFailed)
+	assert.Contains(t, err.Error(), "server network policy")
+	assert.NotContains(t, err.Error(), "private-provider-secret")
+	assert.NotContains(t, err.Error(), provider.URL)
+	assert.Zero(t, calls.Load())
 }

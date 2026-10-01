@@ -166,12 +166,17 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 	return &dto.ForgejoAccountResponse{Login: user.Login, AvatarURL: user.AvatarURL}, nil
 }
 
-// Disconnect removes the connection and unlinks every repo (webhooks on the
-// Forgejo side are removed best-effort).
+// Disconnect unlinks every repo before removing the connection. Local cleanup
+// failures retain the credentials for retry; Forgejo webhooks are best-effort.
 func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) error {
-	repos, _ := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
-	for i := range repos {
-		_ = s.UnlinkRepo(ctx, workspaceID, repos[i].ID)
+	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("listing linked Forgejo repositories: %w", err)
+	}
+	for _, repo := range repos {
+		if err := s.UnlinkRepo(ctx, workspaceID, repo.ID); err != nil {
+			return fmt.Errorf("unlinking Forgejo repository %s: %w", repo.FullName, err)
+		}
 	}
 	return s.fRepo.DeleteConnection(ctx, workspaceID)
 }

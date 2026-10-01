@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { getCachedForgejoStatus, getIssueForgejoActivity } from '$lib/api/forgejo';
+	import { getCachedForgejoStatus, getForgejoStatus, getIssueForgejoActivity } from '$lib/api/forgejo';
 	import type { ForgejoIssueActivity, ForgejoStatus } from '$lib/types/forgejo';
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { m } from '$lib/paraglide/messages.js';
@@ -26,8 +26,10 @@
 	let connection = $state<ForgejoStatus | null>(null);
 	let failed = $state(false);
 	let generation = 0;
+	let refreshContext = '';
 	let refreshing = $state(false);
 	let refreshQueued = false;
+	let freshStatusQueued = false;
 	let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 	let controller: AbortController | undefined;
@@ -39,8 +41,12 @@
 	$effect(() => {
 		const workspaceSlug = slug;
 		const issueIdentifier = identifier;
+		const currentIssueId = issueId;
 		if (!mounted) return;
 		untrack(() => {
+			const context = `${workspaceSlug}/${currentIssueId}/${issueIdentifier}`;
+			if (context === refreshContext) return;
+			refreshContext = context;
 			generation++;
 			controller?.abort();
 			clearTimeout(refreshTimer);
@@ -52,18 +58,25 @@
 			failed = false;
 			refreshing = false;
 			refreshQueued = false;
+			freshStatusQueued = false;
 			void refresh(workspaceSlug, issueIdentifier, generation);
 		});
 	});
 
-	async function refresh(workspaceSlug: string, issueIdentifier: string, requestGeneration: number) {
+	async function refresh(
+		workspaceSlug: string,
+		issueIdentifier: string,
+		requestGeneration: number,
+		freshStatus = false
+	) {
 		refreshing = true;
 		failed = false;
 		const requestController = new AbortController();
 		controller = requestController;
 		try {
-			const status = connection ?? (await getCachedForgejoStatus(workspaceSlug));
+			const status = await (freshStatus ? getForgejoStatus(workspaceSlug) : getCachedForgejoStatus(workspaceSlug));
 			if (!mounted || requestGeneration !== generation) return;
+			if (!status.connected || connection?.instance_url !== status.instance_url) activity = null;
 			connection = status;
 			if (!status.connected) return;
 			const result = await getIssueForgejoActivity(
@@ -81,7 +94,7 @@
 				refreshing = false;
 				if (refreshQueued) {
 					refreshQueued = false;
-					scheduleRefresh();
+					scheduleRefresh(freshStatusQueued);
 				}
 			}
 		}
@@ -89,14 +102,19 @@
 
 	function manualRefresh() {
 		if (refreshing) return;
-		void refresh(slug, identifier, generation);
+		void refresh(slug, identifier, generation, true);
 	}
 
-	function scheduleRefresh() {
+	function scheduleRefresh(freshStatus = false) {
+		freshStatusQueued ||= freshStatus;
 		clearTimeout(refreshTimer);
 		refreshTimer = setTimeout(() => {
 			if (refreshing) refreshQueued = true;
-			else void refresh(slug, identifier, generation);
+			else {
+				const freshStatus = freshStatusQueued;
+				freshStatusQueued = false;
+				void refresh(slug, identifier, generation, freshStatus);
+			}
 		}, 180);
 	}
 
@@ -107,10 +125,15 @@
 			if (!detail || (detail.issue_id !== issueId && detail.id !== issueId && detail.identifier !== identifier)) return;
 			scheduleRefresh();
 		}
+		function handleReconnected(event: Event) {
+			const detail = (event as CustomEvent<{ workspaceSlug?: string }>).detail;
+			if (detail?.workspaceSlug === slug) scheduleRefresh(true);
+		}
 		window.addEventListener('ws:forgejo:pr_updated', handleForgejoUpdate);
 		window.addEventListener('ws:forgejo:branch_created', handleForgejoUpdate);
 		window.addEventListener('ws:forgejo:commit_pushed', handleForgejoUpdate);
 		window.addEventListener('ws:issue-updated', handleForgejoUpdate);
+		window.addEventListener('ws:reconnected', handleReconnected);
 		return () => {
 			mounted = false;
 			generation++;
@@ -121,6 +144,7 @@
 			window.removeEventListener('ws:forgejo:branch_created', handleForgejoUpdate);
 			window.removeEventListener('ws:forgejo:commit_pushed', handleForgejoUpdate);
 			window.removeEventListener('ws:issue-updated', handleForgejoUpdate);
+			window.removeEventListener('ws:reconnected', handleReconnected);
 		};
 	});
 
@@ -140,7 +164,7 @@
 		}
 	}
 
-	function prStateClass(state: string, checksGreen: boolean) {
+	function prStateClass(state: string) {
 		switch (state) {
 			case 'merged':
 				return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
@@ -226,11 +250,8 @@
 									CI
 								</span>
 							{/if}
-							<span
-								class="shrink-0 rounded-full border px-1.5 py-0 text-[9px] leading-4 {prStateClass(
-									pr.state,
-									pr.checks_green
-								)}">{pr.state}</span
+							<span class="shrink-0 rounded-full border px-1.5 py-0 text-[9px] leading-4 {prStateClass(pr.state)}"
+								>{pr.state}</span
 							>
 						</div>
 						<div

@@ -1839,5 +1839,9 @@
 	"forgejo_actions.rerun_in_forgejo": "在 Forgejo 中重新執行",
 	"forgejo_actions.rerun_handoff": "在執行頁面登入 Forgejo，然後使用重新執行控制項。此操作受你的 Forgejo 儲存庫權限限制。",
 	"forgejo_actions.steps_in_forgejo": "在 Forgejo 中查看工作流程步驟",
-	"forgejo_actions.failed_job": "無法重新整理此任務。"
+	"forgejo_actions.failed_job": "無法重新整理此任務。",
+	"dev_boxes.failed_logs_terminal": "無法載入剩餘輸出。請選擇重新整理以重試。",
+	"dev_boxes.criteria_count_invalid": "最多可填寫 50 條非空要求。請刪除或合併部分行。",
+	"dev_boxes.criteria_length_invalid": "第 {line} 條要求超過 2,000 個 UTF-8 位元組。請縮短內容；漢字和表情符號會占用多個位元組。",
+	"dev_boxes.criteria_nul_invalid": "第 {line} 條要求包含空字元。請刪除該字元或重新輸入這條要求。"
 }

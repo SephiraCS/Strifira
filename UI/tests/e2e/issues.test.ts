@@ -105,12 +105,15 @@ test('loads more on scroll without duplicating the initial request', async ({ pa
 			path === '/api/workspaces/test/projects' ||
 			path === '/api/workspaces/test/labels' ||
 			path === '/api/workspaces/test/members' ||
+			path === '/api/workspaces/test/views' ||
 			path === `/api/workspaces/test/teams/${teamId}/statuses`
 		) {
 			return route.fulfill({ json: [] });
 		}
 
-		if (path === '/api/workspaces/test/views' || path === `/api/workspaces/test/teams/${teamId}/cycles`) {
+		if (path === `/api/workspaces/test/teams/${teamId}/cycles`) {
+			// Layout metadata must finish before the team page mounts. Delay only
+			// child metadata to exercise initialization without blocking that mount.
 			await metadataReady;
 			return route.fulfill({ json: [] });
 		}

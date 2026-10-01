@@ -122,7 +122,13 @@ export function forgejoRepositoryHomeUrl(repositoryFullName: string, instanceURL
 
 export function safeForgejoActionsUrl(value: unknown, repositoryFullName: string, instanceURL: string): string | null {
 	const parsed = parseRepositoryUrl(value, repositoryFullName, instanceURL);
-	if (!parsed || parsed.path[2] !== 'actions' || parsed.path.length !== 4 || !/^[1-9]\d*$/.test(parsed.path[3])) {
+	if (
+		!parsed ||
+		parsed.path.length !== 5 ||
+		parsed.path[2] !== 'actions' ||
+		parsed.path[3] !== 'runs' ||
+		!/^[1-9]\d*$/.test(parsed.path[4])
+	) {
 		return null;
 	}
 	return parsed.url.href;

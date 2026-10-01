@@ -12,6 +12,7 @@
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { parseTestCommand, providerName } from './dev-boxes';
+	import { validateAcceptanceCriteria } from './acceptance-criteria';
 
 	let { open = $bindable(false), slug, issue }: { open: boolean; slug: string; issue: Issue } = $props();
 	let boxes = $state<DevBox[]>([]);
@@ -25,6 +26,7 @@
 	let failed = $state(false);
 	let busy = $state(false);
 	let validationError = $state('');
+	let criteriaError = $state('');
 	let formVersion = 0;
 	const availableBoxes = $derived(boxes.filter((box) => box.enabled && box.online && box.providers.length > 0));
 	const selectedBox = $derived(availableBoxes.find((box) => box.id === selectedBoxId));
@@ -49,6 +51,7 @@
 			busy = false;
 			failed = false;
 			validationError = '';
+			criteriaError = '';
 			if (currentOpen) void loadBoxes(currentSlug, currentIssueId, version);
 		});
 		return () => {
@@ -82,6 +85,17 @@
 		event.preventDefault();
 		if (!canSubmit || !provider) return;
 		validationError = '';
+		criteriaError = '';
+		const validatedCriteria = validateAcceptanceCriteria(criteria);
+		if (validatedCriteria.error) {
+			criteriaError =
+				validatedCriteria.error === 'count'
+					? m['dev_boxes.criteria_count_invalid']()
+					: validatedCriteria.error === 'length'
+						? m['dev_boxes.criteria_length_invalid']({ line: validatedCriteria.line })
+						: m['dev_boxes.criteria_nul_invalid']({ line: validatedCriteria.line });
+			return;
+		}
 		let command: string[];
 		try {
 			command = parseTestCommand(testCommand);
@@ -102,10 +116,7 @@
 				issue_id: issueId,
 				provider,
 				prompt: extraInstructions.trim(),
-				acceptance_criteria: criteria
-					.split('\n')
-					.map((line) => line.trim())
-					.filter(Boolean),
+				acceptance_criteria: validatedCriteria.criteria,
 				test_command: command,
 				max_runtime_seconds: runtimeMinutes * 60
 			});
@@ -178,10 +189,19 @@
 				>
 				<label class="block space-y-1"
 					><span class="text-sm font-medium">{m['dev_boxes.acceptance_criteria']()}</span><Textarea
+						id="delegate-criteria"
 						bind:value={criteria}
+						oninput={() => (criteriaError = '')}
+						aria-invalid={!!criteriaError}
+						aria-describedby={criteriaError ? 'delegate-criteria-error' : 'delegate-criteria-help'}
 						rows={3}
-					/><span class="block text-xs text-muted-foreground">{m['dev_boxes.criteria_help']()}</span></label
+					/><span id="delegate-criteria-help" class="block text-xs text-muted-foreground"
+						>{m['dev_boxes.criteria_help']()}</span
+					></label
 				>
+				{#if criteriaError}<p id="delegate-criteria-error" role="alert" class="text-sm text-destructive">
+						{criteriaError}
+					</p>{/if}
 				<label class="block space-y-1"
 					><span class="text-sm font-medium">{m['dev_boxes.test_command']()}</span><Input
 						bind:value={testCommand}

@@ -303,41 +303,254 @@ test('guest navigation omits registration and issue delegation controls', async 
 	await expect(page.getByRole('button', { name: 'Delegate to dev box' })).toHaveCount(0);
 });
 
-test('discarded registration responses cannot reopen a token after the dialog closes', async ({ page }) => {
-	let start!: () => void;
-	let release!: () => void;
-	let finish!: () => void;
-	const started = new Promise<void>((resolve) => {
-		start = resolve;
+for (const operation of ['register', 'rotate'] as const) {
+	test(`pending ${operation} keeps its dialog open until the one-time token arrives`, async ({ page }) => {
+		const started = deferred();
+		const response = deferred();
+		const token = `kub_${'c'.repeat(64)}`;
+		await mockWorkspace(page, async (route, url) => {
+			const expectedPath =
+				operation === 'register'
+					? '/api/workspaces/test/dev-boxes'
+					: `/api/workspaces/test/dev-boxes/${boxId}/rotate-token`;
+			if (url.pathname === expectedPath && route.request().method() === 'POST') {
+				started.resolve();
+				await response.promise;
+				return reply(route, { box, token });
+			}
+			return false;
+		});
+		await page.goto('/test/dev-boxes');
+		const action = operation === 'register' ? 'Register dev box' : 'Replace token';
+		await page.getByRole('button', { name: action, exact: true }).click();
+		const dialog = page.getByRole('dialog');
+		if (operation === 'register') await dialog.getByLabel('Name', { exact: true }).fill('second');
+		await dialog.getByRole('button', { name: action, exact: true }).click();
+		await started.promise;
+		await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+		await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toHaveCount(0);
+		await page.keyboard.press('Escape');
+		await expect(dialog).toBeVisible();
+		await page.mouse.click(2, 2);
+		await expect(dialog).toBeVisible();
+		response.resolve();
+		await expect(dialog.getByLabel('Worker token')).toHaveValue(token);
+		await dialog.getByRole('button', { name: 'Done' }).click();
+		await expect(dialog).toHaveCount(0);
+		await expect(page.getByLabel('Worker token')).toHaveCount(0);
+		await page.getByRole('main').getByRole('button', { name: action, exact: true }).click();
+		await expect(dialog).toBeVisible();
+		await expect(dialog.getByLabel('Worker token')).toHaveCount(0);
 	});
-	const released = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	const finished = new Promise<void>((resolve) => {
-		finish = resolve;
-	});
-	const token = `kub_${'c'.repeat(64)}`;
+}
+
+test('criteria validation explains count, UTF-8 size and null characters before sending a job', async ({ page }) => {
+	const requests: unknown[] = [];
 	await mockWorkspace(page, async (route, url) => {
-		if (url.pathname === '/api/workspaces/test/dev-boxes' && route.request().method() === 'POST') {
-			start();
-			await released;
-			await reply(route, { box, token });
-			finish();
-			return true;
+		if (url.pathname === `/api/workspaces/test/dev-boxes/${boxId}/jobs`) {
+			requests.push(route.request().postDataJSON());
+			return reply(route, job, 201);
+		}
+		if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`) return reply(route, job);
+		if (url.pathname.endsWith('/logs')) return reply(route, []);
+		return false;
+	});
+	await page.goto('/test/issue/ENG-1');
+	await page.getByRole('button', { name: 'Issue actions' }).click();
+	await page.getByRole('button', { name: 'Delegate to dev box' }).click();
+	const dialog = page.getByRole('dialog');
+	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+	await dialog.getByLabel('Test command').fill('["go", "test", "./..."]');
+	const criteria = dialog.getByLabel('Acceptance criteria');
+	await criteria.fill(Array.from({ length: 51 }, (_, index) => `Requirement ${index}`).join('\n'));
+	await dialog.getByRole('button', { name: 'Delegate issue' }).click();
+	await expect(dialog.getByRole('alert')).toHaveText(
+		'Use at most 50 nonempty requirements. Remove or combine some lines.'
+	);
+	await expect(criteria).toHaveAttribute('aria-invalid', 'true');
+	await criteria.fill('é'.repeat(1000) + 'a');
+	await expect(criteria).toHaveAttribute('aria-invalid', 'false');
+	await dialog.getByRole('button', { name: 'Delegate issue' }).click();
+	await expect(dialog.getByRole('alert')).toContainText('Requirement 1 exceeds 2,000 UTF-8 bytes.');
+	await criteria.fill('Must not contain\0NUL');
+	await dialog.getByRole('button', { name: 'Delegate issue' }).click();
+	await expect(dialog.getByRole('alert')).toContainText('Requirement 1 contains a null character.');
+	expect(requests).toEqual([]);
+	const accepted = Array.from({ length: 50 }, () => 'é'.repeat(1000));
+	await criteria.fill(' \n' + accepted.map((line) => ` ${line} `).join('\n\n'));
+	await dialog.getByRole('button', { name: 'Delegate issue' }).click();
+	await expect(page).toHaveURL(`/test/dev-box-jobs/${jobId}`);
+	expect(requests).toHaveLength(1);
+	expect((requests[0] as { acceptance_criteria: string[] }).acceptance_criteria).toEqual(accepted);
+});
+
+test('completed jobs stop retrying a failed log page and retain manual recovery', async ({ page }) => {
+	await page.clock.install();
+	let logsRequests = 0;
+	await mockWorkspace(page, async (route, url) => {
+		if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`)
+			return reply(route, { ...job, status: 'succeeded' });
+		if (url.pathname.endsWith('/logs')) {
+			logsRequests++;
+			if (logsRequests === 1) return reply(route, logPage(0));
+			if (logsRequests === 2) return reply(route, { message: 'Temporary log failure' }, 503);
+			return reply(route, [{ ...logPage(500)[0], content: 'Recovered final output\n' }]);
+		}
+		return false;
+	});
+	await page.goto(`/test/dev-box-jobs/${jobId}`);
+	const logsAlert = page.getByRole('region', { name: 'Live logs', exact: true }).getByRole('alert');
+	await expect(logsAlert).toHaveText('Could not load the remaining output. Select Refresh to try again.');
+	expect(logsRequests).toBe(2);
+	await page.clock.runFor(10_000);
+	expect(logsRequests).toBe(2);
+	await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+	await expect(page.getByTestId('dev-box-logs')).toContainText('Recovered final output');
+	await expect(logsAlert).toHaveCount(0);
+	expect(logsRequests).toBe(3);
+	await page.clock.runFor(10_000);
+	expect(logsRequests).toBe(3);
+});
+
+test('completed jobs drain successful log pages past one poll batch', async ({ page }) => {
+	const cursors: number[] = [];
+	await mockWorkspace(page, async (route, url) => {
+		if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`)
+			return reply(route, { ...job, status: 'succeeded' });
+		if (url.pathname.endsWith('/logs')) {
+			const cursor = Number(url.searchParams.get('after_id'));
+			cursors.push(cursor);
+			return reply(route, cursor < 3000 ? logPage(cursor) : []);
+		}
+		return false;
+	});
+	await page.goto(`/test/dev-box-jobs/${jobId}`);
+	await expect(page.getByTestId('dev-box-logs')).toContainText('Output 3000');
+	await expect.poll(() => cursors.length).toBe(7);
+	expect(cursors).toEqual([0, 500, 1000, 1500, 2000, 2500, 3000]);
+	await expect(page.getByTestId('dev-box-logs')).not.toContainText('Output 1\n');
+});
+
+test('active jobs still retry failed progress requests', async ({ page }) => {
+	await page.clock.install();
+	let logsRequests = 0;
+	await mockWorkspace(page, async (route, url) => {
+		if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`) return reply(route, job);
+		if (url.pathname.endsWith('/logs')) {
+			logsRequests++;
+			return logsRequests === 1
+				? reply(route, { message: 'Temporary log failure' }, 503)
+				: reply(route, [{ ...logPage(0)[0], content: 'Progress recovered\n' }]);
+		}
+		return false;
+	});
+	await page.goto(`/test/dev-box-jobs/${jobId}`);
+	const logsAlert = page.getByRole('region', { name: 'Live logs', exact: true }).getByRole('alert');
+	await expect(logsAlert).toHaveText('Could not refresh progress. Retrying…');
+	await page.clock.runFor(2000);
+	await expect(page.getByTestId('dev-box-logs')).toContainText('Progress recovered');
+	await expect(logsAlert).toHaveCount(0);
+	expect(logsRequests).toBe(2);
+});
+
+test('box polling pauses while hidden after a mutation and refreshes heartbeat state on return', async ({ page }) => {
+	await page.clock.install();
+	const mutationStarted = deferred();
+	const mutationResponse = deferred();
+	let boxesRequests = 0;
+	let jobsRequests = 0;
+	let enabled = true;
+	await mockWorkspace(page, async (route, url) => {
+		if (url.pathname === `/api/workspaces/test/dev-boxes/${boxId}` && route.request().method() === 'PATCH') {
+			mutationStarted.resolve();
+			await mutationResponse.promise;
+			enabled = false;
+			return reply(route, { ...box, enabled });
+		}
+		if (url.pathname === '/api/workspaces/test/dev-boxes') {
+			boxesRequests++;
+			return reply(route, [{ ...box, enabled }]);
+		}
+		if (url.pathname === '/api/workspaces/test/dev-box-jobs') {
+			jobsRequests++;
+			return reply(route, { data: [], has_more: false, page: 1 });
 		}
 		return false;
 	});
 	await page.goto('/test/dev-boxes');
-	await page.getByRole('button', { name: 'Register dev box', exact: true }).click();
-	const dialog = page.getByRole('dialog');
-	await dialog.getByLabel('Name', { exact: true }).fill('second');
-	await dialog.getByRole('button', { name: 'Register dev box', exact: true }).click();
-	await started;
-	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
-	await expect(page.getByRole('dialog')).toHaveCount(0);
-	release();
-	await finished;
-	await page.getByRole('button', { name: 'Register dev box', exact: true }).click();
-	await expect(page.getByLabel('Worker token')).toHaveCount(0);
-	await expect(page.getByRole('dialog').getByLabel('Name', { exact: true })).toHaveValue('');
+	await expect(page.getByRole('article', { name: 'ku', exact: true })).toBeVisible();
+	await page.getByRole('switch', { name: 'Enable ku' }).click();
+	await mutationStarted.promise;
+	await setVisibility(page, 'hidden');
+	mutationResponse.resolve();
+	await expect(page.getByRole('switch', { name: 'Enable ku' })).toHaveAttribute('aria-checked', 'false');
+	await page.clock.runFor(15_000);
+	expect({ boxesRequests, jobsRequests }).toEqual({ boxesRequests: 1, jobsRequests: 1 });
+	await setVisibility(page, 'visible');
+	await expect.poll(() => boxesRequests).toBe(2);
+	await expect.poll(() => jobsRequests).toBe(2);
+	await page.clock.runFor(5000);
+	await expect.poll(() => boxesRequests).toBe(3);
+	await expect.poll(() => jobsRequests).toBe(3);
 });
+
+test('job polling pauses an in-flight page drain while hidden and resumes immediately', async ({ page }) => {
+	await page.clock.install();
+	const logsStarted = deferred();
+	const logsResponse = deferred();
+	const cursors: number[] = [];
+	let jobRequests = 0;
+	await mockWorkspace(page, async (route, url) => {
+		if (url.pathname === `/api/workspaces/test/dev-box-jobs/${jobId}`) {
+			jobRequests++;
+			return reply(route, job);
+		}
+		if (url.pathname.endsWith('/logs')) {
+			const cursor = Number(url.searchParams.get('after_id'));
+			cursors.push(cursor);
+			if (cursor === 0) {
+				logsStarted.resolve();
+				await logsResponse.promise;
+				return reply(route, logPage(0));
+			}
+			return reply(route, [{ ...logPage(cursor)[0], content: 'Visible progress\n' }]);
+		}
+		return false;
+	});
+	await page.goto(`/test/dev-box-jobs/${jobId}`);
+	await logsStarted.promise;
+	await setVisibility(page, 'hidden');
+	logsResponse.resolve();
+	await expect(page.getByTestId('dev-box-logs')).toContainText('Output 500');
+	await page.clock.runFor(10_000);
+	expect(jobRequests).toBe(1);
+	expect(cursors).toEqual([0]);
+	await setVisibility(page, 'visible');
+	await expect(page.getByTestId('dev-box-logs')).toContainText('Visible progress');
+	expect(jobRequests).toBe(2);
+	expect(cursors).toEqual([0, 500]);
+});
+
+function deferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((finish) => (resolve = finish));
+	return { promise, resolve };
+}
+
+function logPage(after: number) {
+	return Array.from({ length: 500 }, (_, index) => ({
+		id: after + index + 1,
+		job_id: jobId,
+		sequence: after + index + 1,
+		stream: 'stdout',
+		content: `Output ${after + index + 1}\n`,
+		created_at: job.created_at
+	}));
+}
+
+async function setVisibility(page: Page, visibility: 'hidden' | 'visible') {
+	await page.evaluate((value) => {
+		Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => value });
+		document.dispatchEvent(new Event('visibilitychange'));
+	}, visibility);
+}

@@ -60,7 +60,7 @@ func NewClaudeCodeProvider(image string) Provider {
 			}
 			// These tools run in the machine's isolated, unprivileged container.
 			// dontAsk makes unsupported tool requests fail instead of hanging for input.
-			return []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk", "--allowedTools", "Bash,Edit,Write", "-p", input.Prompt}
+			return []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk", "--allowedTools", "Bash,Read,Grep,Glob,Edit,Write", "-p", input.Prompt}
 		},
 		parse: parseClaudeResult,
 	}
@@ -185,10 +185,7 @@ func (p *openCodeProvider) ParseResult(stdout, stderr string, exitCode int) RunR
 	}
 
 	if lastAssistantText != "" {
-		result.Summary = strings.TrimSpace(lastAssistantText)
-		if len(result.Summary) > 4000 {
-			result.Summary = result.Summary[:4000]
-		}
+		result.Summary = lastAssistantText
 	}
 
 	if len(toolFailures) > 0 {
@@ -198,6 +195,7 @@ func (p *openCodeProvider) ParseResult(stdout, stderr string, exitCode int) RunR
 		result.RiskNotes = append(result.RiskNotes, toolFailures...)
 	}
 
+	result.Summary = boundedSummary(result.Summary)
 	return result
 }
 

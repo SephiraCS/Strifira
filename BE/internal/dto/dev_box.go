@@ -88,6 +88,15 @@ type DevBoxAppendLogResponse struct {
 	LogsTruncated bool `json:"logs_truncated"`
 }
 
+// DevBoxCompleteBodyLimit bounds the complete encoded request, including JSON
+// escaping. The result validator permits 1 MiB of patch, 8 KiB of summary and
+// 700 metadata strings of 4096 bytes: at six encoded bytes per input byte, these
+// use at most 23,543,808 bytes. The assigned branch (255 database characters),
+// 68-byte lease, statuses, 700 array entries, JSON envelope and two signed
+// 64-bit integers bring the compact encoding bound to 23,547,734 bytes. 24 MiB
+// leaves room for formatting without changing those per-field limits.
+const DevBoxCompleteBodyLimit = 24 << 20
+
 type DevBoxCompleteRequest struct {
 	LeaseToken string                 `json:"lease_token" validate:"required,max=128"`
 	Result     domain.DevBoxJobResult `json:"result"`

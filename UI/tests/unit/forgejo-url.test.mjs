@@ -69,20 +69,34 @@ test('forgejoRepositoryHomeUrl builds a safe link', () => {
 	assert.equal(forgejoRepositoryHomeUrl(REPO, ''), null);
 });
 
-test('safeForgejoActionsUrl accepts only a run on the linked repository', () => {
-	assert.equal(
-		safeForgejoActionsUrl(`${INSTANCE}/${REPO}/actions/42`, REPO, INSTANCE),
-		`${INSTANCE}/${REPO}/actions/42`
-	);
+test('safeForgejoActionsUrl accepts the native Forgejo 16 run URL', () => {
+	const nativeUrl = `${INSTANCE}/${REPO}/actions/runs/302`;
+	assert.equal(safeForgejoActionsUrl(nativeUrl, REPO, INSTANCE), nativeUrl);
+});
+
+test('safeForgejoActionsUrl rejects obsolete, malformed, and untrusted run URLs', () => {
 	for (const url of [
-		`https://example.com/${REPO}/actions/42`,
-		`${INSTANCE}/someone/else/actions/42`,
-		`${INSTANCE}/${REPO}/actions/42?token=secret`,
+		`https://example.com/${REPO}/actions/runs/42`,
+		`https://git.terrascale.tech.example.com/${REPO}/actions/runs/42`,
+		`https://user:secret@git.terrascale.tech/${REPO}/actions/runs/42`,
+		`${INSTANCE}/someone/else/actions/runs/42`,
+		`${INSTANCE}/${REPO}/actions/runs/42?token=secret`,
+		`${INSTANCE}/${REPO}/actions/runs/42#fragment`,
+		`${INSTANCE}/${REPO}/actions/42`,
 		`${INSTANCE}/${REPO}/actions/0`,
-		`${INSTANCE}/${REPO}/actions/42/jobs/2`,
-		`${INSTANCE}/${REPO}/actions/%ZZ`
+		`${INSTANCE}/${REPO}/actions/runs/0`,
+		`${INSTANCE}/${REPO}/actions/runs/-1`,
+		`${INSTANCE}/${REPO}/actions/runs/01`,
+		`${INSTANCE}/${REPO}/actions/runs/42.5`,
+		`${INSTANCE}/${REPO}/actions/runs/not-a-number`,
+		`${INSTANCE}/${REPO}/actions/runs/`,
+		`${INSTANCE}/${REPO}/actions/runs/42/jobs/2`,
+		`${INSTANCE}/${REPO}/actions/runs/42/`,
+		`${INSTANCE}/${REPO}/actions/runs/%ZZ`,
+		`${INSTANCE}/${REPO}/actions/runs/42%2Fjobs`,
+		`javascript:alert(1)`
 	]) {
-		assert.equal(safeForgejoActionsUrl(url, REPO, INSTANCE), null);
+		assert.equal(safeForgejoActionsUrl(url, REPO, INSTANCE), null, url);
 	}
 });
 

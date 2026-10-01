@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import Workflow from '@lucide/svelte/icons/workflow';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
@@ -59,6 +60,7 @@
 	let jobsPage = $state(1);
 	let jobsHasMore = $state(false);
 	let detailsLoading = $state(false);
+	let detailsBusy = $state(false);
 	let detailsFailed = $state(false);
 	let selectedJob = $state<ForgejoActionJob | null>(null);
 	let logs = $state<ForgejoActionLogs | null>(null);
@@ -93,6 +95,7 @@
 	const activeRuns = $derived(
 		runs.some((run) => isActiveAction(actionStatus(run.status, run.conclusion))) || runIsActive
 	);
+	const foregroundBusy = $derived(runsLoading || detailsBusy || jobLoading);
 	const runUrl = $derived(
 		selectedRun && repository
 			? safeForgejoActionsUrl(
@@ -114,11 +117,11 @@
 		visible = document.visibilityState !== 'hidden';
 		function visibilityChanged() {
 			visible = document.visibilityState !== 'hidden';
-			if (visible && activeRuns) void refresh();
+			if (visible) void refresh(true);
 		}
 		document.addEventListener('visibilitychange', visibilityChanged);
 		const timer = setInterval(() => {
-			if (visible && activeRuns && !runsLoading && !detailsLoading && !jobLoading) void refresh();
+			void refresh(true);
 		}, 15000);
 		return () => {
 			mounted = false;
@@ -151,6 +154,7 @@
 		jobsHasMore = false;
 		logs = null;
 		detailsLoading = false;
+		detailsBusy = false;
 		detailsFailed = false;
 		jobLoading = false;
 		jobFailed = false;
@@ -192,6 +196,9 @@
 		abortRequests();
 		clearDetails();
 		repoId = id;
+		const url = new URL(page.url);
+		url.searchParams.set('repo', id);
+		replaceState(url, page.state);
 		runs = [];
 		statusFilter = '';
 		branchInput = '';
@@ -213,8 +220,11 @@
 		runsController?.abort();
 		const controller = new AbortController();
 		runsController = controller;
-		if (!background) runsLoading = true;
-		runsFailed = false;
+		if (!background) {
+			runsLoading = true;
+			runsFailed = false;
+			runsPage = pageNumber;
+		}
 		try {
 			const result = await listForgejoActionRuns(
 				workspaceSlug,
@@ -226,14 +236,15 @@
 			runs = result.data ?? [];
 			runsPage = result.page;
 			runsHasMore = result.has_more;
+			runsFailed = false;
 		} catch {
-			if (generation === runsGeneration && !controller.signal.aborted) runsFailed = true;
+			if (!background && generation === runsGeneration && !controller.signal.aborted) runsFailed = true;
 		} finally {
 			if (generation === runsGeneration) runsLoading = false;
 		}
 	}
 
-	async function loadRun(runId: number, preserve = false) {
+	async function loadRun(runId: number, preserve = false, background = false) {
 		if (!preserve) clearDetails();
 		selectedRunId = runId;
 		const generation = ++detailsGeneration;
@@ -243,28 +254,33 @@
 		const controller = new AbortController();
 		detailsController = controller;
 		if (!preserve) detailsLoading = true;
-		detailsFailed = false;
+		detailsBusy = !background;
+		if (!background) detailsFailed = false;
 		try {
 			const [run, result] = await Promise.all([
 				getForgejoActionRun(workspaceSlug, repositoryId, runId, controller.signal),
 				listForgejoActionJobs(workspaceSlug, repositoryId, runId, jobsPage, controller.signal)
 			]);
-			if (!mounted || generation !== detailsGeneration) return;
+			if (!mounted || generation !== detailsGeneration || (background && !canRefreshInBackground())) return;
 			if (actionRequested === run.id && `${run.status}:${run.updated_at}` !== actionRequestedState)
 				actionRequested = null;
 			selectedRun = run;
 			jobs = result.data ?? [];
 			jobsPage = result.page;
 			jobsHasMore = result.has_more;
-			if (selectedJob) await loadJob(jobs.find((job) => job.id === selectedJob?.id) ?? selectedJob, true);
+			detailsFailed = false;
+			if (selectedJob) await loadJob(jobs.find((job) => job.id === selectedJob?.id) ?? selectedJob, true, background);
 		} catch {
-			if (generation === detailsGeneration && !controller.signal.aborted) detailsFailed = true;
+			if (!background && generation === detailsGeneration && !controller.signal.aborted) detailsFailed = true;
 		} finally {
-			if (generation === detailsGeneration) detailsLoading = false;
+			if (generation === detailsGeneration) {
+				detailsLoading = false;
+				detailsBusy = false;
+			}
 		}
 	}
 
-	async function loadJob(job: ForgejoActionJob, preserve = false) {
+	async function loadJob(job: ForgejoActionJob, preserve = false, background = false) {
 		const runId = selectedRunId;
 		if (runId === null) return;
 		const generation = ++jobGeneration;
@@ -277,15 +293,19 @@
 		selectedJob = job;
 		if (!preserve || jobChanged) logs = null;
 		jobLoading = true;
-		jobFailed = false;
-		logsFailed = false;
+		if (!background) {
+			jobFailed = false;
+			logsFailed = false;
+		}
 		const [detail, output] = await Promise.allSettled([
 			getForgejoActionJob(workspaceSlug, repositoryId, runId, job.id, controller.signal),
 			getForgejoActionLogs(workspaceSlug, repositoryId, runId, job.id, job.attempt, controller.signal)
 		]);
 		if (!mounted || generation !== jobGeneration || controller.signal.aborted) return;
-		if (detail.status === 'fulfilled') selectedJob = detail.value;
-		else jobFailed = true;
+		if (detail.status === 'fulfilled') {
+			selectedJob = detail.value;
+			jobFailed = false;
+		} else if (!background) jobFailed = true;
 		if (detail.status === 'fulfilled' && detail.value.attempt !== job.attempt) {
 			logs = null;
 			try {
@@ -299,25 +319,39 @@
 				);
 				if (generation !== jobGeneration || controller.signal.aborted) return;
 				logs = currentOutput;
+				logsFailed = false;
 			} catch {
 				if (generation !== jobGeneration || controller.signal.aborted) return;
 				logsFailed = true;
 			}
-		} else if (output.status === 'fulfilled') logs = output.value;
-		else logsFailed = true;
+		} else if (output.status === 'fulfilled') {
+			logs = output.value;
+			logsFailed = false;
+		} else if (!background || !logs) logsFailed = true;
 		jobLoading = false;
 	}
 
-	async function refresh() {
-		if (refreshing || initializing || !repoId) return;
+	function canRefreshInBackground() {
+		return visible && activeRuns && !foregroundBusy;
+	}
+
+	async function refresh(background = false) {
+		if (refreshing || initializing || !repoId || (background && !canRefreshInBackground())) return;
 		refreshing = true;
 		const repositoryId = repoId;
 		const workspaceSlug = slug;
 		const runId = selectedRunId;
 		try {
-			await loadRuns(runsPage, true);
-			if (mounted && repositoryId === repoId && workspaceSlug === slug && runId !== null && selectedRunId === runId)
-				await loadRun(runId, true);
+			await loadRuns(runsPage, background);
+			if (
+				mounted &&
+				repositoryId === repoId &&
+				workspaceSlug === slug &&
+				runId !== null &&
+				selectedRunId === runId &&
+				(!background || canRefreshInBackground())
+			)
+				await loadRun(runId, true, background);
 		} finally {
 			refreshing = false;
 		}
@@ -382,8 +416,8 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={refresh}
-				disabled={initializing || refreshing || runsLoading || !repoId}
+				onclick={() => refresh()}
+				disabled={initializing || refreshing || foregroundBusy || !repoId}
 				><RefreshCw size={14} class={refreshing ? 'animate-spin' : ''} />{m['forgejo_actions.refresh']()}</Button
 			>
 			{#if canManage}<Button variant="ghost" size="sm" href="/{slug}/settings/forgejo"
@@ -511,6 +545,7 @@
 				<section
 					class="min-w-0 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]"
 					aria-label={m['forgejo_actions.jobs']()}
+					aria-busy={detailsBusy}
 				>
 					{#if detailsLoading}<div class="p-5"><LoadingState /></div>{:else if detailsFailed}<ErrorState
 							message={m['forgejo_actions.failed_details']()}

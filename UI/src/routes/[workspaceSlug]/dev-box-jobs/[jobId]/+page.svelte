@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Download from '@lucide/svelte/icons/download';
@@ -34,6 +34,19 @@
 	const canCancel = $derived(
 		!!job && isActiveJob(job.status) && !job.cancel_requested && job.requested_by_user_id === authState.user?.id
 	);
+
+	function isVisible() {
+		return document.visibilityState !== 'hidden';
+	}
+
+	onMount(() => {
+		function visibilityChanged() {
+			clearTimeout(timer);
+			if (isVisible() && !cancelBusy) refresh();
+		}
+		document.addEventListener('visibilitychange', visibilityChanged);
+		return () => document.removeEventListener('visibilitychange', visibilityChanged);
+	});
 
 	$effect(() => {
 		const currentSlug = slug;
@@ -74,6 +87,7 @@
 	}
 
 	async function poll(currentSlug: string, currentJobId: string, version: number) {
+		if (!isVisible() || cancelBusy || !isCurrent(currentSlug, currentJobId, version)) return;
 		let hasMore = false;
 		try {
 			if (!job || Date.now() >= nextJobRefresh) {
@@ -84,6 +98,7 @@
 				nextJobRefresh = Date.now() + 5000;
 			}
 			for (let count = 0; count < 5; count++) {
+				if (!isVisible()) break;
 				const result = await listDevBoxJobLogs(currentSlug, currentJobId, logsAfterId, logLimit);
 				if (!isCurrent(currentSlug, currentJobId, version)) return;
 				const incoming = result ?? [];
@@ -94,12 +109,13 @@
 			}
 		} catch {
 			if (!isCurrent(currentSlug, currentJobId, version)) return;
+			hasMore = false;
 			if (!job) failed = true;
 			else logsFailed = true;
 		} finally {
 			if (isCurrent(currentSlug, currentJobId, version)) {
 				loading = false;
-				if (hasMore || !job || isActiveJob(job.status) || logsFailed) {
+				if (isVisible() && (hasMore || !job || isActiveJob(job.status))) {
 					timer = setTimeout(() => void poll(currentSlug, currentJobId, version), hasMore ? 0 : 2000);
 				}
 			}
@@ -109,6 +125,7 @@
 	function refresh() {
 		clearTimeout(timer);
 		nextJobRefresh = 0;
+		if (!isVisible() || cancelBusy) return;
 		void poll(slug, jobId, ++requestVersion);
 	}
 
@@ -129,7 +146,7 @@
 			if (isCurrent(currentSlug, currentJobId, version)) {
 				cancelBusy = false;
 				nextJobRefresh = 0;
-				void poll(currentSlug, currentJobId, version);
+				if (isVisible()) void poll(currentSlug, currentJobId, version);
 			}
 		}
 	}
@@ -258,7 +275,9 @@
 				{/if}
 				<section class="space-y-3" aria-label={m['dev_boxes.logs']()}>
 					<h2 class="text-sm font-semibold">{m['dev_boxes.logs']()}</h2>
-					{#if logsFailed}<p role="alert" class="text-xs text-destructive">{m['dev_boxes.failed_logs']()}</p>{/if}
+					{#if logsFailed}<p role="alert" class="text-xs text-destructive">
+							{isActiveJob(job.status) ? m['dev_boxes.failed_logs']() : m['dev_boxes.failed_logs_terminal']()}
+						</p>{/if}
 					{#if logsLimited || job.logs_truncated}<p class="text-xs text-muted-foreground">
 							{m['dev_boxes.logs_limited']()}
 						</p>{/if}

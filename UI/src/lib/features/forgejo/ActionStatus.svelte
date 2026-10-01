@@ -54,7 +54,7 @@
 			case 'blocked':
 				return m['forgejo_actions.status_blocked']();
 			default:
-				return value || m['forgejo_actions.unknown']();
+				return m['forgejo_actions.unknown']();
 		}
 	});
 </script>
