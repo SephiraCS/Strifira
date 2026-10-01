@@ -198,21 +198,20 @@ func TestCompletionPreservesMaximumEscapedResultAndIdenticalRetry(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, dto.DevBoxCompleteBodyLimit))
 		require.NoError(t, err)
+		if requests.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		} else {
+			w.WriteHeader(http.StatusNoContent)
+		}
+		// Capture the whole upload, then acknowledge it before expensive payload
+		// verification can trigger an unrelated transport timeout on a busy runner.
+		require.NoError(t, http.NewResponseController(w).Flush())
 		var request dto.DevBoxCompleteRequest
 		require.NoError(t, json.Unmarshal(body, &request))
 		bodies <- observation{length: len(body), hash: sha256.Sum256(body), result: request.Result}
-		if requests.Add(1) == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 	client := NewClient(Config{ServerURL: server.URL}, "kub_"+strings.Repeat("a", 64))
-	// This checks full-size payload replay, not transport deadlines. Coverage
-	// instrumentation can make decoding this escaped body exceed the production
-	// request timeout; keep requests bounded by the test context instead.
-	client.http.Timeout = 0
 	require.NoError(t, (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{Token: "kl_" + strings.Repeat("b", 64)}, result))
 	require.Equal(t, int32(2), requests.Load())
 	first, replay := <-bodies, <-bodies
