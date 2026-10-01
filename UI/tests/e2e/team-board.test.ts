@@ -289,10 +289,19 @@ async function mockTeamBoard(
 	return { issueRequests, patches, allPatches, bulkPatches, store };
 }
 
+// Navigation finishes before the client has hydrated and fetched the board.
+// Wait for its final fixture page before measuring rendering and interactions.
 async function openTeamBoard(page: Page) {
+	const loaded = page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return response.request().method() === 'GET' &&
+			url.pathname === '/api/workspaces/test/issues' &&
+			url.searchParams.get('page') === '3';
+	});
 	await page.goto(`/test/teams/${teamId}`);
-	// The document load event precedes Svelte's async auth, pagination and
-	// drag-zone mount. Wait for that surface before testing card behavior.
+	const response = await loaded;
+	expect(response.ok()).toBe(true);
+	expect((await response.json()).has_more).toBe(false);
 	await page.locator('[data-issue-drop-zone]').first().waitFor({ state: 'visible' });
 }
 

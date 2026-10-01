@@ -10,7 +10,7 @@ export default defineConfig({
 	retries: process.env.CI ? 1 : 0,
 	// Every suite mocks the API per page, so workers share no state; the cap
 	// keeps a smaller runner from being oversubscribed.
-	workers: process.env.CI ? Math.min(4, os.availableParallelism()) : undefined,
+	workers: process.env.CI ? Math.min(2, os.availableParallelism()) : undefined,
 	reporter: process.env.CI ? [['dot'], ['html', { open: 'never' }]] : 'list',
 	webServer: {
 		command: 'npm run build && node scripts/serve-e2e-build.mjs 4174',

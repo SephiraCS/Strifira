@@ -18,28 +18,65 @@
 # hours. A store's directory is not touched while it is in use, so that age
 # must stay above every job's timeout-minutes (at most 60 today).
 set -eu
+export LC_ALL=C
 
 root=/cache/ci-tmp
+root=$(realpath -m -- "$root")
+
+validate_store() {
+	[ ! -L "$1" ] || { echo "refusing to remove symlink: $1" >&2; return 1; }
+	validated_path=$(realpath -m -- "$1")
+	[ "$(dirname -- "$validated_path")" = "$root" ] || {
+		echo "refusing to remove $validated_path: not a store under $root" >&2
+		return 1
+	}
+	case "$(basename -- "$validated_path")" in
+	ku-*) ;;
+	*) echo "refusing to remove $validated_path: invalid store name" >&2; return 1 ;;
+	esac
+	[ "${2:-}" = owned ] || [ -f "$validated_path/storage.conf" ] || {
+		echo "refusing to remove $validated_path: no store configuration" >&2
+		return 1
+	}
+	printf '%s\n' "$validated_path"
+}
 
 # Deletes a store, first detaching any overlay mounts a build or container
-# left behind (rm -rf alone fails with EBUSY on them). Failures only warn:
-# a leftover store must not fail the job, and the sweep retries it later.
+# left behind (rm -rf alone fails with EBUSY on them). Return deletion
+# failures so create can fail, while remove and stale sweeps only warn.
 delete_store() {
-	awk -v p="$1/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
-	rm -rf "$1" || echo "warning: could not delete $1" >&2
+	resolved=$(validate_store "$1" "${2:-}") || return 1
+	awk -v p="$resolved/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
+	rm -rf -- "$resolved"
 }
 
 case "${1:-}" in
 create)
 	: "${2:?usage: $0 create <name>}"
 	: "${GITHUB_ENV:?GITHUB_ENV is required}"
+	case "$2" in
+	*[!A-Za-z0-9._-]*|.|..) echo "invalid store name: $2" >&2; exit 2 ;;
+	esac
+	case "${GITHUB_RUN_ID:?}" in
+	*[!0-9]*) echo "invalid GITHUB_RUN_ID" >&2; exit 2 ;;
+	esac
 	mkdir -p "$root"
-	find "$root" -mindepth 1 -maxdepth 1 -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
-		delete_store "$stale"
+	find "$root" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
+		if [ -L "$stale" ]; then
+			rm -f -- "$stale" || echo "warning: could not unlink $stale" >&2
+		else
+			delete_store "$stale" owned || echo "warning: could not sweep $stale" >&2
+		fi
 	done
 	store="$root/ku-${GITHUB_RUN_ID:?}-$2"
 	# A re-run reuses the run ID; never build on a cancelled attempt's store.
-	[ ! -e "$store" ] || delete_store "$store"
+	if [ -L "$store" ]; then
+		rm -f -- "$store" || { echo "could not unlink $store" >&2; exit 1; }
+	fi
+	if [ -e "$store" ]; then
+		delete_store "$store" owned || { echo "could not reset $store" >&2; exit 1; }
+	fi
+	[ ! -e "$store" ] || { echo "could not reset $store" >&2; exit 1; }
 	mkdir -p "$store/root" "$store/run" "$store/tmp"
 	cat >"$store/storage.conf" <<-CONF
 		[storage]
@@ -60,15 +97,10 @@ create)
 remove)
 	store="${PODMAN_STORE:-}"
 	[ -n "$store" ] && [ -d "$store" ] || exit 0
-	case "$store" in
-	"$root"/ku-*) ;;
-	*)
-		echo "refusing to remove $store: not a store under $root" >&2
-		exit 1
-		;;
-	esac
-	podman rm --all --force --time 0 >/dev/null 2>&1 || true
-	delete_store "$store"
+	store=$(validate_store "$store")
+	CONTAINERS_STORAGE_CONF="$store/storage.conf" CONTAINERS_CONF_OVERRIDE="$store/containers.conf" \
+		podman rm --all --force --time 0 >/dev/null 2>&1 || true
+	delete_store "$store" || echo "warning: could not delete $store" >&2
 	;;
 *)
 	echo "usage: $0 create <name> | remove" >&2
