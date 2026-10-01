@@ -17,6 +17,7 @@ on:
       - 'UI/package.json'
       - 'UI/package-lock.json'
       - 'UI/Caddyfile'
+      - 'scripts/ci/**'
       - '.forgejo/workflows/image-security.yml'
   schedule:
     - cron: '0 0 * * *'
@@ -39,18 +40,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { id: app, context: ., file: ./Dockerfile, inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
-          - { id: backend, context: ./BE, file: ./BE/Dockerfile, inputs: 'BE/Dockerfile BE/go.mod BE/go.sum' }
-          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/.dockerignore UI/Caddyfile UI/package.json UI/package-lock.json' }
-          - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway, inputs: 'BE/Dockerfile.machine-gateway BE/go.mod BE/go.sum' }
-          - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager, inputs: 'BE/Dockerfile.machine-manager BE/go.mod BE/go.sum' }
-          - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile, inputs: devmachine }
-          - { id: browser, context: ./devmachine, file: ./devmachine/browser/Dockerfile, inputs: devmachine }
-          - { id: collector, context: ./devmachine, file: ./devmachine/collector/Dockerfile, inputs: devmachine }
-          - { id: egress, context: ./devmachine, file: ./devmachine/egress/Dockerfile, inputs: devmachine }
-          - { id: agent-claude, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: claude-code, inputs: devmachine }
-          - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode, inputs: devmachine }
-          - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex, inputs: devmachine }
+          - { id: app, context: ., file: ./Dockerfile, caches: 'go,npm', inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
+          - { id: backend, context: ./BE, file: ./BE/Dockerfile, caches: go, inputs: 'BE/Dockerfile BE/go.mod BE/go.sum' }
+          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, caches: 'go,npm', inputs: 'UI/Dockerfile UI/.dockerignore UI/Caddyfile UI/package.json UI/package-lock.json' }
+          - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway, caches: go, inputs: 'BE/Dockerfile.machine-gateway BE/go.mod BE/go.sum' }
+          - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager, caches: go, inputs: 'BE/Dockerfile.machine-manager BE/go.mod BE/go.sum' }
+          # The ide and agent images delete /root/.npm, so they get no npm cache.
+          - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile, caches: none, inputs: devmachine }
+          - { id: browser, context: ./devmachine, file: ./devmachine/browser/Dockerfile, caches: go, inputs: devmachine }
+          - { id: collector, context: ./devmachine, file: ./devmachine/collector/Dockerfile, caches: go, inputs: devmachine }
+          - { id: egress, context: ./devmachine, file: ./devmachine/egress/Dockerfile, caches: go, inputs: devmachine }
+          - { id: agent-claude, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: claude-code, caches: none, inputs: devmachine }
+          - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode, caches: none, inputs: devmachine }
+          - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex, caches: none, inputs: devmachine }
     steps:
       - name: Check out the source revision
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -72,14 +74,15 @@ jobs:
           INPUTS: ${{ matrix.inputs }}
         run: |
           # shellcheck disable=SC2086 # INPUTS is a space-separated path list
-          if git diff --quiet "${BASE_SHA}...HEAD" -- $INPUTS .forgejo/workflows/image-security.yml; then
+          if git diff --quiet "${BASE_SHA}...HEAD" -- $INPUTS scripts/ci .forgejo/workflows/image-security.yml; then
             echo "This pull request does not change the ${{ matrix.id }} image; skipping it."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # Intermediate layers are never reused here, and committing one per
-      # instruction is what pushed parallel legs past the runner's Docker
-      # timeouts; the final image content is the same either way.
+      - name: Create the podman store
+        if: steps.inputs.outputs.skip != 'true'
+        run: scripts/ci/podman-store.sh create "image-security-${{ matrix.id }}"
+
       - name: Build the image
         if: steps.inputs.outputs.skip != 'true'
         env:
@@ -102,9 +105,9 @@ jobs:
             sleep 2
           done
           echo "Acquired image build slot $build_slot"
-          podman build --pull --layers=false ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
+          scripts/ci/build-image.sh "${{ matrix.caches }}" --pull ${PROVIDER:+--build-arg "PROVIDER=${PROVIDER}"} \
             --tag "ku-${{ matrix.id }}:scan" --file "${{ matrix.file }}" "${{ matrix.context }}" 9>&-
-          podman save --output "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" "ku-${{ matrix.id }}:scan" 9>&-
+          podman save --output "${PODMAN_STORE}/image.tar" "ku-${{ matrix.id }}:scan" 9>&-
 
       # Every leg shares /cache/trivy. The vulnerability DB is opened
       # read-only, but its refresh and Trivy's BoltDB scan cache take
@@ -118,4 +121,8 @@ jobs:
           mkdir -p "${TRIVY_CACHE_DIR}"
           flock "${TRIVY_CACHE_DIR}/db.lock" trivy image --download-db-only
           trivy image --cache-backend memory --skip-db-update \
-            --input "${RUNNER_TEMP:-/tmp}/ku-${{ matrix.id }}.tar" --severity CRITICAL,HIGH --exit-code 1
+            --input "${PODMAN_STORE}/image.tar" --severity CRITICAL,HIGH --exit-code 1
+
+      - name: Remove the podman store
+        if: always()
+        run: scripts/ci/podman-store.sh remove
