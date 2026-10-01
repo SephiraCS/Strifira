@@ -28,6 +28,7 @@ function issue(id: string, identifier: string, title: string, teamId: string, st
 async function mockMyIssuesBoard(page: Page) {
 	const issueRequests: string[] = [];
 	const unhandled: string[] = [];
+	const patches: { status_id?: string }[] = [];
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', (route) => {
 		const requestUrl = new URL(route.request().url());
@@ -35,7 +36,14 @@ async function mockMyIssuesBoard(page: Page) {
 		if (!path.startsWith('/api/')) return route.continue();
 
 		if (path === '/api/auth/me') {
-			return route.fulfill({ json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User' } });
+			return route.fulfill({
+				json: {
+					id: 'u1',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User'
+				}
+			});
 		}
 		if (path === '/api/preferences') {
 			return route.fulfill({
@@ -54,39 +62,107 @@ async function mockMyIssuesBoard(page: Page) {
 			});
 		}
 		if (path === '/api/workspaces') {
-			return route.fulfill({ json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }] });
+			return route.fulfill({
+				json: [{ id: 'w1', name: 'Test Workspace', slug: 'test' }]
+			});
 		}
 		if (path === '/api/workspaces/test') {
-			return route.fulfill({ json: { id: 'w1', name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
+			return route.fulfill({
+				json: {
+					id: 'w1',
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
 		}
 		if (path === '/api/workspaces/test/teams') {
 			return route.fulfill({
 				json: [
-					{ id: teamA, name: 'Alpha', key: 'ALP', color: '#6366f1', icon: 'layers' },
-					{ id: teamB, name: 'Beta', key: 'BET', color: '#22c55e', icon: 'layers' }
+					{
+						id: teamA,
+						name: 'Alpha',
+						key: 'ALP',
+						color: '#6366f1',
+						icon: 'layers'
+					},
+					{
+						id: teamB,
+						name: 'Beta',
+						key: 'BET',
+						color: '#22c55e',
+						icon: 'layers'
+					}
 				]
 			});
 		}
 		if (path === `/api/workspaces/test/teams/${teamA}/statuses`) {
 			return route.fulfill({
 				json: [
-					{ id: statusA1, team_id: teamA, name: 'Todo', slug: 'todo', category: 'unstarted', color: null, position: 0, is_default: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' },
-					{ id: statusA2, team_id: teamA, name: 'Done', slug: 'done', category: 'completed', color: null, position: 1, is_default: false, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+					{
+						id: statusA1,
+						team_id: teamA,
+						name: 'Todo',
+						slug: 'todo',
+						category: 'unstarted',
+						color: null,
+						position: 0,
+						is_default: true,
+						created_at: '2026-01-01T00:00:00Z',
+						updated_at: '2026-01-01T00:00:00Z'
+					},
+					{
+						id: statusA2,
+						team_id: teamA,
+						name: 'Done',
+						slug: 'done',
+						category: 'completed',
+						color: null,
+						position: 1,
+						is_default: false,
+						created_at: '2026-01-01T00:00:00Z',
+						updated_at: '2026-01-01T00:00:00Z'
+					}
 				]
 			});
 		}
 		if (path === `/api/workspaces/test/teams/${teamB}/statuses`) {
 			return route.fulfill({
 				json: [
-					{ id: statusB1, team_id: teamB, name: 'In Progress', slug: 'in_progress', category: 'started', color: null, position: 0, is_default: true, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+					{
+						id: statusB1,
+						team_id: teamB,
+						name: 'In Progress',
+						slug: 'in_progress',
+						category: 'started',
+						color: null,
+						position: 0,
+						is_default: true,
+						created_at: '2026-01-01T00:00:00Z',
+						updated_at: '2026-01-01T00:00:00Z'
+					}
 				]
 			});
 		}
-		if (['/api/workspaces/test/projects', '/api/workspaces/test/labels', '/api/workspaces/test/members', '/api/workspaces/test/views'].includes(path)) {
+		if (
+			[
+				'/api/workspaces/test/projects',
+				'/api/workspaces/test/labels',
+				'/api/workspaces/test/members',
+				'/api/workspaces/test/views'
+			].includes(path)
+		) {
 			return route.fulfill({ json: [] });
 		}
 		if (path === '/api/notifications') {
 			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
+		}
+		if (/^\/api\/workspaces\/test\/issues\/[^/]+$/.test(path) && route.request().method() === 'PATCH') {
+			patches.push(JSON.parse(route.request().postData() ?? '{}'));
+			return route.fulfill({
+				status: 400,
+				json: { error: { message: 'Unexpected issue update' } }
+			});
 		}
 		if (path === '/api/workspaces/test/issues') {
 			issueRequests.push(`${requestUrl.searchParams.get('page') ?? '1'}`);
@@ -117,15 +193,23 @@ async function mockMyIssuesBoard(page: Page) {
 		}
 
 		unhandled.push(path);
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${path}` } }
+		});
 	});
-	return { issueRequests, unhandled };
+	return { issueRequests, unhandled, patches };
+}
+
+async function openMyIssuesBoard(page: Page) {
+	await page.goto('/test/my-issues');
+	await page.locator('[data-issue-drop-zone]').first().waitFor();
 }
 
 test('my issues board renders one section per team and never hides orphaned statuses', async ({ page }) => {
 	const { unhandled, issueRequests } = await mockMyIssuesBoard(page);
 
-	await page.goto('/test/my-issues');
+	await openMyIssuesBoard(page);
 
 	// One board section per team, each issue under its own team's section.
 	const alphaSection = page.locator('section').filter({ hasText: 'Alpha todo issue' });
@@ -149,7 +233,7 @@ test('my issues board renders one section per team and never hides orphaned stat
 test('app.refresh bursts coalesce into one background reload and never blank the board', async ({ page }) => {
 	const { issueRequests } = await mockMyIssuesBoard(page);
 
-	await page.goto('/test/my-issues');
+	await openMyIssuesBoard(page);
 	await expect(page.getByText('Alpha todo issue')).toBeVisible();
 
 	const requestsBefore = issueRequests.length;
@@ -181,3 +265,37 @@ test('app.refresh bursts coalesce into one background reload and never blank the
 	await expect.poll(() => issueRequests.length - requestsBefore, { timeout: 3_000 }).toBe(2);
 	await expect(page.getByText('Alpha todo issue')).toBeVisible();
 });
+
+for (const foreign of [false, true]) {
+	test(`issue release on ${foreign ? 'another team board' : 'the unmapped bucket'} cancels without an illegal status save`, async ({
+		page
+	}) => {
+		await page.setViewportSize({ width: 1920, height: 1600 });
+		const { patches, unhandled } = await mockMyIssuesBoard(page);
+		await openMyIssuesBoard(page);
+		const source = page.locator('button', { hasText: 'Alpha todo issue' }).first();
+		const target = page
+			.locator('button', {
+				hasText: foreign ? 'Beta in-progress issue' : 'Orphaned status issue'
+			})
+			.first();
+		await expect(target).toBeVisible();
+		const from = await source.boundingBox();
+		const to = await target.boundingBox();
+		if (!from || !to) throw new Error('Missing source or destination board card');
+		const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await page.mouse.move(start.x + 8, start.y);
+		await page.waitForTimeout(130);
+		await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2);
+		await page.waitForTimeout(35);
+		await page.mouse.up();
+		await expect(page.locator('#dnd-action-dragged-el')).toHaveCount(0);
+		await expect(page.locator('[data-issue-card="i1"]')).toHaveCount(1);
+		await expect(page.locator(`div[data-issue-drop-zone="${statusA1}"]`)).toContainText('Alpha todo issue');
+		await expect(page.locator('[data-issue-shadow="true"]')).toHaveCount(0);
+		expect(patches).toEqual([]);
+		expect(unhandled).toEqual([]);
+	});
+}

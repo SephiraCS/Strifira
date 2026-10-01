@@ -33,10 +33,10 @@ fi
 
 refuse_production() {
     case "${1:-}" in
-    [Pp][Rr][Oo][Dd]|[Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn])
+    [Pp][Rr][Oo][Dd] | [Pp][Rr][Oo][Dd][Uu][Cc][Tt][Ii][Oo][Nn])
         echo "FATAL: Refusing to reset the production database!" >&2
         exit 1
-    ;;
+        ;;
     esac
 }
 

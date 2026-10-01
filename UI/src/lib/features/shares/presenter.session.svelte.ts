@@ -1,5 +1,5 @@
 import { browser } from '$app/environment';
-import { createShare, endShare } from '$lib/api/shares';
+import { createShare, endShare, getShare } from '$lib/api/shares';
 import type { ScreenShare } from '$lib/types/share';
 import { appToast } from '$lib/features/toast/toast';
 import { m } from '$lib/paraglide/messages.js';
@@ -54,7 +54,12 @@ class PresenterSession {
 	private ended = false;
 	private endAfterSwitch = false;
 	private slug = '';
+	private currentWorkspaceSlug = '';
+	private presenterToken = '';
+	private pendingCapture: MediaStream | null = null;
+	private generation = 0;
 	private peers = new Map<string, RTCPeerConnection>();
+	private peerNegotiations = new Map<string, string>();
 	private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
 	private wired = false;
 
@@ -67,6 +72,22 @@ class PresenterSession {
 		return this.share !== null && this.live && !this.ended;
 	}
 
+	/** Route ownership changes even while the workspace socket is unavailable. */
+	setWorkspace(workspaceSlug: string): void {
+		if (workspaceSlug === this.currentWorkspaceSlug) return;
+		this.currentWorkspaceSlug = workspaceSlug;
+		this.generation++;
+		this.starting = false;
+		this.pendingCapture?.getTracks().forEach((track) => track.stop());
+		this.pendingCapture = null;
+		if (this.share && workspaceSlug !== this.slug) {
+			void this.stop();
+			// Release capture immediately; the old workspace's end request
+			// must not block starting a share in the newly selected workspace.
+			this.teardown();
+		}
+	}
+
 	/**
 	 * Capture-first start, inside the click's user-activation window
 	 * (Chrome denies getDisplayMedia once the gesture has expired behind
@@ -74,35 +95,49 @@ class PresenterSession {
 	 * the share row created.
 	 */
 	async start(workspaceSlug: string): Promise<void> {
-		if (this.starting || this.active) return;
+		if (this.starting || this.share || this.currentWorkspaceSlug !== workspaceSlug) return;
+		const generation = ++this.generation;
+		const current = () => generation === this.generation && this.currentWorkspaceSlug === workspaceSlug;
 		this.starting = true;
-		let stream: MediaStream;
+		let stream: MediaStream | null = null;
 		try {
-			stream = await navigator.mediaDevices.getDisplayMedia(CAPTURE_OPTIONS);
-		} catch (err) {
-			appToast.apiError(err, m['shares.capture_failed']());
-			return;
-		} finally {
-			this.starting = false;
-		}
-		try {
+			try {
+				stream = await navigator.mediaDevices.getDisplayMedia(CAPTURE_OPTIONS);
+			} catch (err) {
+				if (current()) appToast.apiError(err, m['shares.capture_failed']());
+				return;
+			}
+			if (!current()) {
+				stream.getTracks().forEach((track) => track.stop());
+				return;
+			}
+			this.pendingCapture = stream;
 			const joined = await createShare(workspaceSlug, {});
+			if (!current()) {
+				stream.getTracks().forEach((track) => track.stop());
+				await endShare(workspaceSlug, joined.share.id, joined.presenter_token);
+				return;
+			}
 			this.slug = workspaceSlug;
+			this.presenterToken = joined.presenter_token;
 			this.ended = false;
 			this.stopping = false;
 			this.share = joined.share;
 			this.stream = stream;
 			this.attachStream(stream);
-			// The browser ends the captured track itself when the user hits
-			// the native "Stop sharing" bar — treat that exactly like
-			// pressing our Stop button.
-			stream.getVideoTracks()[0]?.addEventListener('ended', () => this.handleCaptureEnded());
-			announceSharePresence(joined.share.id, 'presenter', 'join');
+			const captured = stream;
+			stream.getVideoTracks()[0]?.addEventListener('ended', () => this.handleCaptureEnded(captured));
+			announceSharePresence(this.slug, joined.share.id, 'presenter', 'join', this.presenterToken);
 			this.live = true;
 			void sharesState.reload();
 		} catch (err) {
-			stream.getTracks().forEach((t) => t.stop());
-			appToast.apiError(err, m['shares.start_failed']());
+			stream?.getTracks().forEach((t) => t.stop());
+			if (current()) appToast.apiError(err, m['shares.start_failed']());
+		} finally {
+			if (current()) {
+				this.pendingCapture = null;
+				this.starting = false;
+			}
 		}
 	}
 
@@ -111,12 +146,13 @@ class PresenterSession {
 		if (this.stopping || !this.share) return;
 		this.stopping = true;
 		const share = this.share;
+		const generation = this.generation;
 		try {
-			await endShare(this.slug, share.id);
+			await endShare(this.slug, share.id, this.presenterToken);
 		} catch {
 			// Server-side end failed; lazy GC closes the row.
 		}
-		this.teardown();
+		if (generation === this.generation) this.teardown();
 	}
 
 	/** Re-pick the captured screen/window/tab while staying live. */
@@ -125,38 +161,44 @@ class PresenterSession {
 		this.switching = true;
 		this.endAfterSwitch = false;
 		const sourceStream = this.stream;
+		const generation = this.generation;
 		try {
 			const next = await navigator.mediaDevices.getDisplayMedia(CAPTURE_OPTIONS);
+			if (generation !== this.generation || this.stopping || this.ended || this.stream !== sourceStream) {
+				next.getTracks().forEach((track) => track.stop());
+				return;
+			}
 			const nextVideo = next.getVideoTracks()[0];
 			if (nextVideo) {
 				nextVideo.contentHint = this.qualityPreference === 'sharp' ? 'detail' : 'motion';
-				nextVideo.addEventListener('ended', () => this.handleCaptureEnded());
+				nextVideo.addEventListener('ended', () => this.handleCaptureEnded(next));
 			}
 			// Swap the track on every live peer; renegotiation is not needed
 			// for a same-kind replaceTrack. replaceTrack can take a long time
 			// to settle (observed tens of seconds on a Firefox peer) — the
 			// switch must not block on it.
-			const senders = [...this.peers.values()].flatMap((pc) => pc.getSenders());
-			for (const sender of senders) {
-				if (sender.track?.kind === 'video' && nextVideo) void sender.replaceTrack(nextVideo).catch(() => {});
-				if (sender.track?.kind === 'audio') {
-					const nextAudio = next.getAudioTracks()[0];
-					if (sender.track || nextAudio) void sender.replaceTrack(nextAudio ?? null).catch(() => {});
+			for (const pc of this.peers.values()) {
+				for (const transceiver of pc.getTransceivers()) {
+					const kind = transceiver.sender.track?.kind ?? transceiver.receiver.track.kind;
+					const track = kind === 'video' ? nextVideo : next.getAudioTracks()[0];
+					void transceiver.sender.replaceTrack(track ?? null).catch(() => {});
 				}
 			}
 			// Retire the previous capture; the new one feeds any mounted
 			// preview (it rebinds through the reactive stream state).
-			sourceStream.getTracks().forEach((t) => t.stop());
 			this.stream = next;
+			this.endAfterSwitch = false;
+			sourceStream.getTracks().forEach((t) => t.stop());
 		} catch {
-			// Picker cancelled or capture denied — nothing is being shared
-			// anymore; end the share cleanly.
-			await this.stop();
+			// Cancelling the picker leaves the existing capture untouched.
+			// If that source ended while the picker was open, finally stops it.
 		} finally {
-			this.switching = false;
-			if (this.endAfterSwitch && !this.stopping && !this.ended) {
-				this.endAfterSwitch = false;
-				void this.stop();
+			if (generation === this.generation) {
+				this.switching = false;
+				if (this.endAfterSwitch && !this.stopping && !this.ended) {
+					this.endAfterSwitch = false;
+					void this.stop();
+				}
 			}
 		}
 	}
@@ -186,25 +228,36 @@ class PresenterSession {
 		onShareSignal((event) => {
 			if (!this.share || this.ended) return;
 			if (event.share_id !== this.share.id) return;
-			if (event.from) void this.handleViewerSignal(event.from, event.data);
+			if (event.from_peer && event.negotiation_id)
+				void this.handleViewerSignal(event.from_peer, event.negotiation_id, event.data);
 		});
 
 		onSharePresence((event) => {
 			if (!this.share || event.share_id !== this.share.id) return;
 			this.viewerCount = event.viewers;
+			for (const [peerId, pc] of this.peers) {
+				if (!event.viewer_peers.includes(peerId)) {
+					this.peers.delete(peerId);
+					this.peerNegotiations.delete(peerId);
+					this.pendingCandidates.delete(peerId);
+					pc.close();
+				}
+			}
 		});
 
-		onWebSocketReconnected(() => {
-			if (!this.share || this.ended) return;
-			// Presence is per-connection: re-announce, then reconcile with
-			// the server's view in case the share was ended (GC, admin)
-			// while the socket was down.
-			announceSharePresence(this.share.id, 'presenter', 'join');
-			void (async () => {
-				await sharesState.load(this.slug);
-				const stillActive = sharesState.active.some((s) => s.id === this.share?.id);
-				if (!stillActive) this.teardown();
-			})();
+		onWebSocketReconnected((workspaceSlug) => {
+			if (!this.share || this.ended || workspaceSlug !== this.currentWorkspaceSlug || workspaceSlug !== this.slug)
+				return;
+			const shareId = this.share.id;
+			const generation = this.generation;
+			announceSharePresence(this.slug, shareId, 'presenter', 'join', this.presenterToken);
+			void getShare(this.slug, shareId)
+				.then((share) => {
+					if (generation === this.generation && share.status !== 'active') this.teardown();
+				})
+				.catch(() => {
+					// A transient REST failure must not release a working capture.
+				});
 		});
 
 		// The server ended the share (our Stop, an admin force-end, or the
@@ -229,8 +282,7 @@ class PresenterSession {
 			if (sender.track?.kind !== 'video') continue;
 			try {
 				const params = sender.getParameters();
-				params.degradationPreference =
-					this.qualityPreference === 'sharp' ? 'maintain-resolution' : 'balanced';
+				params.degradationPreference = this.qualityPreference === 'sharp' ? 'maintain-resolution' : 'balanced';
 				await sender.setParameters(params);
 			} catch {
 				// Browser without degradationPreference support: contentHint
@@ -239,7 +291,8 @@ class PresenterSession {
 		}
 	}
 
-	private handleCaptureEnded(): void {
+	private handleCaptureEnded(source: MediaStream): void {
+		if (source !== this.stream) return;
 		// Track endings we caused ourselves (Stop, or swapping the surface)
 		// already run their own teardown. `stopping` is set synchronously so
 		// its own stopped track cannot re-enter.
@@ -270,11 +323,12 @@ class PresenterSession {
 		}
 	}
 
-	private createPresenterPeer(viewerId: string): RTCPeerConnection {
+	private createPresenterPeer(viewerId: string, negotiationId: string): RTCPeerConnection {
 		const shareId = this.share!.id;
 		const sourceStream = this.stream;
 		const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 		this.peers.set(viewerId, pc);
+		this.peerNegotiations.set(viewerId, negotiationId);
 		if (sourceStream) {
 			this.applyContentHints(sourceStream);
 			for (const track of sourceStream.getTracks()) {
@@ -283,12 +337,17 @@ class PresenterSession {
 			void this.applySenderQuality(pc);
 		}
 		pc.onicecandidate = (e) => {
-			if (e.candidate) sendShareSignal(shareId, viewerId, { type: 'candidate', candidate: e.candidate.toJSON() });
+			if (e.candidate)
+				sendShareSignal(this.slug, shareId, { peerId: viewerId }, negotiationId, {
+					type: 'candidate',
+					candidate: e.candidate.toJSON()
+				});
 		};
 		pc.onconnectionstatechange = () => {
 			if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
 				if (this.peers.get(viewerId) === pc) {
 					this.peers.delete(viewerId);
+					this.peerNegotiations.delete(viewerId);
 					this.pendingCandidates.delete(viewerId);
 					pc.close();
 				}
@@ -297,35 +356,51 @@ class PresenterSession {
 		return pc;
 	}
 
-	private async handleViewerSignal(viewerId: string, data: SignalData): Promise<void> {
-		if (!this.share) return;
+	private async handleViewerSignal(viewerId: string, negotiationId: string, data: SignalData): Promise<void> {
+		if (!this.share || this.stopping || this.ended) return;
 		const shareId = this.share.id;
 		if (data.type === 'offer') {
-			// A viewer (re)negotiating: replace any dead connection for it.
-			// A still-connected peer ignores the stale duplicate offer; a
-			// reconnecting viewer (or one recovering a failed connection
-			// with an ICE restart) lands on a fresh peer.
 			const existing = this.peers.get(viewerId);
+			if (existing && this.peerNegotiations.get(viewerId) === negotiationId) return;
+			this.pendingCandidates.delete(viewerId);
 			if (existing) {
-				if (existing.connectionState === 'connected' || existing.signalingState === 'have-remote-offer') {
-					return; // stale duplicate offer
-				}
 				this.peers.delete(viewerId);
 				existing.close();
 			}
-			const pc = this.createPresenterPeer(viewerId);
+			const pc = this.createPresenterPeer(viewerId, negotiationId);
+			const current = () =>
+				this.peers.get(viewerId) === pc && this.share?.id === shareId && !this.ended && !this.stopping;
 			try {
 				await pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
+				if (!current()) return;
+				// Configure the audio section actually associated with the
+				// viewer's offer. Reserve sending even for a silent capture so
+				// a later surface switch can add audio without renegotiation.
+				for (const transceiver of pc.getTransceivers()) {
+					if (transceiver.mid === null || transceiver.receiver.track.kind !== 'audio') continue;
+					transceiver.direction = 'sendonly';
+					const audio = this.stream?.getAudioTracks()[0] ?? null;
+					if (transceiver.sender.track !== audio) await transceiver.sender.replaceTrack(audio);
+					if (!current()) return;
+				}
 				const answer = await pc.createAnswer();
+				if (!current()) return;
 				await pc.setLocalDescription(answer);
-				sendShareSignal(shareId, viewerId, { type: 'answer', sdp: pc.localDescription!.sdp! });
+				if (!current()) return;
+				sendShareSignal(this.slug, shareId, { peerId: viewerId }, negotiationId, {
+					type: 'answer',
+					sdp: pc.localDescription!.sdp!
+				});
 				await this.flushCandidates(viewerId, pc);
 			} catch {
-				this.peers.delete(viewerId);
-				this.pendingCandidates.delete(viewerId);
+				if (this.peers.get(viewerId) === pc) {
+					this.peers.delete(viewerId);
+					this.peerNegotiations.delete(viewerId);
+					this.pendingCandidates.delete(viewerId);
+				}
 				pc.close();
 			}
-		} else if (data.type === 'candidate') {
+		} else if (data.type === 'candidate' && this.peerNegotiations.get(viewerId) === negotiationId) {
 			const pc = this.peers.get(viewerId);
 			if (pc) this.queueCandidate(viewerId, data.candidate, pc);
 		}
@@ -334,16 +409,21 @@ class PresenterSession {
 	private teardown(): void {
 		if (this.ended) return;
 		this.ended = true;
-		if (this.share) announceSharePresence(this.share.id, 'presenter', 'leave');
+		this.generation++;
+		if (this.share) announceSharePresence(this.slug, this.share.id, 'presenter', 'leave', this.presenterToken);
 		for (const pc of this.peers.values()) pc.close();
 		this.peers.clear();
+		this.peerNegotiations.clear();
 		this.pendingCandidates.clear();
 		// Release the browser's capture indicator for any still-live source
 		// tracks (pre-captured or switched).
 		this.stream?.getTracks().forEach((t) => t.stop());
 		this.share = null;
 		this.stream = null;
+		this.presenterToken = '';
 		this.live = false;
+		this.switching = false;
+		this.endAfterSwitch = false;
 		this.viewerCount = 0;
 		this.stopping = false;
 		void sharesState.reload();

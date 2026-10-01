@@ -15,8 +15,44 @@ func TestBuiltinProvidersBuildArgvWithoutShell(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, invocation.Argv)
 		require.NotContains(t, invocation.Argv, "sh")
-		require.NotContains(t, invocation.Argv, "-c")
 		require.Contains(t, invocation.Image, ":")
+	}
+}
+
+func TestAutonomousProvidersHaveExplicitHeadlessPolicy(t *testing.T) {
+	claude, err := NewClaudeCodeProvider("").BuildInvocation(RunInput{Mode: ModeAutonomous, Prompt: "fix"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"claude", "--print", "--output-format", "stream-json", "--verbose", "--permission-mode", "dontAsk", "--allowedTools", "Bash,Read,Grep,Glob,Edit,Write", "-p", "fix"}, claude.Argv)
+	codex, err := NewCodexProvider("").BuildInvocation(RunInput{Mode: ModeAutonomous, Prompt: "fix"})
+	require.NoError(t, err)
+	require.Equal(t, []string{"codex", "exec", "--json", "--sandbox", "danger-full-access", "-c", `approval_policy="never"`, "fix"}, codex.Argv)
+}
+
+func TestClaudeNormalizesFinalResultAndTerminalFailure(t *testing.T) {
+	p := NewClaudeCodeProvider("")
+	result := p.ParseResult(`{"type":"assistant","message":{"content":[{"type":"text","text":"intermediate"}]}}`+"\n"+`{"type":"result","subtype":"success","is_error":false,"result":"Changed implementation and verified it."}`, "", 0)
+	require.Equal(t, "succeeded", result.Status)
+	require.Equal(t, "Changed implementation and verified it.", result.Summary)
+	result = p.ParseResult(`{"type":"result","subtype":"error_max_turns","is_error":true,"errors":["maximum turns reached"]}`, "", 0)
+	require.Equal(t, "failed", result.Status)
+	require.Equal(t, "maximum turns reached", result.Summary)
+}
+
+func TestCodexNormalizesFinalResultAndTerminalFailure(t *testing.T) {
+	p := NewCodexProvider("")
+	result := p.ParseResult(`{"type":"error","message":"temporary retry"}`+"\n"+`{"type":"item.completed","item":{"type":"agent_message","text":"Implemented the requested fix."}}`+"\n"+`{"type":"turn.completed","usage":{"input_tokens":42}}`, "", 0)
+	require.Equal(t, "succeeded", result.Status)
+	require.Equal(t, "Implemented the requested fix.", result.Summary)
+	result = p.ParseResult(`{"type":"turn.failed","error":{"message":"authentication failed"}}`, "", 0)
+	require.Equal(t, "failed", result.Status)
+	require.Equal(t, "authentication failed", result.Summary)
+}
+
+func TestProvidersFailClosedWhenTerminalOutputIsMissing(t *testing.T) {
+	for _, p := range []Provider{NewClaudeCodeProvider(""), NewCodexProvider("")} {
+		result := p.ParseResult(`{"type":"assistant"}`, "", 0)
+		require.Equal(t, "failed", result.Status)
+		require.NotEmpty(t, result.RiskNotes)
 	}
 }
 
@@ -124,6 +160,13 @@ func TestOpenCodeParseResultUsesCurrentJSONFormat(t *testing.T) {
 	require.Equal(t, "failed", result.Status)
 	require.Equal(t, "Final summary from OpenCode", result.Summary)
 	require.Contains(t, strings.Join(result.RiskNotes, " "), "Check Go compilation")
+}
+
+func TestOpenCodeProviderErrorOverridesZeroExit(t *testing.T) {
+	result := NewOpenCodeProvider("").ParseResult(`{"type":"error","error":{"name":"ProviderModelNotFoundError","data":{"message":"configured model is unavailable"}}}`, "", 0)
+	require.Equal(t, "failed", result.Status)
+	require.Equal(t, "configured model is unavailable", result.Summary)
+	require.Contains(t, result.RiskNotes[0], "OpenCode execution failed")
 }
 
 func TestOpenCodeParseResultToolFailureIsError(t *testing.T) {

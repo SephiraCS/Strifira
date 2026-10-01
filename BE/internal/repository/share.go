@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	"github.com/ku/ku-backend/internal/domain"
 )
@@ -20,9 +21,15 @@ func NewScreenShareRepository(db *sqlx.DB) *ScreenShareRepository {
 
 var _ ScreenShareRepo = (*ScreenShareRepository)(nil)
 
+var ErrScreenShareAlreadyActive = errors.New("presenter already has an active share")
+
 func (r *ScreenShareRepository) Create(ctx context.Context, share *domain.ScreenShare) error {
-	query := `INSERT INTO screen_shares (id, workspace_id, started_by, status) VALUES ($1, $2, $3, $4) RETURNING created_at`
-	return r.db.QueryRowContext(ctx, query, share.ID, share.WorkspaceID, share.StartedBy, share.Status).Scan(&share.CreatedAt)
+	query := `INSERT INTO screen_shares (id, workspace_id, started_by, status, presenter_token) VALUES ($1, $2, $3, $4, $5) RETURNING created_at`
+	err := r.db.QueryRowContext(ctx, query, share.ID, share.WorkspaceID, share.StartedBy, share.Status, share.PresenterToken).Scan(&share.CreatedAt)
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" && pgErr.ConstraintName == "idx_screen_shares_active_presenter" {
+		return ErrScreenShareAlreadyActive
+	}
+	return err
 }
 
 func (r *ScreenShareRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.ScreenShare, error) {

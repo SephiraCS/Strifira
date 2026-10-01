@@ -10,24 +10,44 @@
 export type ShareRole = 'presenter' | 'viewer';
 
 /** Outgoing message shape accepted by the workspace layout's `ws:send`. */
-function wsSend(type: string, payload: unknown): void {
-	window.dispatchEvent(new CustomEvent('ws:send', { detail: { type, payload } }));
+function wsSend(workspaceSlug: string, type: string, payload: unknown): void {
+	window.dispatchEvent(new CustomEvent('ws:send', { detail: { workspaceSlug, type, payload } }));
 }
 
 /** Announce (or retract) this tab's role in a share. */
-export function announceSharePresence(shareId: string, role: ShareRole, action: 'join' | 'leave'): void {
-	wsSend('share.presence', { share_id: shareId, role, action });
+export function announceSharePresence(
+	workspaceSlug: string,
+	shareId: string,
+	role: ShareRole,
+	action: 'join' | 'leave',
+	presenterToken?: string
+): void {
+	wsSend(workspaceSlug, 'share.presence', { share_id: shareId, role, action, presenter_token: presenterToken });
 }
 
-/** Send an opaque SDP/ICE message to one recipient user. */
-export function sendShareSignal(shareId: string, to: string, data: unknown): void {
-	wsSend('share.signal', { share_id: shareId, to, data });
+/** Initial offers address the presenter; replies target one authenticated tab. */
+export function sendShareSignal(
+	workspaceSlug: string,
+	shareId: string,
+	recipient: { userId?: string; peerId?: string },
+	negotiationId: string,
+	data: SignalData
+): void {
+	wsSend(workspaceSlug, 'share.signal', {
+		share_id: shareId,
+		to: recipient.userId,
+		to_peer: recipient.peerId,
+		negotiation_id: negotiationId,
+		data
+	});
 }
 
 /** A relayed signaling message (server stamps the authenticated sender). */
 export interface ShareSignalEvent {
 	share_id: string;
 	from: string;
+	from_peer: string;
+	negotiation_id: string;
 	data: SignalData;
 }
 
@@ -41,6 +61,8 @@ export interface SharePresenceEvent {
 	share_id: string;
 	presenter_online: boolean;
 	viewers: number;
+	presenter_peer: string;
+	viewer_peers: string[];
 }
 
 export function onShareSignal(handler: (event: ShareSignalEvent) => void): () => void {
@@ -59,8 +81,8 @@ export function onSharePresence(handler: (event: SharePresenceEvent) => void): (
  * Subscribe to the layout's WebSocket reconnects: presence lives on the
  * server per-connection, so a reconnect must re-announce and re-negotiate.
  */
-export function onWebSocketReconnected(handler: () => void): () => void {
-	const listener = () => handler();
+export function onWebSocketReconnected(handler: (workspaceSlug: string) => void): () => void {
+	const listener = (e: Event) => handler((e as CustomEvent<{ workspaceSlug: string }>).detail.workspaceSlug);
 	window.addEventListener('ws:reconnected', listener);
 	return () => window.removeEventListener('ws:reconnected', listener);
 }
@@ -69,8 +91,8 @@ export function onWebSocketReconnected(handler: () => void): () => void {
  * Subscribe to WebSocket drops: established P2P media keeps flowing, but
  * signaling and presence are down until the reconnect event fires.
  */
-export function onWebSocketDisconnected(handler: () => void): () => void {
-	const listener = () => handler();
+export function onWebSocketDisconnected(handler: (workspaceSlug: string) => void): () => void {
+	const listener = (e: Event) => handler((e as CustomEvent<{ workspaceSlug: string }>).detail.workspaceSlug);
 	window.addEventListener('ws:disconnected', listener);
 	return () => window.removeEventListener('ws:disconnected', listener);
 }

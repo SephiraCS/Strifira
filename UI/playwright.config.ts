@@ -13,13 +13,14 @@ export default defineConfig({
 	workers: process.env.CI ? Math.min(2, os.availableParallelism()) : undefined,
 	reporter: process.env.CI ? [['dot'], ['html', { open: 'never' }]] : 'list',
 	webServer: {
-		command: 'npm run build && npm run preview -- --port 4174',
+		command: 'npm run build && node scripts/serve-e2e-build.mjs 4174',
 		port: 4174,
 		reuseExistingServer: false,
 		timeout: 480_000
 	},
 	use: {
 		baseURL: 'http://localhost:4174',
+		// Preserve full diagnostics on CI retries without tracing every passing test.
 		trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
 		screenshot: 'only-on-failure',
 		video: process.env.CI ? 'on-first-retry' : 'retain-on-failure'

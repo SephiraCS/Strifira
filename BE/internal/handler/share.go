@@ -16,8 +16,8 @@ import (
 )
 
 type ScreenShareHandler struct {
-	shareSvc  *service.ScreenShareService
-	userRepo  repository.UserRepo
+	shareSvc *service.ScreenShareService
+	userRepo repository.UserRepo
 }
 
 func NewScreenShareHandler(shareSvc *service.ScreenShareService, userRepo repository.UserRepo) *ScreenShareHandler {
@@ -25,7 +25,8 @@ func NewScreenShareHandler(shareSvc *service.ScreenShareService, userRepo reposi
 }
 
 type screenShareResponse struct {
-	Share dto.ScreenShareResponse `json:"share"`
+	Share          dto.ScreenShareResponse `json:"share"`
+	PresenterToken string                  `json:"presenter_token"`
 }
 
 func (h *ScreenShareHandler) List(c echo.Context) error {
@@ -66,7 +67,8 @@ func (h *ScreenShareHandler) Create(c echo.Context) error {
 	}
 
 	return response.Success(c, http.StatusCreated, screenShareResponse{
-		Share: decorated,
+		Share:          decorated,
+		PresenterToken: share.PresenterToken.String(),
 	})
 }
 
@@ -80,7 +82,8 @@ func (h *ScreenShareHandler) Get(c echo.Context) error {
 	if err != nil {
 		return response.InternalError(c)
 	}
-	if share == nil {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if share == nil || share.WorkspaceID != ws.ID {
 		return response.NotFound(c, "Screen share")
 	}
 
@@ -100,9 +103,18 @@ func (h *ScreenShareHandler) End(c echo.Context) error {
 
 	userID := middleware.GetUserID(c)
 	role := middleware.GetWorkspaceRole(c)
-	force := role == domain.RoleOwner || role == domain.RoleAdmin
+	var req dto.EndScreenShareRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	force := req.Force && (role == domain.RoleOwner || role == domain.RoleAdmin)
+	if req.Force && !force {
+		return response.Forbidden(c)
+	}
+	token, _ := uuid.Parse(req.PresenterToken)
+	ws := c.Get("workspace").(*domain.Workspace)
 
-	if _, err := h.shareSvc.End(c.Request().Context(), id, userID, force); err != nil {
+	if _, err := h.shareSvc.End(c.Request().Context(), ws.ID, id, userID, token, force); err != nil {
 		return h.mapError(c, err)
 	}
 
@@ -137,6 +149,8 @@ func (h *ScreenShareHandler) mapError(c echo.Context, err error) error {
 		return response.NotFound(c, "Screen share")
 	case errors.Is(err, service.ErrScreenShareForbidden):
 		return response.Forbidden(c)
+	case errors.Is(err, service.ErrScreenShareAlreadyActive):
+		return response.Error(c, http.StatusConflict, "SHARE_ALREADY_ACTIVE", "You are already sharing in another tab. Stop that share before starting a new one.")
 	default:
 		return response.InternalError(c)
 	}

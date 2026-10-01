@@ -4,9 +4,15 @@ function createRequestDelay() {
 	let markStarted!: () => void;
 	let release!: () => void;
 	let markCompleted!: () => void;
-	const started = new Promise<void>((resolve) => { markStarted = resolve; });
-	const released = new Promise<void>((resolve) => { release = resolve; });
-	const completed = new Promise<void>((resolve) => { markCompleted = resolve; });
+	const started = new Promise<void>((resolve) => {
+		markStarted = resolve;
+	});
+	const released = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const completed = new Promise<void>((resolve) => {
+		markCompleted = resolve;
+	});
 	return { started, markStarted, released, release, completed, markCompleted };
 }
 
@@ -56,11 +62,18 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	const firstRunId = '00000000-0000-0000-0000-000000000052';
 	const secondRunId = '00000000-0000-0000-0000-000000000058';
 	const checkout = {
-		id: '00000000-0000-0000-0000-000000000053', workspace_id: machine.workspace_id,
-		machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000054',
-		forgejo_repo_id: '00000000-0000-0000-0000-000000000055', repository_full_name: 'ku/ku',
-		base_branch: 'main', working_branch: 'ku/runtime-smoke', workspace_path: '/workspace/tasks/runtime-smoke',
-		status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
+		id: '00000000-0000-0000-0000-000000000053',
+		workspace_id: machine.workspace_id,
+		machine_id: machineId,
+		issue_id: '00000000-0000-0000-0000-000000000054',
+		forgejo_repo_id: '00000000-0000-0000-0000-000000000055',
+		repository_full_name: 'ku/ku',
+		base_branch: 'main',
+		working_branch: 'ku/runtime-smoke',
+		workspace_path: '/workspace/tasks/runtime-smoke',
+		status: 'ready',
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z'
 	};
 
 	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
@@ -84,18 +97,31 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		if (path === '/api/preferences') {
 			return route.fulfill({
 				json: {
-					font_size: 'default', pointer_cursors: true, theme_mode: 'dark',
-					light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default',
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
 					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
-					team_workflow_sort_overrides: {}, issues_group_by: 'status'
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
 				}
 			});
 		}
 		if (path === '/api/workspaces') {
-			return route.fulfill({ json: [{ id: machine.workspace_id, name: 'Test Workspace', slug: 'test' }] });
+			return route.fulfill({
+				json: [{ id: machine.workspace_id, name: 'Test Workspace', slug: 'test' }]
+			});
 		}
 		if (path === '/api/workspaces/test') {
-			return route.fulfill({ json: { id: machine.workspace_id, name: 'Test Workspace', slug: 'test' } });
+			return route.fulfill({
+				json: {
+					id: machine.workspace_id,
+					name: 'Test Workspace',
+					slug: 'test'
+				}
+			});
 		}
 		if (
 			path === '/api/workspaces/test/teams' ||
@@ -110,7 +136,9 @@ test('handles machine actions without applying stale poll, route, or trace respo
 			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		}
 		if (path === '/api/workspaces/test/dev-machines') {
-			return route.fulfill({ json: { data: [machine], total_count: 1, page: 1, has_more: false } });
+			return route.fulfill({
+				json: { data: [machine], total_count: 1, page: 1, has_more: false }
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}` && request.method() === 'PATCH') {
 			keepRunningRequests += 1;
@@ -132,37 +160,105 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/services`) {
 			return route.fulfill({
-				json: [{
-					id: '00000000-0000-0000-0000-000000000051', machine_id: machineId,
-					service_type: 'ide', service_key: 'ide', container_name: 'ku-test-ide',
-					image_ref: 'ku/dev-machine-ide:0.1.0', status: 'running', health_status: 'healthy'
-				}]
+				json: [
+					{
+						id: '00000000-0000-0000-0000-000000000051',
+						machine_id: machineId,
+						service_type: 'ide',
+						service_key: 'ide',
+						container_name: 'ku-test-ide',
+						image_ref: 'ku/dev-machine-ide:0.1.0',
+						status: 'running',
+						health_status: 'healthy'
+					}
+				]
 			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/providers`) {
-			return route.fulfill({ json: [{ id: 'opencode', display_name: 'OpenCode', default_image: 'ku/dev-machine-agent-opencode:0.1.0', required_secrets: [], supported_modes: ['autonomous'], custom: false }] });
+			return route.fulfill({
+				json: [
+					{
+						id: 'opencode',
+						display_name: 'OpenCode',
+						default_image: 'ku/dev-machine-agent-opencode:0.1.0',
+						required_secrets: [],
+						supported_modes: ['autonomous'],
+						custom: false
+					}
+				]
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/checkouts`) {
 			return route.fulfill({ json: [checkout] });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/events`) {
-			return route.fulfill({ json: [{ id: 1, workspace_id: machine.workspace_id, machine_id: machineId, source: 'collector', event_type: 'machine_a_event', payload: {}, occurred_at: '2026-07-13T00:00:00Z', created_at: '2026-07-13T00:00:00Z' }] });
+			return route.fulfill({
+				json: [
+					{
+						id: 1,
+						workspace_id: machine.workspace_id,
+						machine_id: machineId,
+						source: 'collector',
+						event_type: 'machine_a_event',
+						payload: {},
+						occurred_at: '2026-07-13T00:00:00Z',
+						created_at: '2026-07-13T00:00:00Z'
+					}
+				]
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/logs`) {
-			return route.fulfill({ json: [{ id: 1, workspace_id: machine.workspace_id, machine_id: machineId, stream: 'system', sequence: 1, content: 'machine A log', truncated: false, created_at: '2026-07-13T00:00:00Z' }] });
+			return route.fulfill({
+				json: [
+					{
+						id: 1,
+						workspace_id: machine.workspace_id,
+						machine_id: machineId,
+						stream: 'system',
+						sequence: 1,
+						content: 'machine A log',
+						truncated: false,
+						created_at: '2026-07-13T00:00:00Z'
+					}
+				]
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`) {
-			return route.fulfill({ json: { data: [{
-				id: firstRunId, machine_id: machineId,
-				workspace_id: machine.workspace_id, provider_id: 'opencode', mode: 'autonomous',
-				status: runCancelled ? 'cancelled' : 'running', prompt: 'Test run', max_runtime_seconds: 600,
-				push_branch: false, open_pull_request: false, created_at: '2026-07-13T00:00:00Z'
-			}, {
-				id: secondRunId, machine_id: machineId,
-				workspace_id: machine.workspace_id, provider_id: 'claude', mode: 'autonomous',
-				status: 'succeeded', prompt: 'Second test run', max_runtime_seconds: 600,
-				push_branch: false, open_pull_request: false, created_at: '2026-07-12T00:00:00Z'
-			}], total_count: 2, page: 1, has_more: false } });
+			return route.fulfill({
+				json: {
+					data: [
+						{
+							id: firstRunId,
+							machine_id: machineId,
+							workspace_id: machine.workspace_id,
+							provider_id: 'opencode',
+							mode: 'autonomous',
+							status: runCancelled ? 'cancelled' : 'running',
+							prompt: 'Test run',
+							max_runtime_seconds: 600,
+							push_branch: false,
+							open_pull_request: false,
+							created_at: '2026-07-13T00:00:00Z'
+						},
+						{
+							id: secondRunId,
+							machine_id: machineId,
+							workspace_id: machine.workspace_id,
+							provider_id: 'claude',
+							mode: 'autonomous',
+							status: 'succeeded',
+							prompt: 'Second test run',
+							max_runtime_seconds: 600,
+							push_branch: false,
+							open_pull_request: false,
+							created_at: '2026-07-12T00:00:00Z'
+						}
+					],
+					total_count: 2,
+					page: 1,
+					has_more: false
+				}
+			});
 		}
 		if (path === `/api/workspaces/test/agent-runs/${firstRunId}/cancel` && request.method() === 'POST') {
 			cancelRequests += 1;
@@ -176,29 +272,77 @@ test('handles machine actions without applying stale poll, route, or trace respo
 				delay.markStarted();
 				await delay.released;
 			}
-			await route.fulfill({ json: {
-				run: { id: firstRunId, machine_id: machineId, workspace_id: machine.workspace_id, provider_id: 'opencode', mode: 'autonomous', status: 'cancelled', prompt: 'Stale first trace prompt', max_runtime_seconds: 600, push_branch: false, open_pull_request: false, created_at: '2026-07-13T00:00:00Z' },
-				steps: [], events: [], logs: [], next_event_id: 0, next_log_id: 0, has_more_events: false, has_more_logs: false
-			} });
+			await route.fulfill({
+				json: {
+					run: {
+						id: firstRunId,
+						machine_id: machineId,
+						workspace_id: machine.workspace_id,
+						provider_id: 'opencode',
+						mode: 'autonomous',
+						status: 'cancelled',
+						prompt: 'Stale first trace prompt',
+						max_runtime_seconds: 600,
+						push_branch: false,
+						open_pull_request: false,
+						created_at: '2026-07-13T00:00:00Z'
+					},
+					steps: [],
+					events: [],
+					logs: [],
+					next_event_id: 0,
+					next_log_id: 0,
+					has_more_events: false,
+					has_more_logs: false
+				}
+			});
 			delay?.markCompleted();
 			return;
 		}
 		if (path === `/api/workspaces/test/agent-runs/${secondRunId}/trace`) {
-			return route.fulfill({ json: {
-				run: { id: secondRunId, machine_id: machineId, workspace_id: machine.workspace_id, provider_id: 'claude', mode: 'autonomous', status: 'succeeded', prompt: 'Current second trace prompt', max_runtime_seconds: 600, push_branch: false, open_pull_request: false, created_at: '2026-07-12T00:00:00Z' },
-				steps: [], events: [], logs: [], next_event_id: 0, next_log_id: 0, has_more_events: false, has_more_logs: false
-			} });
+			return route.fulfill({
+				json: {
+					run: {
+						id: secondRunId,
+						machine_id: machineId,
+						workspace_id: machine.workspace_id,
+						provider_id: 'claude',
+						mode: 'autonomous',
+						status: 'succeeded',
+						prompt: 'Current second trace prompt',
+						max_runtime_seconds: 600,
+						push_branch: false,
+						open_pull_request: false,
+						created_at: '2026-07-12T00:00:00Z'
+					},
+					steps: [],
+					events: [],
+					logs: [],
+					next_event_id: 0,
+					next_log_id: 0,
+					has_more_events: false,
+					has_more_logs: false
+				}
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/resource-usage`) {
 			return route.fulfill({ json: [] });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/pause` && request.method() === 'POST') {
 			pauseRequests += 1;
-			Object.assign(machine, { status: 'paused', desired_status: 'paused', generation: machine.generation + 1 });
+			Object.assign(machine, {
+				status: 'paused',
+				desired_status: 'paused',
+				generation: machine.generation + 1
+			});
 			return route.fulfill({ status: 202, json: { status: 'pending' } });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/start` && request.method() === 'POST') {
-			Object.assign(machine, { status: 'running', desired_status: 'running', generation: machine.generation + 1 });
+			Object.assign(machine, {
+				status: 'running',
+				desired_status: 'running',
+				generation: machine.generation + 1
+			});
 			return route.fulfill({ status: 202, json: { status: 'pending' } });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${secondMachineId}`) {
@@ -214,11 +358,16 @@ test('handles machine actions without applying stale poll, route, or trace respo
 			return route.fulfill({ json: [] });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${secondMachineId}/agent-runs`) {
-			return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
 		}
 
 		unhandledPaths.push(`${request.method()} ${path}`);
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${path}` } }
+		});
 	});
 
 	await page.goto('/test/machines');
@@ -237,14 +386,21 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
 	await expect(page.getByText('machine a event', { exact: true })).toBeVisible();
 	await expect(page.getByText('[system] machine A log', { exact: true })).toBeVisible();
-	await expect.poll(() => page.locator('#activity').evaluate((target) => {
-		let container = target.parentElement;
-		while (container && !['auto', 'scroll'].includes(getComputedStyle(container).overflowY)) container = container.parentElement;
-		if (!container) return false;
-		const targetRect = target.getBoundingClientRect();
-		const containerRect = container.getBoundingClientRect();
-		return container.scrollTop > 0 && targetRect.top < containerRect.bottom && targetRect.bottom > containerRect.top;
-	})).toBe(true);
+	await expect
+		.poll(() =>
+			page.locator('#activity').evaluate((target) => {
+				let container = target.parentElement;
+				while (container && !['auto', 'scroll'].includes(getComputedStyle(container).overflowY))
+					container = container.parentElement;
+				if (!container) return false;
+				const targetRect = target.getBoundingClientRect();
+				const containerRect = container.getBoundingClientRect();
+				return (
+					container.scrollTop > 0 && targetRect.top < containerRect.bottom && targetRect.bottom > containerRect.top
+				);
+			})
+		)
+		.toBe(true);
 	await expect(page.getByTitle('Save development environment')).toHaveCount(0);
 	await page.getByRole('switch', { name: 'Keep running' }).click();
 	await expect.poll(() => keepRunningRequests).toBe(1);
@@ -252,8 +408,12 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	await expect(page.getByRole('heading', { name: 'Run Agent' })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Provider' })).toHaveText('OpenCode');
 	const agentDialog = page.getByRole('dialog');
-	const pushBranch = agentDialog.getByRole('switch', { name: 'Push working branch' });
-	const openPullRequest = agentDialog.getByRole('switch', { name: 'Open pull request' });
+	const pushBranch = agentDialog.getByRole('switch', {
+		name: 'Push working branch'
+	});
+	const openPullRequest = agentDialog.getByRole('switch', {
+		name: 'Open pull request'
+	});
 	await openPullRequest.click();
 	await expect(openPullRequest).toBeChecked();
 	await pushBranch.click();
@@ -268,14 +428,20 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	const staleTrace = traceRequestDelay;
 	await page.getByRole('button', { name: 'View opencode agent run activity' }).click();
 	await staleTrace.started;
-	await page.evaluate(({ href, runId }) => {
-		const link = document.createElement('a');
-		link.href = href;
-		link.hash = `agent-run-${runId}`;
-		document.body.append(link);
-		link.click();
-		link.remove();
-	}, { href: `/test/machines/${machineId}?agent_run_id=${secondRunId}`, runId: secondRunId });
+	await page.evaluate(
+		({ href, runId }) => {
+			const link = document.createElement('a');
+			link.href = href;
+			link.hash = `agent-run-${runId}`;
+			document.body.append(link);
+			link.click();
+			link.remove();
+		},
+		{
+			href: `/test/machines/${machineId}?agent_run_id=${secondRunId}`,
+			runId: secondRunId
+		}
+	);
 	await expect(page.getByText('Current second trace prompt', { exact: true })).toBeVisible();
 	staleTrace.release();
 	await staleTrace.completed;
@@ -336,13 +502,50 @@ test('creates a generic machine with an accessible size and inactivity controls'
 		const request = route.request();
 		const url = new URL(request.url());
 		const path = url.pathname;
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`))
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET') return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
+		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET')
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
 		if (path === '/api/workspaces/test/dev-machine-names/suggestion') {
 			const delay = suggestionDelay;
 			if (delay) {
@@ -350,7 +553,9 @@ test('creates a generic machine with an accessible size and inactivity controls'
 				delay.markStarted();
 				await delay.released;
 			}
-			await route.fulfill({ json: { name: 'quiet-orchid-7f3a', available: true } });
+			await route.fulfill({
+				json: { name: 'quiet-orchid-7f3a', available: true }
+			});
 			delay?.markCompleted();
 			return;
 		}
@@ -361,18 +566,56 @@ test('creates a generic machine with an accessible size and inactivity controls'
 				takenNameDelay.markStarted();
 				await takenNameDelay.released;
 			}
-			await route.fulfill({ json: { name: requestedName, available: requestedName !== 'taken-machine' } });
+			await route.fulfill({
+				json: {
+					name: requestedName,
+					available: requestedName !== 'taken-machine'
+				}
+			});
 			if (requestedName === 'taken-machine') takenNameDelay.markCompleted();
 			return;
 		}
-		if (path === '/api/workspaces/test/dev-machine-providers') return route.fulfill({ json: [{ id: 'opencode', display_name: 'OpenCode', default_image: 'ku/opencode:1', required_secrets: [], supported_modes: ['autonomous'], custom: false }] });
-		if (path === '/api/workspaces/test/dev-machine-policy') return route.fulfill({ json: { workspace_id: workspaceId, enabled: true, max_concurrent_machines: 5, max_machines_per_user: 2, max_daily_agent_runs: 25, max_runtime_minutes: 480, max_disk_gb: 100, idle_pause_minutes: 240, allowed_providers: ['opencode'], allowed_repositories: [], allow_custom_providers: false } });
+		if (path === '/api/workspaces/test/dev-machine-providers')
+			return route.fulfill({
+				json: [
+					{
+						id: 'opencode',
+						display_name: 'OpenCode',
+						default_image: 'ku/opencode:1',
+						required_secrets: [],
+						supported_modes: ['autonomous'],
+						custom: false
+					}
+				]
+			});
+		if (path === '/api/workspaces/test/dev-machine-policy')
+			return route.fulfill({
+				json: {
+					workspace_id: workspaceId,
+					enabled: true,
+					max_concurrent_machines: 5,
+					max_machines_per_user: 2,
+					max_daily_agent_runs: 25,
+					max_runtime_minutes: 480,
+					max_disk_gb: 100,
+					idle_pause_minutes: 240,
+					allowed_providers: ['opencode'],
+					allowed_repositories: [],
+					allow_custom_providers: false
+				}
+			});
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: [] });
 		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'POST') {
 			createPayload = request.postDataJSON();
-			return route.fulfill({ status: 201, json: { id: '00000000-0000-0000-0000-000000000060', ...createPayload } });
+			return route.fulfill({
+				status: 201,
+				json: { id: '00000000-0000-0000-0000-000000000060', ...createPayload }
+			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto('/test/machines');
@@ -381,10 +624,15 @@ test('creates a generic machine with an accessible size and inactivity controls'
 	await expect(dialog.getByRole('heading', { name: 'New Dev Machine' })).toBeVisible();
 	await expect(dialog.getByLabel('Repository')).toHaveCount(0);
 	await expect(dialog.getByLabel('Machine name')).toHaveValue('quiet-orchid-7f3a');
+	// Keep the 300 ms debounce pending until the dialog has actually closed.
+	const now = new Date();
+	await page.clock.install({ time: now });
+	await page.clock.pauseAt(now);
 	await dialog.getByLabel('Machine name').fill('pending-close');
 	await dialog.getByRole('button', { name: 'Cancel' }).click();
-	await page.waitForTimeout(350);
+	await page.clock.runFor(350);
 	expect(availabilityRequests).not.toContain('pending-close');
+	await page.clock.resume();
 
 	await page.locator('header').getByRole('button', { name: 'New machine' }).click();
 	await expect(dialog.getByLabel('Machine name')).toHaveValue('quiet-orchid-7f3a');
@@ -412,7 +660,9 @@ test('creates a generic machine with an accessible size and inactivity controls'
 	await dialog.getByRole('button', { name: 'Create machine' }).click();
 	await expect.poll(() => createPayload).toBeTruthy();
 	expect(createPayload).toMatchObject({
-		name: 'fresh-machine', size: 'large', keep_running: true,
+		name: 'fresh-machine',
+		size: 'large',
+		keep_running: true,
 		services: { ide: true, browser: true }
 	});
 	expect(availabilityRequests).toContain('taken-machine');
@@ -426,32 +676,106 @@ test('selects a policy-compatible size for environment builders', async ({ page 
 	let maxDiskGb = 10;
 	let createPayload: Record<string, unknown> | undefined;
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
 		const path = url.pathname;
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'owner@example.com', name: 'Owner', display_name: 'Owner', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'owner@example.com',
+					name: 'Owner',
+					display_name: 'Owner',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`))
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === '/api/workspaces/test/dev-machine-policy') return route.fulfill({ json: { workspace_id: workspaceId, enabled: true, max_concurrent_machines: 5, max_machines_per_user: 2, max_daily_agent_runs: 25, max_runtime_minutes: 480, max_disk_gb: maxDiskGb, idle_pause_minutes: 240, allowed_providers: ['opencode'], allowed_repositories: [], allow_custom_providers: false } });
-		if (path === '/api/workspaces/test/forgejo/status') return route.fulfill({ json: { configured: true, connected: true, global_config: false, instance_url: 'https://git.example.com', repos: [] } });
-		if (path === '/api/workspaces/test/dev-machine-scope-setting') return route.fulfill({ json: { workspace_id: workspaceId } });
+		if (path === '/api/workspaces/test/dev-machine-policy')
+			return route.fulfill({
+				json: {
+					workspace_id: workspaceId,
+					enabled: true,
+					max_concurrent_machines: 5,
+					max_machines_per_user: 2,
+					max_daily_agent_runs: 25,
+					max_runtime_minutes: 480,
+					max_disk_gb: maxDiskGb,
+					idle_pause_minutes: 240,
+					allowed_providers: ['opencode'],
+					allowed_repositories: [],
+					allow_custom_providers: false
+				}
+			});
+		if (path === '/api/workspaces/test/forgejo/status')
+			return route.fulfill({
+				json: {
+					configured: true,
+					connected: true,
+					global_config: false,
+					instance_url: 'https://git.example.com',
+					repos: []
+				}
+			});
+		if (path === '/api/workspaces/test/dev-machine-scope-setting')
+			return route.fulfill({ json: { workspace_id: workspaceId } });
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: [] });
 		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'POST') {
 			createPayload = request.postDataJSON();
-			return route.fulfill({ status: 201, json: { id: '00000000-0000-0000-0000-000000000061', ...createPayload } });
+			return route.fulfill({
+				status: 201,
+				json: { id: '00000000-0000-0000-0000-000000000061', ...createPayload }
+			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto('/test/settings/dev-machines');
-	const builderButton = page.getByRole('button', { name: 'New Environment Builder' });
+	const builderButton = page.getByRole('button', {
+		name: 'New Environment Builder'
+	});
 	await builderButton.click();
-	await expect(page.getByText('Increase the workspace maximum disk policy to at least 20 GB before creating an Environment Builder', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText(
+			'Increase the workspace maximum disk policy to at least 20 GB before creating an Environment Builder',
+			{ exact: true }
+		)
+	).toBeVisible();
 	expect(createPayload).toBeUndefined();
 
 	maxDiskGb = 40;
@@ -476,55 +800,166 @@ test('retries a code-server launch while a paused machine resumes', async ({ pag
 	let failLaunch = false;
 	let machineGets = 0;
 	const machine = {
-		id: machineId, workspace_id: workspaceId, routing_key: 'pausedmachine00000001', name: 'Paused machine',
-		status: 'paused', desired_status: 'paused', generation: 1, repo_url: '', repo_owner: '', repo_name: '', base_branch: '', working_branch: '',
-		machine_size: 'medium', cpu_millis: 4000, memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240,
-		keep_running: false, environment_builder: true, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z', expires_at: '2099-07-13T04:00:00Z'
+		id: machineId,
+		workspace_id: workspaceId,
+		routing_key: 'pausedmachine00000001',
+		name: 'Paused machine',
+		status: 'paused',
+		desired_status: 'paused',
+		generation: 1,
+		repo_url: '',
+		repo_owner: '',
+		repo_name: '',
+		base_branch: '',
+		working_branch: '',
+		machine_size: 'medium',
+		cpu_millis: 4000,
+		memory_mb: 8192,
+		disk_gb: 50,
+		pids_limit: 1024,
+		max_runtime_minutes: 240,
+		keep_running: false,
+		environment_builder: true,
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z',
+		expires_at: '2099-07-13T04:00:00Z'
 	};
 	const unhandledPaths: string[] = [];
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`))
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}`) {
 			machineGets += 1;
-			if (machineGets > 1) Object.assign(machine, { status: 'running', desired_status: 'running' });
+			if (machineGets > 1)
+				Object.assign(machine, {
+					status: 'running',
+					desired_status: 'running'
+				});
 			return route.fulfill({ json: machine });
 		}
-		if (path === `/api/workspaces/test/dev-machines/${machineId}/services`) return route.fulfill({ json: [{ id: 'svc-ide', machine_id: machineId, service_type: 'ide', service_key: 'ide', container_name: 'ide', image_ref: 'ide:1', status: machine.status === 'running' ? 'running' : 'stopped', health_status: machine.status === 'running' ? 'healthy' : 'paused' }] });
+		if (path === `/api/workspaces/test/dev-machines/${machineId}/services`)
+			return route.fulfill({
+				json: [
+					{
+						id: 'svc-ide',
+						machine_id: machineId,
+						service_type: 'ide',
+						service_key: 'ide',
+						container_name: 'ide',
+						image_ref: 'ide:1',
+						status: machine.status === 'running' ? 'running' : 'stopped',
+						health_status: machine.status === 'running' ? 'healthy' : 'paused'
+					}
+				]
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/checkouts`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/events`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/logs`) return route.fulfill({ json: [] });
-		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`) return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
+		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`)
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/resource-usage`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/services/ide/launch` && request.method() === 'POST') {
 			if (failLaunch) {
 				failedLaunchRequests += 1;
-				if (failedLaunchRequests === 1) return route.fulfill({ status: 202, json: { status: 'pending', retry_after_seconds: 1 } });
-				return route.fulfill({ status: 500, json: { error: { message: 'Resume failed' } } });
+				if (failedLaunchRequests === 1)
+					return route.fulfill({
+						status: 202,
+						json: { status: 'pending', retry_after_seconds: 1 }
+					});
+				return route.fulfill({
+					status: 500,
+					json: { error: { message: 'Resume failed' } }
+				});
 			}
 			launchRequests += 1;
 			if (launchRequests <= 2) {
 				Object.assign(machine, { desired_status: 'running' });
-				return route.fulfill({ status: 202, json: { status: 'resuming', retry_after_seconds: 1, operation: { id: 'op-resume', action: 'start', status: 'pending', generation: 2, idempotency_key: 'launch-resume', attempts: 0, created_at: '2026-07-13T00:00:00Z' } } });
+				return route.fulfill({
+					status: 202,
+					json: {
+						status: 'resuming',
+						retry_after_seconds: 1,
+						operation: {
+							id: 'op-resume',
+							action: 'start',
+							status: 'pending',
+							generation: 2,
+							idempotency_key: 'launch-resume',
+							attempts: 0,
+							created_at: '2026-07-13T00:00:00Z'
+						}
+					}
+				});
 			}
-			return route.fulfill({ status: 201, json: { status: 'ready', launch_url: 'https://code.example.test/?ticket=redacted', expires_at: '2099-07-13T04:00:00Z' } });
+			return route.fulfill({
+				status: 201,
+				json: {
+					status: 'ready',
+					launch_url: 'https://code.example.test/?ticket=redacted',
+					expires_at: '2099-07-13T04:00:00Z'
+				}
+			});
 		}
 		unhandledPaths.push(`${request.method()} ${path}`);
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${path}` } }
+		});
 	});
 
 	await page.goto(`/test/machines/${machineId}`);
 	await expect(page.getByText('Paused machine', { exact: true })).toBeVisible();
 	const popupPromise = page.waitForEvent('popup');
-	await page.getByRole('button', { name: /Code Editor/ }).first().click();
+	await page
+		.getByRole('button', { name: /Code Editor/ })
+		.first()
+		.click();
 	await popupPromise;
 	await expect.poll(() => launchRequests).toBeGreaterThanOrEqual(2);
 	await expect(page.locator('.app-toast-shell')).toHaveCount(1);
@@ -534,7 +969,10 @@ test('retries a code-server launch while a paused machine resumes', async ({ pag
 
 	failLaunch = true;
 	const failedPopupPromise = page.waitForEvent('popup');
-	await page.getByRole('button', { name: /Code Editor/ }).first().click();
+	await page
+		.getByRole('button', { name: /Code Editor/ })
+		.first()
+		.click();
 	const failedPopup = await failedPopupPromise;
 	await expect.poll(() => failedLaunchRequests).toBe(2);
 	await expect(page.getByText('Resume failed', { exact: true })).toBeVisible();
@@ -566,8 +1004,12 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 				super();
 				this.url = url;
 				this.record = {
-					url, sent: [], closed: false, deferClose: false,
-					open: () => this.open(), fail: () => this.dispatchEvent(new Event('error')),
+					url,
+					sent: [],
+					closed: false,
+					deferClose: false,
+					open: () => this.open(),
+					fail: () => this.dispatchEvent(new Event('error')),
 					message: (data: string) => this.dispatchEvent(new MessageEvent('message', { data })),
 					finishClose: () => this.finishClose()
 				};
@@ -583,7 +1025,10 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 				this.dispatchEvent(new Event('open'));
 			}
 			send(data: string | ArrayBuffer | Uint8Array) {
-				const bytes = typeof data === 'string' ? Array.from(new TextEncoder().encode(data)) : Array.from(new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer));
+				const bytes =
+					typeof data === 'string'
+						? Array.from(new TextEncoder().encode(data))
+						: Array.from(new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer));
 				this.record.sent.push(bytes);
 			}
 			close() {
@@ -598,28 +1043,127 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 		(window as any).WebSocket = MockWebSocket;
 	});
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
-		const machine = { id: machineId, workspace_id: workspaceId, routing_key: 'terminalmachine0001', name: 'Terminal machine', status: 'running', desired_status: 'running', generation: 1, repo_owner: 'ku', repo_name: 'ku', base_branch: 'main', working_branch: 'work', machine_size: 'medium', cpu_millis: 4000, memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240, keep_running: false, environment_builder: false, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z', expires_at: '2099-07-13T04:00:00Z' };
-		const checkout = { id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: '00000000-0000-0000-0000-000000000082', forgejo_repo_id: '00000000-0000-0000-0000-000000000083', repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'user/TST-1-terminal', workspace_path: '/workspace/tasks/TST-1-terminal', status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z' };
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
+		const machine = {
+			id: machineId,
+			workspace_id: workspaceId,
+			routing_key: 'terminalmachine0001',
+			name: 'Terminal machine',
+			status: 'running',
+			desired_status: 'running',
+			generation: 1,
+			repo_owner: 'ku',
+			repo_name: 'ku',
+			base_branch: 'main',
+			working_branch: 'work',
+			machine_size: 'medium',
+			cpu_millis: 4000,
+			memory_mb: 8192,
+			disk_gb: 50,
+			pids_limit: 1024,
+			max_runtime_minutes: 240,
+			keep_running: false,
+			environment_builder: false,
+			created_at: '2026-07-13T00:00:00Z',
+			updated_at: '2026-07-13T00:00:00Z',
+			expires_at: '2099-07-13T04:00:00Z'
+		};
+		const checkout = {
+			id: checkoutId,
+			workspace_id: workspaceId,
+			machine_id: machineId,
+			issue_id: '00000000-0000-0000-0000-000000000082',
+			forgejo_repo_id: '00000000-0000-0000-0000-000000000083',
+			repository_full_name: 'ku/ku',
+			base_branch: 'main',
+			working_branch: 'user/TST-1-terminal',
+			workspace_path: '/workspace/tasks/TST-1-terminal',
+			status: 'ready',
+			created_at: '2026-07-13T00:00:00Z',
+			updated_at: '2026-07-13T00:00:00Z'
+		};
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`))
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET') return route.fulfill({ json: { data: [machine], total_count: 1, page: 1, has_more: false } });
+		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET')
+			return route.fulfill({
+				json: { data: [machine], total_count: 1, page: 1, has_more: false }
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}`) return route.fulfill({ json: machine });
-		if (path === `/api/workspaces/test/dev-machines/${machineId}/services`) return route.fulfill({ json: [
-			{ id: 'svc-ide', machine_id: machineId, service_type: 'ide', service_key: 'ide', container_name: 'ide', image_ref: 'ide:1', status: 'running', health_status: 'healthy' },
-			{ id: 'svc-terminal', machine_id: machineId, service_type: 'terminal', service_key: 'terminal', container_name: 'terminal', image_ref: 'ide:1', status: 'running', health_status: 'healthy' }
-		] });
+		if (path === `/api/workspaces/test/dev-machines/${machineId}/services`)
+			return route.fulfill({
+				json: [
+					{
+						id: 'svc-ide',
+						machine_id: machineId,
+						service_type: 'ide',
+						service_key: 'ide',
+						container_name: 'ide',
+						image_ref: 'ide:1',
+						status: 'running',
+						health_status: 'healthy'
+					},
+					{
+						id: 'svc-terminal',
+						machine_id: machineId,
+						service_type: 'terminal',
+						service_key: 'terminal',
+						container_name: 'terminal',
+						image_ref: 'ide:1',
+						status: 'running',
+						health_status: 'healthy'
+					}
+				]
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/checkouts`) return route.fulfill({ json: [checkout] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/events`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/logs`) return route.fulfill({ json: [] });
-		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`) return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
+		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`)
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/resource-usage`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/terminal-sessions` && request.method() === 'GET') {
 			listSessionRequests += 1;
@@ -630,13 +1174,50 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 			terminalSessions += 1;
 			const suffix = String(83 + terminalSessions).padStart(2, '0');
 			const sessionId = `00000000-0000-0000-0000-0000000000${suffix}`;
-			return route.fulfill({ status: 201, json: { status: 'ready', protocol: 'ttyd.v1', web_socket_url: `wss://terminal.example.test/ws?ticket=secret-${terminalSessions}&session=term-${terminalSessions}&cwd=/workspace/tasks/TST-1-terminal`, expires_at: '2099-07-13T04:00:00Z', session: { id: sessionId, machine_id: machineId, checkout_id: checkoutId, name: 'Terminal', runtime_session_name: `term-${terminalSessions}`, status: 'active', created_at: '2026-07-13T00:00:00Z', last_activity_at: '2026-07-13T00:00:00Z' } } });
+			return route.fulfill({
+				status: 201,
+				json: {
+					status: 'ready',
+					protocol: 'ttyd.v1',
+					web_socket_url: `wss://terminal.example.test/ws?ticket=secret-${terminalSessions}&session=term-${terminalSessions}&cwd=/workspace/tasks/TST-1-terminal`,
+					expires_at: '2099-07-13T04:00:00Z',
+					session: {
+						id: sessionId,
+						machine_id: machineId,
+						checkout_id: checkoutId,
+						name: 'Terminal',
+						runtime_session_name: `term-${terminalSessions}`,
+						status: 'active',
+						created_at: '2026-07-13T00:00:00Z',
+						last_activity_at: '2026-07-13T00:00:00Z'
+					}
+				}
+			});
 		}
-		if (path.startsWith(`/api/workspaces/test/dev-machines/${machineId}/terminal-sessions/`) && path.endsWith('/close') && request.method() === 'POST') {
+		if (
+			path.startsWith(`/api/workspaces/test/dev-machines/${machineId}/terminal-sessions/`) &&
+			path.endsWith('/close') &&
+			request.method() === 'POST'
+		) {
 			closeRequests += 1;
-			return route.fulfill({ json: { id: path.split('/').at(-2), machine_id: machineId, checkout_id: checkoutId, name: 'Terminal', runtime_session_name: 'term', status: 'closed', created_at: '2026-07-13T00:00:00Z', last_activity_at: '2026-07-13T00:00:00Z', closed_at: '2026-07-13T00:01:00Z' } });
+			return route.fulfill({
+				json: {
+					id: path.split('/').at(-2),
+					machine_id: machineId,
+					checkout_id: checkoutId,
+					name: 'Terminal',
+					runtime_session_name: 'term',
+					status: 'closed',
+					created_at: '2026-07-13T00:00:00Z',
+					last_activity_at: '2026-07-13T00:00:00Z',
+					closed_at: '2026-07-13T00:01:00Z'
+				}
+			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto(`/test/machines/${machineId}`);
@@ -647,15 +1228,27 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 	await expect.poll(() => terminalPayloads.length).toBe(1);
 	expect(listSessionRequests).toBe(0);
 	expect(terminalPayloads[0]).toMatchObject({ checkout_id: checkoutId });
-	await expect.poll(() => page.evaluate(() => (window as any).__terminalSockets?.[0]?.sent.length ?? 0)).toBeGreaterThan(0);
-	const firstFrame = await page.evaluate(() => new TextDecoder().decode(new Uint8Array((window as any).__terminalSockets[0].sent[0])));
+	await expect
+		.poll(() => page.evaluate(() => (window as any).__terminalSockets?.[0]?.sent.length ?? 0))
+		.toBeGreaterThan(0);
+	const firstFrame = await page.evaluate(() =>
+		new TextDecoder().decode(new Uint8Array((window as any).__terminalSockets[0].sent[0]))
+	);
 	const initialSize = JSON.parse(firstFrame);
-	expect(initialSize).toMatchObject({ AuthToken: '', columns: expect.any(Number), rows: expect.any(Number) });
+	expect(initialSize).toMatchObject({
+		AuthToken: '',
+		columns: expect.any(Number),
+		rows: expect.any(Number)
+	});
 	expect(initialSize.columns).toBeGreaterThan(20);
 	expect(initialSize.rows).toBeGreaterThan(5);
 	expect(initialSize.rows).toBeLessThan(100);
-	const dockHeight = await page.getByTestId('terminal-dock').evaluate((element) => element.getBoundingClientRect().height);
-	const terminalHeight = await page.getByTestId('native-terminal').evaluate((element) => element.getBoundingClientRect().height);
+	const dockHeight = await page
+		.getByTestId('terminal-dock')
+		.evaluate((element) => element.getBoundingClientRect().height);
+	const terminalHeight = await page
+		.getByTestId('native-terminal')
+		.evaluate((element) => element.getBoundingClientRect().height);
 	expect(terminalHeight).toBeLessThanOrEqual(dockHeight);
 	const resizeHandle = page.getByTestId('terminal-resize-handle');
 	const resizeBox = await resizeHandle.boundingBox();
@@ -664,11 +1257,19 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 	await page.mouse.down();
 	await page.mouse.move(resizeBox!.x + resizeBox!.width / 2, resizeBox!.y - 40);
 	await page.mouse.up();
-	await expect.poll(() => page.getByTestId('terminal-dock').evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(dockHeight);
+	await expect
+		.poll(() => page.getByTestId('terminal-dock').evaluate((element) => element.getBoundingClientRect().height))
+		.toBeGreaterThan(dockHeight);
 
 	await page.getByRole('button', { name: 'Collapse terminal dock' }).click();
 	await expect(page.getByTestId('native-terminal')).toBeHidden();
-	await expect.poll(() => page.evaluate(() => (window as any).__terminalSockets?.filter((item: { closed: boolean }) => item.closed).length ?? 0)).toBe(0);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() => (window as any).__terminalSockets?.filter((item: { closed: boolean }) => item.closed).length ?? 0
+			)
+		)
+		.toBe(0);
 	await page.getByRole('button', { name: 'Expand terminal dock' }).click();
 	await expect(page.getByTestId('native-terminal')).toBeVisible();
 
@@ -676,25 +1277,46 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 		(window as any).__terminalSockets[0].deferClose = true;
 		(window as any).__terminalSockets[0].fail();
 	});
-	await expect(page.getByText('Unable to connect to the terminal gateway. Check the machine TLS certificate and retry.', { exact: true })).toBeVisible();
-	await expect(page.getByRole('link', { name: 'Open the terminal gateway' })).toHaveAttribute('href', 'https://terminal.example.test');
+	await expect(
+		page.getByText('Unable to connect to the terminal gateway. Check the machine TLS certificate and retry.', {
+			exact: true
+		})
+	).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Open the terminal gateway' })).toHaveAttribute(
+		'href',
+		'https://terminal.example.test'
+	);
 	await page.evaluate(() => (window as any).__terminalSockets[0].finishClose());
-	await expect(page.getByText('Unable to connect to the terminal gateway. Check the machine TLS certificate and retry.', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Unable to connect to the terminal gateway. Check the machine TLS certificate and retry.', {
+			exact: true
+		})
+	).toBeVisible();
 
 	await page.clock.install();
-	await page.evaluate(() => { (window as any).__terminalAutoOpen = false; });
+	await page.evaluate(() => {
+		(window as any).__terminalAutoOpen = false;
+	});
 	await page.getByRole('button', { name: 'Reconnect' }).click();
 	await expect.poll(() => terminalPayloads.length).toBe(2);
 	await expect.poll(() => page.evaluate(() => (window as any).__terminalSockets?.length ?? 0)).toBe(2);
 	await page.clock.fastForward(10_000);
-	await expect(page.getByText('Terminal gateway connection timed out. Check the machine TLS certificate and retry.', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Terminal gateway connection timed out. Check the machine TLS certificate and retry.', {
+			exact: true
+		})
+	).toBeVisible();
 
 	await page.getByRole('button', { name: 'Reconnect' }).click();
 	await expect.poll(() => terminalPayloads.length).toBe(3);
 	await expect.poll(() => page.evaluate(() => (window as any).__terminalSockets?.length ?? 0)).toBe(3);
 	await page.evaluate(() => (window as any).__terminalSockets[1].finishClose());
 	await page.clock.fastForward(10_000);
-	await expect(page.getByText('Terminal gateway connection timed out. Check the machine TLS certificate and retry.', { exact: true })).toBeVisible();
+	await expect(
+		page.getByText('Terminal gateway connection timed out. Check the machine TLS certificate and retry.', {
+			exact: true
+		})
+	).toBeVisible();
 
 	await page.getByRole('button', { name: 'Reconnect' }).click();
 	await expect.poll(() => terminalPayloads.length).toBe(4);
@@ -719,9 +1341,15 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 	await expect(page.getByRole('tab')).toHaveCount(2);
 	await expect.poll(() => page.evaluate(() => (window as any).__terminalSockets?.length ?? 0)).toBe(5);
 	await page.evaluate(() => (window as any).__terminalSockets[4].open());
-	await expect.poll(() => page.evaluate(() => (window as any).__terminalSockets?.[4]?.sent.length ?? 0)).toBeGreaterThan(0);
+	await expect
+		.poll(() => page.evaluate(() => (window as any).__terminalSockets?.[4]?.sent.length ?? 0))
+		.toBeGreaterThan(0);
 	await page.getByRole('tab').first().click();
-	await expect.poll(() => page.evaluate(() => [(window as any).__terminalSockets[3].closed, (window as any).__terminalSockets[4].closed])).toEqual([false, false]);
+	await expect
+		.poll(() =>
+			page.evaluate(() => [(window as any).__terminalSockets[3].closed, (window as any).__terminalSockets[4].closed])
+		)
+		.toEqual([false, false]);
 
 	await page.getByRole('link', { name: 'Dev Machines' }).click();
 	await expect(page).toHaveURL(/\/test\/machines$/);
@@ -740,22 +1368,64 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 test('uses guarded permanent-delete routes for old-machine cleanup', async ({ page }) => {
 	const workspaceId = '00000000-0000-0000-0000-000000000002';
 	let bulkPayload: Record<string, unknown> | undefined;
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`))
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET') return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
+		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET')
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
 		if (path === '/api/workspaces/test/dev-machines/bulk/permanent-delete' && request.method() === 'POST') {
 			bulkPayload = request.postDataJSON();
 			return route.fulfill({ json: { count: 3 } });
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto('/test/machines');
@@ -777,49 +1447,159 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 	let checkoutDelay: ReturnType<typeof createRequestDelay> | null = null;
 	let launchDelay: ReturnType<typeof createRequestDelay> | null = null;
 	const issue = {
-		id: issueId, identifier: 'TST-43', title: 'Picker cancellation test', description: null,
-		status: 'backlog', team_id: teamId, project_id: null, cycle_id: null, creator_id: 'u1',
-		assignee_id: null, parent_id: null, due_date: null, sort_order: 0,
-		created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
+		id: issueId,
+		identifier: 'TST-43',
+		title: 'Picker cancellation test',
+		description: null,
+		status: 'backlog',
+		team_id: teamId,
+		project_id: null,
+		cycle_id: null,
+		creator_id: 'u1',
+		assignee_id: null,
+		parent_id: null,
+		due_date: null,
+		sort_order: 0,
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z'
 	};
 	const machine = {
-		id: machineId, workspace_id: workspaceId, routing_key: 'pickercancellation001', name: 'Picker machine',
-		status: 'paused', desired_status: 'paused', generation: 1, repo_owner: 'ku', repo_name: 'ku',
-		base_branch: 'main', working_branch: 'ku/picker', machine_size: 'medium', cpu_millis: 4000,
-		memory_mb: 8192, disk_gb: 50, pids_limit: 1024, max_runtime_minutes: 240, keep_running: false,
-		environment_builder: false, created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z',
+		id: machineId,
+		workspace_id: workspaceId,
+		routing_key: 'pickercancellation001',
+		name: 'Picker machine',
+		status: 'paused',
+		desired_status: 'paused',
+		generation: 1,
+		repo_owner: 'ku',
+		repo_name: 'ku',
+		base_branch: 'main',
+		working_branch: 'ku/picker',
+		machine_size: 'medium',
+		cpu_millis: 4000,
+		memory_mb: 8192,
+		disk_gb: 50,
+		pids_limit: 1024,
+		max_runtime_minutes: 240,
+		keep_running: false,
+		environment_builder: false,
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z',
 		expires_at: '2099-07-13T04:00:00Z'
 	};
 	const checkout = {
-		id: checkoutId, workspace_id: workspaceId, machine_id: machineId, issue_id: issueId,
-		forgejo_repo_id: '00000000-0000-0000-0000-000000000112', repository_full_name: 'ku/ku',
-		base_branch: 'main', working_branch: 'ku/TST-43-picker', workspace_path: '/workspace/tasks/TST-43-picker',
-		status: 'ready', created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
+		id: checkoutId,
+		workspace_id: workspaceId,
+		machine_id: machineId,
+		issue_id: issueId,
+		forgejo_repo_id: '00000000-0000-0000-0000-000000000112',
+		repository_full_name: 'ku/ku',
+		base_branch: 'main',
+		working_branch: 'ku/TST-43-picker',
+		workspace_path: '/workspace/tasks/TST-43-picker',
+		status: 'ready',
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (path === '/api/workspaces/test/teams') return route.fulfill({ json: [{ id: teamId, name: 'Engineering', key: 'ENG', color: '#6366f1', icon: 'layers', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }] });
-		if (['/api/workspaces/test/projects', '/api/workspaces/test/labels', '/api/workspaces/test/members', '/api/workspaces/test/views'].includes(path)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: 'u1',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (path === '/api/workspaces/test/teams')
+			return route.fulfill({
+				json: [
+					{
+						id: teamId,
+						name: 'Engineering',
+						key: 'ENG',
+						color: '#6366f1',
+						icon: 'layers',
+						created_at: '2026-01-01T00:00:00Z',
+						updated_at: '2026-01-01T00:00:00Z'
+					}
+				]
+			});
+		if (
+			[
+				'/api/workspaces/test/projects',
+				'/api/workspaces/test/labels',
+				'/api/workspaces/test/members',
+				'/api/workspaces/test/views'
+			].includes(path)
+		)
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === `/api/workspaces/test/teams/${teamId}/statuses` || path === `/api/workspaces/test/teams/${teamId}/cycles`) return route.fulfill({ json: [] });
-		if (path === `/api/workspaces/test/issues/${issue.identifier}` && request.method() === 'GET') return route.fulfill({ json: issue });
-		if (path === `/api/workspaces/test/issues/${issue.identifier}/comments` || path === `/api/workspaces/test/issues/${issue.identifier}/history`) return route.fulfill({ json: [] });
-		if (path === '/api/workspaces/test/issues' && request.method() === 'GET') return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
-		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET') return route.fulfill({ json: { data: [machine], total_count: 1, page: 1, has_more: false } });
+		if (
+			path === `/api/workspaces/test/teams/${teamId}/statuses` ||
+			path === `/api/workspaces/test/teams/${teamId}/cycles`
+		)
+			return route.fulfill({ json: [] });
+		if (path === `/api/workspaces/test/issues/${issue.identifier}` && request.method() === 'GET')
+			return route.fulfill({ json: issue });
+		if (
+			path === `/api/workspaces/test/issues/${issue.identifier}/comments` ||
+			path === `/api/workspaces/test/issues/${issue.identifier}/history`
+		)
+			return route.fulfill({ json: [] });
+		if (path === '/api/workspaces/test/issues' && request.method() === 'GET')
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
+		if (path === '/api/workspaces/test/dev-machines' && request.method() === 'GET')
+			return route.fulfill({
+				json: { data: [machine], total_count: 1, page: 1, has_more: false }
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}` && request.method() === 'GET') {
 			machineGets += 1;
 			return route.fulfill({ json: machine });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/start` && request.method() === 'POST') {
 			startRequests += 1;
-			Object.assign(machine, { status: 'running', desired_status: 'running', generation: 2 });
+			Object.assign(machine, {
+				status: 'running',
+				desired_status: 'running',
+				generation: 2
+			});
 			return route.fulfill({ status: 202, json: { status: 'pending' } });
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/checkouts` && request.method() === 'GET') {
@@ -841,7 +1621,14 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 				delay.markStarted();
 				await delay.released;
 			}
-			await route.fulfill({ status: 201, json: { status: 'ready', launch_url: 'https://code.example.test/?ticket=redacted', expires_at: '2099-07-13T04:00:00Z' } });
+			await route.fulfill({
+				status: 201,
+				json: {
+					status: 'ready',
+					launch_url: 'https://code.example.test/?ticket=redacted',
+					expires_at: '2099-07-13T04:00:00Z'
+				}
+			});
 			delay?.markCompleted();
 			return;
 		}
@@ -849,7 +1636,10 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 			terminalRequests += 1;
 			return route.fulfill({ status: 202, json: { status: 'pending' } });
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	async function openPicker(action: 'Open Code Editor' | 'Open Terminal' | 'Run Agent') {
@@ -908,43 +1698,144 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	let putPayload: Record<string, unknown> | undefined;
 
 	const repos = [
-		{ id: 'repo-1', forgejo_repo_id: 1001, full_name: 'ku/ku', instance_url: 'https://git.example.com', default_branch: 'main', is_active: true },
-		{ id: 'repo-2', forgejo_repo_id: 1002, full_name: 'ku/backend', instance_url: 'https://git.example.com', default_branch: 'develop', is_active: true },
+		{
+			id: 'repo-1',
+			forgejo_repo_id: 1001,
+			full_name: 'ku/ku',
+			instance_url: 'https://git.example.com',
+			default_branch: 'main',
+			is_active: true
+		},
+		{
+			id: 'repo-2',
+			forgejo_repo_id: 1002,
+			full_name: 'ku/backend',
+			instance_url: 'https://git.example.com',
+			default_branch: 'develop',
+			is_active: true
+		}
 	];
 
 	const issue = {
-		id: issueId, identifier: 'TST-42', title: 'Searchable repository test', description: null,
-		status: 'backlog', team_id: teamId, project_id: null, cycle_id: null, creator_id: 'u1',
-		assignee_id: null, parent_id: null, due_date: null, sort_order: 0,
-		created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
+		id: issueId,
+		identifier: 'TST-42',
+		title: 'Searchable repository test',
+		description: null,
+		status: 'backlog',
+		team_id: teamId,
+		project_id: null,
+		cycle_id: null,
+		creator_id: 'u1',
+		assignee_id: null,
+		parent_id: null,
+		due_date: null,
+		sort_order: 0,
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
 
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: 'u1', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: workspaceId, name: 'Test Workspace', slug: 'test', current_user_role: 'owner' } });
-		if (path === '/api/workspaces/test/teams') return route.fulfill({ json: [{ id: teamId, name: 'Engineering', key: 'ENG', color: '#6366f1', icon: 'layers', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }] });
-		if (['/api/workspaces/test/projects', '/api/workspaces/test/labels', '/api/workspaces/test/members', '/api/workspaces/test/views'].includes(path)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: 'u1',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: workspaceId, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: workspaceId,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'owner'
+				}
+			});
+		if (path === '/api/workspaces/test/teams')
+			return route.fulfill({
+				json: [
+					{
+						id: teamId,
+						name: 'Engineering',
+						key: 'ENG',
+						color: '#6366f1',
+						icon: 'layers',
+						created_at: '2026-01-01T00:00:00Z',
+						updated_at: '2026-01-01T00:00:00Z'
+					}
+				]
+			});
+		if (
+			[
+				'/api/workspaces/test/projects',
+				'/api/workspaces/test/labels',
+				'/api/workspaces/test/members',
+				'/api/workspaces/test/views'
+			].includes(path)
+		)
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		if (path === `/api/workspaces/test/teams/${teamId}/statuses`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/teams/${teamId}/cycles`) return route.fulfill({ json: [] });
-		if (path === `/api/workspaces/test/issues/${issue.identifier}` && request.method() === 'GET') return route.fulfill({ json: issue });
+		if (path === `/api/workspaces/test/issues/${issue.identifier}` && request.method() === 'GET')
+			return route.fulfill({ json: issue });
 		if (path === `/api/workspaces/test/issues/${issue.identifier}/comments`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/issues/${issue.identifier}/history`) return route.fulfill({ json: [] });
-		if (path === '/api/workspaces/test/issues' && request.method() === 'GET') return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
-		if (path === '/api/workspaces/test/forgejo/status') return route.fulfill({ json: { configured: true, connected: true, instance_url: 'https://git.example.com', repos } });
+		if (path === '/api/workspaces/test/issues' && request.method() === 'GET')
+			return route.fulfill({
+				json: { data: [], total_count: 0, page: 1, has_more: false }
+			});
+		if (path === '/api/workspaces/test/forgejo/status')
+			return route.fulfill({
+				json: {
+					configured: true,
+					connected: true,
+					instance_url: 'https://git.example.com',
+					repos
+				}
+			});
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: [] });
-		if (path === '/api/workspaces/test/dev-machine-scope-setting' && request.method() === 'GET') return route.fulfill({ json: { workspace_id: workspaceId, issue_id: issueId } });
+		if (path === '/api/workspaces/test/dev-machine-scope-setting' && request.method() === 'GET')
+			return route.fulfill({
+				json: { workspace_id: workspaceId, issue_id: issueId }
+			});
 		if (path === '/api/workspaces/test/dev-machine-scope-setting' && request.method() === 'PUT') {
 			putPayload = request.postDataJSON();
-			return route.fulfill({ json: { workspace_id: workspaceId, issue_id: issueId } });
+			return route.fulfill({
+				json: { workspace_id: workspaceId, issue_id: issueId }
+			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto('/test/issue/TST-42');
@@ -1012,29 +1903,67 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		expires_at: '2099-07-13T04:00:00Z'
 	};
 	const checkout = {
-		id: checkoutId, workspace_id: machine.workspace_id, machine_id: machineId,
-		issue_id: '00000000-0000-0000-0000-000000000064', forgejo_repo_id: '00000000-0000-0000-0000-000000000065',
-		repository_full_name: 'ku/ku', base_branch: 'main', working_branch: 'ku/trace',
-		workspace_path: '/workspace/tasks/trace', status: 'ready',
-		created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z'
+		id: checkoutId,
+		workspace_id: machine.workspace_id,
+		machine_id: machineId,
+		issue_id: '00000000-0000-0000-0000-000000000064',
+		forgejo_repo_id: '00000000-0000-0000-0000-000000000065',
+		repository_full_name: 'ku/ku',
+		base_branch: 'main',
+		working_branch: 'ku/trace',
+		workspace_path: '/workspace/tasks/trace',
+		status: 'ready',
+		created_at: '2026-07-13T00:00:00Z',
+		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const path = new URL(request.url()).pathname;
 
 		if (path === '/api/auth/me') {
-			return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
 		}
 		if (path === '/api/preferences') {
-			return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
 		}
 		if (path === '/api/workspaces') {
-			return route.fulfill({ json: [{ id: machine.workspace_id, name: 'Test Workspace', slug: 'test' }] });
+			return route.fulfill({
+				json: [{ id: machine.workspace_id, name: 'Test Workspace', slug: 'test' }]
+			});
 		}
 		if (path === '/api/workspaces/test') {
-			return route.fulfill({ json: { id: machine.workspace_id, name: 'Test Workspace', slug: 'test', current_user_role: 'admin' } });
+			return route.fulfill({
+				json: {
+					id: machine.workspace_id,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'admin'
+				}
+			});
 		}
 		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) {
 			return route.fulfill({ json: [] });
@@ -1043,7 +1972,15 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		}
 		if (path === '/api/workspaces/test/dev-machines') {
-			return route.fulfill({ json: { data: [machine], total_count: 1, page: 1, per_page: 50, has_more: false } });
+			return route.fulfill({
+				json: {
+					data: [machine],
+					total_count: 1,
+					page: 1,
+					per_page: 50,
+					has_more: false
+				}
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}` && request.method() === 'GET') {
 			return route.fulfill({ json: machine });
@@ -1061,18 +1998,79 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 			return route.fulfill({
 				json: {
 					data: [
-						{ id: runId, machine_id: machineId, checkout_id: checkoutId, provider_id: 'opencode', mode: 'autonomous', status: 'succeeded', prompt: 'Fix the bug', summary: 'Fixed bug in login', changed_files: ['src/login.ts'], commits: ['abc1234'], branch: 'ku/trace', pull_request_url: pullRequestUrl, tests_run: ['TestLogin'], test_status: 'passed', risk_notes: ['Minor risk'], exit_code: 0, error_message: null, created_at: '2026-07-13T00:00:00Z', started_at: '2026-07-13T00:01:00Z', completed_at: '2026-07-13T00:05:00Z' },
-						{ id: runId2, machine_id: machineId, checkout_id: checkoutId, provider_id: 'claude-code', mode: 'autonomous', status: 'running', prompt: 'Add tests', summary: null, changed_files: [], commits: [], branch: null, pull_request_url: untrustedPullRequestUrl, tests_run: [], test_status: 'not_run', risk_notes: [], exit_code: null, error_message: null, created_at: '2026-07-13T01:00:00Z', started_at: '2026-07-13T01:01:00Z', completed_at: null }
+						{
+							id: runId,
+							machine_id: machineId,
+							checkout_id: checkoutId,
+							provider_id: 'opencode',
+							mode: 'autonomous',
+							status: 'succeeded',
+							prompt: 'Fix the bug',
+							summary: 'Fixed bug in login',
+							changed_files: ['src/login.ts'],
+							commits: ['abc1234'],
+							branch: 'ku/trace',
+							pull_request_url: pullRequestUrl,
+							tests_run: ['TestLogin'],
+							test_status: 'passed',
+							risk_notes: ['Minor risk'],
+							exit_code: 0,
+							error_message: null,
+							created_at: '2026-07-13T00:00:00Z',
+							started_at: '2026-07-13T00:01:00Z',
+							completed_at: '2026-07-13T00:05:00Z'
+						},
+						{
+							id: runId2,
+							machine_id: machineId,
+							checkout_id: checkoutId,
+							provider_id: 'claude-code',
+							mode: 'autonomous',
+							status: 'running',
+							prompt: 'Add tests',
+							summary: null,
+							changed_files: [],
+							commits: [],
+							branch: null,
+							pull_request_url: untrustedPullRequestUrl,
+							tests_run: [],
+							test_status: 'not_run',
+							risk_notes: [],
+							exit_code: null,
+							error_message: null,
+							created_at: '2026-07-13T01:00:00Z',
+							started_at: '2026-07-13T01:01:00Z',
+							completed_at: null
+						}
 					],
-					total_count: 2, page: 1, per_page: 50, has_more: false
+					total_count: 2,
+					page: 1,
+					per_page: 50,
+					has_more: false
 				}
 			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/events` && request.method() === 'GET') {
 			return route.fulfill({
 				json: [
-					{ id: 1, machine_id: machineId, agent_run_id: runId, source: 'agent', event_type: 'agent_run.queued', payload: {}, occurred_at: '2026-07-13T00:00:00Z' },
-					{ id: 2, machine_id: machineId, agent_run_id: runId, source: 'agent', event_type: 'agent_run.completed', payload: { exit_code: 0 }, occurred_at: '2026-07-13T00:05:00Z' }
+					{
+						id: 1,
+						machine_id: machineId,
+						agent_run_id: runId,
+						source: 'agent',
+						event_type: 'agent_run.queued',
+						payload: {},
+						occurred_at: '2026-07-13T00:00:00Z'
+					},
+					{
+						id: 2,
+						machine_id: machineId,
+						agent_run_id: runId,
+						source: 'agent',
+						event_type: 'agent_run.completed',
+						payload: { exit_code: 0 },
+						occurred_at: '2026-07-13T00:05:00Z'
+					}
 				]
 			});
 		}
@@ -1091,19 +2089,82 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 			lastTraceLogsAfterId = logsAfterId;
 
 			const allEvents = [
-				{ id: 1, machine_id: machineId, agent_run_id: runId, source: 'agent', event_type: 'agent_run.queued', payload: {}, occurred_at: '2026-07-13T00:00:00Z' },
-				{ id: 2, machine_id: machineId, agent_run_id: runId, source: 'agent', event_type: 'agent_run.started', payload: {}, occurred_at: '2026-07-13T00:01:00Z' },
-				{ id: 3, machine_id: machineId, agent_run_id: runId, source: 'agent', event_type: 'agent_run.completed', payload: { exit_code: 0 }, occurred_at: '2026-07-13T00:05:00Z' }
+				{
+					id: 1,
+					machine_id: machineId,
+					agent_run_id: runId,
+					source: 'agent',
+					event_type: 'agent_run.queued',
+					payload: {},
+					occurred_at: '2026-07-13T00:00:00Z'
+				},
+				{
+					id: 2,
+					machine_id: machineId,
+					agent_run_id: runId,
+					source: 'agent',
+					event_type: 'agent_run.started',
+					payload: {},
+					occurred_at: '2026-07-13T00:01:00Z'
+				},
+				{
+					id: 3,
+					machine_id: machineId,
+					agent_run_id: runId,
+					source: 'agent',
+					event_type: 'agent_run.completed',
+					payload: { exit_code: 0 },
+					occurred_at: '2026-07-13T00:05:00Z'
+				}
 			];
 			const filteredEvents = eventsAfterId === 0 ? allEvents : allEvents.filter((e) => e.id > eventsAfterId);
 
 			return route.fulfill({
 				json: {
-					run: { id: runId, machine_id: machineId, checkout_id: checkoutId, provider_id: 'opencode', mode: 'autonomous', status: 'succeeded', prompt: 'Fix the bug', summary: 'Fixed bug in login', changed_files: ['src/login.ts'], commits: ['abc1234'], branch: 'ku/trace', pull_request_url: pullRequestUrl, tests_run: ['TestLogin'], test_status: 'passed', risk_notes: ['Minor risk'], exit_code: 0, error_message: null, created_at: '2026-07-13T00:00:00Z', started_at: '2026-07-13T00:01:00Z', completed_at: '2026-07-13T00:05:00Z' },
-					steps: [{ id: runId, agent_run_id: runId, sequence: 1, step_type: 'shell', name: 'Run tests', status: 'succeeded', command_argv: null, summary: 'All tests passed', exit_code: 0, started_at: '2026-07-13T00:02:00Z', completed_at: '2026-07-13T00:03:00Z', created_at: '2026-07-13T00:02:00Z' }],
+					run: {
+						id: runId,
+						machine_id: machineId,
+						checkout_id: checkoutId,
+						provider_id: 'opencode',
+						mode: 'autonomous',
+						status: 'succeeded',
+						prompt: 'Fix the bug',
+						summary: 'Fixed bug in login',
+						changed_files: ['src/login.ts'],
+						commits: ['abc1234'],
+						branch: 'ku/trace',
+						pull_request_url: pullRequestUrl,
+						tests_run: ['TestLogin'],
+						test_status: 'passed',
+						risk_notes: ['Minor risk'],
+						exit_code: 0,
+						error_message: null,
+						created_at: '2026-07-13T00:00:00Z',
+						started_at: '2026-07-13T00:01:00Z',
+						completed_at: '2026-07-13T00:05:00Z'
+					},
+					steps: [
+						{
+							id: runId,
+							agent_run_id: runId,
+							sequence: 1,
+							step_type: 'shell',
+							name: 'Run tests',
+							status: 'succeeded',
+							command_argv: null,
+							summary: 'All tests passed',
+							exit_code: 0,
+							started_at: '2026-07-13T00:02:00Z',
+							completed_at: '2026-07-13T00:03:00Z',
+							created_at: '2026-07-13T00:02:00Z'
+						}
+					],
 					events: filteredEvents,
-					logs: [], next_event_id: filteredEvents.at(-1)?.id ?? eventsAfterId, next_log_id: logsAfterId,
-					has_more_events: false, has_more_logs: false
+					logs: [],
+					next_event_id: filteredEvents.at(-1)?.id ?? eventsAfterId,
+					next_log_id: logsAfterId,
+					has_more_events: false,
+					has_more_logs: false
 				}
 			});
 		}
@@ -1111,14 +2172,42 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 			traceRequests++;
 			return route.fulfill({
 				json: {
-					run: { id: runId2, machine_id: machineId, checkout_id: checkoutId, provider_id: 'claude-code', mode: 'autonomous', status: 'running', prompt: 'Add tests', summary: null, changed_files: [], commits: [], branch: null, pull_request_url: untrustedPullRequestUrl, tests_run: [], test_status: 'not_run', risk_notes: [], exit_code: null, error_message: null, created_at: '2026-07-13T01:00:00Z', started_at: '2026-07-13T01:01:00Z', completed_at: null },
+					run: {
+						id: runId2,
+						machine_id: machineId,
+						checkout_id: checkoutId,
+						provider_id: 'claude-code',
+						mode: 'autonomous',
+						status: 'running',
+						prompt: 'Add tests',
+						summary: null,
+						changed_files: [],
+						commits: [],
+						branch: null,
+						pull_request_url: untrustedPullRequestUrl,
+						tests_run: [],
+						test_status: 'not_run',
+						risk_notes: [],
+						exit_code: null,
+						error_message: null,
+						created_at: '2026-07-13T01:00:00Z',
+						started_at: '2026-07-13T01:01:00Z',
+						completed_at: null
+					},
 					steps: [],
 					events: [],
-					logs: [], next_event_id: 0, next_log_id: 0, has_more_events: false, has_more_logs: false
+					logs: [],
+					next_event_id: 0,
+					next_log_id: 0,
+					has_more_events: false,
+					has_more_logs: false
 				}
 			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	// Test 1: Navigate to machine page and click the agent-run card
@@ -1167,7 +2256,9 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 	await page.getByRole('button', { name: 'View claude-code agent run activity' }).click();
 	await expect(page.getByRole('heading', { name: 'Agent Run Trace' })).toBeVisible();
 	const activeSheetContent = page.locator('[data-slot="sheet-content"]');
-	await expect(activeSheetContent.getByText('claude-code')).toBeVisible({ timeout: 10000 });
+	await expect(activeSheetContent.getByText('claude-code')).toBeVisible({
+		timeout: 10000
+	});
 	await expect(activeSheetContent.getByRole('link', { name: 'Pull Request' })).toHaveCount(0);
 
 	// Verify multiple trace requests were made (including cursor polling for active run)
@@ -1262,31 +2353,81 @@ test('bounds machine and agent trace telemetry during long-running sessions', as
 	}));
 
 	await page.clock.install();
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) => route.fulfill({ json: [] }));
+	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+		route.fulfill({ json: [] })
+	);
 	await page.route('**/api/**', async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
 		const path = url.pathname;
-		if (path === '/api/auth/me') return route.fulfill({ json: { id: '00000000-0000-0000-0000-000000000001', email: 'test@example.com', name: 'Test User', display_name: 'Test User', avatar_url: null } });
-		if (path === '/api/preferences') return route.fulfill({ json: { font_size: 'default', pointer_cursors: true, theme_mode: 'dark', light_theme: 'light', dark_theme: 'dark', workflow_sort_mode: 'default', workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'], team_workflow_sort_overrides: {}, issues_group_by: 'status' } });
-		if (path === '/api/workspaces') return route.fulfill({ json: [{ id: machine.workspace_id, name: 'Test Workspace', slug: 'test' }] });
-		if (path === '/api/workspaces/test') return route.fulfill({ json: { id: machine.workspace_id, name: 'Test Workspace', slug: 'test', current_user_role: 'admin' } });
-		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`)) return route.fulfill({ json: [] });
+		if (path === '/api/auth/me')
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		if (path === '/api/preferences')
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {},
+					issues_group_by: 'status'
+				}
+			});
+		if (path === '/api/workspaces')
+			return route.fulfill({
+				json: [{ id: machine.workspace_id, name: 'Test Workspace', slug: 'test' }]
+			});
+		if (path === '/api/workspaces/test')
+			return route.fulfill({
+				json: {
+					id: machine.workspace_id,
+					name: 'Test Workspace',
+					slug: 'test',
+					current_user_role: 'admin'
+				}
+			});
+		if (['teams', 'projects', 'labels', 'members', 'views'].some((part) => path === `/api/workspaces/test/${part}`))
+			return route.fulfill({ json: [] });
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === `/api/workspaces/test/dev-machines/${machineId}` && request.method() === 'GET') return route.fulfill({ json: machine });
+		if (path === `/api/workspaces/test/dev-machines/${machineId}` && request.method() === 'GET')
+			return route.fulfill({ json: machine });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/services`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/checkouts`) return route.fulfill({ json: [] });
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/resource-usage`) return route.fulfill({ json: [] });
-		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`) return route.fulfill({ json: { data: [run], total_count: 1, page: 1, per_page: 50, has_more: false } });
+		if (path === `/api/workspaces/test/dev-machines/${machineId}/agent-runs`)
+			return route.fulfill({
+				json: {
+					data: [run],
+					total_count: 1,
+					page: 1,
+					per_page: 50,
+					has_more: false
+				}
+			});
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/events`) {
 			machineEventRequests++;
 			const afterId = Number(url.searchParams.get('after_id') ?? 0);
-			return route.fulfill({ json: machineEvents.filter((event) => event.id > afterId).slice(0, 100) });
+			return route.fulfill({
+				json: machineEvents.filter((event) => event.id > afterId).slice(0, 100)
+			});
 		}
 		if (path === `/api/workspaces/test/dev-machines/${machineId}/logs`) {
 			machineLogRequests++;
 			const afterId = Number(url.searchParams.get('after_id') ?? 0);
-			return route.fulfill({ json: machineLogs.filter((log) => log.id > afterId).slice(0, 250) });
+			return route.fulfill({
+				json: machineLogs.filter((log) => log.id > afterId).slice(0, 250)
+			});
 		}
 		if (path === `/api/workspaces/test/agent-runs/${runId}/trace`) {
 			traceRequests++;
@@ -1311,17 +2452,25 @@ test('bounds machine and agent trace telemetry during long-running sessions', as
 				}
 			});
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto(`/test/machines/${machineId}`);
+	await page.locator('#activity').waitFor();
 	await expect.poll(() => machineEventRequests).toBe(1);
 	await expect.poll(() => machineLogRequests).toBe(1);
 	for (let requestCount = 2; requestCount <= 5; requestCount++) {
 		await page.clock.fastForward(4_000);
 		await expect.poll(() => machineEventRequests).toBe(requestCount);
 		await expect.poll(() => machineLogRequests).toBe(requestCount);
-		await expect(page.locator('#activity').getByText(`machine event ${Math.min(requestCount * 100, 450)}`, { exact: true })).toBeVisible();
+		await expect(
+			page.locator('#activity').getByText(`machine event ${Math.min(requestCount * 100, 450)}`, {
+				exact: true
+			})
+		).toBeVisible();
 	}
 
 	const activity = page.locator('#activity').locator('> div').first();

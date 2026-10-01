@@ -1,10 +1,15 @@
 package config
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +21,66 @@ func TestParseSysadmins(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, ids, id)
 	assert.Len(t, ids, 1)
+}
+
+func TestLoadBindAddress(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/fixture")
+	t.Setenv("REDIS_URL", "redis://localhost:6379")
+	t.Setenv("JWT_SECRET", strings.Repeat("fixture", 8))
+	t.Setenv("DEV_MACHINES_ENABLED", "false")
+	t.Setenv("SYSADMINS", "")
+	t.Setenv("SYSTEM_UPDATER_TOKEN", "")
+	t.Setenv("AI_PROVIDER_TRUSTED_ORIGINS", "")
+	t.Setenv("BIND_ADDRESS", "")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.BindAddress)
+
+	t.Setenv("BIND_ADDRESS", "127.0.0.1")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.Equal(t, "127.0.0.1", cfg.BindAddress)
+}
+
+func TestLoadAIProviderNetworkPolicy(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/fixture")
+	t.Setenv("REDIS_URL", "redis://localhost:6379")
+	t.Setenv("JWT_SECRET", strings.Repeat("fixture", 8))
+	t.Setenv("DEV_MACHINES_ENABLED", "false")
+	t.Setenv("SYSADMINS", "")
+	t.Setenv("SYSTEM_UPDATER_TOKEN", "")
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "approved private provider")
+	}))
+	t.Cleanup(provider.Close)
+
+	t.Setenv("AI_PROVIDER_TRUSTED_ORIGINS", "")
+	cfg, err := Load()
+	require.NoError(t, err)
+	client := cfg.AIProviderNetworkPolicy.NewHTTPClient(time.Second)
+	t.Cleanup(client.CloseIdleConnections)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, provider.URL+"/chat/completions", nil)
+	require.NoError(t, err)
+	_, err = client.Do(request)
+	require.ErrorIs(t, err, aiegress.ErrDestinationBlocked)
+
+	t.Setenv("AI_PROVIDER_TRUSTED_ORIGINS", provider.URL)
+	cfg, err = Load()
+	require.NoError(t, err)
+	client = cfg.AIProviderNetworkPolicy.NewHTTPClient(time.Second)
+	t.Cleanup(client.CloseIdleConnections)
+	response, err := client.Do(request)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+
+	for _, value := range []string{"http://*.example", provider.URL + "/v1", "http://user:secret@localhost", provider.URL + ","} {
+		t.Setenv("AI_PROVIDER_TRUSTED_ORIGINS", value)
+		_, err := Load()
+		require.ErrorContains(t, err, "AI_PROVIDER_TRUSTED_ORIGINS")
+		assert.NotContains(t, err.Error(), "secret")
+	}
 }
 
 func TestParseSysadminsRejectsInvalidID(t *testing.T) {

@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
@@ -26,6 +26,7 @@ const DefaultIssueCopyPrompt = "Work on issue {{issue_identifier}}:\n\n{{issue_x
 var (
 	ErrAISettingsNotConfigured = errors.New("AI settings are not configured")
 	ErrAIProviderRequestFailed = errors.New("AI provider request failed")
+	ErrAIInvalidText           = errors.New("text to rewrite must not be blank")
 	ErrIssueNotFound           = errors.New("issue not found")
 )
 
@@ -37,13 +38,13 @@ type AISettingsService struct {
 	httpClient    *http.Client
 }
 
-func NewAISettingsService(aiRepo repository.AISettingsRepo, workspaceRepo repository.WorkspaceRepo, issueRepo repository.IssueRepo, encryptionKey []byte) *AISettingsService {
+func NewAISettingsService(aiRepo repository.AISettingsRepo, workspaceRepo repository.WorkspaceRepo, issueRepo repository.IssueRepo, encryptionKey []byte, providerNetworkPolicy aiegress.Policy) *AISettingsService {
 	return &AISettingsService{
 		aiRepo:        aiRepo,
 		workspaceRepo: workspaceRepo,
 		issueRepo:     issueRepo,
 		encryptionKey: encryptionKey,
-		httpClient:    &http.Client{Timeout: 45 * time.Second},
+		httpClient:    providerNetworkPolicy.NewHTTPClient(45 * time.Second),
 	}
 }
 
@@ -111,7 +112,7 @@ func (s *AISettingsService) Update(ctx context.Context, workspaceID, userID uuid
 			if err != nil {
 				return nil, err
 			}
-			settings.APIKeyEncrypted = &encrypted
+			settings.APIKeyEncrypted = new(encrypted)
 		}
 	}
 
@@ -122,7 +123,7 @@ func (s *AISettingsService) Update(ctx context.Context, workspaceID, userID uuid
 		return nil, fmt.Errorf("unsupported AI provider")
 	}
 	if settings.BaseURL != "" {
-		if err := validateHTTPURL(settings.BaseURL); err != nil {
+		if err := validateAIBaseURL(settings.BaseURL); err != nil {
 			return nil, err
 		}
 	}
@@ -134,22 +135,14 @@ func (s *AISettingsService) Update(ctx context.Context, workspaceID, userID uuid
 }
 
 func (s *AISettingsService) ExpandIssueDescription(ctx context.Context, workspaceID uuid.UUID, identifier string, selectedText *string) (string, error) {
-	settings, err := s.Get(ctx, workspaceID)
+	settings, apiKey, err := s.configuredProvider(ctx, workspaceID)
 	if err != nil {
 		return "", err
-	}
-	if strings.TrimSpace(settings.BaseURL) == "" || strings.TrimSpace(settings.Model) == "" || settings.APIKeyEncrypted == nil || *settings.APIKeyEncrypted == "" {
-		return "", ErrAISettingsNotConfigured
 	}
 
 	issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, identifier)
 	if err != nil || issue == nil {
 		return "", ErrIssueNotFound
-	}
-
-	apiKey, err := crypto.Decrypt(*settings.APIKeyEncrypted, s.encryptionKey)
-	if err != nil {
-		return "", ErrAISettingsNotConfigured
 	}
 
 	currentDescription := ""
@@ -170,44 +163,93 @@ func (s *AISettingsService) ExpandIssueDescription(ctx context.Context, workspac
 	if err != nil {
 		return "", err
 	}
-	content = strings.TrimSpace(stripCodeFence(content))
-	if content == "" {
-		return "", ErrAIProviderRequestFailed
-	}
-	return sanitize.SanitizeEditorContent(content), nil
+	return sanitizeAIContent(content)
 }
 
 // ReworkText rewrites an arbitrary editor selection (comment text, new-issue
 // description, ...) with the workspace AI settings. It is the workspace-scoped
 // sibling of ExpandIssueDescription, which keeps issue context.
 func (s *AISettingsService) ReworkText(ctx context.Context, workspaceID uuid.UUID, text string, context *string) (string, error) {
-	settings, err := s.Get(ctx, workspaceID)
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", ErrAIInvalidText
+	}
+	settings, apiKey, err := s.configuredProvider(ctx, workspaceID)
 	if err != nil {
 		return "", err
-	}
-	if strings.TrimSpace(settings.BaseURL) == "" || strings.TrimSpace(settings.Model) == "" || settings.APIKeyEncrypted == nil || *settings.APIKeyEncrypted == "" {
-		return "", ErrAISettingsNotConfigured
-	}
-
-	apiKey, err := crypto.Decrypt(*settings.APIKeyEncrypted, s.encryptionKey)
-	if err != nil {
-		return "", ErrAISettingsNotConfigured
 	}
 
 	userPrompt := settings.DescriptionExpandPrompt
 	if context != nil && strings.TrimSpace(*context) != "" {
 		userPrompt += fmt.Sprintf("\n\nContext:\n%s", strings.TrimSpace(*context))
 	}
-	userPrompt += fmt.Sprintf("\n\nText to rewrite. Return only the replacement HTML for this text:\n%s", strings.TrimSpace(text))
+	userPrompt += fmt.Sprintf("\n\nText to rewrite. Return only the replacement HTML for this text:\n%s", text)
 	content, err := s.complete(ctx, settings.BaseURL, settings.Model, apiKey, userPrompt)
 	if err != nil {
 		return "", err
 	}
-	content = strings.TrimSpace(stripCodeFence(content))
-	if content == "" {
-		return "", ErrAIProviderRequestFailed
+	return sanitizeAIContent(content)
+}
+
+// TestConnection checks the saved configuration with the same HTML completion
+// used by the editor. It never accepts or returns provider credentials.
+func (s *AISettingsService) TestConnection(ctx context.Context, workspaceID, userID uuid.UUID) (dto.AIConnectionTestResponse, error) {
+	ws, err := s.workspaceRepo.GetByID(ctx, workspaceID)
+	if err != nil {
+		return dto.AIConnectionTestResponse{}, err
 	}
-	return sanitize.SanitizeEditorContent(content), nil
+	if ws == nil {
+		return dto.AIConnectionTestResponse{}, ErrWorkspaceNotFound
+	}
+	if ws.OwnerID == uuid.Nil || ws.OwnerID != userID {
+		return dto.AIConnectionTestResponse{}, ErrNotWorkspaceOwner
+	}
+	settings, apiKey, err := s.configuredProvider(ctx, workspaceID)
+	if err != nil {
+		return dto.AIConnectionTestResponse{}, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	start := time.Now()
+	content, err := s.complete(ctx, settings.BaseURL, settings.Model, apiKey, "Reply with only <p>Connection successful.</p>. Keep the response to one short paragraph.")
+	if err != nil {
+		return dto.AIConnectionTestResponse{}, err
+	}
+	if _, err := sanitizeAIContent(content); err != nil {
+		return dto.AIConnectionTestResponse{}, err
+	}
+	return dto.AIConnectionTestResponse{Model: settings.Model, LatencyMS: time.Since(start).Milliseconds()}, nil
+}
+
+func (s *AISettingsService) configuredProvider(ctx context.Context, workspaceID uuid.UUID) (*domain.AISettings, string, error) {
+	settings, err := s.Get(ctx, workspaceID)
+	if err != nil {
+		return nil, "", err
+	}
+	if settings.Provider != domain.AIProviderOpenAICompatible || strings.TrimSpace(settings.Model) == "" || validateAIBaseURL(settings.BaseURL) != nil || settings.APIKeyEncrypted == nil || *settings.APIKeyEncrypted == "" {
+		return nil, "", ErrAISettingsNotConfigured
+	}
+	apiKey, err := crypto.Decrypt(*settings.APIKeyEncrypted, s.encryptionKey)
+	if err != nil || strings.TrimSpace(apiKey) == "" {
+		return nil, "", ErrAISettingsNotConfigured
+	}
+	return settings, apiKey, nil
+}
+
+func sanitizeAIContent(content string) (string, error) {
+	content = strings.TrimSpace(stripCodeFence(content))
+	// Reject unsafe-only output before markdown normalization can escape its
+	// tags as visible text. Normalize the original once to preserve entities in
+	// plain text, Markdown, and already-escaped HTML.
+	if sanitize.PlainText(sanitize.StripHTML(content)) == "" {
+		return "", fmt.Errorf("%w: provider returned empty content", ErrAIProviderRequestFailed)
+	}
+	content = sanitize.SanitizeEditorContent(content)
+	if sanitize.PlainText(sanitize.StripHTML(content)) == "" {
+		return "", fmt.Errorf("%w: provider returned empty content", ErrAIProviderRequestFailed)
+	}
+	return content, nil
 }
 
 func defaultAISettings(workspaceID uuid.UUID) *domain.AISettings {
@@ -234,22 +276,13 @@ func ToAISettingsResponse(settings *domain.AISettings) dto.AISettingsResponse {
 	}
 }
 
-func validateHTTPURL(rawURL string) error {
-	u, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil || u.Hostname() == "" {
-		return fmt.Errorf("base URL must be a valid URL")
-	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return fmt.Errorf("base URL must be an http or https URL")
-	}
-	return nil
+func validateAIBaseURL(rawURL string) error {
+	return aiegress.ValidateBaseURL(rawURL)
 }
 
 type chatCompletionRequest struct {
-	Model       string                  `json:"model"`
-	Messages    []chatCompletionMessage `json:"messages"`
-	Temperature float64                 `json:"temperature"`
+	Model    string                  `json:"model"`
+	Messages []chatCompletionMessage `json:"messages"`
 }
 
 type chatCompletionMessage struct {
@@ -259,7 +292,8 @@ type chatCompletionMessage struct {
 
 type chatCompletionResponse struct {
 	Choices []struct {
-		Message chatCompletionMessage `json:"message"`
+		Message      chatCompletionMessage `json:"message"`
+		FinishReason string                `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -267,13 +301,15 @@ type chatCompletionResponse struct {
 }
 
 func (s *AISettingsService) complete(ctx context.Context, baseURL, model, apiKey, prompt string) (string, error) {
+	if err := validateAIBaseURL(baseURL); err != nil {
+		return "", fmt.Errorf("%w: invalid base URL", ErrAIProviderRequestFailed)
+	}
 	payload := chatCompletionRequest{
 		Model: model,
 		Messages: []chatCompletionMessage{
 			{Role: "system", Content: "You produce safe TipTap/ProseMirror-compatible HTML fragments. Return only parseable HTML nodes, never Markdown fences or surrounding prose."},
 			{Role: "user", Content: prompt},
 		},
-		Temperature: 0.2,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -283,28 +319,52 @@ func (s *AISettingsService) complete(ctx context.Context, baseURL, model, apiKey
 	endpoint := strings.TrimRight(baseURL, "/") + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: invalid provider request", ErrAIProviderRequestFailed)
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := s.httpClient.Do(req)
+	// Do not follow redirects: the bearer token belongs only to the configured
+	// endpoint, and a redirect must never carry it to another endpoint or origin.
+	client := *s.httpClient
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrAIProviderRequestFailed, err)
+		if errors.Is(err, context.Canceled) {
+			return "", fmt.Errorf("%w: %w", ErrAIProviderRequestFailed, context.Canceled)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "", fmt.Errorf("%w: %w", ErrAIProviderRequestFailed, context.DeadlineExceeded)
+		}
+		if errors.Is(err, aiegress.ErrDestinationBlocked) {
+			return "", fmt.Errorf("%w: provider blocked by server network policy", ErrAIProviderRequestFailed)
+		}
+		return "", fmt.Errorf("%w: unable to reach provider", ErrAIProviderRequestFailed)
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	var parsed chatCompletionResponse
-	_ = json.Unmarshal(respBody, &parsed)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if parsed.Error != nil && parsed.Error.Message != "" {
-			return "", fmt.Errorf("%w: %s", ErrAIProviderRequestFailed, parsed.Error.Message)
-		}
-		return "", fmt.Errorf("%w: status %d", ErrAIProviderRequestFailed, resp.StatusCode)
+	const maxResponseBytes = 1 << 20
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return "", fmt.Errorf("%w: unable to read provider response", ErrAIProviderRequestFailed)
 	}
-	if len(parsed.Choices) == 0 {
-		return "", ErrAIProviderRequestFailed
+	if len(respBody) > maxResponseBytes {
+		return "", fmt.Errorf("%w: provider response is too large", ErrAIProviderRequestFailed)
+	}
+	// Upstream error text can echo credentials, URLs, or request content. Report
+	// only the HTTP status and controlled diagnostics to callers.
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("%w: provider returned HTTP status %d", ErrAIProviderRequestFailed, resp.StatusCode)
+	}
+	var parsed chatCompletionResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return "", fmt.Errorf("%w: invalid provider response", ErrAIProviderRequestFailed)
+	}
+	if parsed.Error != nil || len(parsed.Choices) == 0 || strings.TrimSpace(parsed.Choices[0].Message.Content) == "" {
+		return "", fmt.Errorf("%w: provider returned no completion", ErrAIProviderRequestFailed)
+	}
+	if reason := parsed.Choices[0].FinishReason; reason != "" && reason != "stop" {
+		return "", fmt.Errorf("%w: provider did not finish the completion", ErrAIProviderRequestFailed)
 	}
 	return parsed.Choices[0].Message.Content, nil
 }

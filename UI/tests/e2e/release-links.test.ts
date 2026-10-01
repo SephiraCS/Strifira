@@ -15,7 +15,12 @@ test('retries and restricts release manifest links to the fork repository', asyn
 		releaseRequests += 1;
 		const failure = transientFailures.shift();
 		if (failure === 'http') return route.fulfill({ status: 503, body: 'temporarily unavailable' });
-		if (failure === 'json') return route.fulfill({ status: 200, contentType: 'application/json', body: '{' });
+		if (failure === 'json')
+			return route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: '{'
+			});
 		return route.fulfill({
 			json: [
 				{
@@ -65,7 +70,13 @@ test('retries and restricts release manifest links to the fork repository', asyn
 		}
 		if (path === '/api/workspaces') {
 			return route.fulfill({
-				json: [{ id: '00000000-0000-0000-0000-000000000002', name: 'Test Workspace', slug: 'test' }]
+				json: [
+					{
+						id: '00000000-0000-0000-0000-000000000002',
+						name: 'Test Workspace',
+						slug: 'test'
+					}
+				]
 			});
 		}
 		if (path === '/api/workspaces/test') {
@@ -84,10 +95,14 @@ test('retries and restricts release manifest links to the fork repository', asyn
 		if (path === '/api/notifications') {
 			return route.fulfill({ json: { notifications: [], unread_count: 0 } });
 		}
-		return route.fulfill({ status: 404, json: { error: { message: `Unhandled ${request.method()} ${path}` } } });
+		return route.fulfill({
+			status: 404,
+			json: { error: { message: `Unhandled ${request.method()} ${path}` } }
+		});
 	});
 
 	await page.goto('/test/settings/version');
+	await page.getByRole('heading', { name: 'Version', exact: true }).waitFor();
 	await expect(page.getByText('No releases were found.')).toBeVisible();
 	await expect.poll(() => releaseRequests).toBe(3);
 	await page.getByRole('button', { name: 'Check releases' }).click();

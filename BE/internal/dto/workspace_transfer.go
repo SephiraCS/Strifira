@@ -9,7 +9,7 @@ import (
 )
 
 const WorkspaceExportFormat = "ku.workspace"
-const WorkspaceExportVersion = 1
+const WorkspaceExportVersion = 2
 
 type WorkspaceExportManifest struct {
 	Format                  string         `json:"format"`

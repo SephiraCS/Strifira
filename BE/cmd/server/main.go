@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -100,7 +102,7 @@ func main() {
 	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo)
 	favSvc := service.NewFavoriteService(favRepo)
 	prefsSvc := service.NewPreferencesService(prefsRepo)
-	aiSettingsSvc := service.NewAISettingsService(aiSettingsRepo, workspaceRepo, issueRepo, crypto.DeriveKey(cfg.JWTSecret+":ai"))
+	aiSettingsSvc := service.NewAISettingsService(aiSettingsRepo, workspaceRepo, issueRepo, crypto.DeriveKey(cfg.JWTSecret+":ai"), cfg.AIProviderNetworkPolicy)
 
 	// Dev Machine agent registry
 	devMachineAgentReg := agent.NewRegistry(
@@ -143,6 +145,18 @@ func main() {
 	prefsH := handler.NewPreferencesHandler(prefsSvc)
 	aiSettingsH := handler.NewAISettingsHandler(aiSettingsSvc)
 	devMachineH := handler.NewDevMachineHandler(devMachineSvc)
+	devBoxRepo := repository.NewDevBoxRepository(db)
+	devBoxSvc := service.NewDevBoxService(devBoxRepo, workspaceRepo, devMachineSvc, cfg.DemoDevMachineAllowed)
+	devBoxH := handler.NewDevBoxHandler(devBoxSvc)
+	go func() {
+		for range time.Tick(15 * time.Second) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			if err := devBoxSvc.SweepExpired(ctx); err != nil {
+				log.WithError(err).Warn("failed to expire dev box jobs")
+			}
+			cancel()
+		}
+	}()
 	analyticsRepo := repository.NewAnalyticsRepository(db)
 	analyticsH := handler.NewAnalyticsHandler(analyticsRepo)
 	systemH := handler.NewSystemHandler(cfg.SystemUpdaterURL, cfg.SystemUpdaterToken, cfg.IsSysAdmin)
@@ -153,6 +167,7 @@ func main() {
 	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)
 	shareSvc := service.NewScreenShareService(shareRepo, userRepo, hub)
+	hub.AuthorizeSharePresence = shareSvc.AuthorizePresence
 	// Persist presenter contact so the no-source GC grace survives restarts.
 	hub.OnPresenterSeen = func(shareID uuid.UUID) {
 		go func() {
@@ -191,11 +206,12 @@ func main() {
 	}
 	forgejoRepo := repository.NewForgejoRepository(db)
 	forgejoSvc := service.NewForgejoService(
-		forgejoRepo, issueRepo, teamRepo, teamStatusRepo, historyRepo,
+		forgejoRepo, issueRepo, teamRepo, teamStatusRepo,
 		crypto.DeriveKey(cfg.JWTSecret+":forgejo"), hub, cfg.FrontendURL, cfg.ForgejoWebhookURL,
 		globalForgejo,
 	)
 	forgejoH := handler.NewForgejoHandler(forgejoSvc)
+	forgejoActionsH := handler.NewForgejoActionsHandler(forgejoSvc)
 	// Forgejo Actions completion webhooks trigger CI status refreshes.
 	// Reconcile open PRs every five minutes in case a delivery is missed.
 	go forgejoSvc.ReconcileWebhookEvents(context.Background())
@@ -225,26 +241,28 @@ func main() {
 	}()
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
-		Version:      mcpServerVersion(),
-		Users:        userRepo,
-		Workspaces:   workspaceRepo,
-		Teams:        teamRepo,
-		TeamStatuses: teamStatusRepo,
-		Projects:     projectRepo,
-		Labels:       labelRepo,
-		Cycles:       cycleRepo,
-		Templates:    templateRepo,
-		Analytics:    analyticsRepoMCP,
-		IssueSvc:     issueSvc,
-		CommentSvc:   commentSvc,
-		RelationSvc:  relationSvc,
-		WorkspaceSvc: workspaceSvc,
-		TeamSvc:      teamSvc,
-		StatusSvc:    teamStatusSvc,
-		ProjectSvc:   projectSvc,
-		LabelSvc:     labelSvc,
-		NotifSvc:     notifSvc,
-		ForgejoSvc:   forgejoSvc,
+		Version:           mcpServerVersion(),
+		Users:             userRepo,
+		Workspaces:        workspaceRepo,
+		Teams:             teamRepo,
+		TeamStatuses:      teamStatusRepo,
+		Projects:          projectRepo,
+		Labels:            labelRepo,
+		Cycles:            cycleRepo,
+		Templates:         templateRepo,
+		Analytics:         analyticsRepoMCP,
+		IssueSvc:          issueSvc,
+		CommentSvc:        commentSvc,
+		RelationSvc:       relationSvc,
+		WorkspaceSvc:      workspaceSvc,
+		TeamSvc:           teamSvc,
+		StatusSvc:         teamStatusSvc,
+		ProjectSvc:        projectSvc,
+		LabelSvc:          labelSvc,
+		NotifSvc:          notifSvc,
+		ForgejoSvc:        forgejoSvc,
+		ForgejoActionsSvc: forgejoSvc,
+		DevBoxSvc:         devBoxSvc,
 	})
 
 	// Background: clean up expired refresh tokens every hour
@@ -437,6 +455,7 @@ func main() {
 	ws.GET("/ai-settings", aiSettingsH.Get, mw.RequirePermission("issue:read"))
 	ws.GET("/ai-settings/issue-copy-prompt", aiSettingsH.GetIssueCopyPrompt, mw.RequirePermission("issue:read"))
 	ws.PATCH("/ai-settings", aiSettingsH.Update, mw.RequireOwner())
+	ws.POST("/ai-settings/test", aiSettingsH.TestConnection, mw.RequireOwner())
 	ws.POST("/ai/rework", aiSettingsH.Rework, mw.RequirePermission("issue:update"))
 
 	// Forgejo integration
@@ -452,6 +471,12 @@ func main() {
 	ws.GET("/forgejo/repos", forgejoH.ListRepos, mw.RequirePermission("workspace:manage"))
 	ws.POST("/forgejo/repos", forgejoH.LinkRepos, mw.RequirePermission("workspace:manage"))
 	ws.DELETE("/forgejo/repos/:id", forgejoH.UnlinkRepo, mw.RequirePermission("workspace:manage"))
+	ws.GET("/forgejo/repos/:repoId/actions/runs", forgejoActionsH.ListRuns, mw.RequirePermission("issue:read"))
+	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId", forgejoActionsH.GetRun, mw.RequirePermission("issue:read"))
+	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId/jobs", forgejoActionsH.ListJobs, mw.RequirePermission("issue:read"))
+	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId/jobs/:jobId", forgejoActionsH.GetJob, mw.RequirePermission("issue:read"))
+	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId/jobs/:jobId/logs", forgejoActionsH.GetJobLogs, mw.RequirePermission("issue:read"))
+	ws.POST("/forgejo/repos/:repoId/actions/runs/:runId/cancel", forgejoActionsH.Cancel, mw.RequirePermission("workspace:manage"))
 	ws.GET("/forgejo/user-mappings", forgejoH.ListUserMappings)
 	ws.PUT("/forgejo/user-mappings", forgejoH.UpdateUserMappings, mw.RequirePermission("workspace:manage"))
 	ws.GET("/forgejo/auto-transitions", forgejoH.ListAutoTransitions)
@@ -505,6 +530,25 @@ func main() {
 	dm.POST("/agent-runs/:agentRunId/cancel", devMachineH.CancelAgentRun, mw.RequirePermission("dev_machine:manage"))
 	dm.GET("/agent-runs/:agentRunId/trace", devMachineH.AgentRunTrace, mw.RequirePermission("dev_machine:read"))
 
+	// Existing development hosts use an outbound worker and do not require Docker.
+	dm.GET("/dev-boxes", devBoxH.List, mw.RequirePermission(domain.PermDevMachineRead))
+	dm.POST("/dev-boxes", devBoxH.Create, mw.RequirePermission(domain.PermDevMachineCreate))
+	dm.PATCH("/dev-boxes/:boxId", devBoxH.Update, mw.RequirePermission(domain.PermDevMachineManage))
+	dm.POST("/dev-boxes/:boxId/rotate-token", devBoxH.RotateToken, mw.RequirePermission(domain.PermDevMachineManage))
+	dm.DELETE("/dev-boxes/:boxId", devBoxH.Revoke, mw.RequirePermission(domain.PermDevMachineManage))
+	dm.POST("/dev-boxes/:boxId/jobs", devBoxH.CreateJob, mw.RequirePermission(domain.PermDevMachineManage))
+	dm.GET("/dev-box-jobs", devBoxH.ListJobs, mw.RequirePermission(domain.PermDevMachineRead))
+	dm.GET("/dev-box-jobs/:jobId", devBoxH.GetJob, mw.RequirePermission(domain.PermDevMachineRead))
+	dm.POST("/dev-box-jobs/:jobId/cancel", devBoxH.CancelJob, mw.RequirePermission(domain.PermDevMachineManage))
+	dm.GET("/dev-box-jobs/:jobId/logs", devBoxH.JobLogs, mw.RequirePermission(domain.PermDevMachineRead))
+	workers := e.Group("/api/dev-box-worker", mw.DevBoxWorkerAuth(devBoxSvc))
+	workers.POST("/heartbeat", devBoxH.Heartbeat)
+	workers.POST("/claim", devBoxH.Claim)
+	workers.POST("/jobs/:jobId/start", devBoxH.Start)
+	workers.POST("/jobs/:jobId/renew", devBoxH.Renew)
+	workers.POST("/jobs/:jobId/logs", devBoxH.AppendLog)
+	workers.POST("/jobs/:jobId/complete", devBoxH.Complete)
+
 	// Favorites
 	ws.GET("/favorites", favH.List)
 	ws.POST("/favorites", favH.Create)
@@ -547,7 +591,7 @@ func main() {
 	e.Any("/mcp", echo.WrapHandler(mcpHandler), mw.APIKeyAuth(apiKeySvc))
 
 	// Start
-	addr := fmt.Sprintf(":%d", cfg.Port)
+	addr := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.Port))
 	log.Infof("Starting server on %s", addr)
 	if err := e.Start(addr); err != nil {
 		log.Fatalf("Server failed: %v", err)

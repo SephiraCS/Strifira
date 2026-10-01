@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Cycle, CycleBurndownPoint } from '$lib/types/cycle';
-	import * as echarts from 'echarts';
+	import { init, graphic, type ECharts } from '$lib/charts/echarts';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
@@ -13,7 +13,7 @@
 	} = $props();
 
 	let chartEl: HTMLDivElement | undefined = $state();
-	let chart: echarts.ECharts | undefined;
+	let chart: ECharts | undefined;
 	let hoveredPoint = $state<CycleBurndownPoint | null>(null);
 	let hoveredNoData = $state(false);
 
@@ -24,14 +24,10 @@
 	const lastPoint = $derived(data.length > 0 ? data[data.length - 1] : null);
 	const displayPoint = $derived(hoveredPoint ?? lastPoint);
 	const startedPct = $derived(
-		displayPoint && displayPoint.scope > 0
-			? Math.round((displayPoint.started / displayPoint.scope) * 100)
-			: 0
+		displayPoint && displayPoint.scope > 0 ? Math.round((displayPoint.started / displayPoint.scope) * 100) : 0
 	);
 	const completedPct = $derived(
-		displayPoint && displayPoint.scope > 0
-			? Math.round((displayPoint.completed / displayPoint.scope) * 100)
-			: 0
+		displayPoint && displayPoint.scope > 0 ? Math.round((displayPoint.completed / displayPoint.scope) * 100) : 0
 	);
 
 	function formatDate(dateStr: string): string {
@@ -108,7 +104,7 @@
 			projectionMetIndex >= 0 && i >= projectionMetIndex ? lastScope : null
 		);
 
-		chart = echarts.init(chartEl, undefined, { renderer: 'canvas' });
+		chart = init(chartEl, undefined, { renderer: 'canvas' });
 
 		// Create canvas pattern for single-direction oblique stripes
 		const patternSize = 10;
@@ -192,9 +188,11 @@
 					const sv = started?.value ?? started?.value?.value ?? '';
 					const cv = completed?.value ?? completed?.value?.value ?? '';
 					if (sv === '' && cv === '') return `<span style="font-weight:500">${label}</span>`;
-					return `<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:500">${label}</span>`
-						+ `<span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${colorStarted}"/></svg>${sv}</span>`
-						+ `<span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${colorCompleted}"/></svg>${cv}</span></div>`;
+					return (
+						`<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:500">${label}</span>` +
+						`<span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${colorStarted}"/></svg>${sv}</span>` +
+						`<span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${colorCompleted}"/></svg>${cv}</span></div>`
+					);
 				}
 			},
 			series: [
@@ -207,7 +205,7 @@
 					lineStyle: { color: colorFinish, width: 1.5, opacity: 0.35 },
 					itemStyle: { color: colorFinish },
 					areaStyle: {
-						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+						color: new graphic.LinearGradient(0, 0, 0, 1, [
 							{ offset: 0, color: colorFinish + '0a' },
 							{ offset: 0.4, color: colorFinish + '00' }
 						])
@@ -238,17 +236,13 @@
 				{
 					name: m['cycles.chart.started'](),
 					type: 'line',
-					data: startedData.map((v, i) =>
-						i === lastActualIndex
-							? { value: v, symbol: 'circle', symbolSize: 8 }
-							: v
-					),
+					data: startedData.map((v, i) => (i === lastActualIndex ? { value: v, symbol: 'circle', symbolSize: 8 } : v)),
 					smooth: true,
 					symbol: 'none',
 					lineStyle: { color: colorStarted, width: 2 },
 					itemStyle: { color: colorStarted },
 					areaStyle: {
-						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+						color: new graphic.LinearGradient(0, 0, 0, 1, [
 							{ offset: 0.6, color: colorStarted + '10' },
 							{ offset: 1, color: colorStarted + '00' }
 						])
@@ -258,16 +252,14 @@
 					name: m['cycles.chart.completed'](),
 					type: 'line',
 					data: completedData.map((v, i) =>
-						i === lastActualIndex
-							? { value: v, symbol: 'circle', symbolSize: 8 }
-							: v
+						i === lastActualIndex ? { value: v, symbol: 'circle', symbolSize: 8 } : v
 					),
 					smooth: true,
 					symbol: 'none',
 					lineStyle: { color: colorCompleted, width: 2 },
 					itemStyle: { color: colorCompleted },
 					areaStyle: {
-						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+						color: new graphic.LinearGradient(0, 0, 0, 1, [
 							{ offset: 0.6, color: colorCompleted + '10' },
 							{ offset: 1, color: colorCompleted + '00' }
 						])
@@ -325,7 +317,10 @@
 		<div class="flex w-[200px] shrink-0 flex-col justify-center gap-5 px-4 py-5 text-sm">
 			<div class="flex items-center justify-between gap-3">
 				<span class="flex items-center gap-2">
-					<span class="inline-block h-2.5 w-2.5 rounded-sm bg-[var(--color-text-tertiary)]" style="border: 1px dotted var(--color-text-tertiary);"></span>
+					<span
+						class="inline-block h-2.5 w-2.5 rounded-sm bg-[var(--color-text-tertiary)]"
+						style="border: 1px dotted var(--color-text-tertiary);"
+					></span>
 					<span class="text-[var(--color-text-secondary)]">{m['cycles.chart.scope']()}</span>
 				</span>
 				<span class="font-medium text-[var(--color-text-secondary)]">{displayPoint?.scope ?? lastPoint?.scope}</span>
@@ -338,7 +333,9 @@
 				{#if hoveredNoData}
 					<span class="text-[var(--color-text-tertiary)]">-</span>
 				{:else}
-					<span class="text-[var(--color-text-primary)]">{displayPoint?.started} <span class="text-[var(--color-text-tertiary)]">· {startedPct}%</span></span>
+					<span class="text-[var(--color-text-primary)]"
+						>{displayPoint?.started} <span class="text-[var(--color-text-tertiary)]">· {startedPct}%</span></span
+					>
 				{/if}
 			</div>
 			<div class="flex items-center justify-between gap-3">
@@ -349,7 +346,9 @@
 				{#if hoveredNoData}
 					<span class="text-[var(--color-text-tertiary)]">-</span>
 				{:else}
-					<span class="text-[var(--color-text-primary)]">{displayPoint?.completed} <span class="text-[var(--color-text-tertiary)]">· {completedPct}%</span></span>
+					<span class="text-[var(--color-text-primary)]"
+						>{displayPoint?.completed} <span class="text-[var(--color-text-tertiary)]">· {completedPct}%</span></span
+					>
 				{/if}
 			</div>
 			<div class="flex items-center justify-between gap-3">

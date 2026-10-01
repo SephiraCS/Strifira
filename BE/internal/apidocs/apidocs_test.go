@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/ku/ku-backend/internal/dto"
 )
 
 // loadSpec parses the embedded document and returns its paths.
@@ -25,7 +27,7 @@ func loadSpec(t *testing.T) map[string]any {
 	return paths
 }
 
-var routeRe = regexp.MustCompile(`(?m)^\t(e|api|ws|auth|pub|dm)\.(GET|POST|PATCH|PUT|DELETE|Any)\("([^"]*)",`)
+var routeRe = regexp.MustCompile(`(?m)^\t(e|api|ws|auth|pub|dm|workers)\.(GET|POST|PATCH|PUT|DELETE|Any)\("([^"]*)",`)
 
 var paramRe = regexp.MustCompile(`:(\w+)`)
 
@@ -47,6 +49,8 @@ func registeredOps(src string) map[string]bool {
 			path = "/api/public" + path
 		case "api":
 			path = "/api" + path
+		case "workers":
+			path = "/api/dev-box-worker" + path
 		default: // ws / dm
 			path = "/api/workspaces/:slug" + path
 		}
@@ -55,6 +59,13 @@ func registeredOps(src string) map[string]bool {
 		})] = true
 	}
 	return ops
+}
+
+func TestRegisteredWorkerOperations(t *testing.T) {
+	ops := registeredOps("\tworkers.POST(\"/jobs/:jobId/complete\", handler)\n")
+	if !ops["POST /api/dev-box-worker/jobs/{jobId}/complete"] {
+		t.Fatalf("worker route prefix not recognized: %v", ops)
+	}
 }
 
 // TestRouteParity keeps the document in lockstep with the routes actually
@@ -172,5 +183,43 @@ func TestVersionMatchesUI(t *testing.T) {
 	info, _ := doc["info"].(map[string]any)
 	if info["version"] != pkg.Version {
 		t.Errorf("openapi info.version = %v, want %v (UI/package.json)", info["version"], pkg.Version)
+	}
+}
+
+// Match the documented native job payload to the response type so the docs
+// cannot promise step or timing data unavailable from Forgejo's run-jobs API.
+func TestForgejoActionJobSchemaMatchesResponse(t *testing.T) {
+	doc, err := Spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	components := doc["components"].(map[string]any)
+	schemas := components["schemas"].(map[string]any)
+	schema := schemas["ForgejoActionJob"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	required := schema["required"].([]any)
+	encoded, err := json.Marshal(dto.ForgejoActionJobResponse{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(properties) != len(fields) || len(required) != len(fields) {
+		t.Fatalf("job schema fields = %v (required %v), response fields = %v", properties, required, fields)
+	}
+	for field := range fields {
+		if _, exists := properties[field]; !exists {
+			t.Errorf("job response field %q is undocumented", field)
+		}
+	}
+	for _, field := range required {
+		if _, exists := fields[field.(string)]; !exists {
+			t.Errorf("job schema requires unsupported field %q", field)
+		}
+	}
+	if _, exists := schemas["ForgejoActionStep"]; exists {
+		t.Error("job step schema remains despite the native API lacking step data")
 	}
 }

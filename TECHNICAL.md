@@ -205,7 +205,7 @@ Initial providers:
 |---|---|---|---|
 | `claude-code` | Claude Code | `ANTHROPIC_API_KEY` | interactive, autonomous |
 | `opencode` | OpenCode | model/provider dependent | interactive, autonomous |
-| `codex` | Codex | `OPENAI_API_KEY` | interactive, autonomous |
+| `codex` | Codex | `CODEX_API_KEY` | interactive, autonomous |
 | `custom` | Admin-configured argv CLI | explicit configuration | interactive, autonomous |
 
 Provider adapters can construct both invocation modes, but the current product dialogs queue autonomous runs only and there is no UI/gateway endpoint for attaching to an interactive agent container. The shared developer image pins OpenCode, Claude Code, and Codex CLI versions for direct interactive terminal/code-server use. Custom providers must be enabled by workspace policy and are currently launched through the autonomous dashboard flow. Provider-specific agent images remain separately pinned by tag or digest in configuration and runtime Dockerfiles; custom provider images must also be pinned.
@@ -227,7 +227,7 @@ Provider adapters can construct both invocation modes, but the current product d
 }
 ```
 
-Completed autonomous provider stdout/stderr is collected and redacted before persistence. JSON-line provider events are normalized into `dev_machine_events`.
+Autonomous provider stdout/stderr is streamed from Docker while the run is active, redacted, and persisted as cursor-addressable log chunks. JSON-line provider events are persisted as `dev_machine_events`. Claude terminal result errors and Codex failed turns override a zero process exit; missing terminal results are treated as incomplete failures. Claude explicitly permits coding tools in headless `dontAsk` mode; Codex uses explicit sandbox and approval settings inside the isolated container.
 
 ## Execution Modes
 
@@ -248,7 +248,9 @@ An autonomous run receives:
 - explicitly allowed secret names;
 - push and pull-request policy.
 
-Ku adds an execution contract instructing the provider to work only inside the selected workspace path, avoid credential output, run the requested tests, commit results, and use the configured working branch.
+Ku adds an execution contract instructing the provider to work inside the selected workspace path, avoid credential output, run the requested tests, and use the configured working branch. After provider success, the manager independently runs the exact configured test argv in the developer container and records its actual exit status. It inspects committed, dirty, and untracked Git files, rejects changed forbidden paths or an unexpected working branch, then commits outstanding changes and pushes to the selected linked Forgejo repository before opening a pull request. A failed test or verification check blocks publication. An absent test command is recorded as `not_run`; model-reported test success is never treated as verification.
+
+Allowed-command instructions remain advisory. Forbidden paths are a publication check, not a filesystem access sandbox; edits can occur before validation. The shared workspace remains editable through the IDE, so operators should avoid concurrent edits during a run and publication. Tests use the developer image toolchain and do not receive Git publishing tokens in their exec environment.
 
 ## Lifecycle
 
@@ -353,9 +355,9 @@ Environment deletion is two-phase. The API marks an environment `delete_requeste
 
 Dev Machines use the workspace (or globally configured) Forgejo token for clone, push, and pull-request creation. Generic machines may start without a repository; issue checkouts resolve the linked repository through issue, project, team, then workspace development settings. Once a machine has repository affinity, additional issue worktrees must use the same linked repository.
 
-The token needs repository write scope for push and pull-request creation. Forgejo has no per-repository installation tokens, so the manager reuses the connection token itself: the global `FORGEJO_TOKEN` when configured, otherwise the workspace connection token decrypted at use time (it is stored AES-256-GCM encrypted). The manager only hands it out for repositories linked to the workspace, registers it as a runtime credential for telemetry redaction, and injects it as `FORGEJO_TOKEN` through the tmpfs secret flow into the developer or agent containers that need Git.
+The token needs repository write scope for push and pull-request creation. Forgejo has no per-repository installation tokens, so the manager reuses the connection token itself: the global `FORGEJO_TOKEN` when configured, otherwise the workspace connection token decrypted at use time (it is stored AES-256-GCM encrypted). The manager only hands it out for repositories linked to the workspace, registers it as a runtime credential for telemetry redaction, and delivers it through the tmpfs secret flow to the developer container when needed for Git. Autonomous provider containers do not receive the Forgejo publishing token; manager-controlled publication supplies a fresh token to a short-lived Git process after verification, with repository hooks disabled.
 
-The developer and agent containers install an ephemeral Git credential helper; issue checkouts additionally use a temporary askpass script. Ku resolves the workspace or global Forgejo connection again before creating a pull request after a successful run.
+The developer and agent containers install a Git credential helper that only supplies Forgejo credentials for the selected HTTPS host and repository (GitHub tokens are limited to github.com). Issue checkouts use a temporary credential helper and token file that are removed on success or failure, and resolve the clone URL from the linked Forgejo instance. Publication uses the authorized repository URL instead of a mutable origin remote. Ku resolves the workspace or global Forgejo connection again before creating a pull request after a successful run.
 
 Branches, commits, and pull requests are persisted in `dev_machine_git_refs` with workspace, machine, run, issue, repository, and URL linkage. Existing Forgejo webhooks continue to populate the issue development timeline.
 
@@ -378,7 +380,7 @@ Each issue checkout is an idempotent `dev_machine_checkouts` record with its own
 
 Activity is operational telemetry, not tamper-proof security auditing. Trusted workspace code can bypass in-container hooks.
 
-Structured events use a monotonic `BIGSERIAL` cursor. Completed autonomous agent stdout/stderr uses cursor-addressable `dev_machine_log_chunks`. The schema reserves a PTY stream, but native terminal and interactive-agent PTY output is not currently persisted. Issue worktrees do not install the root-checkout Git hooks. API reads are workspace-scoped. High-volume log retention should be configured and periodically pruned by operators.
+Structured events use a monotonic `BIGSERIAL` cursor. Active autonomous agent stdout/stderr uses cursor-addressable `dev_machine_log_chunks`; manager-run test output is recorded in the `tests` stream. The schema reserves a PTY stream, but native terminal and interactive-agent PTY output is not currently persisted. Issue worktrees do not install the root-checkout Git hooks. API reads are workspace-scoped. High-volume log retention should be configured and periodically pruned by operators.
 
 The UI exposes machine status, services, resource samples, cursor-paginated events and logs, checkouts, terminal sessions, agent runs, normalized results, commits, branches, PRs, and lifecycle/delete controls. Native terminal attachment is implemented in the Ku UI with `@xterm/xterm`; ttyd's own web page is not exposed.
 
@@ -569,6 +571,8 @@ Compose places the Internet-facing gateway only on an internal `machine-control`
 Valid-looking unknown wildcard hosts are bounded before they can exhaust the database: route lookups use a 60-per-second source limit, a 500-per-second process limit, and a 32-query concurrency cap; missing routes are cached for 30 seconds. Attacker-controlled source and negative-route state is capped, and unknown-route audits are limited to one per source per five minutes and ten total writes per minute. The manager deletes access logs older than 90 days in batches of 1,000. Malformed or out-of-domain hosts are rejected before any database operation.
 
 The self-hosting `dev-machine-images` profile builds the developer, browser, collector, egress, and built-in provider agent images locally. Environment Builder snapshot bytes are additional local OCI images in the host Docker image store, while their references and lifecycle metadata are stored in `dev_machine_environments`; snapshots are not Compose volumes. Backups and host migrations must account for PostgreSQL, Docker named volumes, and any environment images that should survive a host replacement.
+
+For focused agent runtime qualification, build `devmachine/agent/Dockerfile` with `devmachine` as its context and `PROVIDER=claude-code`. Its `GO_IMAGE` and `NODE_IMAGE` build arguments accept private registry equivalents of the pinned base images. From `BE`, set `KU_DOCKER_AGENT_IMAGE` to that local image and run `go test ./internal/machine -run TestDockerRuntimeAgentQualification -count=1 -v`. The test creates and removes its own quota volume, bridge and bounded containers; it checks the Go compiler, independent test exit codes, Git changes and agent/command cancellation. Setting `KU_DOCKER_AGENT_LIVE=1` also exercises the real coding CLI, streamed JSONL and normalized terminal result. Provide `KU_DOCKER_AGENT_API_KEY` only in the test process environment; optional `KU_DOCKER_AGENT_BASE_URL` and `KU_DOCKER_AGENT_MODEL` select a development provider. This focused test uses an externally routed disposable bridge and bypasses the proxy only when a development base URL is supplied; the full lifecycle test separately covers machine network isolation and egress policy. It never publishes a branch or creates a pull request.
 
 `selfhosting/update.sh` detects an active Dev Machines profile without enabling it on other deployments. When active, it rebuilds runtime images before stopping the old gateway and manager, applies migrations with the new backend image, and starts the updated application and control plane only after the schema is current. If migration, role provisioning, or a later update step fails after the stop, its EXIT trap removes the upgrade marker, preserves the original failure status and container logs, and uses `docker compose start` to revive the same previous control-plane containers rather than recreating them from new images.
 

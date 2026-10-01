@@ -6,13 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/ku/ku-backend/internal/dto"
 )
+
+var ErrWorkspaceTransferIdentifierConflict = errors.New("issue identifier belongs to a different imported issue")
 
 type WorkspaceTransferTableSpec struct {
 	Name       string
@@ -37,6 +39,7 @@ func WorkspaceTransferTableSpecs() []WorkspaceTransferTableSpec {
 		{Name: "project_status_visibility", SelectSQL: `SELECT to_jsonb(x)::text FROM project_status_visibility x JOIN projects p ON p.id=x.project_id WHERE p.workspace_id=$1 ORDER BY x.project_id,x.status_id`},
 		{Name: "cycles", SelectSQL: `SELECT to_jsonb(x)::text FROM cycles x JOIN teams p ON p.id=x.team_id WHERE p.workspace_id=$1 ORDER BY x.team_id,x.number,x.id`, IDColumn: "id"},
 		{Name: "issues", SelectSQL: `SELECT to_jsonb(x)::text FROM issues x WHERE workspace_id=$1 ORDER BY created_at,id`, IDColumn: "id", UserFields: []string{"creator_id", "assignee_id"}},
+		{Name: "issue_identifier_history", SelectSQL: `SELECT to_jsonb(x)::text FROM issue_identifier_history x WHERE workspace_id=$1 ORDER BY identifier_text`},
 		{Name: "issue_labels", SelectSQL: `SELECT to_jsonb(x)::text FROM issue_labels x JOIN issues p ON p.id=x.issue_id WHERE p.workspace_id=$1 ORDER BY x.issue_id,x.label_id`},
 		{Name: "issue_assignees", SelectSQL: `SELECT to_jsonb(x)::text FROM issue_assignees x JOIN issues p ON p.id=x.issue_id WHERE p.workspace_id=$1 ORDER BY x.issue_id,x.user_id`, UserFields: []string{"user_id"}},
 		{Name: "issue_subscribers", SelectSQL: `SELECT to_jsonb(x)::text FROM issue_subscribers x JOIN issues p ON p.id=x.issue_id WHERE p.workspace_id=$1 ORDER BY x.issue_id,x.user_id`, UserFields: []string{"user_id"}},
@@ -201,7 +204,7 @@ func (r *WorkspaceTransferRepository) InsertRow(ctx context.Context, tx *sqlx.Tx
 	if len(columns) == 0 {
 		return fmt.Errorf("%s row has no importable columns", table)
 	}
-	sort.Strings(columns)
+	slices.Sort(columns)
 	quoted := make([]string, len(columns))
 	values := make([]string, len(columns))
 	args := make([]any, len(columns))
@@ -211,11 +214,30 @@ func (r *WorkspaceTransferRepository) InsertRow(ctx context.Context, tx *sqlx.Tx
 		args[i] = transferDBValue(table, column, row[column])
 	}
 	query := fmt.Sprintf(`INSERT INTO "%s" (%s) VALUES (%s)`, table, strings.Join(quoted, ","), strings.Join(values, ","))
-	_, err := tx.ExecContext(ctx, query, args...)
+	if table == "issue_identifier_history" {
+		// Issue insertion already registers the current identifier. Preserve its
+		// archived timestamp without allowing an alias to change issue owners.
+		query += ` ON CONFLICT (workspace_id,identifier_text) DO UPDATE
+			SET created_at=EXCLUDED.created_at
+			WHERE issue_identifier_history.issue_id=EXCLUDED.issue_id`
+	}
+	result, err := tx.ExecContext(ctx, query, args...)
 	if table == "workspaces" && err != nil {
 		return workspaceCreateError(err)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if table == "issue_identifier_history" {
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return ErrWorkspaceTransferIdentifierConflict
+		}
+	}
+	return nil
 }
 
 func transferDBValue(table, column string, value any) any {

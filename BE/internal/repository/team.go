@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	"github.com/ku/ku-backend/internal/domain"
 )
@@ -19,8 +20,19 @@ func NewTeamRepository(db *sqlx.DB) *TeamRepository {
 }
 
 func (r *TeamRepository) Create(ctx context.Context, team *domain.Team) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := reserveTeamKey(ctx, tx, team.ID, team.WorkspaceID, team.Key); err != nil {
+		return err
+	}
 	query := `INSERT INTO teams (id, workspace_id, name, key, description, color, icon) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING created_at, updated_at`
-	return r.db.QueryRowContext(ctx, query, team.ID, team.WorkspaceID, team.Name, team.Key, team.Description, team.Color, team.Icon).Scan(&team.CreatedAt, &team.UpdatedAt)
+	if err := tx.QueryRowContext(ctx, query, team.ID, team.WorkspaceID, team.Name, team.Key, team.Description, team.Color, team.Icon).Scan(&team.CreatedAt, &team.UpdatedAt); err != nil {
+		return teamKeyError(err)
+	}
+	return tx.Commit()
 }
 
 func (r *TeamRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Team, error) {
@@ -43,9 +55,47 @@ func (r *TeamRepository) Update(ctx context.Context, team *domain.Team) error {
 	return r.db.QueryRowContext(ctx, query, team.Name, team.Description, team.Color, team.Icon, team.TriageEnabled, team.ParentAutoCloseEnabled, team.SubIssueAutoCloseEnabled, team.IssueCopyPrompt, team.ID).Scan(&team.UpdatedAt)
 }
 
-// ErrTeamKeyCollision means another team in the workspace already issues
-// identifiers under the requested key, so renaming would create duplicates.
+// ErrTeamKeyCollision means the requested key would reuse an existing or
+// historical identifier owned by another issue or team in the workspace.
 var ErrTeamKeyCollision = errors.New("another team already uses identifiers under this key")
+
+func teamKeyError(err error) error {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" {
+		switch pgErr.ConstraintName {
+		case "teams_workspace_id_key_key", "issues_workspace_id_identifier_text_key", "issue_identifier_history_pkey":
+			return ErrTeamKeyCollision
+		}
+	}
+	return err
+}
+
+func reserveTeamKey(ctx context.Context, tx *sqlx.Tx, teamID, workspaceID uuid.UUID, key string) error {
+	// Serialize key creation/renaming within a workspace. The identifier history
+	// primary key also protects against aliases inserted outside these paths.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 524052))`, workspaceID); err != nil {
+		return err
+	}
+	var collision bool
+	err := tx.GetContext(ctx, &collision, `SELECT
+		EXISTS(SELECT 1 FROM teams WHERE workspace_id = $2 AND key = $3 AND id <> $1)
+		OR EXISTS(
+			SELECT 1 FROM issue_identifier_history h
+			JOIN issues owner ON owner.workspace_id = h.workspace_id AND owner.id = h.issue_id
+			WHERE h.workspace_id = $2 AND split_part(h.identifier_text, '-', 1) = $3
+			AND owner.team_id <> $1)
+		OR EXISTS(
+			SELECT 1 FROM issues mine
+			JOIN issue_identifier_history h ON h.workspace_id = mine.workspace_id
+				AND h.identifier_text = $3 || '-' || mine.number
+			WHERE mine.workspace_id = $2 AND mine.team_id = $1 AND h.issue_id <> mine.id)`, teamID, workspaceID, key)
+	if err != nil {
+		return err
+	}
+	if collision {
+		return ErrTeamKeyCollision
+	}
+	return nil
+}
 
 // UpdateAndRenameKey changes the team row (including its key) and rewrites
 // every issue identifier from oldKey-N to newKey-N in one transaction. The
@@ -58,27 +108,17 @@ func (r *TeamRepository) UpdateAndRenameKey(ctx context.Context, team *domain.Te
 	}
 	defer tx.Rollback()
 
-	var collision bool
-	err = tx.GetContext(ctx, &collision, `SELECT EXISTS(
-		SELECT 1 FROM issues mine
-		JOIN issues other ON other.workspace_id = mine.workspace_id
-			AND other.team_id <> mine.team_id
-			AND other.identifier_text = $3 || '-' || mine.number
-		WHERE mine.team_id = $1 AND mine.workspace_id = $2)`, team.ID, team.WorkspaceID, newKey)
-	if err != nil {
+	if err := reserveTeamKey(ctx, tx, team.ID, team.WorkspaceID, newKey); err != nil {
 		return 0, err
-	}
-	if collision {
-		return 0, ErrTeamKeyCollision
 	}
 
 	if err := tx.QueryRowContext(ctx, `UPDATE teams SET name = $1, key = $2, description = $3, color = $4, icon = $5, triage_enabled = $6, parent_auto_close_enabled = $7, sub_issue_auto_close_enabled = $8, issue_copy_prompt = $9, updated_at = NOW() WHERE id = $10 RETURNING updated_at`,
 		team.Name, newKey, team.Description, team.Color, team.Icon, team.TriageEnabled, team.ParentAutoCloseEnabled, team.SubIssueAutoCloseEnabled, team.IssueCopyPrompt, team.ID).Scan(&team.UpdatedAt); err != nil {
-		return 0, err
+		return 0, teamKeyError(err)
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE issues SET identifier_text = $1 || '-' || number, updated_at = NOW() WHERE team_id = $2 AND workspace_id = $3`, newKey, team.ID, team.WorkspaceID)
 	if err != nil {
-		return 0, err
+		return 0, teamKeyError(err)
 	}
 	renamed, err := res.RowsAffected()
 	if err != nil {

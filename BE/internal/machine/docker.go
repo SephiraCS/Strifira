@@ -51,36 +51,8 @@ for secret_name in ${KU_SECRET_NAMES:-}; do
 done
 IFS=$old_ifs
 rm -f /run/ku-secrets/.ready
-home_dir=${HOME:-/home/ku}
-credential_helper=${KU_GIT_CREDENTIAL_HELPER:-$home_dir/.ku-git-credential}
-case "$credential_helper" in /*) ;; *) exit 1 ;; esac
-helper_dir=${credential_helper%/*}
-[ "$helper_dir" != "$credential_helper" ] || helper_dir=.
-mkdir -p "$helper_dir"
-old_umask=$(umask)
-umask 077
-cat > "$credential_helper" <<'SCRIPT'
-#!/bin/sh
-case "${1:-get}" in
-  get ) ;;
-  store|erase ) exit 0 ;;
-  * ) exit 0 ;;
-esac
-if [ -z "${GITHUB_TOKEN:-}" ]; then
-  echo "missing active GitHub token" >&2
-  exit 1
-fi
-printf '%s\n' username=x-access-token
-printf '%s\n' "password=$GITHUB_TOKEN"
-SCRIPT
-chmod 0700 "$credential_helper"
-umask "$old_umask"
-if command -v git >/dev/null 2>&1; then
-  git config --global --unset-all core.askPass >/dev/null 2>&1 || true
-  git config --global --unset-all credential.helper >/dev/null 2>&1 || true
-  git config --global credential.helper "$credential_helper"
-  export GIT_TERMINAL_PROMPT=0
-fi
+unset FORGEJO_TOKEN GITHUB_TOKEN KU_GIT_CREDENTIAL_HELPER KU_FORGEJO_HOST KU_GIT_REPOSITORY
+export GIT_TERMINAL_PROMPT=0
 exec "$@"`
 
 type DockerConfig struct {
@@ -95,10 +67,12 @@ type DockerConfig struct {
 }
 
 type DockerRuntime struct {
-	client     *client.Client
-	config     DockerConfig
-	quotaMu    sync.Mutex
-	quotaReady bool
+	client             *client.Client
+	config             DockerConfig
+	quotaMu            sync.Mutex
+	quotaReady         bool
+	reservationMu      sync.Mutex
+	activeReservations map[string]struct{}
 }
 
 func NewDockerRuntime(config DockerConfig) (*DockerRuntime, error) {
@@ -178,9 +152,18 @@ func (r *DockerRuntime) Inspect(ctx context.Context, machine *domain.DevMachine,
 	return result, nil
 }
 
-func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService, secrets map[string]map[string]string) (string, string, map[string]string, error) {
+func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService, secrets map[string]map[string]string, provision *RepositoryProvision) (string, string, map[string]string, error) {
+	if err := validateRepositoryProvision(machine, provision); err != nil {
+		return "", "", nil, err
+	}
 	networkName := "ku-machine-" + machine.RoutingKey
 	volumeName := "ku-workspace-" + machine.RoutingKey
+	if machine.DockerNetworkName != nil && *machine.DockerNetworkName != "" {
+		networkName = *machine.DockerNetworkName
+	}
+	if machine.WorkspaceVolumeName != nil && *machine.WorkspaceVolumeName != "" {
+		volumeName = *machine.WorkspaceVolumeName
+	}
 	labels := machineLabels(machine)
 	containers := make(map[string]string, len(services))
 	createdContainers := make(map[string]string, len(services))
@@ -205,7 +188,11 @@ func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, s
 			_, _ = r.client.NetworkRemove(context.Background(), networkName, client.NetworkRemoveOptions{})
 		}
 		if cleanup.RemoveVolume {
-			_, _ = r.client.VolumeRemove(context.Background(), volumeName, client.VolumeRemoveOptions{Force: true})
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cleanupCancel()
+			if err := r.removeManagedVolume(cleanupCtx, volumeName, machine.ID); err == nil {
+				_ = r.removeWorkspaceLayoutRecord(cleanupCtx, machine, volumeName)
+			}
 		}
 	}()
 
@@ -226,7 +213,7 @@ func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, s
 			break
 		}
 	}
-	if err := r.prepareWorkspaceVolume(ctx, machine, volumeName, initImage); err != nil {
+	if err := r.prepareProtectedWorkspaceVolume(ctx, machine, volumeName, initImage); err != nil {
 		return "", "", nil, fmt.Errorf("prepare workspace volume: %w", err)
 	}
 	if r.config.GatewayContainerName == "" {
@@ -239,7 +226,29 @@ func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, s
 	}
 
 	terminalServices := make([]domain.DevMachineService, 0)
+	// Egress must be attached before the credentialed repository fetch. All
+	// workspace services remain stopped until provisioning is complete.
+	orderedServices := make([]domain.DevMachineService, 0, len(services))
 	for _, service := range services {
+		if service.ServiceType == "egress" {
+			orderedServices = append(orderedServices, service)
+		}
+	}
+	for _, service := range services {
+		if service.ServiceType != "egress" {
+			orderedServices = append(orderedServices, service)
+		}
+	}
+	provisioned := provision == nil
+	for _, service := range orderedServices {
+		if !provisioned && service.ServiceType != "egress" {
+			preparedMachine := *machine
+			preparedMachine.DockerNetworkName, preparedMachine.WorkspaceVolumeName = &networkName, &volumeName
+			if err := r.provisionDefaultRepository(ctx, &preparedMachine, services, provision); err != nil {
+				return "", "", nil, fmt.Errorf("prepare default repository: %w", err)
+			}
+			provisioned = true
+		}
 		if service.ServiceType == "terminal" {
 			terminalServices = append(terminalServices, service)
 			continue
@@ -259,6 +268,9 @@ func (r *DockerRuntime) Spawn(ctx context.Context, machine *domain.DevMachine, s
 				createdEgressNetworkConnections[service.ServiceKey] = containerID
 			}
 		}
+	}
+	if !provisioned {
+		return "", "", nil, errors.New("repository provisioning requires workspace services")
 	}
 	for _, service := range terminalServices {
 		containerID := containers["ide"]
@@ -298,64 +310,6 @@ func (r *DockerRuntime) containerOnNetwork(ctx context.Context, networkName, con
 	return connected
 }
 
-func (r *DockerRuntime) prepareWorkspaceVolume(ctx context.Context, machine *domain.DevMachine, volumeName, imageRef string) error {
-	if err := r.ensureImage(ctx, imageRef); err != nil {
-		return err
-	}
-	containerName := "ku-" + machine.RoutingKey + "-volume-init"
-	if inspection, err := r.client.ContainerInspect(ctx, containerName, client.ContainerInspectOptions{}); err == nil {
-		if inspection.Container.Config.Labels["com.ku.machine-id"] != machine.ID.String() {
-			return fmt.Errorf("existing volume initializer is not managed by Ku")
-		}
-		if _, err := r.client.ContainerRemove(ctx, inspection.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
-			return err
-		}
-	} else if !errdefs.IsNotFound(err) {
-		return err
-	}
-	labels := machineLabels(machine)
-	labels["com.ku.service"] = "volume-init"
-	pidsLimit := int64(16)
-	response, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Image: imageRef, User: "0:0", Entrypoint: []string{"/bin/sh"}, Cmd: []string{"-c", "chown 1000:1000 /workspace"}, Labels: labels,
-		},
-		HostConfig: &container.HostConfig{
-			NetworkMode: "none", ReadonlyRootfs: true, CapDrop: []string{"ALL"}, CapAdd: []string{"CHOWN"},
-			SecurityOpt: []string{"no-new-privileges=true"},
-			LogConfig:   boundedLogConfig(),
-			Mounts: []mount.Mount{{
-				Type: mount.TypeVolume, Source: volumeName, Target: "/workspace",
-				VolumeOptions: &mount.VolumeOptions{NoCopy: true},
-			}},
-			Resources: container.Resources{Memory: 64 * 1024 * 1024, MemorySwap: 64 * 1024 * 1024, NanoCPUs: 100_000_000, PidsLimit: &pidsLimit},
-		},
-		Name: containerName,
-	})
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_, _ = r.client.ContainerRemove(context.Background(), response.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
-	}()
-	if _, err := r.client.ContainerStart(ctx, response.ID, client.ContainerStartOptions{}); err != nil {
-		return err
-	}
-	waitResult := r.client.ContainerWait(ctx, response.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-	select {
-	case result := <-waitResult.Result:
-		if result.StatusCode != 0 {
-			_, stderr, _ := r.containerLogs(ctx, response.ID)
-			return fmt.Errorf("volume initializer exited %d: %s", result.StatusCode, strings.TrimSpace(stderr))
-		}
-		return nil
-	case err := <-waitResult.Error:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
 func (r *DockerRuntime) Start(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService, secrets map[string]map[string]string) error {
 	if machine.WorkspaceVolumeName == nil || *machine.WorkspaceVolumeName == "" {
 		return fmt.Errorf("machine workspace volume is unavailable")
@@ -367,6 +321,8 @@ func (r *DockerRuntime) Start(ctx context.Context, machine *domain.DevMachine, s
 	if !volumeExists {
 		return fmt.Errorf("machine workspace volume does not exist")
 	}
+	// Validate every resumed service before restarting any of them. Stopped
+	// machines go through Spawn, which migrates and persists replacement IDs.
 	for _, service := range plannedStartServices(machine.Status, services) {
 		if service.ContainerID == nil || *service.ContainerID == "" {
 			return fmt.Errorf("service %s has no container", service.ServiceKey)
@@ -375,7 +331,22 @@ func (r *DockerRuntime) Start(ctx context.Context, machine *domain.DevMachine, s
 		if err != nil {
 			return err
 		}
-		if err := r.ensureContainerStarted(ctx, *service.ContainerID, machine.Status, inspection.Container.State.Running, inspection.Container.State.Paused, secrets[service.ServiceKey]); err != nil {
+		if !serviceWorkspaceMountsMatch(inspection.Container.HostConfig, service.ServiceType, *machine.WorkspaceVolumeName) {
+			return errors.New("stop the machine before migrating its legacy workspace services")
+		}
+		if inspection.Container.Config == nil || containerHasManagedGitCredentials(inspection.Container.Config.Env) {
+			return errors.New("stop the machine before replacing services with Git credentials")
+		}
+	}
+	for _, service := range plannedStartServices(machine.Status, services) {
+		if service.ContainerID == nil || *service.ContainerID == "" {
+			return fmt.Errorf("service %s has no container", service.ServiceKey)
+		}
+		inspection, err := r.client.ContainerInspect(ctx, *service.ContainerID, client.ContainerInspectOptions{})
+		if err != nil {
+			return err
+		}
+		if err := r.ensureContainerStarted(ctx, *service.ContainerID, machine.Status, inspection.Container.State.Running, inspection.Container.State.Paused, untrustedGitSecrets(secrets[service.ServiceKey], service.ServiceType == "agent")); err != nil {
 			return err
 		}
 		if err := r.requireRunning(ctx, *service.ContainerID); err != nil {
@@ -505,6 +476,10 @@ func (r *DockerRuntime) Stop(ctx context.Context, _ *domain.DevMachine, services
 }
 
 func (r *DockerRuntime) Teardown(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService) error {
+	volumeName := "ku-workspace-" + machine.RoutingKey
+	if machine.WorkspaceVolumeName != nil && *machine.WorkspaceVolumeName != "" {
+		volumeName = *machine.WorkspaceVolumeName
+	}
 	seen := make(map[string]bool, len(services))
 	for _, service := range services {
 		if service.ContainerID == nil {
@@ -529,6 +504,20 @@ func (r *DockerRuntime) Teardown(ctx context.Context, machine *domain.DevMachine
 		if item.Labels["com.ku.managed"] != "true" || item.Labels["com.ku.machine-id"] != machine.ID.String() {
 			return fmt.Errorf("container %s is not owned by machine", item.ID)
 		}
+		if item.Labels["com.ku.service"] == "workspace-layout" {
+			inspection, err := r.client.ContainerInspect(ctx, item.ID, client.ContainerInspectOptions{})
+			if err != nil {
+				return err
+			}
+			if _, err := validateWorkspaceLayoutRecord(inspection.Container, machine, volumeName); err != nil {
+				return err
+			}
+			if inspection.Container.Name != "/"+workspaceLayoutName(machine) {
+				return errors.New("workspace layout record has an unexpected name")
+			}
+			// Keep authority when volume removal fails or teardown is canceled.
+			continue
+		}
 		if _, err := r.client.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !errdefs.IsNotFound(err) {
 			return err
 		}
@@ -541,14 +530,10 @@ func (r *DockerRuntime) Teardown(ctx context.Context, machine *domain.DevMachine
 	if err := r.removeManagedNetwork(ctx, networkName, machine.ID); err != nil {
 		return err
 	}
-	volumeName := "ku-workspace-" + machine.RoutingKey
-	if machine.WorkspaceVolumeName != nil && *machine.WorkspaceVolumeName != "" {
-		volumeName = *machine.WorkspaceVolumeName
-	}
 	if err := r.removeManagedVolume(ctx, volumeName, machine.ID); err != nil {
 		return err
 	}
-	return nil
+	return r.removeWorkspaceLayoutRecord(ctx, machine, volumeName)
 }
 
 func (r *DockerRuntime) removeManagedContainer(ctx context.Context, containerID string, machineID uuid.UUID) error {
@@ -603,6 +588,7 @@ func (r *DockerRuntime) removeManagedVolume(ctx context.Context, volumeName stri
 }
 
 func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine, run *domain.DevMachineAgentRun, provider *domain.DevMachineAgentProvider, checkout *domain.DevMachineCheckout, secrets map[string]string) (*AgentExecution, error) {
+	secrets = untrustedGitSecrets(secrets, true)
 	if machine.DockerNetworkName == nil || machine.WorkspaceVolumeName == nil {
 		return nil, fmt.Errorf("machine runtime resources are unavailable")
 	}
@@ -616,6 +602,9 @@ func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine
 	var argv []string
 	if err = json.Unmarshal(run.CommandArgv, &argv); err != nil || len(argv) == 0 {
 		return nil, fmt.Errorf("invalid agent argv")
+	}
+	if err := r.requireAgentRunActive(ctx, machine, run.ID); err != nil {
+		return nil, err
 	}
 	containerName := "ku-" + machine.RoutingKey + "-agent-" + run.ID.String()
 	labels := machineLabels(machine)
@@ -636,6 +625,9 @@ func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine
 		"KU_COLLECTOR_URL=http://" + machine.RoutingKey + "-collector:8091", "KU_SECRET_NAMES=" + strings.Join(secretNames, ","),
 	}
 	if inspection, inspectErr := r.client.ContainerInspect(ctx, containerName, client.ContainerInspectOptions{}); inspectErr == nil {
+		if inspection.Container.Config == nil || containerHasManagedGitCredentials(inspection.Container.Config.Env) {
+			return nil, errors.New("existing agent container carries managed Git credentials")
+		}
 		if inspection.Container.Config.Image != provider.ImageRef || inspection.Container.Config.Labels["com.ku.agent-run-id"] != run.ID.String() {
 			return nil, fmt.Errorf("existing agent container does not match run")
 		}
@@ -646,12 +638,13 @@ func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine
 	workingDirectory := "/workspace"
 	if checkout != nil {
 		workingDirectory = checkout.WorkspacePath
+
 	}
 	response, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image: provider.ImageRef, User: "1000:1000", WorkingDir: workingDirectory,
 			Entrypoint: entrypoint, Cmd: argv,
-			Env: mergeEnvironment(imageEnvironment, runtimeEnvironment...), Labels: labels,
+			Env: mergeEnvironment(scrubManagedGitEnvironment(imageEnvironment), runtimeEnvironment...), Labels: labels,
 			AttachStdout: true, AttachStderr: true, AttachStdin: run.Mode == "interactive",
 			OpenStdin: run.Mode == "interactive", Tty: run.Mode == "interactive",
 		},
@@ -665,6 +658,10 @@ func (r *DockerRuntime) RunAgent(ctx context.Context, machine *domain.DevMachine
 		return nil, err
 	}
 	containerID := response.ID
+	if err := r.requireAgentRunActive(ctx, machine, run.ID); err != nil {
+		_, removeErr := r.client.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{Force: true})
+		return nil, errors.Join(err, removeErr)
+	}
 	if _, err := r.client.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); err != nil {
 		_, _ = r.client.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 		return nil, err
@@ -703,6 +700,11 @@ func (r *DockerRuntime) resumeAgent(ctx context.Context, inspection container.In
 		}
 		return &AgentExecution{ContainerID: containerID}, nil
 	}
+	drainLogs := false
+	if observer, ok := ctx.Value(agentLogObserverKey{}).(agentLogObserver); ok {
+		finishLogs := r.followAgentLogs(ctx, containerID, observer)
+		defer func() { finishLogs(drainLogs) }()
+	}
 	if inspection.State.Running {
 		waitResult := r.client.ContainerWait(ctx, containerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 		select {
@@ -720,29 +722,12 @@ func (r *DockerRuntime) resumeAgent(ctx context.Context, inspection container.In
 			return &AgentExecution{ContainerID: containerID, ExitCode: -1}, ctx.Err()
 		}
 	}
+	drainLogs = true
 	stdout, stderr, err := r.containerLogs(ctx, containerID)
 	if err != nil {
 		return &AgentExecution{ContainerID: containerID, ExitCode: inspection.State.ExitCode}, err
 	}
 	return &AgentExecution{ContainerID: containerID, Stdout: stdout, Stderr: stderr, ExitCode: inspection.State.ExitCode}, nil
-}
-
-func (r *DockerRuntime) CancelAgent(ctx context.Context, run *domain.DevMachineAgentRun) error {
-	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true})
-	if err != nil {
-		return err
-	}
-	for _, item := range containers.Items {
-		if item.Labels["com.ku.agent-run-id"] != run.ID.String() {
-			continue
-		}
-		if item.Labels["com.ku.managed"] != "true" {
-			return fmt.Errorf("agent container %s is not managed by Ku", item.ID)
-		}
-		_, err := r.client.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
-		return err
-	}
-	return nil
 }
 
 func (r *DockerRuntime) Stats(ctx context.Context, _ *domain.DevMachine, services []domain.DevMachineService) (ResourceUsage, error) {
@@ -791,47 +776,6 @@ func (r *DockerRuntime) Stats(ctx context.Context, _ *domain.DevMachine, service
 		}
 	}
 	return usage, nil
-}
-
-func (r *DockerRuntime) GitState(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService, checkout *domain.DevMachineCheckout) (GitState, error) {
-	var ideContainer string
-	for _, service := range services {
-		if service.ServiceType == "ide" && service.ContainerID != nil {
-			ideContainer = *service.ContainerID
-			break
-		}
-	}
-	if ideContainer == "" {
-		return GitState{}, fmt.Errorf("IDE container is unavailable")
-	}
-	workspacePath, baseBranch := "/workspace", machine.BaseBranch
-	if checkout != nil {
-		workspacePath, baseBranch = checkout.WorkspacePath, checkout.BaseBranch
-	}
-	branch, err := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "branch", "--show-current"})
-	if err != nil {
-		return GitState{}, err
-	}
-	commits, _ := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "rev-list", "origin/" + baseBranch + "..HEAD"})
-	changed, _ := r.execOutput(ctx, ideContainer, []string{"git", "-C", workspacePath, "diff", "--name-only", "origin/" + baseBranch + "...HEAD"})
-	return GitState{Branch: strings.TrimSpace(branch), Commits: nonEmptyLines(commits), ChangedFiles: nonEmptyLines(changed)}, nil
-}
-
-func (r *DockerRuntime) PrepareCheckout(ctx context.Context, _ *domain.DevMachine, services []domain.DevMachineService, checkout *domain.DevMachineCheckout, token string) error {
-	developerContainer := developerContainerID(services)
-	if developerContainer == "" {
-		return fmt.Errorf("developer container is unavailable")
-	}
-	if token == "" {
-		return fmt.Errorf("repository credential is unavailable")
-	}
-	if err := r.execWithInput(ctx, developerContainer, []string{
-		"/usr/local/bin/ku-checkout", checkout.RepositoryFullName, checkout.BaseBranch,
-		checkout.WorkingBranch, checkout.WorkspacePath,
-	}, token+"\n"); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (r *DockerRuntime) TerminateTerminal(ctx context.Context, machine *domain.DevMachine, services []domain.DevMachineService, session *domain.DevMachineTerminalSession) (resultErr error) {
@@ -977,10 +921,24 @@ func uniqueContainerIDs(services []domain.DevMachineService) []string {
 }
 
 func (r *DockerRuntime) ensureService(ctx context.Context, machine *domain.DevMachine, service domain.DevMachineService, networkName, volumeName string, secrets map[string]string) (containerID string, containerCreated bool, networkAttached bool, err error) {
+	secrets = untrustedGitSecrets(secrets, false)
 	inspection, err := r.client.ContainerInspect(ctx, service.ContainerName, client.ContainerInspectOptions{})
 	if err == nil {
 		if inspection.Container.Config.Image != service.ImageRef || inspection.Container.Config.Labels["com.ku.machine-id"] != machine.ID.String() || inspection.Container.Config.Labels["com.ku.service"] != service.ServiceType {
 			return "", false, false, fmt.Errorf("existing container does not match service")
+		}
+		if !serviceWorkspaceMountsMatch(inspection.Container.HostConfig, service.ServiceType, volumeName) {
+			return "", false, false, errors.New("existing service does not match protected workspace mounts")
+		}
+		if containerHasManagedGitCredentials(inspection.Container.Config.Env) {
+			state := inspection.Container.State
+			if state == nil || state.Running || state.Paused || state.Restarting || state.Status != container.StateExited && state.Status != container.StateCreated {
+				return "", false, false, errors.New("stop the machine before replacing services with Git credentials")
+			}
+			if _, err := r.client.ContainerRemove(ctx, inspection.Container.ID, client.ContainerRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
+				return "", false, false, err
+			}
+			return r.ensureService(ctx, machine, service, networkName, volumeName, secrets)
 		}
 		containerID = inspection.Container.ID
 		networkAttached, err = r.connectNetwork(ctx, networkName, inspection.Container.ID, &network.EndpointSettings{Aliases: []string{service.InternalHost}})
@@ -1027,7 +985,6 @@ func (r *DockerRuntime) ensureService(ctx context.Context, machine *domain.DevMa
 		environment = append(environment, "KU_COLLECTOR_URL=http://"+machine.RoutingKey+"-collector:8091")
 	}
 	if service.ServiceType == "ide" {
-		environment = append(environment, "KU_REPO_URL="+machine.RepoURL, "KU_BASE_BRANCH="+machine.BaseBranch, "KU_WORKING_BRANCH="+machine.WorkingBranch)
 		environment = append(environment, "SHELL=/usr/local/bin/ku-shell")
 	}
 	if service.ServiceType == "collector" {
@@ -1040,7 +997,7 @@ func (r *DockerRuntime) ensureService(ctx context.Context, machine *domain.DevMa
 		environment = append(environment, "KU_EGRESS_ALLOWLIST="+r.config.EgressAllowlist, "KU_EGRESS_DENYLIST="+r.config.EgressDenylist)
 	}
 	containerConfig := &container.Config{
-		Image: service.ImageRef, User: "1000:1000", WorkingDir: "/workspace", Env: append(imageEnvironment, environment...), Labels: labels,
+		Image: service.ImageRef, User: "1000:1000", WorkingDir: "/workspace", Env: mergeEnvironment(scrubManagedGitEnvironment(imageEnvironment), environment...), Labels: labels,
 		Entrypoint: []string{"/usr/local/bin/ku-service-entrypoint"}, Cmd: command,
 	}
 	if service.ServiceType == "ide" {
@@ -1108,7 +1065,10 @@ func (r *DockerRuntime) secureHostConfig(machine *domain.DevMachine, serviceType
 	if serviceType != "browser" && serviceType != "egress" {
 		mounts = append(mounts, mount.Mount{
 			Type: mount.TypeVolume, Source: volumeName, Target: "/workspace", ReadOnly: workspaceReadOnly,
-			VolumeOptions: &mount.VolumeOptions{NoCopy: true},
+			VolumeOptions: &mount.VolumeOptions{NoCopy: true, Subpath: "workspace"},
+		}, mount.Mount{
+			Type: mount.TypeVolume, Source: volumeName, Target: "/repositories", ReadOnly: true,
+			VolumeOptions: &mount.VolumeOptions{NoCopy: true, Subpath: "repositories"},
 		})
 	}
 	tmpOptions := "rw,noexec,nosuid,uid=1000,gid=1000,size=256m"
@@ -1121,7 +1081,7 @@ func (r *DockerRuntime) secureHostConfig(machine *domain.DevMachine, serviceType
 		CapDrop: []string{"ALL"}, SecurityOpt: securityOptions,
 		LogConfig: boundedLogConfig(),
 		Tmpfs: map[string]string{
-			"/tmp":                tmpOptions,
+			"/tmp":            tmpOptions,
 			"/run/ku-secrets": "rw,noexec,nosuid,uid=1000,gid=1000,mode=0700,size=8m",
 			"/home/ku":        "rw,nosuid,uid=1000,gid=1000,size=512m",
 		},
@@ -1462,6 +1422,7 @@ func (r *DockerRuntime) containerLogs(ctx context.Context, containerID string) (
 type cappedBuffer struct {
 	bytes.Buffer
 	remaining int
+	overflow  bool
 }
 
 func newCappedBuffer(limit int) cappedBuffer {
@@ -1471,6 +1432,7 @@ func newCappedBuffer(limit int) cappedBuffer {
 func (b *cappedBuffer) Write(value []byte) (int, error) {
 	originalLength := len(value)
 	if len(value) > b.remaining {
+		b.overflow = true
 		value = value[:b.remaining]
 	}
 	if len(value) > 0 {
@@ -1481,15 +1443,23 @@ func (b *cappedBuffer) Write(value []byte) (int, error) {
 }
 
 func (r *DockerRuntime) workspaceSize(ctx context.Context, collectorID string) (int64, error) {
-	output, err := r.execOutput(ctx, collectorID, []string{"du", "-sb", "/workspace"})
+	output, err := r.execOutput(ctx, collectorID, []string{"du", "-sb", "/workspace", "/repositories"})
 	if err != nil {
 		return 0, err
 	}
-	fields := strings.Fields(output)
-	if len(fields) == 0 {
-		return 0, fmt.Errorf("workspace size unavailable")
+	var total int64
+	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0, errors.New("workspace size unavailable")
+		}
+		value, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		total += value
 	}
-	return strconv.ParseInt(fields[0], 10, 64)
+	return total, nil
 }
 
 func (r *DockerRuntime) execOutput(ctx context.Context, containerID string, command []string) (string, error) {
@@ -1508,10 +1478,15 @@ func (r *DockerRuntime) execOutputAs(ctx context.Context, containerID string, co
 		return "", err
 	}
 	defer attached.Close()
+	stopClose := context.AfterFunc(ctx, func() { attached.Close() })
+	defer stopClose()
 	stdout := newCappedBuffer(maxCapturedLogBytes)
 	stderr := newCappedBuffer(maxCapturedLogBytes)
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, attached.Reader); err != nil {
 		return "", err
+	}
+	if stdout.overflow || stderr.overflow {
+		return "", errors.New("command output exceeds the capture limit")
 	}
 	inspection, err := r.client.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
 	if err != nil {
@@ -1524,30 +1499,49 @@ func (r *DockerRuntime) execOutputAs(ctx context.Context, containerID string, co
 }
 
 func (r *DockerRuntime) execWithInput(ctx context.Context, containerID string, command []string, input string) error {
+	pidFile := "/tmp/ku-input-command-" + uuid.NewString() + ".pid"
+	command = append([]string{"/bin/sh", "-c", workspaceCommandScript, "ku-input-command", pidFile}, command...)
 	created, err := r.client.ExecCreate(ctx, containerID, client.ExecCreateOptions{
 		Cmd: command, User: "1000:1000", AttachStdin: true, AttachStdout: true, AttachStderr: true,
 	})
 	if err != nil {
 		return err
 	}
+	cancelCommand, stopCancel := r.commandCancellation(ctx, containerID, pidFile)
+	defer func() {
+		if !stopCancel() {
+			cancelCommand()
+		}
+	}()
 	attached, err := r.client.ExecAttach(ctx, created.ID, client.ExecAttachOptions{})
 	if err != nil {
+		cancelCommand()
 		return err
 	}
 	defer attached.Close()
+	stopClose := context.AfterFunc(ctx, func() { attached.Close() })
+	defer stopClose()
 	if _, err := io.WriteString(attached.Conn, input); err != nil {
+		cancelCommand()
 		return err
 	}
 	if err := attached.CloseWrite(); err != nil {
+		cancelCommand()
 		return err
 	}
 	stdout, stderr := newCappedBuffer(maxCapturedLogBytes), newCappedBuffer(maxCapturedLogBytes)
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, attached.Reader); err != nil && !errors.Is(err, io.EOF) {
+		cancelCommand()
 		return err
 	}
 	inspection, err := r.client.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
 	if err != nil {
+		cancelCommand()
 		return err
+	}
+	if inspection.Running {
+		cancelCommand()
+		return errors.New("command attachment ended before execution completed")
 	}
 	if inspection.ExitCode != 0 {
 		return fmt.Errorf("checkout command failed with exit code %d: %s", inspection.ExitCode, strings.TrimSpace(stderr.String()))

@@ -24,11 +24,13 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	let {
+		workspaceSlug,
 		shareId,
 		mode,
 		presenterName,
 		presenterUserId
 	}: {
+		workspaceSlug: string;
 		shareId: string;
 		/**
 		 * 'present' previews this tab's own persistent share (the engine
@@ -65,6 +67,9 @@
 	// Viewer side: this tab's single connection to the presenter.
 	let viewerPc = $state<RTCPeerConnection | null>(null);
 	let viewerRemoteSettled = false;
+	let negotiationId = '';
+	let presenterPeerId = '';
+	let knownPresenterPeer = '';
 	// Why a viewer tile stopped: 'disconnected' (presenter gone — no source
 	// to retry against) vs 'error' (negotiation/ICE failed — manual retry).
 	let endReason = $state<'disconnected' | 'error' | null>(null);
@@ -133,6 +138,8 @@
 	let attemptToken = 0;
 	let disconnectedWatchdog: number | null = null;
 	let presenterOfflineTimer: number | null = null;
+	let attemptDeadline: number | null = null;
+	let retryTimer: number | null = null;
 
 	/** Reject if `step` (createOffer / setLocalDescription) never settles. */
 	function withDeadline<T>(step: Promise<T>, what: string): Promise<T> {
@@ -162,7 +169,7 @@
 	/** Start a negotiation attempt unless one is already in flight or live. */
 	function ensureNegotiating(force = false) {
 		if (disposed || streamEnded || presentEnded || isPresenting()) return;
-		if (live) return;
+		if (live && !force) return;
 		if (!force && viewerPc) return; // an attempt is in flight; its deadline governs
 		startViewerAttempt();
 	}
@@ -177,10 +184,27 @@
 		const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 		viewerPc = pc;
 		viewerRemoteSettled = false;
+		negotiationId = crypto.randomUUID();
+		presenterPeerId = '';
+		const currentNegotiation = negotiationId;
+		let offerSent = false;
+		const outgoingCandidates: RTCIceCandidateInit[] = [];
+		const sendCandidate = (candidate: RTCIceCandidateInit) => {
+			sendShareSignal(
+				workspaceSlug,
+				shareId,
+				presenterPeerId || knownPresenterPeer
+					? { peerId: presenterPeerId || knownPresenterPeer }
+					: { userId: presenterUserId },
+				currentNegotiation,
+				{ type: 'candidate', candidate }
+			);
+		};
 		pc.addTransceiver('video', { direction: 'recvonly' });
 		pc.addTransceiver('audio', { direction: 'recvonly' });
 		const remote = new MediaStream();
 		pc.ontrack = (e) => {
+			if (pc !== viewerPc || token !== attemptToken || disposed) return;
 			remote.addTrack(e.track);
 			if (videoEl) {
 				videoEl.srcObject = remote;
@@ -190,12 +214,14 @@
 			if (e.track.kind === 'video') markLive();
 		};
 		pc.onicecandidate = (e) => {
-			if (e.candidate && presenterUserId) {
-				sendShareSignal(shareId, presenterUserId, { type: 'candidate', candidate: e.candidate.toJSON() });
+			if (e.candidate && presenterUserId && pc === viewerPc && token === attemptToken) {
+				const candidate = e.candidate.toJSON();
+				if (offerSent) sendCandidate(candidate);
+				else outgoingCandidates.push(candidate);
 			}
 		};
 		pc.onconnectionstatechange = () => {
-			if (pc !== viewerPc) return;
+			if (pc !== viewerPc || token !== attemptToken || disposed) return;
 			if (pc.connectionState === 'connected') {
 				markLive();
 			} else if (pc.connectionState === 'disconnected') {
@@ -209,6 +235,7 @@
 				// it.
 				if (token === attemptToken && !streamEnded) {
 					attempt = live ? 0 : attempt;
+					live = false;
 					retryOrGiveUp(token);
 				}
 			}
@@ -220,7 +247,7 @@
 		};
 		// Covers everything after the offer is out: answer lost in the mount
 		// race, ICE that never completes, or a createOffer that hung.
-		window.setTimeout(attemptExpired, ATTEMPT_DEADLINE_MS);
+		attemptDeadline = window.setTimeout(attemptExpired, ATTEMPT_DEADLINE_MS);
 
 		void (async () => {
 			try {
@@ -229,7 +256,16 @@
 				await withDeadline(pc.setLocalDescription(offer), 'setLocalDescription');
 				if (token !== attemptToken || disposed) return;
 				if (!presenterUserId) return;
-				sendShareSignal(shareId, presenterUserId, { type: 'offer', sdp: pc.localDescription!.sdp! });
+				sendShareSignal(
+					workspaceSlug,
+					shareId,
+					knownPresenterPeer ? { peerId: knownPresenterPeer } : { userId: presenterUserId },
+					currentNegotiation,
+					{ type: 'offer', sdp: pc.localDescription!.sdp! }
+				);
+				offerSent = true;
+				for (const candidate of outgoingCandidates) sendCandidate(candidate);
+				outgoingCandidates.length = 0;
 			} catch {
 				if (token === attemptToken && !live) retryOrGiveUp(token);
 			}
@@ -262,7 +298,7 @@
 			giveUp();
 			return;
 		}
-		window.setTimeout(() => {
+		retryTimer = window.setTimeout(() => {
 			if (token === attemptToken && !disposed && !live && !streamEnded) startViewerAttempt();
 		}, RETRY_BACKOFF_MS);
 	}
@@ -278,8 +314,19 @@
 
 	function teardownViewerPc() {
 		clearWatchdog();
-		viewerPc?.close();
+		if (attemptDeadline !== null) window.clearTimeout(attemptDeadline);
+		if (retryTimer !== null) window.clearTimeout(retryTimer);
+		attemptDeadline = null;
+		retryTimer = null;
+		const retired = viewerPc;
 		viewerPc = null;
+		live = false;
+		if (retired) {
+			retired.ontrack = null;
+			retired.onicecandidate = null;
+			retired.onconnectionstatechange = null;
+			retired.close();
+		}
 		pendingCandidates.delete('viewer');
 	}
 
@@ -291,19 +338,22 @@
 		}
 	}
 
-	async function handlePresenterSignal(data: SignalData) {
+	async function handlePresenterSignal(peerId: string, incomingNegotiation: string, data: SignalData) {
 		const pc = viewerPc;
-		if (!pc) return;
+		const token = attemptToken;
+		if (!pc || incomingNegotiation !== negotiationId || (presenterPeerId && peerId !== presenterPeerId)) return;
+		presenterPeerId = peerId;
 		if (data.type === 'answer') {
 			if (viewerRemoteSettled || pc.signalingState !== 'have-local-offer') return;
 			try {
 				await pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+				if (pc !== viewerPc || token !== attemptToken || disposed) return;
 				viewerRemoteSettled = true;
 				await flushCandidates('viewer', pc);
 			} catch {
 				// Broken answer: recycle like any failed attempt instead of
 				// killing the tile.
-				retryOrGiveUp(attemptToken);
+				if (pc === viewerPc && token === attemptToken) retryOrGiveUp(token);
 			}
 		} else if (data.type === 'candidate') {
 			queueCandidate('viewer', data.candidate, pc);
@@ -311,6 +361,9 @@
 	}
 
 	function markLive() {
+		clearWatchdog();
+		if (attemptDeadline !== null) window.clearTimeout(attemptDeadline);
+		attemptDeadline = null;
 		connecting = false;
 		reconnecting = false;
 		endReason = null;
@@ -325,7 +378,7 @@
 		disposed = true;
 		attemptToken++; // cancel any in-flight attempt bookkeeping
 		if (!isPresenting()) {
-			announceSharePresence(shareId, 'viewer', 'leave');
+			announceSharePresence(workspaceSlug, shareId, 'viewer', 'leave');
 			clearPresenterOffline();
 			teardownViewerPc();
 		}
@@ -341,7 +394,7 @@
 			live = presenterSession.active;
 			connecting = false;
 		} else {
-			announceSharePresence(shareId, 'viewer', 'join');
+			announceSharePresence(workspaceSlug, shareId, 'viewer', 'join');
 			startViewerAttempt();
 		}
 
@@ -351,7 +404,8 @@
 				if (!isPresenting()) {
 					// Only the share's presenter may answer us. Signals still
 					// apply after a give-up so a manual retry finds a live pc.
-					if (event.from === presenterUserId && !streamEnded) void handlePresenterSignal(event.data);
+					if (event.from === presenterUserId && !streamEnded)
+						void handlePresenterSignal(event.from_peer, event.negotiation_id, event.data);
 				}
 			})
 		);
@@ -361,6 +415,8 @@
 				if (event.share_id !== shareId) return;
 				if (isPresenting()) return;
 				viewerCount = event.viewers;
+				const previousPresenterPeer = knownPresenterPeer;
+				knownPresenterPeer = event.presenter_peer;
 				if (!event.presenter_online) {
 					// The presenter's socket dropped. Media is peer-to-peer
 					// and may still flow; treat the share as gone only after
@@ -380,7 +436,16 @@
 					}
 				} else {
 					clearPresenterOffline();
-					if (!live) {
+					if (
+						(presenterPeerId || previousPresenterPeer) &&
+						(presenterPeerId || previousPresenterPeer) !== knownPresenterPeer &&
+						viewerPc
+					) {
+						attempt = 0;
+						streamEnded = false;
+						endReason = null;
+						ensureNegotiating(true);
+					} else if (!live) {
 						// The presenter is (back) online — e.g. their session
 						// just re-announced after a reconnect. Revive a tile
 						// that died on the earlier offline transition; an
@@ -398,24 +463,24 @@
 		);
 
 		cleanups.push(
-			onWebSocketReconnected(() => {
+			onWebSocketReconnected((reconnectedSlug) => {
+				if (reconnectedSlug !== workspaceSlug) return;
 				if (disposed || presentEnded) return;
 				if (isPresenting()) return; // the session store re-announces itself
 				// Presence is per-connection: re-announce, then renegotiate
 				// whatever died with the old socket.
-				announceSharePresence(shareId, 'viewer', 'join');
-				if (!live) {
-					// The old socket's in-flight negotiation addressed a
-					// membership that no longer exists; restart it. A socket
-					// drop must not burn the whole retry budget.
-					attempt = Math.min(attempt, MAX_ATTEMPTS - 1);
-					if (!streamEnded) ensureNegotiating(true);
-				}
+				announceSharePresence(workspaceSlug, shareId, 'viewer', 'join');
+				attempt = 0;
+				streamEnded = false;
+				endReason = null;
+				knownPresenterPeer = '';
+				ensureNegotiating(true);
 			})
 		);
 
 		cleanups.push(
-			onWebSocketDisconnected(() => {
+			onWebSocketDisconnected((disconnectedSlug) => {
+				if (disconnectedSlug !== workspaceSlug) return;
 				if (disposed || isPresenting() || streamEnded) return;
 				// Signaling is down (e.g. a backend restart): surface it; the
 				// reconnect handler above re-establishes everything.
@@ -456,7 +521,9 @@
 	}
 </script>
 
-<div class="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black">
+<div
+	class="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black"
+>
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video class="h-full w-full object-contain" playsinline autoplay bind:this={videoEl}></video>
 
@@ -468,12 +535,16 @@
 	{/if}
 
 	{#if mode === 'view' && presenterOffline && !streamEnded}
-		<div class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black">
+		<div
+			class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black"
+		>
 			<LoaderCircle size={12} class="animate-spin" />
 			{m['shares.presenter_reconnecting']()}
 		</div>
 	{:else if reconnecting && !streamEnded && !presentEnded}
-		<div class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black">
+		<div
+			class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black"
+		>
 			<LoaderCircle size={12} class="animate-spin" />
 			{m['shares.reconnecting']()}
 		</div>
@@ -487,7 +558,9 @@
 
 	{#if live && !connecting}
 		<div class="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
-			<span class="flex max-w-[50%] items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white">
+			<span
+				class="flex max-w-[50%] items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white"
+			>
 				<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-white"></span>
 				{mode === 'present' ? m['shares.sharing_badge']() : m['shares.live_badge']()}
 			</span>
@@ -516,20 +589,30 @@
 			{#if mode === 'present'}
 				<div class="flex overflow-hidden rounded-md border border-white/20 bg-black/60 text-xs text-white">
 					<button
-						class="px-2.5 py-1 {presenterSession.qualityPreference === 'sharp' ? 'bg-white/20 font-medium' : 'hover:bg-white/10'}"
+						class="px-2.5 py-1 {presenterSession.qualityPreference === 'sharp'
+							? 'bg-white/20 font-medium'
+							: 'hover:bg-white/10'}"
 						onclick={() => void presenterSession.setQuality('sharp')}
 					>
 						{m['shares.quality_sharp']()}
 					</button>
 					<button
-						class="px-2.5 py-1 {presenterSession.qualityPreference === 'smooth' ? 'bg-white/20 font-medium' : 'hover:bg-white/10'}"
+						class="px-2.5 py-1 {presenterSession.qualityPreference === 'smooth'
+							? 'bg-white/20 font-medium'
+							: 'hover:bg-white/10'}"
 						onclick={() => void presenterSession.setQuality('smooth')}
 					>
 						{m['shares.quality_smooth']()}
 					</button>
 				</div>
 			{:else}
-				<Button variant="secondary" size="sm" class="h-7 bg-black/60 text-white hover:bg-black/80" onclick={toggleAudio} title={audioMuted ? m['shares.unmute']() : m['shares.mute']()}>
+				<Button
+					variant="secondary"
+					size="sm"
+					class="h-7 bg-black/60 text-white hover:bg-black/80"
+					onclick={toggleAudio}
+					title={audioMuted ? m['shares.unmute']() : m['shares.mute']()}
+				>
 					{#if audioMuted}
 						<VolumeX size={13} />
 					{:else}
@@ -537,14 +620,25 @@
 					{/if}
 				</Button>
 			{/if}
-			<Button variant="secondary" size="sm" class="h-7 bg-black/60 text-white hover:bg-black/80" onclick={toggleFullscreen}>
+			<Button
+				variant="secondary"
+				size="sm"
+				class="h-7 bg-black/60 text-white hover:bg-black/80"
+				onclick={toggleFullscreen}
+			>
 				<Maximize2 size={13} />
 			</Button>
 		</div>
 
 		{#if mode === 'present'}
 			<div class="absolute bottom-3 right-3 flex items-center gap-2">
-				<Button variant="secondary" size="sm" class="bg-black/60 text-white hover:bg-black/80" onclick={() => void presenterSession.switchSurface()} disabled={presenterSession.switching}>
+				<Button
+					variant="secondary"
+					size="sm"
+					class="bg-black/60 text-white hover:bg-black/80"
+					onclick={() => void presenterSession.switchSurface()}
+					disabled={presenterSession.switching}
+				>
 					{#if presenterSession.switching}
 						<LoaderCircle size={14} class="animate-spin" />
 					{:else}

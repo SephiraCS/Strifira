@@ -12,6 +12,7 @@
 	import Underline from '@tiptap/extension-underline';
 	import { Extension, InputRule } from '@tiptap/core';
 	import { Plugin, PluginKey } from 'prosemirror-state';
+	import { closeHistory } from '@tiptap/pm/history';
 	import { Decoration, DecorationSet } from 'prosemirror-view';
 	import { common, createLowlight } from 'lowlight';
 	import { Button } from '$lib/components/ui/button';
@@ -75,6 +76,10 @@
 		oncursorchange,
 		oncreateissue,
 		onreworkselection,
+		showAIButton = true,
+		allowEmptyAI = false,
+		aiButtonLabel,
+		aiContextKey = '',
 		onuploadschange
 	}: {
 		content?: string;
@@ -98,10 +103,15 @@
 		oncursorchange?: (position: number, anchor: number) => void;
 		oncreateissue?: (selectedText: string) => void;
 		onreworkselection?: (selectedText: string) => Promise<string>;
+		showAIButton?: boolean;
+		allowEmptyAI?: boolean;
+		aiButtonLabel?: string;
+		aiContextKey?: string;
 		onuploadschange?: (pending: number) => void;
 	} = $props();
 
 	let editor = $state<Editor | null>(null);
+	let lastExternalContent: string | undefined;
 	let isFocused = $state(false);
 	let linkInputVisible = $state(false);
 	let linkUrl = $state('');
@@ -125,7 +135,7 @@
 	let mentionRange = $state<{ from: number; to: number } | null>(null);
 	let reworkingSelection = $state(false);
 	let rewriteJustApplied = $state(false);
-	let lastSelection = $state<{ from: number; to: number; text: string } | null>(null);
+	let aiSuggestion = $state<{ html: string; reason: 'protected-content' | 'changed-document' } | null>(null);
 	let rewriteAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const mentionFilteredItems: MentionItem[] = $derived.by(() => {
@@ -143,12 +153,12 @@
 
 		if (!q) return [...userItems.slice(0, 6), ...issueItems.slice(0, 4)];
 
-		const filteredUsers = userItems.filter(
-			(u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)
-		).slice(0, 6);
-		const filteredIssues = issueItems.filter(
-			(i) => i.identifier.toLowerCase().includes(q) || i.title.toLowerCase().includes(q)
-		).slice(0, 4);
+		const filteredUsers = userItems
+			.filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+			.slice(0, 6);
+		const filteredIssues = issueItems
+			.filter((i) => i.identifier.toLowerCase().includes(q) || i.title.toLowerCase().includes(q))
+			.slice(0, 4);
 
 		return [...filteredUsers, ...filteredIssues];
 	});
@@ -163,17 +173,19 @@
 					find: /^\s*\[([ xX])\]\s$/,
 					handler: ({ state, range, chain }) => {
 						chain().deleteRange(range).toggleTaskList().run();
-					},
-				}),
+					}
+				})
 			];
-		},
+		}
 	});
 
-	const editorClass = $derived(compact
-		? 'prose prose-invert prose-sm max-w-none outline-none text-[var(--color-text-primary)] compact-editor'
-		: borderless
-			? 'prose prose-invert prose-sm max-w-none outline-none text-[var(--color-text-primary)] borderless-editor'
-			: 'prose prose-invert prose-sm max-w-none outline-none min-h-[80px] px-3 py-2 text-[var(--color-text-primary)]');
+	const editorClass = $derived(
+		compact
+			? 'prose prose-invert prose-sm max-w-none outline-none text-[var(--color-text-primary)] compact-editor'
+			: borderless
+				? 'prose prose-invert prose-sm max-w-none outline-none text-[var(--color-text-primary)] borderless-editor'
+				: 'prose prose-invert prose-sm max-w-none outline-none min-h-[80px] px-3 py-2 text-[var(--color-text-primary)]'
+	);
 
 	type UploadedFile = { url: string; filename: string; size: number; contentType: string };
 	type UploadPlaceholder = { id: string; pos: number; label: string; side: number };
@@ -189,7 +201,7 @@
 				width: {
 					default: null,
 					parseHTML: (element) => element.getAttribute('width'),
-					renderHTML: (attributes) => attributes.width ? { width: attributes.width } : {}
+					renderHTML: (attributes) => (attributes.width ? { width: attributes.width } : {})
 				}
 			};
 		},
@@ -246,9 +258,10 @@
 					}
 					if (!nodeEditor.isEditable) {
 						const alt = image.alt.trim();
-						image.setAttribute('aria-label', alt
-							? m['imageViewer.view_named']({ name: alt })
-							: m['imageViewer.view']());
+						image.setAttribute(
+							'aria-label',
+							alt ? m['imageViewer.view_named']({ name: alt }) : m['imageViewer.view']()
+						);
 					}
 					handle.setAttribute('aria-valuenow', String(Math.round(currentPercent())));
 				}
@@ -484,19 +497,19 @@
 		const content = uploaded.contentType.startsWith('image/')
 			? { type: 'image', attrs: { src: uploaded.url, alt: uploaded.filename } }
 			: {
-				type: 'attachment',
-				attrs: {
-					href: `${uploaded.url}?download=1`,
-					filename: uploaded.filename,
-					size: uploaded.size
-				}
-			};
+					type: 'attachment',
+					attrs: {
+						href: `${uploaded.url}?download=1`,
+						filename: uploaded.filename,
+						size: uploaded.size
+					}
+				};
 		editor.commands.insertContentAt(decoration.from, content, { updateSelection: false });
 		removeUploadPlaceholder(placeholder.id);
 	}
 
 	// Number of uploads started but not yet inserted into the document.
-	let pendingUploads = 0;
+	let pendingUploads = $state(0);
 
 	function setPendingUploads(delta: number) {
 		pendingUploads += delta;
@@ -572,17 +585,19 @@
 	}
 
 	onMount(() => {
-		const SubmitShortcut = onsubmit ? Extension.create({
-			name: 'submitShortcut',
-			addKeyboardShortcuts() {
-				return {
-					'Mod-Enter': () => {
-						onsubmit?.();
-						return true;
+		const SubmitShortcut = onsubmit
+			? Extension.create({
+					name: 'submitShortcut',
+					addKeyboardShortcuts() {
+						return {
+							'Mod-Enter': () => {
+								onsubmit?.();
+								return true;
+							}
+						};
 					}
-				};
-			}
-		}) : null;
+				})
+			: null;
 
 		const imagePasteExt = createImagePasteHandler();
 
@@ -634,7 +649,7 @@
 			StarterKit.configure({
 				codeBlock: false,
 				link: false,
-				underline: false,
+				underline: false
 			}),
 			Placeholder.configure({ placeholder }),
 			TaskList,
@@ -658,9 +673,10 @@
 				}
 			}),
 			...(SubmitShortcut ? [SubmitShortcut] : []),
-			...(imagePasteExt ? [imagePasteExt] : []),
+			...(imagePasteExt ? [imagePasteExt] : [])
 		];
 
+		lastExternalContent = content;
 		editor = new Editor({
 			extensions,
 			content,
@@ -669,20 +685,23 @@
 				onupdate?.(sanitizeEditorOutput(e.getHTML()));
 			},
 			onSelectionUpdate: ({ editor: e }) => {
-				const { from, to, head, anchor } = e.state.selection;
-				const selectedText = e.state.doc.textBetween(from, to, ' ').trim();
-				lastSelection = selectedText ? { from, to, text: selectedText } : null;
+				const { head, anchor } = e.state.selection;
 				oncursorchange?.(head, anchor);
 			},
-			onFocus: () => { isFocused = true; onFocusProp?.(); },
-			onBlur: () => { isFocused = false; onBlurProp?.(); },
+			onFocus: () => {
+				isFocused = true;
+				onFocusProp?.();
+			},
+			onBlur: () => {
+				isFocused = false;
+				onBlurProp?.();
+			},
 			editorProps: {
 				attributes: {
 					class: editorClass
 				}
 			}
 		});
-
 	});
 
 	// Render remote cursors as widget decorations in the editor
@@ -690,14 +709,14 @@
 		if (!editor || !remoteCursors || remoteCursors.length === 0) {
 			// Clear cursors
 			if (cursorElements.length > 0) {
-				cursorElements.forEach(el => el.remove());
+				cursorElements.forEach((el) => el.remove());
 				cursorElements = [];
 			}
 			return;
 		}
 
 		// Remove old cursor elements
-		cursorElements.forEach(el => el.remove());
+		cursorElements.forEach((el) => el.remove());
 		cursorElements = [];
 
 		const view = editor.view;
@@ -791,16 +810,17 @@
 		}
 
 		return () => {
-			cursorElements.forEach(el => el.remove());
+			cursorElements.forEach((el) => el.remove());
 			cursorElements = [];
 		};
 	});
 
-	// Sync content from outside (e.g. real-time updates) without losing cursor.
-	// Only sync when content prop has a non-empty value (skip for comment editors
-	// where content="" is just the initial value, not an ongoing binding).
+	// Apply external content changes, including clears, after focus leaves the editor.
+	// Comparing the prop to its last value prevents blur from restoring stale server
+	// content while a local edit or AI replacement is still waiting for autosave.
 	$effect(() => {
-		if (editor && !isFocused && content) {
+		if (editor && !isFocused && content !== lastExternalContent) {
+			lastExternalContent = content;
 			const current = sanitizeEditorOutput(editor.getHTML());
 			if (current !== content) {
 				editor.commands.setContent(content, { emitUpdate: false });
@@ -831,25 +851,53 @@
 	});
 
 	onDestroy(() => {
-		cursorElements.forEach(el => el.remove());
+		cursorElements.forEach((el) => el.remove());
 		if (rewriteAnimationTimer) clearTimeout(rewriteAnimationTimer);
 		editor?.destroy();
 	});
 
-	function toggleBold() { editor?.chain().focus().toggleBold().run(); }
-	function toggleItalic() { editor?.chain().focus().toggleItalic().run(); }
-	function toggleStrike() { editor?.chain().focus().toggleStrike().run(); }
-	function toggleUnderline() { editor?.chain().focus().toggleUnderline().run(); }
-	function toggleCode() { editor?.chain().focus().toggleCode().run(); }
-	function toggleH1() { editor?.chain().focus().toggleHeading({ level: 1 }).run(); }
-	function toggleH2() { editor?.chain().focus().toggleHeading({ level: 2 }).run(); }
-	function toggleBulletList() { editor?.chain().focus().toggleBulletList().run(); }
-	function toggleOrderedList() { editor?.chain().focus().toggleOrderedList().run(); }
-	function toggleTaskList() { editor?.chain().focus().toggleTaskList().run(); }
-	function toggleCodeBlock() { editor?.chain().focus().toggleCodeBlock().run(); }
-	function toggleBlockquote() { editor?.chain().focus().toggleBlockquote().run(); }
-	function undo() { editor?.chain().focus().undo().run(); }
-	function redo() { editor?.chain().focus().redo().run(); }
+	function toggleBold() {
+		editor?.chain().focus().toggleBold().run();
+	}
+	function toggleItalic() {
+		editor?.chain().focus().toggleItalic().run();
+	}
+	function toggleStrike() {
+		editor?.chain().focus().toggleStrike().run();
+	}
+	function toggleUnderline() {
+		editor?.chain().focus().toggleUnderline().run();
+	}
+	function toggleCode() {
+		editor?.chain().focus().toggleCode().run();
+	}
+	function toggleH1() {
+		editor?.chain().focus().toggleHeading({ level: 1 }).run();
+	}
+	function toggleH2() {
+		editor?.chain().focus().toggleHeading({ level: 2 }).run();
+	}
+	function toggleBulletList() {
+		editor?.chain().focus().toggleBulletList().run();
+	}
+	function toggleOrderedList() {
+		editor?.chain().focus().toggleOrderedList().run();
+	}
+	function toggleTaskList() {
+		editor?.chain().focus().toggleTaskList().run();
+	}
+	function toggleCodeBlock() {
+		editor?.chain().focus().toggleCodeBlock().run();
+	}
+	function toggleBlockquote() {
+		editor?.chain().focus().toggleBlockquote().run();
+	}
+	function undo() {
+		editor?.chain().focus().undo().run();
+	}
+	function redo() {
+		editor?.chain().focus().redo().run();
+	}
 	function setImageWidth(width: string | null) {
 		editor?.chain().focus().updateAttributes('image', { width }).run();
 	}
@@ -884,42 +932,92 @@
 		if (selectedText.trim()) oncreateissue(selectedText.trim());
 	}
 
-	async function reworkSelection() {
-		if (!editor || !onreworkselection || reworkingSelection) return;
-		const { from, to } = editor.state.selection;
-		const selectedText = editor.state.doc.textBetween(from, to, ' ').trim();
-		const selection = selectedText ? { from, to, text: selectedText } : lastSelection;
-		if (!selection) return;
+	function markRewriteApplied() {
+		rewriteJustApplied = true;
+		if (rewriteAnimationTimer) clearTimeout(rewriteAnimationTimer);
+		rewriteAnimationTimer = setTimeout(() => {
+			rewriteJustApplied = false;
+			rewriteAnimationTimer = null;
+		}, 900);
+		appToast.success(m['issue.toast.selection_reworked']());
+	}
+
+	function applyAIContentAt(range: number | { from: number; to: number }, html: string): boolean {
+		if (!editor || editor.isDestroyed) return false;
+		const applied = editor
+			.chain()
+			.focus()
+			.command(({ tr }) => {
+				closeHistory(tr);
+				return true;
+			})
+			.insertContentAt(range, html)
+			.run();
+		if (applied) editor.view.dispatch(closeHistory(editor.state.tr));
+		return applied;
+	}
+
+	async function reworkRange(range: { from: number; to: number }, allowEmpty = false) {
+		if (!editor || editor.isDestroyed || !onreworkselection || reworkingSelection || pendingUploads > 0) return;
+		const targetEditor = editor;
+		// ProseMirror documents are immutable; this also catches external and remote updates.
+		const originalDocument = targetEditor.state.doc;
+		const originalExternalContent = content;
+		const originalContext = aiContextKey;
+		const text = originalDocument.textBetween(range.from, range.to, '\n').trim();
+		if (!text && !allowEmpty) {
+			appToast.error(m['sharedComponents.rich_editor.ai_empty_text']());
+			return;
+		}
+		let hasProtectedContent = false;
+		originalDocument.nodesBetween(range.from, range.to, (node) => {
+			if (node.isAtom && !node.isText && node.type.name !== 'hardBreak') hasProtectedContent = true;
+		});
+		aiSuggestion = null;
 		reworkingSelection = true;
 		try {
-			const replacement = await onreworkselection(selection.text);
-			if (!replacement.trim()) return;
-			editor.chain().focus().deleteRange({ from: selection.from, to: selection.to }).insertContent(replacement).run();
-			rewriteJustApplied = true;
-			if (rewriteAnimationTimer) clearTimeout(rewriteAnimationTimer);
-			rewriteAnimationTimer = setTimeout(() => {
-				rewriteJustApplied = false;
-				rewriteAnimationTimer = null;
-			}, 900);
+			const replacement = sanitizeEditorOutput(await onreworkselection(text));
+			if (!replacement.trim() || targetEditor.isDestroyed || editor !== targetEditor) return;
+			const documentChanged =
+				!targetEditor.state.doc.eq(originalDocument) ||
+				content !== originalExternalContent ||
+				aiContextKey !== originalContext;
+			if (documentChanged || hasProtectedContent || pendingUploads > 0) {
+				aiSuggestion = {
+					html: replacement,
+					reason: documentChanged ? 'changed-document' : 'protected-content'
+				};
+				return;
+			}
+			// A single transaction makes the replacement undoable without disturbing earlier edits.
+			if (applyAIContentAt(range, replacement)) markRewriteApplied();
+		} catch (err) {
+			appToast.apiError(err, m['issue.toast.failed_rework']());
 		} finally {
 			reworkingSelection = false;
 		}
 	}
 
-	/**
-	 * Rework the whole document (or the current selection when one exists).
-	 * Exposed so pages can attach a persistent AI button via bind:this.
-	 */
-	export async function reworkWholeDocument() {
-		if (!editor || !onreworkselection || reworkingSelection) return;
+	async function reworkSelection() {
+		if (!editor) return;
 		const { from, to } = editor.state.selection;
-		const hasSelection = to > from;
-		if (!hasSelection) {
-			const text = editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n').trim();
-			if (!text) return;
-			editor.chain().focus().selectAll().run();
+		if (to > from) await reworkRange({ from, to });
+	}
+
+	/** Rework the current selection, or the whole document when nothing is selected. */
+	export async function reworkWholeDocument() {
+		if (!editor) return;
+		const { from, to } = editor.state.selection;
+		await reworkRange(to > from ? { from, to } : { from: 0, to: editor.state.doc.content.size }, allowEmptyAI);
+	}
+
+	function insertAISuggestion() {
+		if (!editor || editor.isDestroyed || !aiSuggestion || pendingUploads > 0) return;
+		// Resolve the insertion position now, never reuse positions from before the AI request.
+		if (applyAIContentAt(editor.state.doc.content.size, aiSuggestion.html)) {
+			aiSuggestion = null;
+			markRewriteApplied();
 		}
-		await reworkSelection();
 	}
 
 	export function isReworking(): boolean {
@@ -939,10 +1037,13 @@
 
 	function handleMentionSelect(item: MentionItem | undefined) {
 		if (!item || !editor || !mentionRange) return;
-		const attrs = item.kind === 'user'
-			? { id: item.id, label: item.name || item.email, kind: 'user' }
-			: { id: item.id, label: `${item.identifier} ${item.title}`, kind: 'issue', identifier: item.identifier };
-		editor.chain().focus()
+		const attrs =
+			item.kind === 'user'
+				? { id: item.id, label: item.name || item.email, kind: 'user' }
+				: { id: item.id, label: `${item.identifier} ${item.title}`, kind: 'issue', identifier: item.identifier };
+		editor
+			.chain()
+			.focus()
 			.deleteRange({ from: mentionRange.from, to: mentionRange.to })
 			.insertContent({ type: 'mention', attrs })
 			.insertContent(' ')
@@ -997,57 +1098,126 @@
 	let showStaticToolbar = $derived(editable && !minimal && !bubbleMenu);
 </script>
 
-<div class="w-full my-auto {borderless ? '' : 'rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)]'}">
+<div
+	class="w-full my-auto {borderless
+		? ''
+		: 'rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)]'}"
+>
 	{#if showStaticToolbar}
 		<!-- Toolbar -->
 		<div class="flex items-center gap-0.5 border-b border-[var(--app-border)] px-2 py-1">
-			<button type="button" onclick={toggleBold} class={btnClass(editor?.isActive('bold') ?? false)} title={m['sharedComponents.rich_editor.bold']()}>
+			<button
+				type="button"
+				onclick={toggleBold}
+				class={btnClass(editor?.isActive('bold') ?? false)}
+				title={m['sharedComponents.rich_editor.bold']()}
+			>
 				<Bold size={14} />
 			</button>
-			<button type="button" onclick={toggleItalic} class={btnClass(editor?.isActive('italic') ?? false)} title={m['sharedComponents.rich_editor.italic']()}>
+			<button
+				type="button"
+				onclick={toggleItalic}
+				class={btnClass(editor?.isActive('italic') ?? false)}
+				title={m['sharedComponents.rich_editor.italic']()}
+			>
 				<Italic size={14} />
 			</button>
-			<button type="button" onclick={toggleStrike} class={btnClass(editor?.isActive('strike') ?? false)} title={m['sharedComponents.rich_editor.strikethrough']()}>
+			<button
+				type="button"
+				onclick={toggleStrike}
+				class={btnClass(editor?.isActive('strike') ?? false)}
+				title={m['sharedComponents.rich_editor.strikethrough']()}
+			>
 				<Strikethrough size={14} />
 			</button>
-			<button type="button" onclick={toggleCode} class={btnClass(editor?.isActive('code') ?? false)} title={m['sharedComponents.rich_editor.inline_code']()}>
+			<button
+				type="button"
+				onclick={toggleCode}
+				class={btnClass(editor?.isActive('code') ?? false)}
+				title={m['sharedComponents.rich_editor.inline_code']()}
+			>
 				<Code size={14} />
 			</button>
 
 			<Separator orientation="vertical" class="mx-1 h-4" />
 
-			<button type="button" onclick={toggleH1} class={btnClass(editor?.isActive('heading', { level: 1 }) ?? false)} title={m['sharedComponents.rich_editor.heading_1']()}>
+			<button
+				type="button"
+				onclick={toggleH1}
+				class={btnClass(editor?.isActive('heading', { level: 1 }) ?? false)}
+				title={m['sharedComponents.rich_editor.heading_1']()}
+			>
 				<Heading1 size={14} />
 			</button>
-			<button type="button" onclick={toggleH2} class={btnClass(editor?.isActive('heading', { level: 2 }) ?? false)} title={m['sharedComponents.rich_editor.heading_2']()}>
+			<button
+				type="button"
+				onclick={toggleH2}
+				class={btnClass(editor?.isActive('heading', { level: 2 }) ?? false)}
+				title={m['sharedComponents.rich_editor.heading_2']()}
+			>
 				<Heading2 size={14} />
 			</button>
 
 			<Separator orientation="vertical" class="mx-1 h-4" />
 
-			<button type="button" onclick={toggleBulletList} class={btnClass(editor?.isActive('bulletList') ?? false)} title={m['sharedComponents.rich_editor.bullet_list']()}>
+			<button
+				type="button"
+				onclick={toggleBulletList}
+				class={btnClass(editor?.isActive('bulletList') ?? false)}
+				title={m['sharedComponents.rich_editor.bullet_list']()}
+			>
 				<List size={14} />
 			</button>
-			<button type="button" onclick={toggleOrderedList} class={btnClass(editor?.isActive('orderedList') ?? false)} title={m['sharedComponents.rich_editor.ordered_list']()}>
+			<button
+				type="button"
+				onclick={toggleOrderedList}
+				class={btnClass(editor?.isActive('orderedList') ?? false)}
+				title={m['sharedComponents.rich_editor.ordered_list']()}
+			>
 				<ListOrdered size={14} />
 			</button>
-			<button type="button" onclick={toggleTaskList} class={btnClass(editor?.isActive('taskList') ?? false)} title={m['sharedComponents.rich_editor.task_list']()}>
+			<button
+				type="button"
+				onclick={toggleTaskList}
+				class={btnClass(editor?.isActive('taskList') ?? false)}
+				title={m['sharedComponents.rich_editor.task_list']()}
+			>
 				<ListChecks size={14} />
 			</button>
 
 			<Separator orientation="vertical" class="mx-1 h-4" />
 
-			<button type="button" onclick={toggleLink} class={btnClass(editor?.isActive('link') ?? false)} title={m['sharedComponents.rich_editor.link']()}>
+			<button
+				type="button"
+				onclick={toggleLink}
+				class={btnClass(editor?.isActive('link') ?? false)}
+				title={m['sharedComponents.rich_editor.link']()}
+			>
 				<LinkIcon size={14} />
 			</button>
-			<button type="button" onclick={toggleCodeBlock} class={btnClass(editor?.isActive('codeBlock') ?? false)} title={m['sharedComponents.rich_editor.code_block']()}>
+			<button
+				type="button"
+				onclick={toggleCodeBlock}
+				class={btnClass(editor?.isActive('codeBlock') ?? false)}
+				title={m['sharedComponents.rich_editor.code_block']()}
+			>
 				<Code2 size={14} />
 			</button>
 			{#if uploadUrl}
-				<button type="button" onclick={() => chooseFiles(true)} class={btnClass(false)} title={m['sharedComponents.rich_editor.upload_image']()}>
+				<button
+					type="button"
+					onclick={() => chooseFiles(true)}
+					class={btnClass(false)}
+					title={m['sharedComponents.rich_editor.upload_image']()}
+				>
 					<ImagePlus size={14} />
 				</button>
-				<button type="button" onclick={() => chooseFiles()} class={btnClass(false)} title={m['sharedComponents.rich_editor.attach_files']()}>
+				<button
+					type="button"
+					onclick={() => chooseFiles()}
+					class={btnClass(false)}
+					title={m['sharedComponents.rich_editor.attach_files']()}
+				>
 					<Paperclip size={14} />
 				</button>
 			{/if}
@@ -1064,11 +1234,41 @@
 	{/if}
 	{#if editable && uploadUrl && bubbleMenu && !hideUploadButtons}
 		<div class="flex items-center justify-end gap-0.5 px-1 py-0.5">
-			<button type="button" onclick={() => chooseFiles(true)} class={btnClass(false)} title={m['sharedComponents.rich_editor.upload_image']()} aria-label={m['sharedComponents.rich_editor.upload_image']()}>
+			<button
+				type="button"
+				onclick={() => chooseFiles(true)}
+				class={btnClass(false)}
+				title={m['sharedComponents.rich_editor.upload_image']()}
+				aria-label={m['sharedComponents.rich_editor.upload_image']()}
+			>
 				<ImagePlus size={14} />
 			</button>
-			<button type="button" onclick={() => chooseFiles()} class={btnClass(false)} title={m['sharedComponents.rich_editor.attach_files']()} aria-label={m['sharedComponents.rich_editor.attach_files']()}>
+			<button
+				type="button"
+				onclick={() => chooseFiles()}
+				class={btnClass(false)}
+				title={m['sharedComponents.rich_editor.attach_files']()}
+				aria-label={m['sharedComponents.rich_editor.attach_files']()}
+			>
 				<Paperclip size={14} />
+			</button>
+		</div>
+	{/if}
+
+	{#if editable && onreworkselection && showAIButton}
+		<div class="flex justify-end px-1 py-1">
+			<button
+				type="button"
+				onpointerdown={(event) => event.preventDefault()}
+				onclick={reworkWholeDocument}
+				disabled={reworkingSelection || pendingUploads > 0}
+				class="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+				title={aiButtonLabel ?? m['issue.ai.improve_description']()}
+				aria-label={aiButtonLabel ?? m['issue.ai.improve_description']()}
+				aria-busy={reworkingSelection}
+			>
+				<Sparkles size={13} class={reworkingSelection ? 'animate-pulse' : ''} />
+				{aiButtonLabel ?? m['issue.ai.improve_description']()}
 			</button>
 		</div>
 	{/if}
@@ -1076,7 +1276,9 @@
 	<!-- Editor content -->
 	{#if editor}
 		<div
-			class="rich-editor {reworkingSelection ? 'ai-rewrite-loading' : ''} {rewriteJustApplied ? 'ai-rewrite-applied' : ''}"
+			class="rich-editor {reworkingSelection ? 'ai-rewrite-loading' : ''} {rewriteJustApplied
+				? 'ai-rewrite-applied'
+				: ''}"
 			style="position: relative; overflow: visible; {minHeight ? `--editor-min-height: ${minHeight}` : ''}"
 			use:mentionInteractivity={{ slug: workspaceSlug, members, issues }}
 		>
@@ -1090,6 +1292,34 @@
 		</div>
 	{/if}
 
+	{#if aiSuggestion}
+		<section
+			class="my-2 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-3"
+			aria-label={m['sharedComponents.rich_editor.ai_suggestion']()}
+			aria-live="polite"
+		>
+			<p class="text-sm font-medium text-[var(--color-text-primary)]">
+				{m['sharedComponents.rich_editor.ai_suggestion']()}
+			</p>
+			<p class="mt-1 text-xs text-[var(--color-text-secondary)]">
+				{aiSuggestion.reason === 'changed-document'
+					? m['sharedComponents.rich_editor.ai_document_changed']()
+					: m['sharedComponents.rich_editor.ai_preserved_content']()}
+			</p>
+			<div class="prose prose-invert prose-sm my-3 max-h-64 max-w-none overflow-auto text-[var(--color-text-primary)]">
+				{@html aiSuggestion.html}
+			</div>
+			<div class="flex flex-wrap gap-2">
+				<Button type="button" size="sm" onclick={insertAISuggestion} disabled={pendingUploads > 0}
+					>{m['sharedComponents.rich_editor.ai_insert_suggestion']()}</Button
+				>
+				<Button type="button" size="sm" variant="ghost" onclick={() => (aiSuggestion = null)}
+					>{m['sharedComponents.rich_editor.ai_discard_suggestion']()}</Button
+				>
+			</div>
+		</section>
+	{/if}
+
 	<!-- Slash command menu -->
 	{#if slashActive && editor && slashFlatItems.length > 0}
 		<SlashCommandMenu
@@ -1097,7 +1327,9 @@
 			selectedIndex={slashSelectedIndex}
 			position={slashPosition}
 			onselect={handleSlashSelect}
-			onclose={() => { slashActive = false; }}
+			onclose={() => {
+				slashActive = false;
+			}}
 		/>
 	{/if}
 
@@ -1108,76 +1340,171 @@
 			selectedIndex={mentionSelectedIndex}
 			position={mentionPosition}
 			onselect={handleMentionSelect}
-			onclose={() => { mentionActive = false; }}
+			onclose={() => {
+				mentionActive = false;
+			}}
 		/>
 	{/if}
 
 	{#if bubbleMenu && editor && editable}
 		<BubbleMenu {editor} shouldShow={shouldShowBubble}>
 			{#snippet children()}
-				<div class="bubble-toolbar" role="toolbar" aria-label={m['sharedComponents.rich_editor.editor_formatting']()} tabindex="-1" onpointerdown={(event) => event.preventDefault()}>
+				<div
+					class="bubble-toolbar"
+					role="toolbar"
+					aria-label={m['sharedComponents.rich_editor.editor_formatting']()}
+					tabindex="-1"
+					onpointerdown={(event) => event.preventDefault()}
+				>
 					{#if editor?.isActive('image')}
 						<span class="bubble-image-label">{m['sharedComponents.rich_editor.image_size']()}</span>
 						{#each ['25%', '50%', '75%', '100%'] as width}
-							<button type="button" onclick={() => setImageWidth(width)} class={btnClass(editor?.getAttributes('image').width === width)} title={m['sharedComponents.rich_editor.set_image_width']({ width })}>
+							<button
+								type="button"
+								onclick={() => setImageWidth(width)}
+								class={btnClass(editor?.getAttributes('image').width === width)}
+								title={m['sharedComponents.rich_editor.set_image_width']({ width })}
+							>
 								{width}
 							</button>
 						{/each}
-						<button type="button" onclick={() => setImageWidth(null)} class={btnClass(!editor?.getAttributes('image').width)} title={m['sharedComponents.rich_editor.use_original_image_size']()}>{m['sharedComponents.rich_editor.auto']()}</button>
+						<button
+							type="button"
+							onclick={() => setImageWidth(null)}
+							class={btnClass(!editor?.getAttributes('image').width)}
+							title={m['sharedComponents.rich_editor.use_original_image_size']()}
+							>{m['sharedComponents.rich_editor.auto']()}</button
+						>
 						<div class="bubble-separator"></div>
-						<button type="button" onclick={viewActiveImage} class={btnClass(false)} title={m['imageViewer.view']()} aria-label={m['imageViewer.view']()}>
+						<button
+							type="button"
+							onclick={viewActiveImage}
+							class={btnClass(false)}
+							title={m['imageViewer.view']()}
+							aria-label={m['imageViewer.view']()}
+						>
 							<Maximize2 size={14} />
 						</button>
-						<button type="button" onclick={downloadActiveImage} class={btnClass(false)} title={m['imageViewer.download']()} aria-label={m['imageViewer.download']()}>
+						<button
+							type="button"
+							onclick={downloadActiveImage}
+							class={btnClass(false)}
+							title={m['imageViewer.download']()}
+							aria-label={m['imageViewer.download']()}
+						>
 							<Download size={14} />
 						</button>
-						<button type="button" onclick={copyActiveImage} class={btnClass(false)} title={m['imageViewer.copy']()} aria-label={m['imageViewer.copy']()}>
+						<button
+							type="button"
+							onclick={copyActiveImage}
+							class={btnClass(false)}
+							title={m['imageViewer.copy']()}
+							aria-label={m['imageViewer.copy']()}
+						>
 							<Copy size={14} />
 						</button>
 					{:else}
-					<button type="button" onclick={toggleBold} class={btnClass(editor?.isActive('bold') ?? false)} title={m['sharedComponents.rich_editor.bold']()}>
-						<Bold size={14} />
-					</button>
-					<button type="button" onclick={toggleItalic} class={btnClass(editor?.isActive('italic') ?? false)} title={m['sharedComponents.rich_editor.italic']()}>
-						<Italic size={14} />
-					</button>
-					<button type="button" onclick={toggleStrike} class={btnClass(editor?.isActive('strike') ?? false)} title={m['sharedComponents.rich_editor.strikethrough']()}>
-						<Strikethrough size={14} />
-					</button>
-					<button type="button" onclick={toggleUnderline} class={btnClass(editor?.isActive('underline') ?? false)} title={m['sharedComponents.rich_editor.underline']()}>
-						<UnderlineIcon size={14} />
-					</button>
-
-					<div class="bubble-separator"></div>
-
-					<button type="button" onclick={toggleLink} class={btnClass(editor?.isActive('link') ?? false)} title={m['sharedComponents.rich_editor.link']()}>
-						<LinkIcon size={14} />
-					</button>
-					<button type="button" onclick={toggleBlockquote} class={btnClass(editor?.isActive('blockquote') ?? false)} title={m['sharedComponents.rich_editor.blockquote']()}>
-						<Quote size={14} />
-					</button>
-					<button type="button" onclick={toggleCode} class={btnClass(editor?.isActive('code') ?? false)} title={m['sharedComponents.rich_editor.inline_code']()}>
-						<Code size={14} />
-					</button>
-					<button type="button" onclick={toggleCodeBlock} class={btnClass(editor?.isActive('codeBlock') ?? false)} title={m['sharedComponents.rich_editor.code_block']()}>
-						<Code2 size={14} />
-					</button>
-					<button type="button" onclick={toggleBulletList} class={btnClass(editor?.isActive('bulletList') ?? false)} title={m['sharedComponents.rich_editor.bullet_list']()}>
-						<List size={14} />
-					</button>
-
-					{#if oncreateissue}
-						<div class="bubble-separator"></div>
-						<button type="button" onclick={createIssueFromSelection} class={btnClass(false)} title={m['sharedComponents.rich_editor.create_issue_from_selection']()}>
-							<SquareArrowOutUpRight size={14} />
+						<button
+							type="button"
+							onclick={toggleBold}
+							class={btnClass(editor?.isActive('bold') ?? false)}
+							title={m['sharedComponents.rich_editor.bold']()}
+						>
+							<Bold size={14} />
 						</button>
-					{/if}
-					{#if onreworkselection}
-						<div class="bubble-separator"></div>
-						<button type="button" onpointerdown={(e) => e.preventDefault()} onclick={reworkSelection} class={btnClass(false)} title={m['sharedComponents.rich_editor.rework_with_ai']()} disabled={reworkingSelection}>
-							<Sparkles size={14} class={reworkingSelection ? 'ai-rewrite-icon-loading' : ''} />
+						<button
+							type="button"
+							onclick={toggleItalic}
+							class={btnClass(editor?.isActive('italic') ?? false)}
+							title={m['sharedComponents.rich_editor.italic']()}
+						>
+							<Italic size={14} />
 						</button>
-					{/if}
+						<button
+							type="button"
+							onclick={toggleStrike}
+							class={btnClass(editor?.isActive('strike') ?? false)}
+							title={m['sharedComponents.rich_editor.strikethrough']()}
+						>
+							<Strikethrough size={14} />
+						</button>
+						<button
+							type="button"
+							onclick={toggleUnderline}
+							class={btnClass(editor?.isActive('underline') ?? false)}
+							title={m['sharedComponents.rich_editor.underline']()}
+						>
+							<UnderlineIcon size={14} />
+						</button>
+
+						<div class="bubble-separator"></div>
+
+						<button
+							type="button"
+							onclick={toggleLink}
+							class={btnClass(editor?.isActive('link') ?? false)}
+							title={m['sharedComponents.rich_editor.link']()}
+						>
+							<LinkIcon size={14} />
+						</button>
+						<button
+							type="button"
+							onclick={toggleBlockquote}
+							class={btnClass(editor?.isActive('blockquote') ?? false)}
+							title={m['sharedComponents.rich_editor.blockquote']()}
+						>
+							<Quote size={14} />
+						</button>
+						<button
+							type="button"
+							onclick={toggleCode}
+							class={btnClass(editor?.isActive('code') ?? false)}
+							title={m['sharedComponents.rich_editor.inline_code']()}
+						>
+							<Code size={14} />
+						</button>
+						<button
+							type="button"
+							onclick={toggleCodeBlock}
+							class={btnClass(editor?.isActive('codeBlock') ?? false)}
+							title={m['sharedComponents.rich_editor.code_block']()}
+						>
+							<Code2 size={14} />
+						</button>
+						<button
+							type="button"
+							onclick={toggleBulletList}
+							class={btnClass(editor?.isActive('bulletList') ?? false)}
+							title={m['sharedComponents.rich_editor.bullet_list']()}
+						>
+							<List size={14} />
+						</button>
+
+						{#if oncreateissue}
+							<div class="bubble-separator"></div>
+							<button
+								type="button"
+								onclick={createIssueFromSelection}
+								class={btnClass(false)}
+								title={m['sharedComponents.rich_editor.create_issue_from_selection']()}
+							>
+								<SquareArrowOutUpRight size={14} />
+							</button>
+						{/if}
+						{#if onreworkselection}
+							<div class="bubble-separator"></div>
+							<button
+								type="button"
+								onpointerdown={(e) => e.preventDefault()}
+								onclick={reworkSelection}
+								class={btnClass(false)}
+								title={m['sharedComponents.rich_editor.rework_with_ai']()}
+								aria-label={m['sharedComponents.rich_editor.rework_with_ai']()}
+								disabled={reworkingSelection || pendingUploads > 0}
+							>
+								<Sparkles size={14} class={reworkingSelection ? 'ai-rewrite-icon-loading' : ''} />
+							</button>
+						{/if}
 					{/if}
 				</div>
 				{#if linkInputVisible}
@@ -1189,8 +1516,13 @@
 							placeholder="https://..."
 							autofocus
 							onkeydown={(e) => {
-								if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
-								if (e.key === 'Escape') { cancelLink(); }
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									applyLink();
+								}
+								if (e.key === 'Escape') {
+									cancelLink();
+								}
 							}}
 							class="bubble-link-field"
 						/>
@@ -1286,12 +1618,22 @@
 		padding: 0;
 	}
 	@keyframes aiRewriteSpin {
-		from { transform: rotate(0deg); }
-		to { transform: rotate(360deg); }
+		from {
+			transform: rotate(0deg);
+		}
+		to {
+			transform: rotate(360deg);
+		}
 	}
 	@keyframes aiRewriteFloat {
-		from { transform: translateY(0); opacity: 0.82; }
-		to { transform: translateY(-2px); opacity: 1; }
+		from {
+			transform: translateY(0);
+			opacity: 0.82;
+		}
+		to {
+			transform: translateY(-2px);
+			opacity: 1;
+		}
 	}
 	@keyframes aiRewriteFlash {
 		0% {
@@ -1332,8 +1674,7 @@
 		font-weight: 600;
 		margin: 0.5rem 0 0.25rem;
 	}
-	:global(.rich-editor .tiptap ul,
-	.rich-editor .tiptap ol) {
+	:global(.rich-editor .tiptap ul, .rich-editor .tiptap ol) {
 		padding-left: 1.5rem;
 		margin: 0.25rem 0;
 	}
@@ -1343,23 +1684,23 @@
 	:global(.rich-editor .tiptap ol) {
 		list-style: decimal;
 	}
-	:global(.rich-editor .tiptap ul[data-type="taskList"]) {
+	:global(.rich-editor .tiptap ul[data-type='taskList']) {
 		list-style: none;
 		padding-left: 0;
 	}
-	:global(.rich-editor .tiptap ul[data-type="taskList"] li) {
+	:global(.rich-editor .tiptap ul[data-type='taskList'] li) {
 		display: flex;
 		align-items: flex-start;
 		gap: 0.25rem;
 		margin-bottom: 0.35rem;
 	}
-	:global(.rich-editor .tiptap ul[data-type="taskList"] li label) {
+	:global(.rich-editor .tiptap ul[data-type='taskList'] li label) {
 		display: flex;
 		align-items: flex-start;
 		gap: 0.2rem;
 	}
 
-	:global(.rich-editor .tiptap ul[data-type="taskList"] li input[type="checkbox"]) {
+	:global(.rich-editor .tiptap ul[data-type='taskList'] li input[type='checkbox']) {
 		appearance: none;
 		-webkit-appearance: none;
 		width: 15px;
@@ -1371,25 +1712,28 @@
 		background: transparent;
 		cursor: pointer;
 		position: relative;
-		transition: background-color 0.15s, border-color 0.15s;
+		transition:
+			background-color 0.15s,
+			border-color 0.15s;
 	}
 
-	:global(.rich-editor .tiptap ul[data-type="taskList"] li input[type="checkbox"]:checked) {
+	:global(.rich-editor .tiptap ul[data-type='taskList'] li input[type='checkbox']:checked) {
 		background: var(--app-accent);
 		border-color: var(--app-accent);
 	}
 
-	:global(.rich-editor .tiptap ul[data-type="taskList"] li input[type="checkbox"]:checked::after) {
+	:global(.rich-editor .tiptap ul[data-type='taskList'] li input[type='checkbox']:checked::after) {
 		content: '';
 		position: absolute;
 		inset: 0;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center/13px no-repeat;
+		background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E")
+			center/13px no-repeat;
 	}
 
-	:global(.rich-editor .tiptap ul[data-type="taskList"] li input[type="checkbox"]:hover) {
+	:global(.rich-editor .tiptap ul[data-type='taskList'] li input[type='checkbox']:hover) {
 		border-color: var(--app-accent);
 	}
 	:global(.rich-editor .tiptap code) {

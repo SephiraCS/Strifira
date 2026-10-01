@@ -16,6 +16,7 @@ ARG OPENCODE_VERSION=1.18.4
 ARG CODEX_VERSION=0.145.0
 ARG BRACE_EXPANSION_VERSION=5.0.11
 ARG IP_ADDRESS_VERSION=10.3.1
+ARG SHELL_QUOTE_VERSION=1.9.0
 ARG JS_YAML_VERSION=4.3.2
 ARG TAR_VERSION=7.5.21
 ARG UNDICI_VERSION=7.29.1
@@ -24,13 +25,12 @@ COPY --from=node-stage /usr/local /usr/local
 COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
 COPY ide/start.sh /usr/local/bin/ku-ide-start
 COPY ide/shell.sh /usr/local/bin/ku-shell
-COPY ide/checkout.sh /usr/local/bin/ku-checkout
 COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
 COPY ide/command-event.js /usr/local/lib/ku-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
 # VS Code's npm support extension is not the npm CLI package; keep its manifest identity unambiguous.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep sudo tmux xz-utils \
+    && apt-get install -y --no-install-recommends ca-certificates curl git ripgrep sudo tmux util-linux xz-utils \
     && case "${TARGETARCH}" in \
          amd64) package_arch=amd64; code_server_sha="$CODE_SERVER_AMD64_SHA256"; ttyd_arch=x86_64; ttyd_sha="$TTYD_AMD64_SHA256" ;; \
          arm64) package_arch=arm64; code_server_sha="$CODE_SERVER_ARM64_SHA256"; ttyd_arch=aarch64; ttyd_sha="$TTYD_ARM64_SHA256" ;; \
@@ -49,7 +49,7 @@ RUN apt-get update \
     && for pair in "brace-expansion@${BRACE_EXPANSION_VERSION}" "ip-address@${IP_ADDRESS_VERSION}" "js-yaml@${JS_YAML_VERSION}" "tar@${TAR_VERSION}" "undici@${UNDICI_VERSION}"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
     && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
-         "js-yaml@${JS_YAML_VERSION}" "shell-quote@1.9.0" "tar@${TAR_VERSION}" \
+         "js-yaml@${JS_YAML_VERSION}" "shell-quote@${SHELL_QUOTE_VERSION}" "tar@${TAR_VERSION}" \
     && rm -rf /usr/lib/code-server/node_modules/js-yaml \
          /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
          /usr/lib/code-server/lib/vscode/node_modules/tar \
@@ -62,7 +62,7 @@ RUN apt-get update \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && mkdir -p /home/ku \
     && chown 1000:1000 /home/ku \
-    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-checkout /usr/local/bin/ku-terminal-session \
+    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-terminal-session \
     && code-server --version \
     && node --version \
     && npm --version \

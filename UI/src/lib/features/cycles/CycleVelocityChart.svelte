@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { VelocityPoint } from '$lib/types/cycle';
-	import * as echarts from 'echarts';
+	import { init, type ECharts } from '$lib/charts/echarts';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
@@ -11,7 +11,7 @@
 	} = $props();
 
 	let chartEl: HTMLDivElement | undefined = $state();
-	let chart: echarts.ECharts | undefined;
+	let chart: ECharts | undefined;
 
 	function getColor(varName: string): string {
 		return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -36,7 +36,7 @@
 			chart.dispose();
 		}
 
-		chart = echarts.init(chartEl, undefined, { renderer: 'canvas' });
+		chart = init(chartEl, undefined, { renderer: 'canvas' });
 
 		chart.setOption({
 			backgroundColor: 'transparent',
@@ -80,10 +80,12 @@
 					const cancelled = params.find((p: any) => p.seriesName === m['cycles.chart.cancelled']())?.value ?? 0;
 					const remaining = params.find((p: any) => p.seriesName === m['cycles.chart.remaining']())?.value ?? 0;
 					const total = completed + cancelled + remaining;
-					return `<div><strong>${name}</strong></div>`
-						+ `<div style="margin-top:4px">${m['cycles.chart.velocity_completed']()}${completed}/${total}</div>`
-						+ `<div>${m['cycles.chart.velocity_cancelled']()}${cancelled}</div>`
-						+ `<div>${m['cycles.chart.velocity_remaining']()}${remaining}</div>`;
+					return (
+						`<div><strong>${name}</strong></div>` +
+						`<div style="margin-top:4px">${m['cycles.chart.velocity_completed']()}${completed}/${total}</div>` +
+						`<div>${m['cycles.chart.velocity_cancelled']()}${cancelled}</div>` +
+						`<div>${m['cycles.chart.velocity_remaining']()}${remaining}</div>`
+					);
 				}
 			},
 			series: [

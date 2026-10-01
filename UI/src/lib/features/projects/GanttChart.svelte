@@ -2,7 +2,7 @@
 	import type { Issue, IssueStatus } from '$lib/types/issue';
 	import { getStatusLabel } from '$lib/types/issue';
 	import type { Cycle } from '$lib/types/cycle';
-	import * as echarts from 'echarts';
+	import { init, graphic, type ECharts } from '$lib/charts/echarts';
 	import Filter from '@lucide/svelte/icons/funnel';
 	import X from '@lucide/svelte/icons/x';
 	import { m } from '$lib/paraglide/messages.js';
@@ -20,7 +20,7 @@
 
 	let chartEl: HTMLDivElement | undefined = $state();
 	let containerEl: HTMLDivElement | undefined = $state();
-	let chart: echarts.ECharts | undefined;
+	let chart: ECharts | undefined;
 
 	// Filters
 	let showFilters = $state(false);
@@ -31,7 +31,8 @@
 
 	function toggleStatus(s: IssueStatus) {
 		const next = new Set(filterStatus);
-		if (next.has(s)) next.delete(s); else next.add(s);
+		if (next.has(s)) next.delete(s);
+		else next.add(s);
 		filterStatus = next;
 	}
 
@@ -45,12 +46,12 @@
 	const filteredIssues = $derived.by(() => {
 		let result = issues;
 		if (filterStatus.size > 0) {
-			result = result.filter(i => filterStatus.has(i.status));
+			result = result.filter((i) => filterStatus.has(i.status));
 		}
 		if (filterHasDueDate === 'yes') {
-			result = result.filter(i => i.due_date);
+			result = result.filter((i) => i.due_date);
 		} else if (filterHasDueDate === 'no') {
-			result = result.filter(i => !i.due_date);
+			result = result.filter((i) => !i.due_date);
 		}
 		return result;
 	});
@@ -66,19 +67,25 @@
 	}
 
 	function escapeHtml(value: string): string {
-		return value.replace(/[&<>"']/g, (char) => ({
-			'&': '&amp;',
-			'<': '&lt;',
-			'>': '&gt;',
-			'"': '&quot;',
-			"'": '&#39;'
-		}[char] ?? char));
+		return value.replace(
+			/[&<>"']/g,
+			(char) =>
+				({
+					'&': '&amp;',
+					'<': '&lt;',
+					'>': '&gt;',
+					'"': '&quot;',
+					"'": '&#39;'
+				})[char] ?? char
+		);
 	}
 
 	// Sorted: by due_date first, then created_at, reversed for ECharts bottom-up y-axis
 	const sortedIssues = $derived.by(() => {
-		const withDue = filteredIssues.filter(i => i.due_date).sort((a, b) => a.due_date!.localeCompare(b.due_date!));
-		const withoutDue = filteredIssues.filter(i => !i.due_date).sort((a, b) => a.created_at.localeCompare(b.created_at));
+		const withDue = filteredIssues.filter((i) => i.due_date).sort((a, b) => a.due_date!.localeCompare(b.due_date!));
+		const withoutDue = filteredIssues
+			.filter((i) => !i.due_date)
+			.sort((a, b) => a.created_at.localeCompare(b.created_at));
 		return [...withDue, ...withoutDue].reverse();
 	});
 
@@ -122,10 +129,15 @@
 
 	function statusColor(status: string): string {
 		switch (status) {
-			case 'done': return getColor('--color-success') || '#22c55e';
-			case 'in_progress': case 'in_review': return getColor('--app-accent') || '#6650eb';
-			case 'cancelled': return getColor('--color-text-tertiary') || '#8c8c8c';
-			default: return getColor('--color-text-secondary') || '#a0a0a0';
+			case 'done':
+				return getColor('--color-success') || '#22c55e';
+			case 'in_progress':
+			case 'in_review':
+				return getColor('--app-accent') || '#6650eb';
+			case 'cancelled':
+				return getColor('--color-text-tertiary') || '#8c8c8c';
+			default:
+				return getColor('--color-text-secondary') || '#a0a0a0';
 		}
 	}
 
@@ -150,7 +162,7 @@
 			chart.dispose();
 		}
 
-		chart = echarts.init(chartEl, undefined, { renderer: 'canvas' });
+		chart = init(chartEl, undefined, { renderer: 'canvas' });
 
 		const issueData: any[] = sortedIssues.map((issue, idx) => {
 			const created = new Date(issue.created_at);
@@ -314,7 +326,7 @@
 						const end = api.coord([endTime, categoryIndex]);
 						const barW = Math.max(end[0] - start[0], hasDue ? 6 : 10);
 
-						const rectShape = echarts.graphic.clipRectByRect(
+						const rectShape = graphic.clipRectByRect(
 							{
 								x: start[0],
 								y: start[1] - barHeight / 2,
@@ -375,20 +387,22 @@
 						y: 0
 					},
 					markArea: cycleAreas.length > 0 ? { silent: true, data: cycleAreas } : undefined,
-					markLine: todayInRange ? {
-						silent: true,
-						symbol: 'none',
-						label: {
-							show: true,
-							position: 'start',
-							formatter: m['projects.gantt.today'](),
-							fontSize: 9,
-							color: '#ef4444',
-							padding: [0, 0, 0, 4]
-						},
-						data: [{ xAxis: today.getTime() }],
-						lineStyle: { color: '#ef4444', width: 1, type: 'dashed', opacity: 0.5 }
-					} : undefined
+					markLine: todayInRange
+						? {
+								silent: true,
+								symbol: 'none',
+								label: {
+									show: true,
+									position: 'start',
+									formatter: m['projects.gantt.today'](),
+									fontSize: 9,
+									color: '#ef4444',
+									padding: [0, 0, 0, 4]
+								},
+								data: [{ xAxis: today.getTime() }],
+								lineStyle: { color: '#ef4444', width: 1, type: 'dashed', opacity: 0.5 }
+							}
+						: undefined
 				}
 			]
 		});
@@ -416,13 +430,17 @@
 	<!-- Toolbar -->
 	<div class="flex items-center gap-2 pb-3">
 		<button
-			onclick={() => showFilters = !showFilters}
-			class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] {hasActiveFilters ? 'border-[var(--app-accent)] text-[var(--app-accent)]' : ''}"
+			onclick={() => (showFilters = !showFilters)}
+			class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2.5 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] {hasActiveFilters
+				? 'border-[var(--app-accent)] text-[var(--app-accent)]'
+				: ''}"
 		>
 			<Filter size={12} />
 			{m['projects.gantt.filter']()}
 			{#if hasActiveFilters}
-				<span class="rounded-full bg-[var(--app-accent)] px-1.5 text-[9px] font-medium text-white">{filterStatus.size + (filterHasDueDate !== 'all' ? 1 : 0)}</span>
+				<span class="rounded-full bg-[var(--app-accent)] px-1.5 text-[9px] font-medium text-white"
+					>{filterStatus.size + (filterHasDueDate !== 'all' ? 1 : 0)}</span
+				>
 			{/if}
 		</button>
 		{#if hasActiveFilters}
@@ -434,18 +452,29 @@
 				{m['projects.gantt.clear']()}
 			</button>
 		{/if}
-		<span class="text-[11px] text-[var(--color-text-tertiary)]">{m['projects.gantt.issues_count']({ count: filteredIssues.length, plural: filteredIssues.length !== 1 ? 's' : '' })}</span>
+		<span class="text-[11px] text-[var(--color-text-tertiary)]"
+			>{m['projects.gantt.issues_count']({
+				count: filteredIssues.length,
+				plural: filteredIssues.length !== 1 ? 's' : ''
+			})}</span
+		>
 	</div>
 
 	<!-- Filter bar -->
 	{#if showFilters}
-		<div class="flex flex-wrap items-center gap-3 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 py-2 mb-3">
+		<div
+			class="flex flex-wrap items-center gap-3 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 py-2 mb-3"
+		>
 			<div class="flex items-center gap-1.5">
-				<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{m['projects.gantt.status']()}</span>
+				<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]"
+					>{m['projects.gantt.status']()}</span
+				>
 				{#each statusOptions as s}
 					<button
 						onclick={() => toggleStatus(s)}
-						class="rounded-md px-2 py-0.5 text-[11px] {filterStatus.has(s) ? 'bg-[var(--app-accent)] text-white' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'}"
+						class="rounded-md px-2 py-0.5 text-[11px] {filterStatus.has(s)
+							? 'bg-[var(--app-accent)] text-white'
+							: 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'}"
 					>
 						{getStatusLabel(s)}
 					</button>
@@ -453,11 +482,15 @@
 			</div>
 			<div class="h-4 w-px bg-[var(--app-border)]"></div>
 			<div class="flex items-center gap-1.5">
-				<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{m['projects.gantt.due_date']()}</span>
+				<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]"
+					>{m['projects.gantt.due_date']()}</span
+				>
 				{#each [['all', m['projects.gantt.all']()], ['yes', m['projects.gantt.has_due']()], ['no', m['projects.gantt.no_due']()]] as [val, label]}
 					<button
-						onclick={() => filterHasDueDate = val as any}
-						class="rounded-md px-2 py-0.5 text-[11px] {filterHasDueDate === val ? 'bg-[var(--app-accent)] text-white' : 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'}"
+						onclick={() => (filterHasDueDate = val as any)}
+						class="rounded-md px-2 py-0.5 text-[11px] {filterHasDueDate === val
+							? 'bg-[var(--app-accent)] text-white'
+							: 'bg-[var(--color-bg-tertiary)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'}"
 					>
 						{label}
 					</button>

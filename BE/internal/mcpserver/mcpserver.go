@@ -27,26 +27,28 @@ type UserSource interface {
 }
 
 type Deps struct {
-	Version      string
-	Users        UserSource
-	Workspaces   repository.WorkspaceRepo
-	Teams        repository.TeamRepo
-	TeamStatuses repository.TeamStatusRepo
-	Projects     repository.ProjectRepo
-	Labels       repository.LabelRepo
-	Cycles       repository.CycleRepo
-	Templates    repository.IssueTemplateRepo
-	Analytics    *repository.AnalyticsRepository
-	IssueSvc     *service.IssueService
-	CommentSvc   *service.CommentService
-	RelationSvc  *service.IssueRelationService
-	WorkspaceSvc *service.WorkspaceService
-	TeamSvc      *service.TeamService
-	StatusSvc    *service.TeamStatusService
-	ProjectSvc   *service.ProjectService
-	LabelSvc     *service.LabelService
-	NotifSvc     *service.NotificationService
-	ForgejoSvc   *service.ForgejoService
+	Version           string
+	Users             UserSource
+	Workspaces        repository.WorkspaceRepo
+	Teams             repository.TeamRepo
+	TeamStatuses      repository.TeamStatusRepo
+	Projects          repository.ProjectRepo
+	Labels            repository.LabelRepo
+	Cycles            repository.CycleRepo
+	Templates         repository.IssueTemplateRepo
+	Analytics         *repository.AnalyticsRepository
+	IssueSvc          *service.IssueService
+	CommentSvc        *service.CommentService
+	RelationSvc       *service.IssueRelationService
+	WorkspaceSvc      *service.WorkspaceService
+	TeamSvc           *service.TeamService
+	StatusSvc         *service.TeamStatusService
+	ProjectSvc        *service.ProjectService
+	LabelSvc          *service.LabelService
+	NotifSvc          *service.NotificationService
+	ForgejoSvc        *service.ForgejoService
+	ForgejoActionsSvc ForgejoActionsToolsService
+	DevBoxSvc         DevBoxToolsService
 }
 
 // NewHTTPHandler builds the /mcp endpoint. Stateless mode keeps every POST

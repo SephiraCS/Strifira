@@ -2,12 +2,14 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/ku/ku-backend/pkg/storage"
 	"golang.org/x/net/publicsuffix"
 )
@@ -31,15 +33,17 @@ func (f ForgejoConfig) NormalizedURL() string {
 }
 
 type Config struct {
-	Port           int    `envconfig:"PORT" default:"8080"`
-	DatabaseURL    string `envconfig:"DATABASE_URL" required:"true"`
-	RedisURL       string `envconfig:"REDIS_URL" required:"true"`
-	JWTSecret      string `envconfig:"JWT_SECRET" required:"true"`
-	FrontendURL    string `envconfig:"FRONTEND_URL" default:"http://localhost:5173"`
-	Environment    string `envconfig:"ENVIRONMENT" default:"development"`
-	Storage        storage.Config
-	Sysadmins      string `envconfig:"SYSADMINS"`
-	PublicDemoMode bool   `envconfig:"PUBLIC_DEMO_MODE"`
+	Port                    int    `envconfig:"PORT" default:"8080"`
+	BindAddress             string `envconfig:"BIND_ADDRESS"`
+	DatabaseURL             string `envconfig:"DATABASE_URL" required:"true"`
+	RedisURL                string `envconfig:"REDIS_URL" required:"true"`
+	JWTSecret               string `envconfig:"JWT_SECRET" required:"true"`
+	FrontendURL             string `envconfig:"FRONTEND_URL" default:"http://localhost:5173"`
+	Environment             string `envconfig:"ENVIRONMENT" default:"development"`
+	Storage                 storage.Config
+	Sysadmins               string          `envconfig:"SYSADMINS"`
+	PublicDemoMode          bool            `envconfig:"PUBLIC_DEMO_MODE"`
+	AIProviderNetworkPolicy aiegress.Policy `envconfig:"AI_PROVIDER_TRUSTED_ORIGINS"`
 
 	SystemUpdaterURL   string `envconfig:"SYSTEM_UPDATER_URL"`
 	SystemUpdaterToken string `envconfig:"SYSTEM_UPDATER_TOKEN"`
@@ -166,6 +170,11 @@ func validHostnameSuffix(value string) bool {
 func Load() (*Config, error) {
 	var cfg Config
 	if err := envconfig.Process("", &cfg); err != nil {
+		// envconfig's ParseError includes the raw value. A malformed provider
+		// origin may contain credentials, so expose only our controlled error.
+		if parseErr, ok := errors.AsType[*envconfig.ParseError](err); ok && parseErr.KeyName == "AI_PROVIDER_TRUSTED_ORIGINS" {
+			return nil, fmt.Errorf("loading config: %w", parseErr.Err)
+		}
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
 	if len(cfg.JWTSecret) < 32 {

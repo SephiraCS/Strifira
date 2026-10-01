@@ -892,16 +892,12 @@ func (r *DevMachineRepository) CancelAgentRun(ctx context.Context, workspaceID, 
 	return tx.Commit()
 }
 
-func (r *DevMachineRepository) UpdateAgentRunStarted(ctx context.Context, runID uuid.UUID) error {
-	result, err := r.db.ExecContext(ctx, `UPDATE dev_machine_agent_runs SET status='running', started_at=COALESCE(started_at,NOW())
-		WHERE id=$1 AND status IN ('queued','starting')`, runID)
-	if err != nil {
-		return err
-	}
-	if rows, _ := result.RowsAffected(); rows != 1 {
-		return sql.ErrNoRows
-	}
-	return nil
+// Retrying a leased operation must keep the original execution deadline.
+func (r *DevMachineRepository) StartAgentRun(ctx context.Context, runID uuid.UUID) (time.Time, error) {
+	var startedAt time.Time
+	err := r.db.GetContext(ctx, &startedAt, `UPDATE dev_machine_agent_runs SET status='running', started_at=COALESCE(started_at,NOW())
+ WHERE id=$1 AND status IN ('queued','starting','running') RETURNING started_at`, runID)
+	return startedAt, err
 }
 
 func (r *DevMachineRepository) CompleteAgentRun(ctx context.Context, run *domain.DevMachineAgentRun) error {
@@ -921,11 +917,46 @@ func (r *DevMachineRepository) CreateEvent(ctx context.Context, event *domain.De
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = time.Now().UTC()
 	}
-	return r.db.QueryRowContext(ctx, `INSERT INTO dev_machine_events
-		(workspace_id, machine_id, agent_run_id, actor_user_id, source, event_type, payload, occurred_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, created_at`, event.WorkspaceID, event.MachineID,
+	if event.OccurrenceID == uuid.Nil {
+		event.OccurrenceID = uuid.New()
+	}
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// All producers serialize cursor allocation through commit for one machine.
+	// A rolled-back occurrence gets a fresh cursor on retry; a lost commit reply
+	// recovers the already-visible row by its stable occurrence UUID.
+	var machineID uuid.UUID
+	if err := tx.GetContext(ctx, &machineID, `SELECT id FROM dev_machines WHERE workspace_id=$1 AND id=$2 FOR NO KEY UPDATE`, event.WorkspaceID, event.MachineID); err != nil {
+		return err
+	}
+	var id int64
+	var createdAt time.Time
+	err = tx.QueryRowContext(ctx, `INSERT INTO dev_machine_events
+		(occurrence_id, workspace_id, machine_id, agent_run_id, actor_user_id, source, event_type, payload, occurred_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (occurrence_id) DO UPDATE SET occurrence_id=EXCLUDED.occurrence_id
+		WHERE dev_machine_events.workspace_id=EXCLUDED.workspace_id
+			AND dev_machine_events.machine_id=EXCLUDED.machine_id
+			AND dev_machine_events.agent_run_id IS NOT DISTINCT FROM EXCLUDED.agent_run_id
+			AND dev_machine_events.actor_user_id IS NOT DISTINCT FROM EXCLUDED.actor_user_id
+			AND dev_machine_events.source=EXCLUDED.source
+			AND dev_machine_events.event_type=EXCLUDED.event_type
+			AND dev_machine_events.payload=EXCLUDED.payload
+			AND dev_machine_events.occurred_at=EXCLUDED.occurred_at
+		RETURNING id, created_at`, event.OccurrenceID, event.WorkspaceID, event.MachineID,
 		event.AgentRunID, event.ActorUserID, event.Source, event.EventType, event.Payload, event.OccurredAt,
-	).Scan(&event.ID, &event.CreatedAt)
+	).Scan(&id, &createdAt)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	event.ID, event.CreatedAt = id, createdAt
+	return nil
 }
 
 func (r *DevMachineRepository) AuthenticateMachineToken(ctx context.Context, tokenHash, scope string) (*domain.DevMachineToken, *domain.DevMachine, error) {
@@ -1817,17 +1848,13 @@ func (r *DevMachineRepository) CreateCheckout(ctx context.Context, checkout *dom
 		return err
 	}
 	defer tx.Rollback()
-	repoURL := checkout.RepositoryURL
-	if repoURL == "" {
-		repoURL = checkout.RepositoryFullName
-	}
-	result, err := tx.ExecContext(ctx, `UPDATE dev_machines SET repository_affinity_id=$1, issue_id=$2,
-		repo_url=$3,repo_provider='forgejo',repo_owner=split_part($4,'/',1),repo_name=split_part($4,'/',2),
-		base_branch=$5,working_branch=$6,last_activity_at=NOW()
-		WHERE workspace_id=$7 AND id=$8 AND (repository_affinity_id IS NULL OR repository_affinity_id=$1)
-		AND status='running' AND desired_status='running'`, checkout.ForgejoRepoID, checkout.IssueID,
-		repoURL, checkout.RepositoryFullName, checkout.BaseBranch,
-		checkout.WorkingBranch, checkout.WorkspaceID, checkout.MachineID)
+	// An issue checkout has its own repository and branches. Claim affinity on
+	// a generic machine without replacing its default workspace or primary issue.
+	result, err := tx.ExecContext(ctx, `UPDATE dev_machines SET repository_affinity_id=$1,last_activity_at=NOW()
+		WHERE workspace_id=$2 AND id=$3 AND (repository_affinity_id IS NULL OR repository_affinity_id=$1)
+		AND ((repo_owner='' AND repo_name='') OR (repo_owner || '/' || repo_name)=$4)
+		AND status='running' AND desired_status='running'`, checkout.ForgejoRepoID,
+		checkout.WorkspaceID, checkout.MachineID, checkout.RepositoryFullName)
 	if err != nil {
 		return err
 	}

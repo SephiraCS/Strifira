@@ -9,6 +9,9 @@ vendor/
 # Node
 node_modules/
 
+# Python acceptance scripts
+__pycache__/
+
 # Build output
 dist/
 build/
