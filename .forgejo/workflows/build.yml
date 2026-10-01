@@ -140,9 +140,13 @@ jobs:
               > >(sed -u "s/^/[${name}] /") 2>&1 &
             pids+=("$!")
           done
+          # Wait for every build, so none still writes to the store when the
+          # job moves on to removing it.
+          status=0
           for pid in "${pids[@]}"; do
-            wait "$pid"
+            wait "$pid" || status=1
           done
+          exit "$status"
 
       - name: Push the images
         if: steps.version.outputs.push == 'true'

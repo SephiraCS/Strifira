@@ -4,7 +4,7 @@
 #
 #   scripts/ci/build-image.sh <caches> [podman build arguments...]
 #
-# <caches> is a comma-separated list of go and npm, or "none". The ts-builder
+# <caches> is a comma-separated list of go and npm, or "none" on its own. The ts-builder
 # job image points GOMODCACHE, GOCACHE, and NPM_CONFIG_CACHE at the shared
 # /cache volume, so module and package downloads and unchanged Go packages
 # are reused across jobs. Mounted caches never become part of the image. Only
@@ -19,7 +19,8 @@ caches="${1:?usage: $0 <caches> [podman build arguments...]}"
 shift
 
 volumes=()
-IFS=, read -ra names <<<"$caches"
+names=()
+[ "$caches" = none ] || IFS=, read -ra names <<<"$caches"
 for cache in "${names[@]}"; do
 	case "$cache" in
 	go)
@@ -33,7 +34,6 @@ for cache in "${names[@]}"; do
 		mkdir -p "$NPM_CONFIG_CACHE"
 		volumes+=(--volume "$NPM_CONFIG_CACHE:/root/.npm")
 		;;
-	none) ;;
 	*)
 		echo "unknown cache: $cache" >&2
 		exit 2

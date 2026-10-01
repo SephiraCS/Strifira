@@ -12,19 +12,34 @@
 #
 # `create` writes the store's configuration (image copies stage their blobs
 # in the store too, not in /var/tmp) and exports it with PODMAN_STORE to
-# later steps; `remove` (run with `if: always()`) deletes
-# the store. Stores a cancelled job never removed are swept after six hours.
+# later steps; `remove` (run with `if: always()`) deletes the store.
+#
+# Cancelled jobs skip `remove`, so `create` sweeps stores older than six
+# hours. A store's directory is not touched while it is in use, so that age
+# must stay above every job's timeout-minutes (at most 60 today).
 set -eu
 
 root=/cache/ci-tmp
+
+# Deletes a store, first detaching any overlay mounts a build or container
+# left behind (rm -rf alone fails with EBUSY on them). Failures only warn:
+# a leftover store must not fail the job, and the sweep retries it later.
+delete_store() {
+	awk -v p="$1/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
+	rm -rf "$1" || echo "warning: could not delete $1" >&2
+}
 
 case "${1:-}" in
 create)
 	: "${2:?usage: $0 create <name>}"
 	: "${GITHUB_ENV:?GITHUB_ENV is required}"
 	mkdir -p "$root"
-	find "$root" -mindepth 1 -maxdepth 1 -name 'ku-*' -mmin +360 -exec rm -rf {} +
+	find "$root" -mindepth 1 -maxdepth 1 -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
+		delete_store "$stale"
+	done
 	store="$root/ku-${GITHUB_RUN_ID:?}-$2"
+	# A re-run reuses the run ID; never build on a cancelled attempt's store.
+	[ ! -e "$store" ] || delete_store "$store"
 	mkdir -p "$store/root" "$store/run" "$store/tmp"
 	cat >"$store/storage.conf" <<-CONF
 		[storage]
@@ -45,10 +60,15 @@ create)
 remove)
 	store="${PODMAN_STORE:-}"
 	[ -n "$store" ] && [ -d "$store" ] || exit 0
+	case "$store" in
+	"$root"/ku-*) ;;
+	*)
+		echo "refusing to remove $store: not a store under $root" >&2
+		exit 1
+		;;
+	esac
 	podman rm --all --force --time 0 >/dev/null 2>&1 || true
-	# Layers a build or container left mounted would block the delete.
-	awk -v p="$store/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l
-	rm -rf "$store"
+	delete_store "$store"
 	;;
 *)
 	echo "usage: $0 create <name> | remove" >&2
