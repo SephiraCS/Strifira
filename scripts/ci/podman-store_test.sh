@@ -26,13 +26,19 @@ grep -Fx "PODMAN_STORE=$store" "$GITHUB_ENV"
 touch "$store/cancelled-attempt"
 sh "$sandbox/store.sh" create test
 test ! -e "$store/cancelled-attempt"
+# An interrupted create can leave a directory before either config is written.
+rm "$store/storage.conf" "$store/containers.conf"
+touch "$store/torn-attempt"
+sh "$sandbox/store.sh" create test
+test ! -e "$store/torn-attempt"
 for name in old young unmarked; do mkdir -p "$root/ku-$name"; done
 touch "$root/ku-old/storage.conf" "$root/ku-young/storage.conf"
 touch -d '7 hours ago' "$root/ku-old" "$root/ku-unmarked"
 sh "$sandbox/store.sh" create sweep
 test ! -e "$root/ku-old"
 test -d "$root/ku-young"
-test -d "$root/ku-unmarked"
+test ! -e "$root/ku-unmarked"
+mkdir -p "$root/ku-unmarked"
 touch "$sandbox/outside/keep"
 ln -s "$sandbox/outside" "$root/ku-link"
 mkdir -p "$store/nested"
@@ -50,6 +56,22 @@ if GITHUB_RUN_ID='../escape' sh "$sandbox/store.sh" create test; then exit 1; fi
 PODMAN_STORE="$store" sh "$sandbox/store.sh" remove
 test ! -e "$store"
 grep -Fx "$store/storage.conf" "$PODMAN_TEST_CALLS"
-# Cancellation sweep grace must exceed every literal workflow job timeout.
-awk '/timeout-minutes:/ { if ($2 !~ /^[0-9]+$/ || $2 >= 360) exit 1 }' "$repo"/.forgejo/workflows/*.yml
+# Every job must declare a timeout below the cancellation sweep grace.
+awk '
+    /^[[:space:]]*runs-on:/ { jobs[FILENAME]++ }
+    /^[[:space:]]*timeout-minutes:/ {
+        limits[FILENAME]++
+        if ($2 !~ /^[0-9]+$/ || $2 >= 360) {
+            printf "invalid timeout-minutes %s in %s: expected a number below 360\n", $2, FILENAME > "/dev/stderr"
+            failed = 1
+        }
+    }
+    END {
+        for (file in jobs) if (jobs[file] != limits[file]) {
+            printf "every job in %s must declare timeout-minutes\n", file > "/dev/stderr"
+            failed = 1
+        }
+        exit failed
+    }
+' "$repo"/.forgejo/workflows/*.yml
 echo 'podman store cleanup checks passed'

@@ -22,28 +22,30 @@ set -eu
 root=/cache/ci-tmp
 
 validate_store() {
-	store=$(realpath -m -- "$1")
-	[ "$(dirname -- "$store")" = "$root" ] || {
-		echo "refusing to remove $store: not a store under $root" >&2
+	[ ! -L "$1" ] || { echo "refusing to remove symlink: $1" >&2; return 1; }
+	resolved=$(realpath -m -- "$1")
+	[ "$(dirname -- "$resolved")" = "$root" ] || {
+		echo "refusing to remove $resolved: not a store under $root" >&2
 		return 1
 	}
-	case "$(basename -- "$store")" in
+	case "$(basename -- "$resolved")" in
 	ku-*) ;;
-	*) echo "refusing to remove $store: invalid store name" >&2; return 1 ;;
+	*) echo "refusing to remove $resolved: invalid store name" >&2; return 1 ;;
 	esac
-	[ -f "$store/storage.conf" ] || {
-		echo "refusing to remove $store: no store configuration" >&2
+	[ "${2:-}" = owned ] || [ -f "$resolved/storage.conf" ] || {
+		echo "refusing to remove $resolved: no store configuration" >&2
 		return 1
 	}
+	printf '%s\n' "$resolved"
 }
 
 # Deletes a store, first detaching any overlay mounts a build or container
 # left behind (rm -rf alone fails with EBUSY on them). Failures only warn:
 # a leftover store must not fail the job, and the sweep retries it later.
 delete_store() {
-	validate_store "$1" || return 1
-	awk -v p="$store/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
-	rm -rf -- "$store" || echo "warning: could not delete $store" >&2
+	resolved=$(validate_store "$1" "${2:-}") || return 1
+	awk -v p="$resolved/" 'index($2, p) == 1 { print $2 }' /proc/mounts | sort -r | xargs -r umount -l 2>/dev/null || true
+	rm -rf -- "$resolved" || echo "warning: could not delete $resolved" >&2
 }
 
 case "${1:-}" in
@@ -58,11 +60,13 @@ create)
 	esac
 	mkdir -p "$root"
 	find "$root" -mindepth 1 -maxdepth 1 -type d -name 'ku-*' -mmin +360 | while IFS= read -r stale; do
-		delete_store "$stale" || echo "warning: could not sweep $stale" >&2
+		delete_store "$stale" owned || echo "warning: could not sweep $stale" >&2
 	done
 	store="$root/ku-${GITHUB_RUN_ID:?}-$2"
 	# A re-run reuses the run ID; never build on a cancelled attempt's store.
-	[ ! -e "$store" ] || delete_store "$store"
+	if [ -e "$store" ] || [ -L "$store" ]; then
+		delete_store "$store" owned || { echo "could not reset $store" >&2; exit 1; }
+	fi
 	[ ! -e "$store" ] || { echo "could not reset $store" >&2; exit 1; }
 	mkdir -p "$store/root" "$store/run" "$store/tmp"
 	cat >"$store/storage.conf" <<-CONF
@@ -84,7 +88,7 @@ create)
 remove)
 	store="${PODMAN_STORE:-}"
 	[ -n "$store" ] && [ -d "$store" ] || exit 0
-	validate_store "$store"
+	store=$(validate_store "$store")
 	CONTAINERS_STORAGE_CONF="$store/storage.conf" CONTAINERS_CONF_OVERRIDE="$store/containers.conf" \
 		podman rm --all --force --time 0 >/dev/null 2>&1 || true
 	delete_store "$store"

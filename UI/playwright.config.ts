@@ -20,8 +20,8 @@ export default defineConfig({
 	},
 	use: {
 		baseURL: 'http://localhost:4174',
-		trace: 'on-first-retry',
+		trace: process.env.CI ? 'on-first-retry' : 'retain-on-failure',
 		screenshot: 'only-on-failure',
-		video: 'on-first-retry'
+		video: process.env.CI ? 'on-first-retry' : 'retain-on-failure'
 	}
 });
