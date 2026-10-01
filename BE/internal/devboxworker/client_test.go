@@ -209,6 +209,10 @@ func TestCompletionPreservesMaximumEscapedResultAndIdenticalRetry(t *testing.T) 
 	}))
 	defer server.Close()
 	client := NewClient(Config{ServerURL: server.URL}, "kub_"+strings.Repeat("a", 64))
+	// This checks full-size payload replay, not transport deadlines. Coverage
+	// instrumentation can make decoding this escaped body exceed the production
+	// request timeout; keep requests bounded by the test context instead.
+	client.http.Timeout = 0
 	require.NoError(t, (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{Token: "kl_" + strings.Repeat("b", 64)}, result))
 	require.Equal(t, int32(2), requests.Load())
 	first, replay := <-bodies, <-bodies
