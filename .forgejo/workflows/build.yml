@@ -122,17 +122,40 @@ jobs:
           printf '%s' "${FORGEJO_TOKEN}" | podman login --authfile "$authfile" "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
           echo "REGISTRY_AUTH_FILE=$authfile" >> "$GITHUB_ENV"
 
-      - name: Build and push the images
+      - name: Create the podman store
+        run: scripts/ci/podman-store.sh create build
+
+      # The three images share no stages, so they build concurrently.
+      - name: Build the images
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          PUSH: ${{ steps.version.outputs.push }}
         run: |
           set -euo pipefail
-          for pair in ku:. ku-api:./BE ku-web:./UI; do
-            image="${IMAGE_PREFIX}/${pair%%:*}"
-            podman build --pull --tag "${image}:latest" --tag "${image}:${VERSION}" "${pair#*:}"
-            if [ "${PUSH}" = "true" ]; then
-              podman push "${image}:latest"
-              podman push "${image}:${VERSION}"
-            fi
+          pids=()
+          for spec in ku:.:go,npm ku-api:./BE:go ku-web:./UI:go,npm; do
+            IFS=: read -r name context caches <<<"$spec"
+            image="${IMAGE_PREFIX}/${name}"
+            scripts/ci/build-image.sh "$caches" --pull \
+              --tag "${image}:latest" --tag "${image}:${VERSION}" "$context" \
+              > >(sed -u "s/^/[${name}] /") 2>&1 &
+            pids+=("$!")
           done
+          for pid in "${pids[@]}"; do
+            wait "$pid"
+          done
+
+      - name: Push the images
+        if: steps.version.outputs.push == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for name in ku ku-api ku-web; do
+            image="${IMAGE_PREFIX}/${name}"
+            podman push "${image}:latest"
+            podman push "${image}:${VERSION}"
+          done
+
+      - name: Remove the podman store
+        if: always()
+        run: scripts/ci/podman-store.sh remove
