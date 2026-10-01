@@ -37,6 +37,7 @@ jobs:
       - name: Create the podman store
         working-directory: .
         run: |
+          sh scripts/ci/check-image-versions.sh
           sh scripts/ci/podman-store_test.sh
           scripts/ci/podman-store.sh create backend-test
 
