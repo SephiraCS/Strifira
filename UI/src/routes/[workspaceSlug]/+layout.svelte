@@ -336,7 +336,7 @@
 		}
 	]);
 
-	const shortcutEngine = createShortcutEngine(shortcutDefs);
+	const shortcutEngine = createShortcutEngine(() => shortcutDefs);
 
 	onMount(() => {
 		document.addEventListener('keydown', shortcutEngine.handler);
