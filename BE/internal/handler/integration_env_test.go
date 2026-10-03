@@ -135,6 +135,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	teamStatusH := NewTeamStatusHandler(teamStatusSvc)
 	webhookH := NewWebhookHandler(webhookSvc)
 	sharedLinkH := NewSharedLinkHandler(sharedLinkSvc, "http://ku.test")
+	forgejoH := NewForgejoHandler(service.NewForgejoService(repository.NewForgejoRepository(db), issueRepo, teamRepo, teamStatusRepo, make([]byte, 32), hub, "http://ku.test", "", nil))
 
 	env.apiKeySvc = service.NewAPIKeyService(repository.NewAPIKeyRepository(db), userRepo)
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
@@ -155,8 +156,21 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(mw.Recovery())
+	e.Use(mw.BodyLimit())
 
 	e.GET("/api/public/share/:token/issues", sharedLinkH.ListPublicIssues)
+	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
+	// Stand-in for the workspace import routes, which enforce their own
+	// 1 GiB limit and are exempt from the global body limit.
+	drain := func(c echo.Context) error {
+		n, err := io.Copy(io.Discard, c.Request().Body)
+		if err != nil {
+			return c.NoContent(http.StatusRequestEntityTooLarge)
+		}
+		return c.JSON(http.StatusOK, map[string]int64{"bytes": n})
+	}
+	e.POST("/api/workspaces/import", drain)
+	e.POST("/api/test/echo-body", drain)
 
 	e.Any("/mcp", echo.WrapHandler(mcpHandler), mw.APIKeyAuth(env.apiKeySvc))
 

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -283,12 +287,16 @@ func main() {
 	// Echo
 	e := echo.New()
 	e.HideBanner = true
+	// Bound slow header delivery. No WriteTimeout: websockets and streamed
+	// downloads are long-lived.
+	e.Server.ReadHeaderTimeout = 10 * time.Second
 
 	// Global middleware
 	e.Use(mw.Recovery())
 	e.Use(mw.Logging())
 	e.Use(mw.CORS(cfg.FrontendURL))
 	e.Use(mw.SecureHeaders())
+	e.Use(mw.BodyLimit())
 
 	// Health
 	e.GET("/health", healthH.Health)
@@ -595,10 +603,27 @@ func main() {
 	// Start
 	addr := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.Port))
 	log.Infof("Starting server on %s", addr)
-	if err := e.Start(addr); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- e.Start(addr) }()
+	select {
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server failed: %v", err)
+		}
+	case <-ctx.Done():
+		log.Info("Shutdown signal received, draining connections")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := e.Shutdown(shutdownCtx); err != nil {
+			log.WithError(err).Warn("graceful shutdown did not complete")
+		}
 	}
 }
+
+// shutdownTimeout bounds connection draining on SIGINT/SIGTERM.
+const shutdownTimeout = 25 * time.Second
 
 func mcpServerVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {

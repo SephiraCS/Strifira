@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -163,6 +164,10 @@ func (h *ForgejoHandler) AgentIssueLinks(c echo.Context) error {
 	return response.Success(c, http.StatusOK, activity)
 }
 
+// MaxForgejoWebhookBodyBytes caps the unauthenticated Forgejo webhook body;
+// it is read fully before the signature can be checked.
+const MaxForgejoWebhookBodyBytes = 5 << 20
+
 // HandleWebhook receives incoming Forgejo webhook events (public endpoint).
 // Forgejo signs deliveries with X-Forgejo-Signature (hex HMAC-SHA256 of the
 // raw body); Gitea/X-Gitea-Signature variants are accepted for compat.
@@ -170,8 +175,11 @@ func (h *ForgejoHandler) HandleWebhook(c echo.Context) error {
 	signature := firstHeader(c, "X-Forgejo-Signature", "X-Gitea-Signature", "X-Gogs-Signature")
 	eventType := firstHeader(c, "X-Forgejo-Event", "X-Gitea-Event", "X-Gogs-Event")
 
-	body, err := io.ReadAll(c.Request().Body)
+	body, err := io.ReadAll(http.MaxBytesReader(c.Response().Writer, c.Request().Body, MaxForgejoWebhookBodyBytes))
 	if err != nil {
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return c.NoContent(http.StatusRequestEntityTooLarge)
+		}
 		return c.NoContent(http.StatusBadRequest)
 	}
 
