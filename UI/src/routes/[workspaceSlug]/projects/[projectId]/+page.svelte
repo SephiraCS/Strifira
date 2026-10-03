@@ -68,6 +68,15 @@
 	let developmentReady = $state(false);
 	let savingDevelopment = $state(false);
 	let canManageDevelopment = $state(false);
+	const developmentSettingsLabel = $derived(
+		developmentLoading
+			? m['projects.development.loading']()
+			: developmentReady
+				? canManageDevelopment
+					? m['projects.development.settings']()
+					: m['projects.development.view_settings']()
+				: m['projects.development.unavailable']()
+	);
 	let developmentRequestVersion = 0;
 	let developmentSaveVersion = 0;
 	const projectTeam = $derived(project?.team_id ? teams.find(t => t.id === project!.team_id) : null);
@@ -280,7 +289,7 @@
 				</Popover.Root>
 			</div>
 			<div class="flex items-center gap-2">
-				<Button variant="ghost" size="icon-sm" disabled={developmentLoading || !developmentReady} onclick={() => (developmentOpen = true)} title={developmentLoading ? m['projects.development.loading']() : developmentReady ? canManageDevelopment ? m['projects.development.settings']() : m['projects.development.view_settings']() : m['projects.development.unavailable']()}><Settings2 size={15} /></Button>
+				<Button variant="ghost" size="icon-sm" disabled={developmentLoading || !developmentReady} onclick={() => (developmentOpen = true)} title={developmentSettingsLabel} aria-label={developmentSettingsLabel}><Settings2 size={15} /></Button>
 				<!-- View switcher -->
 				<div class="flex rounded-md border border-[var(--app-border)]">
 					<button

@@ -242,8 +242,8 @@
 					</Tooltip.Root>
 				{/if}
 				<Popover.Root bind:open={actionsOpen}>
-					<Popover.Trigger>
-						<Button variant="ghost" size="icon-sm">
+					<Popover.Trigger aria-label={m['views.actions']()} title={m['views.actions']()}>
+						<Button variant="ghost" size="icon-sm" tabindex={-1} aria-hidden="true">
 							<Ellipsis size={14} />
 						</Button>
 					</Popover.Trigger>
