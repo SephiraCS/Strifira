@@ -339,6 +339,13 @@ test('loads every job page and refreshes open logs on the tick that sees a run f
 	const lists = calls.lists.length;
 	await page.clock.fastForward(20000);
 	expect(calls.lists).toHaveLength(lists);
+	// The discovery poll refreshes runs but not the finished run's jobs or logs.
+	const jobs = calls.jobs.length;
+	const logs = calls.logs.length;
+	await page.clock.fastForward(10001);
+	await expect.poll(() => calls.lists.length).toBe(lists + 1);
+	expect(calls.jobs).toHaveLength(jobs);
+	expect(calls.logs).toHaveLength(logs);
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {

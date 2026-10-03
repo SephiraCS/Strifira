@@ -256,6 +256,7 @@
 
 	async function loadRuns(workspaceSlug: string, pullRequests: ForgejoPullRequest[]) {
 		const runGeneration = ++actionsGeneration;
+		const detailsWereActive = !!expandedRun && runIsActive(expandedRun.run);
 		runsController?.abort();
 		clearTimeout(pollTimer);
 		const requestController = new AbortController();
@@ -309,8 +310,10 @@
 		if (expandedRun && !targets.some((pr) => pr.id === expandedRun?.pullRequestId)) closeRun();
 		// Refresh open details only after the runs, so the tick that observes a
 		// run finishing also shows its final jobs and logs before polling stops.
+		// Finished details never change, so refresh them only while the run is
+		// active and once more on the tick that sees it finish.
 		const target = expandedRun;
-		if (target) {
+		if (target && (detailsWereActive || runIsActive(target.run))) {
 			await loadJobs(workspaceSlug, target, true);
 			// Starting logs for a superseded selection would abort the current request.
 			const job = selectedJob;
@@ -345,6 +348,10 @@
 			runsByPullRequest[pr.id] = { ...runsByPullRequest[pr.id], loadingMore: false };
 			appToast.error(m['forgejo_actions.failed_load']());
 		}
+	}
+
+	function runIsActive(run: ForgejoActionRun): boolean {
+		return isActiveAction(actionStatus(run.status, run.conclusion));
 	}
 
 	function sameRun(a: ExpandedRun | null, b: ExpandedRun): boolean {
