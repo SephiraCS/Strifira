@@ -55,6 +55,7 @@ async function mockActions(
 	const calls = {
 		lists: [] as URL[],
 		runPages: [] as URL[],
+		branchLists: [] as URL[],
 		jobs: [] as string[],
 		actions: [] as string[],
 		logs: [] as URL[]
@@ -89,6 +90,7 @@ async function mockActions(
 	if (options.finished)
 		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
 	const failNextLogs = { count: 0 };
+	const pushRun = { ...completedRun, id: 99, event: 'push', title: 'Push checks', run_number: 40, html_url: '' };
 	const runsGate = { hold: false, waiting: 0, release: () => {} };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
 	const job = {
@@ -174,6 +176,13 @@ async function mockActions(
 		if (path === `${actionsPath}/runs`) {
 			// The newest page holds both current runs; older history is on page 2.
 			const second = url.searchParams.get('page') === '2';
+			if (url.searchParams.get('ref') === 'refs/heads/ENG-1-fix') {
+				// Push workflows on the PR's source branch.
+				calls.branchLists.push(url);
+				return route.fulfill({
+					json: { data: second ? [] : [pushRun], total_count: 1, page: second ? 2 : 1, per_page: 20, has_more: false }
+				});
+			}
 			if (second) calls.runPages.push(url);
 			else calls.lists.push(url);
 			const pullRuns = url.searchParams.get('ref') === 'refs/pull/7/head';
@@ -259,6 +268,9 @@ test('shows pull request workflow runs, jobs, and plain logs on the issue and ca
 	await expect(actions.getByRole('button', { name: /Build application/ })).toContainText('#42');
 	await expect(actions.getByRole('button', { name: /Build application/ })).toContainText('1m 0s');
 	expect(calls.lists[0].searchParams.get('ref')).toBe('refs/pull/7/head');
+	// Push workflows on the source branch show alongside pull request runs.
+	await expect(actions.getByRole('button', { name: /Push checks/ })).toBeVisible();
+	expect(calls.branchLists[0].searchParams.get('ref')).toBe('refs/heads/ENG-1-fix');
 	// Older history loads only on request.
 	expect(calls.lists[0].searchParams.get('per_page')).toBe('20');
 	expect(calls.runPages).toEqual([]);

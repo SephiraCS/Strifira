@@ -250,13 +250,22 @@
 		logsFailed = false;
 	}
 
+	// A PR's runs come from pull_request workflows (refs/pull/N/head) and from
+	// push workflows on its source branch; one page holds both, newest first.
 	async function fetchRunPage(workspaceSlug: string, pr: ForgejoPullRequest, page: number, signal: AbortSignal) {
-		return listForgejoActionRuns(
-			workspaceSlug,
-			pr.repo_id,
-			{ ref: `refs/pull/${pr.number}/head`, page, perPage: RUNS_PAGE_SIZE },
-			signal
+		const refs = [`refs/pull/${pr.number}/head`];
+		if (pr.head_branch && !pr.head_branch.startsWith('refs/')) refs.push(`refs/heads/${pr.head_branch}`);
+		const results = await Promise.all(
+			refs.map((ref) =>
+				listForgejoActionRuns(workspaceSlug, pr.repo_id, { ref, page, perPage: RUNS_PAGE_SIZE }, signal)
+			)
 		);
+		const byId = new Map<number, ForgejoActionRun>();
+		for (const result of results) for (const run of result.data ?? []) byId.set(run.id, run);
+		return {
+			data: [...byId.values()].sort((a, b) => b.id - a.id),
+			has_more: results.some((result) => result.has_more && !!result.data?.length)
+		};
 	}
 
 	async function loadRuns(workspaceSlug: string, pullRequests: ForgejoPullRequest[]) {
