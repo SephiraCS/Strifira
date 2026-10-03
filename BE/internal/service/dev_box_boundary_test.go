@@ -134,7 +134,7 @@ func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
 	require.NoError(t, migrator.Up())
 	version, dirty, err := migrator.Version()
 	require.NoError(t, err)
-	require.Equal(t, uint(57), version)
+	require.GreaterOrEqual(t, version, uint(57), "the upgrade reaches at least the bounded-result migration")
 	require.False(t, dirty)
 	var preserved json.RawMessage
 	require.NoError(t, db.GetContext(t.Context(), &preserved, `SELECT result FROM dev_box_jobs WHERE id=$1`, previousJob.ID))
