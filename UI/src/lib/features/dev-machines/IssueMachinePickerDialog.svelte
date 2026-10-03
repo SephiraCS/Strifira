@@ -190,7 +190,7 @@
 		{#if loading}
 			<div class="flex min-h-40 items-center justify-center text-sm text-[var(--color-text-tertiary)]"><LoaderCircle class="mr-2 size-4 animate-spin" />{m['machines.loading_machines']()}</div>
 		{:else}
-			<div class="max-h-[min(50vh,420px)] space-y-2 overflow-y-auto pr-1" role="radiogroup" aria-label="Existing Dev Machines">
+			<div class="max-h-[min(50vh,420px)] space-y-2 overflow-y-auto pr-1" role="radiogroup" aria-label={m['machines.existing_machines']()}>
 				{#each machines as machine (machine.id)}
 					{@const reason = disabledReason(machine)}
 					<button

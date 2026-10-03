@@ -85,7 +85,7 @@
 		style="background: transparent;"
 		onclick={close}
 		tabindex={-1}
-		aria-label="Close issue detail"
+		aria-label={m['issue.close_detail']()}
 	></button>
 
 	<!-- Drawer -->
@@ -103,7 +103,8 @@
 						onclick={goUp}
 						disabled={!hasPrev}
 						class="shrink-0 rounded-md p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-25 disabled:pointer-events-none"
-						title="Previous issue"
+						title={m['issue.previous_issue']()}
+						aria-label={m['issue.previous_issue']()}
 					>
 						<ChevronUp size={16} />
 					</button>
@@ -111,7 +112,8 @@
 						onclick={goDown}
 						disabled={!hasNext}
 						class="shrink-0 rounded-md p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-25 disabled:pointer-events-none"
-						title="Next issue"
+						title={m['issue.next_issue']()}
+						aria-label={m['issue.next_issue']()}
 					>
 						<ChevronDown size={16} />
 					</button>
@@ -139,7 +141,7 @@
 							{issue.status_info?.name ?? issue.status}
 						</span>
 					</Tooltip.Trigger>
-					<Tooltip.Content>Status</Tooltip.Content>
+					<Tooltip.Content>{m['issue.status']()}</Tooltip.Content>
 				</Tooltip.Root>
 
 				<!-- Priority -->
@@ -150,7 +152,7 @@
 							{getPriorityLabel(issue.priority as IssuePriority)}
 						</span>
 					</Tooltip.Trigger>
-					<Tooltip.Content>Priority</Tooltip.Content>
+					<Tooltip.Content>{m['issue.priority']()}</Tooltip.Content>
 				</Tooltip.Root>
 
 				<!-- Assignees -->
@@ -182,7 +184,7 @@
 								{due.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' })}
 							</span>
 						</Tooltip.Trigger>
-						<Tooltip.Content>Due date</Tooltip.Content>
+						<Tooltip.Content>{m['issue.due_date']()}</Tooltip.Content>
 					</Tooltip.Root>
 				{/if}
 

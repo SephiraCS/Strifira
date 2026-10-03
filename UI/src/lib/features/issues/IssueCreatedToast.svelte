@@ -4,6 +4,7 @@
 	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import X from '@lucide/svelte/icons/x';
+	import { m } from '$lib/paraglide/messages.js';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 
 	let {
@@ -52,8 +53,8 @@
 
 	<div class="content">
 		<div class="header">
-			<div class="title">Issue created</div>
-			<button class="close" type="button" aria-label="Close toast" onclick={dismiss}>
+			<div class="title">{m['common.toast.issue_created']()}</div>
+			<button class="close" type="button" aria-label={m['common.toast.close_toast']()} onclick={dismiss}>
 				<X size={16} />
 			</button>
 		</div>
@@ -66,17 +67,27 @@
 		</a>
 
 		<div class="footer">
-			<a {href} class="view-link" onclick={dismiss}>View issue</a>
+			<a {href} class="view-link" onclick={dismiss}>{m['common.toast.view_issue']()}</a>
 
-			<div class="commands" aria-label="Issue commands">
-				<button type="button" aria-label="Copy issue link" title="Copy issue link" onclick={() => copy(url, 'link')}>
+			<div class="commands" aria-label={m['common.toast.issue_commands']()}>
+				<button
+					type="button"
+					aria-label={m['common.toast.copy_issue_link']()}
+					title={m['common.toast.copy_issue_link']()}
+					onclick={() => copy(url, 'link')}
+				>
 					{#if copied === 'link'}
 						<Check size={12} />
 					{:else}
 						<LinkIcon size={12} />
 					{/if}
 				</button>
-				<button type="button" aria-label="Copy issue ID" title="Copy issue ID" onclick={() => copy(identifier, 'id')}>
+				<button
+					type="button"
+					aria-label={m['common.toast.copy_issue_id']()}
+					title={m['common.toast.copy_issue_id']()}
+					onclick={() => copy(identifier, 'id')}
+				>
 					{#if copied === 'id'}
 						<Check size={12} />
 					{:else}
@@ -85,8 +96,8 @@
 				</button>
 				<button
 					type="button"
-					aria-label="Copy branch name"
-					title="Copy branch name"
+					aria-label={m['common.toast.copy_branch_name']()}
+					title={m['common.toast.copy_branch_name']()}
 					onclick={() => copy(branchName, 'branch')}
 				>
 					{#if copied === 'branch'}

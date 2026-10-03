@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Check from '@lucide/svelte/icons/check';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import { m } from '$lib/paraglide/messages.js';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 
 	let {
@@ -28,7 +29,7 @@
 	</div>
 
 	<div class="content">
-		<div class="title">{count === 1 ? 'Issue deleted' : 'Issues deleted'}</div>
+		<div class="title">{count === 1 ? m['common.toast.issue_deleted']() : m['common.toast.issues_deleted']()}</div>
 
 		<div class="issue-line">
 			{#if isSingleIssue}
@@ -40,7 +41,7 @@
 				<span class="status-icon multi" aria-hidden="true">
 					<Trash2 size={12} />
 				</span>
-				<span class="issue-text">Deleted {count} issues</span>
+				<span class="issue-text">{m['common.toast.issues_deleted_count']({ count })}</span>
 			{/if}
 		</div>
 	</div>
