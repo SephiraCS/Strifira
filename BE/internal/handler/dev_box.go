@@ -349,6 +349,6 @@ func devBoxError(c echo.Context, err error) error {
 	case errors.Is(err, service.ErrDevBoxAuthentication):
 		return response.Unauthorized(c)
 	default:
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 }

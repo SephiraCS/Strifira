@@ -34,7 +34,7 @@ func (h *ScreenShareHandler) List(c echo.Context) error {
 
 	list, err := h.shareSvc.List(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, list)
@@ -63,7 +63,7 @@ func (h *ScreenShareHandler) Create(c echo.Context) error {
 
 	decorated, err := h.decorate(c, *share)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusCreated, screenShareResponse{
@@ -80,7 +80,7 @@ func (h *ScreenShareHandler) Get(c echo.Context) error {
 
 	share, err := h.shareSvc.Get(c.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	ws := c.Get("workspace").(*domain.Workspace)
 	if share == nil || share.WorkspaceID != ws.ID {
@@ -89,7 +89,7 @@ func (h *ScreenShareHandler) Get(c echo.Context) error {
 
 	decorated, err := h.decorate(c, *share)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, decorated)
@@ -152,6 +152,6 @@ func (h *ScreenShareHandler) mapError(c echo.Context, err error) error {
 	case errors.Is(err, service.ErrScreenShareAlreadyActive):
 		return response.Error(c, http.StatusConflict, "SHARE_ALREADY_ACTIVE", "You are already sharing in another tab. Stop that share before starting a new one.")
 	default:
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 }

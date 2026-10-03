@@ -39,7 +39,7 @@ func cycleError(c echo.Context, err error) error {
 	case errors.Is(err, service.ErrCycleNotFound):
 		return response.NotFound(c, "Cycle")
 	}
-	return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	return response.ServiceError(c, err)
 }
 
 func (h *CycleHandler) List(c echo.Context) error {
@@ -53,7 +53,7 @@ func (h *CycleHandler) List(c echo.Context) error {
 		return response.NotFound(c, "Team")
 	}
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.CycleResponse, len(cycles))
@@ -157,8 +157,11 @@ func (h *CycleHandler) Complete(c echo.Context) error {
 	}
 
 	var req dto.CompleteCycleRequest
-	// Bind optional JSON body; ignore errors (body may be empty)
-	_ = c.Bind(&req)
+	// The body is optional: an empty body binds to the zero request, but a
+	// malformed one is rejected rather than silently ignored.
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
 
 	cycle, carriedOver, err := h.cycleSvc.Complete(c.Request().Context(), workspaceID, teamID, id, req)
 	if err != nil {
@@ -182,7 +185,7 @@ func (h *CycleHandler) Velocity(c echo.Context) error {
 		return response.NotFound(c, "Team")
 	}
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, points)
 }

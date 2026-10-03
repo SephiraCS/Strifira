@@ -73,12 +73,6 @@ func (rl *RateLimiter) allow(ip string) bool {
 	return true
 }
 
-// RateLimit returns middleware that limits requests per IP.
-// rate: requests refilled per second, burst: max requests in a burst.
-func RateLimit(rate float64, burst int) echo.MiddlewareFunc {
-	return rateLimit(rate, burst, func(c echo.Context) string { return "ip:" + c.RealIP() })
-}
-
 // MachineTokenRateLimit gives each collector credential its own bucket without
 // retaining the raw secret. Requests without a usable credential share an IP bucket.
 func MachineTokenRateLimit(rate float64, burst int) echo.MiddlewareFunc {

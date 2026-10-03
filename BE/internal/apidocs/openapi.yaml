@@ -157,6 +157,21 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      description: Prometheus exposition of HTTP request counts and latency by route template, Forgejo webhook delivery outcomes and Go runtime metrics. Intended for in-cluster scraping only; the bundled reverse proxies do not route it publicly.
+      security: []
+      responses:
+        "200":
+          description: Metrics in the Prometheus text format.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /api/openapi.json:
     get:
       operationId: openapiSpec

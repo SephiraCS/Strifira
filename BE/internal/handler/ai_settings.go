@@ -25,7 +25,7 @@ func (h *AISettingsHandler) Get(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	settings, err := h.aiSvc.Get(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, service.ToAISettingsResponse(settings))
 }
@@ -34,7 +34,7 @@ func (h *AISettingsHandler) GetIssueCopyPrompt(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	settings, err := h.aiSvc.Get(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, dto.IssueCopyPromptResponse{
 		IssueCopyPrompt:        settings.IssueCopyPrompt,
@@ -65,7 +65,7 @@ func (h *AISettingsHandler) Update(c echo.Context) error {
 		case errors.Is(err, service.ErrWorkspaceNotFound):
 			return response.NotFound(c, "Workspace")
 		default:
-			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return response.ServiceError(c, err)
 		}
 	}
 	return response.Success(c, http.StatusOK, service.ToAISettingsResponse(settings))
@@ -85,7 +85,7 @@ func (h *AISettingsHandler) TestConnection(c echo.Context) error {
 		case errors.Is(err, service.ErrAIProviderRequestFailed):
 			return response.Error(c, http.StatusBadGateway, "AI_PROVIDER_ERROR", err.Error())
 		default:
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 	}
 	return response.Success(c, http.StatusOK, result)
@@ -115,7 +115,7 @@ func (h *AISettingsHandler) ExpandIssueDescription(c echo.Context) error {
 		case errors.Is(err, service.ErrAIProviderRequestFailed):
 			return response.Error(c, http.StatusBadGateway, "AI_PROVIDER_ERROR", err.Error())
 		default:
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 	}
 	return response.Success(c, http.StatusOK, dto.ExpandIssueDescriptionResponse{Description: description})
@@ -139,13 +139,13 @@ func (h *AISettingsHandler) Rework(c echo.Context) error {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAIInvalidText):
-			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+			return response.ServiceError(c, err)
 		case errors.Is(err, service.ErrAISettingsNotConfigured):
 			return response.Error(c, http.StatusBadRequest, "AI_NOT_CONFIGURED", "AI settings are incomplete. Configure a base URL, model, and API key first.")
 		case errors.Is(err, service.ErrAIProviderRequestFailed):
 			return response.Error(c, http.StatusBadGateway, "AI_PROVIDER_ERROR", err.Error())
 		default:
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 	}
 	return response.Success(c, http.StatusOK, dto.ReworkTextResponse{Text: text})

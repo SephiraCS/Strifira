@@ -258,5 +258,5 @@ func forgejoActionError(c echo.Context, err error, logs bool) error {
 			return response.Error(c, http.StatusBadGateway, "FORGEJO_UNAVAILABLE", "Forgejo could not complete the Actions request")
 		}
 	}
-	return response.InternalError(c)
+	return response.InternalErrorErr(c, err)
 }
