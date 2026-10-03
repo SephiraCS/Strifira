@@ -89,6 +89,8 @@
 	let jobsController: AbortController | undefined;
 	let logsController: AbortController | undefined;
 	let pollTimer: ReturnType<typeof setTimeout> | undefined;
+	// Set when a background detail refresh fails, so the next poll retries it.
+	let detailsStale = false;
 
 	const actionPullRequests = $derived(activity?.pull_requests.filter((pr) => pr.repo_id) ?? []);
 	const canManageActions = $derived(sidebarState.workspaceRole === 'owner');
@@ -233,6 +235,7 @@
 	}
 
 	function closeRun() {
+		detailsStale = false;
 		jobsController?.abort();
 		logsController?.abort();
 		expandedRun = null;
@@ -313,7 +316,8 @@
 		// Finished details never change, so refresh them only while the run is
 		// active and once more on the tick that sees it finish.
 		const target = expandedRun;
-		if (target && (detailsWereActive || runIsActive(target.run))) {
+		if (target && (detailsWereActive || detailsStale || runIsActive(target.run))) {
+			detailsStale = false;
 			await loadJobs(workspaceSlug, target, true);
 			// Starting logs for a superseded selection would abort the current request.
 			const job = selectedJob;
@@ -361,7 +365,7 @@
 	function schedulePoll(workspaceSlug: string, runGeneration: number) {
 		clearTimeout(pollTimer);
 		const watching = actionPullRequests.some((pr) => pr.state === 'open' || pr.state === 'draft');
-		if (!anyActiveRun && !watching) return;
+		if (!anyActiveRun && !watching && !detailsStale) return;
 		pollTimer = setTimeout(
 			() => {
 				if (!mounted || runGeneration !== actionsGeneration || !activity) return;
@@ -410,7 +414,9 @@
 			jobs = loaded;
 			jobsFailed = false;
 		} catch {
-			if (!background && !requestController.signal.aborted) jobsFailed = true;
+			if (requestController.signal.aborted) return;
+			if (background) detailsStale = true;
+			else jobsFailed = true;
 		} finally {
 			if (jobsController === requestController) jobsLoading = false;
 		}
@@ -454,7 +460,9 @@
 			logs = result;
 			logsFailed = false;
 		} catch {
-			if (!background && !requestController.signal.aborted) logsFailed = true;
+			if (requestController.signal.aborted) return;
+			if (background) detailsStale = true;
+			else logsFailed = true;
 		} finally {
 			if (logsController === requestController) logsLoading = false;
 		}

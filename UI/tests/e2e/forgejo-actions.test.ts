@@ -88,6 +88,7 @@ async function mockActions(
 	};
 	if (options.finished)
 		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
+	const failNextLogs = { count: 0 };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
 	const job = {
 		id: 201,
@@ -196,6 +197,10 @@ async function mockActions(
 		}
 		if (path === `${actionsPath}/runs/102/jobs/301/logs`) {
 			calls.logs.push(url);
+			if (failNextLogs.count > 0) {
+				failNextLogs.count--;
+				return route.fulfill({ status: 502, json: { error: 'Forgejo is unavailable' } });
+			}
 			const done = runningRun.status !== 'running';
 			return route.fulfill({
 				json: { content: done ? 'Deploy finished\n' : 'Deploying\n', truncated: false, max_bytes: 2097152 }
@@ -226,7 +231,7 @@ async function mockActions(
 		}
 		return route.fulfill({ json: [] });
 	});
-	return { calls, runningRun };
+	return { calls, runningRun, failNextLogs };
 }
 
 async function openIssue(page: Page) {
@@ -346,6 +351,31 @@ test('loads every job page and refreshes open logs on the tick that sees a run f
 	await expect.poll(() => calls.lists.length).toBe(lists + 1);
 	expect(calls.jobs).toHaveLength(jobs);
 	expect(calls.logs).toHaveLength(logs);
+});
+
+test('retries the final logs refresh after a transient failure when a run finishes', async ({ page }) => {
+	const { calls, runningRun, failNextLogs } = await mockActions(page, {
+		pullRequests: [{ ...pullRequest, state: 'merged' }]
+	});
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await actions.getByRole('button', { name: /Deploy preview/ }).click();
+	await actions.getByRole('button', { name: /Deploy preview job/ }).click();
+	await expect(actions.locator('pre')).toHaveText('Deploying\n');
+	runningRun.status = 'success';
+	runningRun.conclusion = 'success';
+	runningRun.completed_at = '2026-09-30T12:03:00Z';
+	failNextLogs.count = 1;
+	const logs = calls.logs.length;
+	await page.clock.fastForward(10001);
+	await expect.poll(() => calls.logs.length).toBe(logs + 1);
+	await expect(actions.locator('pre')).toHaveText('Deploying\n');
+	// The merged PR has no active runs, but the failed refresh is retried.
+	await page.clock.fastForward(30001);
+	await expect(actions.locator('pre')).toHaveText('Deploy finished\n');
+	const settled = calls.lists.length;
+	await page.clock.fastForward(60001);
+	expect(calls.lists).toHaveLength(settled);
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {
