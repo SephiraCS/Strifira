@@ -10,6 +10,7 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/realtime"
+	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 	"nhooyr.io/websocket"
@@ -77,6 +78,14 @@ func (h *WSHandler) Handle(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	userID := middleware.GetUserID(c)
 
+	// Admit the upgrade before hijacking so a concurrent hub Shutdown either
+	// refuses it here or waits for it to register.
+	upgraded, admitted := h.hub.BeginUpgrade()
+	if !admitted {
+		return response.Error(c, http.StatusServiceUnavailable, "SHUTTING_DOWN", "Server is shutting down")
+	}
+	defer upgraded() // no-op once called below
+
 	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
 		OriginPatterns: h.originPatterns,
 	})
@@ -92,6 +101,7 @@ func (h *WSHandler) Handle(c echo.Context) error {
 	}
 
 	client := h.hub.Register(conn, ws.ID, userID)
+	upgraded()
 	defer h.hub.Unregister(client)
 
 	ctx := c.Request().Context()

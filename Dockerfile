@@ -43,6 +43,14 @@ RUN chmod -R a+rX /app/server /app/migrations /srv && \
     mkdir -p /app/uploads /app/.home && chown ku:ku /app/uploads /app/.home
 
 COPY <<'EOF' /etc/caddy/Caddyfile
+{
+	# Bound connection draining on SIGTERM: without it a long-lived stream
+	# or idle keep-alive connection could hold Caddy (and the container)
+	# open indefinitely. The start script kills anything still running
+	# after its own, slightly longer, deadline.
+	grace_period 20s
+}
+
 :3000 {
 	header {
 		X-Content-Type-Options nosniff
@@ -143,8 +151,17 @@ server=$!
 $run_as caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
 caddy=$!
 
+# Forward SIGTERM, give both processes a bounded grace period (the API
+# drains for up to 25s, Caddy for 20s), then SIGKILL whatever is left so
+# neither a shutdown nor the child-failure path can hang the container.
 stop() {
 	kill -TERM "$server" "$caddy" 2>/dev/null || true
+	waited=0
+	while [ "$waited" -lt 30 ] && { kill -0 "$server" 2>/dev/null || kill -0 "$caddy" 2>/dev/null; }; do
+		sleep 1
+		waited=$((waited + 1))
+	done
+	kill -KILL "$server" "$caddy" 2>/dev/null || true
 	wait "$server" 2>/dev/null || true
 	wait "$caddy" 2>/dev/null || true
 }

@@ -1,8 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import {
-	blockWebSocket,
 	installControllableWebSocket,
-	releaseWebSocketOpen,
 	restoreWebSocket,
 	webSocketDisconnects
 } from './support/websocket';
@@ -247,53 +245,28 @@ test('after a confirmed delete, focus moves to the next surviving delete button,
 const loads = (gets: string[], resource: string) => () =>
 	gets.filter((path) => path === `/api/workspaces/test/${resource}`).length;
 
-test('collections read before the first socket open are reloaded when it opens', async ({ page }) => {
-	await page.routeWebSocket('**/api/workspaces/*/ws', () => {});
-	// The socket connects, but the app only sees it open once released.
-	await installControllableWebSocket(page, { holdOpen: true });
-	const gets: string[] = [];
-	await mockSettings(page, { gets });
-	const projectLoads = loads(gets, 'projects');
-	const labelLoads = loads(gets, 'labels');
-	const viewLoads = loads(gets, 'views');
-	await page.goto('/test/settings/webhooks');
-	await expect(page.getByText(webhook.url)).toBeVisible();
-	await expect.poll(projectLoads).toBe(1);
-	await expect.poll(labelLoads).toBe(1);
-
-	// Their responses may predate a change whose event was sent before the
-	// subscription, so the shared collections are fetched again. Collections
-	// pages do not share (views) are left alone.
-	await releaseWebSocketOpen(page);
-	await expect.poll(projectLoads).toBe(2);
-	await expect.poll(labelLoads).toBe(2);
-	expect(viewLoads()).toBe(1);
-});
-
 test('workspace collections reload after the realtime connection drops and reconnects', async ({ page }) => {
 	const sockets: { close: () => Promise<void> }[] = [];
 	await page.routeWebSocket('**/api/workspaces/*/ws', (ws) => {
 		sockets.push(ws);
 	});
-	await installControllableWebSocket(page, { holdOpen: true });
 	const gets: string[] = [];
 	await mockSettings(page, { gets });
 	const projectLoads = loads(gets, 'projects');
 	const labelLoads = loads(gets, 'labels');
 	await page.goto('/test/settings/webhooks');
 	await expect(page.getByText(webhook.url)).toBeVisible();
-	await expect.poll(projectLoads).toBe(1);
 
-	// The first open reloads what was read before it (see the test above).
-	await releaseWebSocketOpen(page);
-	await expect.poll(projectLoads).toBe(2);
-	await expect.poll(labelLoads).toBe(2);
+	// A first connection without earlier failures reloads nothing.
+	await expect.poll(() => sockets.length).toBe(1);
+	await expect.poll(projectLoads).toBe(1);
+	expect(labelLoads()).toBe(1);
 
 	// Events missed while disconnected are recovered by reloading everything.
 	await sockets[0].close();
 	await expect.poll(() => sockets.length, { timeout: 10_000 }).toBe(2);
-	await expect.poll(projectLoads).toBe(3);
-	await expect.poll(labelLoads).toBe(3);
+	await expect.poll(projectLoads).toBe(2);
+	await expect.poll(labelLoads).toBe(2);
 });
 
 test('collections reload when the first connection opens only after failed attempts', async ({ page }) => {
@@ -316,48 +289,4 @@ test('collections reload when the first connection opens only after failed attem
 	await expect.poll(() => connections).toBe(1);
 	await expect.poll(projectLoads).toBe(2);
 	await expect.poll(labelLoads).toBe(2);
-});
-
-test('pages never reuse a collection loaded while the realtime connection is down', async ({ page }) => {
-	const sockets: { close: () => Promise<void> }[] = [];
-	await page.routeWebSocket('**/api/workspaces/*/ws', (ws) => {
-		sockets.push(ws);
-	});
-	await installControllableWebSocket(page, { holdOpen: true });
-	const gets: string[] = [];
-	await mockSettings(page, { gets });
-	// Teams are loaded by the workspace layout and, on settings pages, by the
-	// settings layout too; both reload them on a refresh.
-	const teamLoads = loads(gets, 'teams');
-	await page.goto('/test/settings/webhooks');
-	await expect(page.getByText(webhook.url)).toBeVisible();
-	await expect.poll(teamLoads).toBe(2);
-	// The first open reloads teams in both layouts.
-	await releaseWebSocketOpen(page);
-	await expect.poll(() => sockets.length).toBe(1);
-	await expect.poll(teamLoads).toBe(4);
-
-	// Drop the socket and keep it down.
-	await blockWebSocket(page);
-	await sockets[0].close();
-	await expect.poll(() => webSocketDisconnects(page)).toBeGreaterThan(0);
-
-	// A refresh during the outage reloads teams in both layouts...
-	await page.evaluate(() =>
-		window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: 'test', resources: ['teams'] } }))
-	);
-	await expect.poll(teamLoads).toBe(6);
-
-	// ...but the projects page fetches its own copy instead of reusing the
-	// workspace layout's.
-	await page.locator('body').click({ position: { x: 1, y: 1 } });
-	await page.keyboard.press('g');
-	await page.keyboard.press('p');
-	await expect(page).toHaveURL(/\/test\/projects$/);
-	await expect.poll(teamLoads).toBe(7);
-
-	// Recovery reloads everything again.
-	await restoreWebSocket(page);
-	await expect.poll(() => sockets.length).toBe(2);
-	await expect.poll(teamLoads).toBe(8);
 });

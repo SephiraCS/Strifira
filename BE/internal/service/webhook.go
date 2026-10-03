@@ -270,8 +270,10 @@ func (s *WebhookService) enqueue(job webhookJob) bool {
 func (s *WebhookService) worker() {
 	defer s.pool.wg.Done()
 	for job := range s.pool.queue {
-		// After a shutdown timeout the backlog is discarded, not run.
+		// After a shutdown timeout the backlog is discarded, not run, and
+		// counted: a dispatch job is one event, a target job one delivery.
 		if s.pool.ctx.Err() != nil {
+			metrics.WebhookEventsDropped.WithLabelValues(metrics.WebhookDropShutdown).Inc()
 			continue
 		}
 		s.run(job)

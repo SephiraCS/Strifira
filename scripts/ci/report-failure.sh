@@ -55,6 +55,16 @@ redact() {
 		printf '%s\n' "$FORGEJO_TOKEN"
 		printf '%s\n' "${REDACT:-}"
 	} | awk 'length($0) >= 6' >"$work/literals"
+	# Terminal formatting goes first, so a secret split by a color escape or
+	# a carriage return is whole again before the literals are matched: CSI
+	# and OSC sequences, charset and other short escapes, then stray control
+	# bytes (tab and newline stay).
+	sed -E \
+		-e 's/\x1b\][^\x07\x1b]*(\x07|\x1b\\)//g' \
+		-e 's#\x1b\[[0-9;:?<=>]*[ -/]*[@-~]##g' \
+		-e 's#\x1b[ -/]+[0-~]##g' \
+		-e 's/\x1b[@-_]//g' \
+		-e 's/[\x01-\x08\x0b-\x1f\x7f]//g' |
 	# One pass per line with an advancing cursor: the earliest (then longest)
 	# literal is masked and scanning continues after it, so inserted markers
 	# are never rescanned (REDACT=REDACTED terminates).
@@ -80,7 +90,6 @@ redact() {
 			print out rest
 		}' |
 		sed -E \
-			-e 's/\x1b\[[0-9;]*[A-Za-z]//g' \
 			-e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
 			-e 's#([A-Za-z][A-Za-z0-9+.-]*://)[^/@ :]+:[^/@ ]+@#\1[REDACTED]@#g' \
 			-e 's/((authorization|proxy-authorization)["'\'']?[[:space:]]*[:=]?[[:space:]]*["'\'']?((token|bearer|basic|digest|negotiate)[[:space:]]+)?)[^[:space:]"'\'',}]+/\1[REDACTED]/Ig' \

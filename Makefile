@@ -66,8 +66,9 @@ reset-dev:
 # Backend suites need PostgreSQL and Redis (TEST_DATABASE_URL, REDIS_URL;
 # `make dev-start-services` locally). TEST_DATABASE_URL must name a separate
 # test database (in the environment or .env); it is migrated first, the
-# targets refuse to run without it, and the suites run with DATABASE_URL set
-# to it, so tests that read only DATABASE_URL never touch the app database.
+# targets refuse to run without it or when it names the .env DATABASE_URL
+# (scripts/ci/check-test-database.sh), and the suites run with DATABASE_URL
+# set to it, so tests that read only DATABASE_URL never touch the app database.
 #
 # The frontend suites and the live checks build into UI/build and serve on
 # fixed ports, so `test` and `test-slow` run their parts one after another
@@ -96,9 +97,7 @@ check-gofmt:
 		echo "gofmt needed (run gofmt -w . in BE):"; echo "$$unformatted"; exit 1; fi
 
 test-migrate:
-	@$(DOTENV) if [ -z "$${TEST_DATABASE_URL:-}" ]; then \
-		echo "TEST_DATABASE_URL is not set: point it at a test database (never the app database)." >&2; exit 1; \
-	fi
+	@$(DOTENV) sh scripts/ci/check-test-database.sh
 	$(DOTENV) cd BE && dir=$$(mktemp -d) && trap 'rm -rf "$$dir"' EXIT && \
 		go build -o "$$dir/ku-server" ./cmd/server && \
 		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/ku-server" migrate up

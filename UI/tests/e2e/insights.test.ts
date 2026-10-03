@@ -1,5 +1,4 @@
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
-import { installControllableWebSocket, releaseWebSocketOpen } from './support/websocket';
 
 async function plottedPixels(canvas: Locator) {
 	return canvas.evaluate((element: HTMLCanvasElement) => {
@@ -434,24 +433,13 @@ test('a teams response invalidated while in flight never overwrites the refreshe
 	let defaultTeams: Team[] = [];
 	let latestTeams: Team[] | null = null;
 	let holdTeams = false;
-	let teamLoads = 0;
-	// Keep the realtime connection up so finished requests are shareable. Its
-	// first open is held until the initial loads are done, so the reload it
-	// triggers happens at a known point.
-	await page.routeWebSocket('**/api/workspaces/*/ws', () => {});
-	await installControllableWebSocket(page, { holdOpen: true });
 	await mockInsights(page, async (route, defaults) => {
-		teamLoads += 1;
 		defaultTeams = defaults;
 		if (!holdTeams) return route.fulfill({ json: latestTeams ?? defaults });
 		pending.push({ route, release: (teams) => route.fulfill({ json: teams }) });
 	});
 	await page.goto('/test/projects');
 	await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
-	await expect.poll(() => teamLoads).toBeGreaterThan(0);
-	const beforeOpen = teamLoads;
-	await releaseWebSocketOpen(page);
-	await expect.poll(() => teamLoads).toBe(beforeOpen + 1);
 
 	// The layout reloads teams; that request is still pending when insights
 	// mounts and shares it.
@@ -482,47 +470,42 @@ test('a teams response invalidated while in flight never overwrites the refreshe
 	await expect(page.getByRole('option', { name: 'Engineering' })).toHaveCount(0);
 });
 
-test('a team change made before the socket first opens reaches pages opened afterwards', async ({ page }) => {
+test('pages share the layout\'s pending teams request but never reuse a finished one', async ({ page }) => {
+	const pending: Array<() => Promise<void>> = [];
+	let holdTeams = false;
 	let teamLoads = 0;
-	let renamedTeams: Team[] | null = null;
-	await page.routeWebSocket('**/api/workspaces/*/ws', () => {});
-	// The socket's first open is delayed until after the initial loads.
-	await installControllableWebSocket(page, { holdOpen: true });
 	await mockInsights(page, async (route, defaults) => {
+		if (!holdTeams) return route.fulfill({ json: defaults });
 		teamLoads += 1;
-		return route.fulfill({ json: renamedTeams ?? defaults });
+		pending.push(() => route.fulfill({ json: defaults }));
 	});
 	await page.goto('/test/projects');
 	await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
-	await expect.poll(() => teamLoads).toBeGreaterThan(0);
-	const beforeOpen = teamLoads;
 
-	// Another client renames the team before this one subscribes, so no event
-	// for it ever arrives.
-	renamedTeams = [
-		{
-			id: '00000000-0000-0000-0000-000000000010',
-			name: 'Platform',
-			key: 'ENG',
-			description: null,
-			color: '#6366f1',
-			icon: 'layers',
-			triage_enabled: false,
-			parent_auto_close_enabled: false,
-			sub_issue_auto_close_enabled: false,
-			issue_copy_prompt: null,
-			created_at: '2026-01-01T00:00:00Z',
-			updated_at: '2026-01-01T00:00:00Z'
-		}
-	];
-	await releaseWebSocketOpen(page);
-	await expect.poll(() => teamLoads).toBe(beforeOpen + 1);
-
+	// Insights mounts while the layout's teams reload is pending and waits
+	// for it instead of sending its own request.
+	holdTeams = true;
+	await page.evaluate(() =>
+		window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: 'test', resources: ['teams'] } }))
+	);
+	await expect.poll(() => teamLoads).toBe(1);
 	await page.locator('body').click({ position: { x: 1, y: 1 } });
 	await page.keyboard.press('g');
 	await page.keyboard.press('a');
 	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
+	holdTeams = false;
+	await pending[0]();
 	await page.getByLabel('Team scope').click();
-	await expect(page.getByRole('option', { name: 'Platform' })).toBeVisible();
-	await expect(page.getByRole('option', { name: 'Engineering' })).toHaveCount(0);
+	await expect(page.getByRole('option', { name: 'Engineering' })).toBeVisible();
+	await page.keyboard.press('Escape');
+	expect(teamLoads).toBe(1);
+
+	// Once settled the result is gone: pages opened later fetch their own.
+	holdTeams = true;
+	await page.locator('body').click({ position: { x: 1, y: 1 } });
+	await page.keyboard.press('g');
+	await page.keyboard.press('p');
+	await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
+	await expect.poll(() => teamLoads).toBe(2);
+	await pending[1]();
 });

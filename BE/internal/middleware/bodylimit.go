@@ -35,21 +35,28 @@ var defaultBodyLimitBytes = func() int64 {
 	return limit
 }()
 
-// bodyLimitExempt lists routes that enforce a larger limit (and their own
-// pacing) themselves: workspace imports accept archives up to 1 GiB.
-var bodyLimitExempt = map[string]bool{
+// DefaultUploadReadTimeout bounds body reads on the archive upload routes,
+// which are exempt from the size cap: long enough for a 1 GiB archive on a
+// slow link (about 600 KB/s), but finite.
+const DefaultUploadReadTimeout = 30 * time.Minute
+
+// sizeLimitExempt lists routes that enforce a larger size limit themselves:
+// workspace imports accept archives up to 1 GiB. They still get a (longer)
+// body read deadline.
+var sizeLimitExempt = map[string]bool{
 	"/api/workspaces/import":         true,
 	"/api/workspaces/import/preview": true,
 }
 
 // BodyLimit rejects request bodies above DefaultBodyLimit with 413 and
-// bounds body reads by DefaultBodyReadTimeout.
+// bounds body reads by DefaultBodyReadTimeout (DefaultUploadReadTimeout on
+// the archive upload routes).
 func BodyLimit() echo.MiddlewareFunc {
-	return BodyLimitWith(defaultBodyLimitBytes, DefaultBodyReadTimeout)
+	return BodyLimitWith(defaultBodyLimitBytes, DefaultBodyReadTimeout, DefaultUploadReadTimeout)
 }
 
 // BodyLimitWith is BodyLimit with an explicit byte limit and body read
-// timeout (0 disables the timeout).
+// timeouts for regular and upload routes (0 disables a timeout).
 //
 // Enforcement streams; nothing is buffered here:
 //   - a declared Content-Length above the limit is refused up front;
@@ -58,21 +65,29 @@ func BodyLimit() echo.MiddlewareFunc {
 //     read/bind error with their own 400, so the response writer is guarded
 //     too: once the body has overflowed, whatever the handler (or Echo's
 //     error handler) answers is replaced by the 413 response.
-func BodyLimitWith(limit int64, readTimeout time.Duration) echo.MiddlewareFunc {
+func BodyLimitWith(limit int64, readTimeout, uploadReadTimeout time.Duration) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := c.Request()
-			if bodyLimitExempt[req.URL.Path] || req.Body == nil || req.Body == http.NoBody || req.ContentLength == 0 {
+			if req.Body == nil || req.Body == http.NoBody || req.ContentLength == 0 {
+				return next(c)
+			}
+			upload := sizeLimitExempt[req.URL.Path]
+			timeout := readTimeout
+			if upload {
+				timeout = uploadReadTimeout
+			}
+			if timeout > 0 {
+				// The deadline only affects reads; net/http resets it before
+				// the next request on a kept-alive connection. Recorders
+				// (tests) do not support it, which is fine.
+				_ = http.NewResponseController(c.Response().Writer).SetReadDeadline(time.Now().Add(timeout))
+			}
+			if upload {
 				return next(c)
 			}
 			if req.ContentLength > limit {
 				return echo.ErrStatusRequestEntityTooLarge
-			}
-			if readTimeout > 0 {
-				// The deadline only affects reads; net/http resets it before
-				// the next request on a kept-alive connection. Recorders
-				// (tests) do not support it, which is fine.
-				_ = http.NewResponseController(c.Response().Writer).SetReadDeadline(time.Now().Add(readTimeout))
 			}
 			res := c.Response()
 			guard := &overflowGuard{ResponseWriter: res.Writer, response: res}

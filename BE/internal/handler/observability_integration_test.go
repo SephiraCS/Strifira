@@ -547,9 +547,42 @@ func TestHubShutdownClosesLiveWebSockets(t *testing.T) {
 		t.Fatal("the client was not disconnected")
 	}
 
-	// Sockets opened while shutting down are closed straight away too.
-	late, _, err := env.wsDial(t, obsFrontendURL)
-	require.NoError(t, err)
-	_, _, err = late.Read(context.Background())
-	require.Equal(t, websocket.StatusGoingAway, websocket.CloseStatus(err))
+	// Upgrades after shutdown started are refused before hijacking.
+	_, resp, err := env.wsDial(t, obsFrontendURL)
+	require.Error(t, err)
+	require.NotNil(t, resp)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+}
+
+// An upgrade admitted before Shutdown (between admission and registration,
+// i.e. mid-hijack) holds Shutdown open until it settles, so it cannot slip
+// past the drain.
+func TestHubShutdownWaitsForAdmittedUpgrades(t *testing.T) {
+	env := setupObservability(t)
+	upgraded, admitted := env.hub.BeginUpgrade()
+	require.True(t, admitted)
+
+	result := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		result <- env.hub.Shutdown(ctx)
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("Shutdown returned (%v) while an upgrade was still pending", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	// No new upgrade is admitted meanwhile.
+	_, again := env.hub.BeginUpgrade()
+	require.False(t, again)
+
+	upgraded()
+	select {
+	case err := <-result:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Shutdown did not finish once the upgrade settled")
+	}
 }

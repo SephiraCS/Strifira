@@ -38,7 +38,9 @@ func teamStatusError(c echo.Context, err error) error {
 func (h *TeamStatusHandler) List(c echo.Context) error {
 	teamIDStr := c.Param("teamId")
 	teamID, err := uuid.Parse(teamIDStr)
-	if err != nil {
+	// uuid.Nil is the service's "any team" wildcard (MCP only); a REST
+	// path always names a real team.
+	if err != nil || teamID == uuid.Nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
 
@@ -88,7 +90,9 @@ func (h *TeamStatusHandler) Create(c echo.Context) error {
 
 	teamIDStr := c.Param("teamId")
 	teamID, err := uuid.Parse(teamIDStr)
-	if err != nil {
+	// uuid.Nil is the service's "any team" wildcard (MCP only); a REST
+	// path always names a real team.
+	if err != nil || teamID == uuid.Nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
 
@@ -122,7 +126,9 @@ func (h *TeamStatusHandler) Update(c echo.Context) error {
 	}
 
 	teamID, err := uuid.Parse(c.Param("teamId"))
-	if err != nil {
+	// uuid.Nil is the service's "any team" wildcard (MCP only); a REST
+	// path always names a real team.
+	if err != nil || teamID == uuid.Nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
 
@@ -151,7 +157,9 @@ func (h *TeamStatusHandler) Delete(c echo.Context) error {
 	}
 
 	teamID, err := uuid.Parse(c.Param("teamId"))
-	if err != nil {
+	// uuid.Nil is the service's "any team" wildcard (MCP only); a REST
+	// path always names a real team.
+	if err != nil || teamID == uuid.Nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
 

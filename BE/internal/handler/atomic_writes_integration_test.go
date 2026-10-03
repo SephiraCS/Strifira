@@ -148,3 +148,23 @@ func TestTeamStatusWrites_StatusAndVisibilityAreAtomic(t *testing.T) {
 	rec = env.do(http.MethodPatch, statuses+"/"+statusID, owner.Token, map[string]any{"project_ids": []string{uuid.NewString()}})
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+// The zero UUID is the service's MCP "any team" wildcard; through REST it
+// must not reach a status of some other team.
+func TestTeamStatusRoutesRejectZeroTeamID(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("zeroteam")
+	teamID := env.createTeam(owner, "Real", "REAL")
+	status := env.mustJSON(http.MethodPost, owner.path("/teams/"+teamID+"/statuses"), owner.Token,
+		map[string]any{"name": "QA", "category": "started"}, http.StatusCreated)
+	statusPath := owner.path("/teams/" + uuid.Nil.String() + "/statuses/" + status["id"].(string))
+
+	rec := env.do(http.MethodPatch, statusPath, owner.Token, map[string]any{"name": "hijacked"})
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	rec = env.do(http.MethodDelete, statusPath, owner.Token, nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	var name string
+	require.NoError(t, env.db.Get(&name, `SELECT name FROM team_statuses WHERE id=$1`, status["id"]))
+	assert.Equal(t, "QA", name, "the status is untouched")
+}

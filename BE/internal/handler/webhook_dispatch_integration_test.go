@@ -412,6 +412,7 @@ func TestOutgoingWebhooks_CloseAfterDeadlineDiscardsBacklog(t *testing.T) {
 		t.Fatal("first delivery never arrived")
 	}
 
+	shutdownBefore := droppedWebhookEvents(t, metrics.WebhookDropShutdown)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	require.ErrorIs(t, svc.Close(ctx), context.Canceled)
@@ -422,6 +423,8 @@ func TestOutgoingWebhooks_CloseAfterDeadlineDiscardsBacklog(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 	assert.Zero(t, delivered.Load())
+	assert.Equal(t, shutdownBefore+2, droppedWebhookEvents(t, metrics.WebhookDropShutdown),
+		"the queued delivery and the unreached fan-out subscriber are counted")
 	failures := 0
 	for _, entry := range hook.AllEntries() {
 		if entry.Message == "webhook delivery failed" {
@@ -482,4 +485,42 @@ func TestOutgoingWebhooks_FanoutIsBoundedByJobDeadline(t *testing.T) {
 	defer cancel()
 	require.NoError(t, svc.Close(ctx))
 	assert.Len(t, arrived, 1, "exactly two subscribers were attempted")
+}
+
+// Every job discarded by a timed-out shutdown is counted: a queued dispatch
+// as one event, a queued subscriber delivery as one delivery.
+func TestOutgoingWebhooks_DiscardedBacklogIsCounted(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("discard")
+	receiver, arrived, _, release := blockingReceiver(t)
+	releaseOnce(t, release)
+	for i := range 2 {
+		registerWebhook(t, env, owner.WorkspaceID, receiver.URL, "discard-secret-"+strconv.Itoa(i), "issue.updated")
+	}
+
+	// One worker, room in the queue: the first dispatch queues both
+	// deliveries, the worker blocks on the first, so the queue holds the
+	// second delivery followed by two more dispatches.
+	svc := service.NewWebhookService(repository.NewWebhookRepository(env.db), integrationJWTSecret).
+		WithAllowedAddresses(func(net.IP) bool { return true }).
+		WithDeliveryPool(1, 8)
+	dispatch := func() {
+		svc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "DIS-1"})
+	}
+	dispatch()
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first delivery never arrived")
+	}
+	dispatch()
+	dispatch()
+
+	before := droppedWebhookEvents(t, metrics.WebhookDropShutdown)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.ErrorIs(t, svc.Close(ctx), context.Canceled)
+	assert.Equal(t, before+3, droppedWebhookEvents(t, metrics.WebhookDropShutdown),
+		"one queued delivery and two queued dispatches were discarded")
+	assert.Empty(t, arrived, "nothing discarded reached the receiver")
 }

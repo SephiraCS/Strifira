@@ -32,8 +32,10 @@
 # release commit of this commit is on main (whether or not main has moved on
 # since), a release-API or image failure after the push is repaired by
 # re-running the job, which (re)creates the release idempotently and writes
-# the outputs again without touching main. publish-images.sh then publishes
-# that version but only moves latest when it is still the newest release.
+# the outputs again without touching main. The same happens when the
+# deployed commit is itself a tagged release commit (CI dispatched on main
+# right after a release). publish-images.sh then publishes that version but
+# only moves latest when it is still the newest release.
 #
 # A push that fails because main moved on is skipped like above; any other
 # push failure (authentication, outage, protected branch, conflicting tag)
@@ -55,15 +57,17 @@ git config --local credential.helper \
 remote=${RELEASE_REMOTE:-"https://$host/$GITHUB_REPOSITORY.git"}
 git fetch --quiet --tags --force "$remote" "+refs/heads/main:refs/remotes/release/main"
 
-# notes <previous version or empty>: the release notes for $sha.
+# notes <previous version or empty> [deployed commit, default $sha]: the
+# release notes for the deployed commit.
 notes() {
+	deployed=${2:-$sha}
 	if [ -n "$1" ]; then
-		range="v$1..$sha"
+		range="v$1..$deployed"
 	else
-		range=$sha
+		range=$deployed
 	fi
 	log=$(git log --first-parent --format='- %s' --max-count=100 "$range" | grep -v '^- chore(release): ' || :)
-	printf 'Deployed to alpha as %s.\n\n%s\n' "$sha" "${log:-- No changes recorded.}"
+	printf 'Deployed to alpha as %s.\n\n%s\n' "$deployed" "${log:-- No changes recorded.}"
 }
 
 # create_release <tag> <notes>: creates the Forgejo release; an existing one
@@ -89,11 +93,12 @@ outputs() {
 	} >>"$output"
 }
 
-# released_tag <commit>: prints vX.Y.Z when <commit> is the release commit of
-# $sha: its only parent is $sha, its subject is "chore(release): vX.Y.Z
-# [skip ci]", and tag vX.Y.Z points at it.
+# released_tag <commit> [deployed commit, default $sha]: prints vX.Y.Z when
+# <commit> is the release commit of the deployed commit: its only parent is
+# the deployed commit, its subject is "chore(release): vX.Y.Z [skip ci]", and
+# tag vX.Y.Z points at it.
 released_tag() {
-	[ "$(git rev-parse "$1^@" 2>/dev/null)" = "$sha" ] || return 1
+	[ "$(git rev-parse "$1^@" 2>/dev/null)" = "${2:-$sha}" ] || return 1
 	t=$(git log -1 --format=%s "$1" | sed -nE 's/^chore\(release\): (v[0-9]+\.[0-9]+\.[0-9]+) \[skip ci\]$/\1/p')
 	[ -n "$t" ] || return 1
 	[ "$(git rev-parse --verify --quiet "refs/tags/$t^{commit}")" = "$1" ] || return 1
@@ -111,21 +116,43 @@ release_commit() {
 	done
 }
 
+# resume <release commit> <tag>: finishes a release whose commit and tag are
+# already on main: (re)creates the Forgejo release and writes the outputs so
+# the images are published, without touching main.
+resume() {
+	deployed=$(git rev-parse "$1^")
+	git checkout --quiet --detach "$1"
+	previous=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$deployed" 2>/dev/null | sed 's/^v//' || :)
+	create_release "$2" "$(notes "$previous" "$deployed")"
+	outputs "$2" "$1"
+}
+
 main=$(git rev-parse release/main)
 if [ "$main" != "$sha" ]; then
 	if release=$(release_commit) && [ -n "$release" ]; then
 		# A previous attempt pushed the release commit; finish what it left.
 		tag=$(released_tag "$release")
 		echo "$sha was released as $tag ($release); resuming the release (main is at $main)."
-		git checkout --quiet --detach "$release"
-		previous=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$sha" 2>/dev/null | sed 's/^v//' || :)
-		create_release "$tag" "$(notes "$previous")"
-		outputs "$tag" "$release"
+		resume "$release" "$tag"
 		exit 0
 	fi
 	echo "main is at $main, past the deployed $sha; the newer commit's run releases."
 	exit 0
 fi
+# The deployed commit is itself a release commit (CI dispatched on main right
+# after a release): make sure that release is complete instead of cutting
+# another one on top of a version-only commit.
+parent=$(git rev-parse "$sha^@" 2>/dev/null || :)
+case "$parent" in
+*[!0-9a-f]* | '') ;;
+*)
+	if tag=$(released_tag "$sha" "$parent"); then
+		echo "$sha is the release commit of $tag; resuming the release."
+		resume "$sha" "$tag"
+		exit 0
+	fi
+	;;
+esac
 if tagged=$(git describe --exact-match --tags --match 'v[0-9]*' "$sha" 2>/dev/null); then
 	echo "$sha is already released as $tagged."
 	exit 0
