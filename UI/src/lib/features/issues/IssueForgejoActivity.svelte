@@ -273,6 +273,15 @@
 				}
 			})
 		);
+		if (!mounted || runGeneration !== actionsGeneration) return;
+		// Refresh open details only after the runs, so the tick that observes a
+		// run finishing also shows its final jobs and logs before polling stops.
+		const target = expandedRun;
+		if (target) {
+			await loadJobs(workspaceSlug, target, true);
+			const job = selectedJob;
+			if (job && expandedRun?.run.id === target.run.id) await loadLogs(workspaceSlug, target, job, true);
+		}
 		if (mounted && runGeneration === actionsGeneration) schedulePoll(workspaceSlug, runGeneration);
 	}
 
@@ -286,10 +295,6 @@
 				return;
 			}
 			void loadRuns(workspaceSlug, activity.pull_requests);
-			if (expandedRun) {
-				void loadJobs(workspaceSlug, expandedRun, true);
-				if (selectedJob) void loadLogs(workspaceSlug, expandedRun, selectedJob, true);
-			}
 		}, ACTIONS_POLL_MS);
 	}
 
@@ -312,15 +317,20 @@
 			jobsFailed = false;
 		}
 		try {
-			const result = await listForgejoActionJobs(
-				workspaceSlug,
-				target.repoId,
-				target.run.id,
-				1,
-				requestController.signal
-			);
+			const loaded: ForgejoActionJob[] = [];
+			for (let page = 1; ; page++) {
+				const result = await listForgejoActionJobs(
+					workspaceSlug,
+					target.repoId,
+					target.run.id,
+					page,
+					requestController.signal
+				);
+				loaded.push(...(result.data ?? []));
+				if (!result.has_more || !result.data?.length) break;
+			}
 			if (!mounted || requestController.signal.aborted || expandedRun?.run.id !== target.run.id) return;
-			jobs = result.data ?? [];
+			jobs = loaded;
 			jobsFailed = false;
 		} catch {
 			if (!background && !requestController.signal.aborted) jobsFailed = true;

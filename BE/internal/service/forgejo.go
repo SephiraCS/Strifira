@@ -1412,8 +1412,28 @@ func (s *ForgejoService) issuePastStatus(ctx context.Context, issue *domain.Issu
 	if err != nil || current == nil {
 		return false, err
 	}
-	return current.TeamID == target.TeamID && current.Slug == string(issue.Status) &&
-		current.Category == domain.StatusCategoryStarted && current.Position > target.Position, nil
+	if current.TeamID != target.TeamID || current.Slug != string(issue.Status) {
+		return false, nil
+	}
+	// Categories order the workflow; board position only orders statuses within
+	// one category, since the default PR status is appended after Done.
+	if currentRank, targetRank := statusCategoryRank(current.Category), statusCategoryRank(target.Category); currentRank != targetRank {
+		return currentRank > targetRank, nil
+	}
+	return current.Category == domain.StatusCategoryStarted && current.Position > target.Position, nil
+}
+
+func statusCategoryRank(category domain.StatusCategory) int {
+	switch category {
+	case domain.StatusCategoryBacklog:
+		return 0
+	case domain.StatusCategoryUnstarted:
+		return 1
+	case domain.StatusCategoryStarted:
+		return 2
+	default:
+		return 3
+	}
 }
 
 func (s *ForgejoService) applyStatusAutomation(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool, expectedPR *domain.ForgejoPullRequest) error {

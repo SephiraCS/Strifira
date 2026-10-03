@@ -92,6 +92,15 @@ async function mockActions(
 		conclusion: 'success',
 		attempt: 2
 	};
+	const deployJob = {
+		...job,
+		id: 301,
+		run_id: 102,
+		name: 'Deploy preview job',
+		status: 'running',
+		conclusion: '',
+		attempt: 1
+	};
 	const workspace = {
 		id: '00000000-0000-0000-0000-000000000002',
 		name: 'Test Workspace',
@@ -162,7 +171,28 @@ async function mockActions(
 				json: { data, total_count: data.length, page: 1, per_page: 20, has_more: false }
 			});
 		}
-		if (path === `${actionsPath}/runs/101/jobs` || path === `${actionsPath}/runs/102/jobs`) {
+		if (path === `${actionsPath}/runs/102/jobs`) {
+			// The running workflow spans two pages of jobs.
+			calls.jobs.push(path);
+			const second = url.searchParams.get('page') === '2';
+			return route.fulfill({
+				json: {
+					data: [second ? deployJob : job],
+					total_count: 2,
+					page: second ? 2 : 1,
+					per_page: 100,
+					has_more: !second
+				}
+			});
+		}
+		if (path === `${actionsPath}/runs/102/jobs/301/logs`) {
+			calls.logs.push(url);
+			const done = runningRun.status !== 'running';
+			return route.fulfill({
+				json: { content: done ? 'Deploy finished\n' : 'Deploying\n', truncated: false, max_bytes: 2097152 }
+			});
+		}
+		if (path === `${actionsPath}/runs/101/jobs`) {
 			calls.jobs.push(path);
 			return route.fulfill({
 				json: { data: [job], total_count: 1, page: 1, per_page: 100, has_more: false }
@@ -265,6 +295,24 @@ test('polls active issue runs and stops once every run has finished', async ({ p
 	await expect.poll(() => calls.lists.length).toBe(3);
 	await page.clock.fastForward(30001);
 	expect(calls.lists).toHaveLength(3);
+});
+
+test('loads every job page and refreshes open logs on the tick that sees a run finish', async ({ page }) => {
+	const { calls, runningRun } = await mockActions(page);
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await actions.getByRole('button', { name: /Deploy preview/ }).click();
+	await expect(actions.getByRole('button', { name: /Linux checks/ })).toBeVisible();
+	await actions.getByRole('button', { name: /Deploy preview job/ }).click();
+	await expect(actions.locator('pre')).toHaveText('Deploying\n');
+	runningRun.status = 'success';
+	runningRun.conclusion = 'success';
+	runningRun.completed_at = '2026-09-30T12:03:00Z';
+	await page.clock.fastForward(10001);
+	await expect(actions.locator('pre')).toHaveText('Deploy finished\n');
+	const lists = calls.lists.length;
+	await page.clock.fastForward(30001);
+	expect(calls.lists).toHaveLength(lists);
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {

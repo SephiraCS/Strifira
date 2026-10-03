@@ -713,3 +713,17 @@ func TestForgejoWebhookAutomationNeverMovesAnIssueBackwards(t *testing.T) {
 	assert.Equal(t, 0, f.historyCount(t, f.issueID, "status"))
 	assert.Contains(t, f.issueAssigneeIDs(t, f.issueID), f.pusherID.String(), "assignment still applies")
 }
+
+func TestForgejoWebhookMergeCompletesIssueWhenReviewStatusIsAppendedAfterDone(t *testing.T) {
+	f := setupForgejoWebhook(t, "https://forgejo.example.test")
+	doneID := f.addStatus(t, f.team, "done", "completed", 2)
+	// ensureReviewStatus appends the default PR status after every existing one.
+	reviewID := f.addStatus(t, f.team, "pr", "started", 3)
+	_, err := f.db.ExecContext(t.Context(), `UPDATE issues SET status='pr', status_id=$1 WHERE id=$2`, reviewID, f.issueID)
+	require.NoError(t, err)
+	require.NoError(t, f.svc.UpdateAutoTransitions(t.Context(), f.workspace, dto.UpdateAutoTransitionsRequest{
+		Transitions: []dto.AutoTransitionRule{{Event: "pr_merged", TargetStatus: "done", IsActive: true}},
+	}))
+	require.NoError(t, f.deliver(t, "pull_request", f.pullRequest(t, "closed", "", "pusher", true)))
+	assert.Equal(t, doneID, f.statusID(t, f.issueID), "board position must not block a later workflow category")
+}
