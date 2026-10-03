@@ -75,6 +75,10 @@
 	// Open PRs keep a slower poll so newly queued runs appear without a webhook.
 	const ACTIONS_DISCOVERY_MS = 30000;
 	const RUNS_PAGE_SIZE = 20;
+	// Finished older runs can be re-run in Forgejo; each poll re-checks a few
+	// of them in rotation, so the budget stays fixed however long the history.
+	const ROTATING_RECHECKS = 3;
+	let recheckCursor = 0;
 	let runsByPullRequest = $state<Record<string, PullRequestRuns>>({});
 	let expandedRun = $state<ExpandedRun | null>(null);
 	let jobs = $state<ForgejoActionJob[]>([]);
@@ -318,9 +322,14 @@
 						newest.sources.every((source) => !source.hasMore || source.ids.some((id) => cachedIds.has(id)));
 					const expandedId = expandedRun?.pullRequestId === pr.id ? expandedRun.run.id : null;
 					const older = cached.filter((run) => !fresh.has(run.id) && (overlaps || run.id === expandedId));
+					const finished = older.filter((run) => !runIsActive(run) && run.id !== expandedId);
+					const rotating = new Set<number>();
+					for (let i = 0; i < Math.min(ROTATING_RECHECKS, finished.length); i++)
+						rotating.add(finished[(recheckCursor + i) % finished.length].id);
+					recheckCursor = finished.length ? (recheckCursor + ROTATING_RECHECKS) % finished.length : 0;
 					const rechecked = await Promise.all(
 						older.map((run) =>
-							runIsActive(run) || run.id === expandedId
+							runIsActive(run) || run.id === expandedId || rotating.has(run.id)
 								? getForgejoActionRun(workspaceSlug, pr.repo_id, run.id, requestController.signal).catch(() => run)
 								: run
 						)

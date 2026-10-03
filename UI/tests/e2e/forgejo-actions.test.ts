@@ -472,7 +472,8 @@ test('polls only the newest page and re-checks older runs that are still active'
 	await page.clock.fastForward(10001);
 	await expect.poll(() => calls.runGets).toContain('100');
 	expect(calls.runPages).toHaveLength(olderPages);
-	expect(calls.runGets.filter((id) => id !== '100')).toEqual([]);
+	// Besides active runs, a poll re-checks at most three finished older runs.
+	expect(calls.runGets.filter((id) => id !== '100').length).toBeLessThanOrEqual(3);
 });
 
 test('restarts history paging when the newest page no longer overlaps it', async ({ page }) => {
@@ -503,6 +504,19 @@ test('re-checks an expanded older run and refreshes its details after a re-run',
 	await page.clock.fastForward(10001);
 	await expect.poll(() => calls.runGets).toContain('100');
 	await expect.poll(() => calls.jobs.filter((path) => path.endsWith('/runs/100/jobs')).length).toBeGreaterThan(jobs);
+});
+
+test('rotates re-checks through finished older runs so a re-run is discovered', async ({ page }) => {
+	const { calls, olderRun } = await mockActions(page);
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
+	// The finished older run is re-run in Forgejo while collapsed.
+	Object.assign(olderRun, { status: 'running', conclusion: '', completed_at: null });
+	await page.clock.fastForward(10001);
+	await expect.poll(() => calls.runGets).toContain('100');
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toContainText('Running');
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {
