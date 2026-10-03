@@ -62,10 +62,11 @@ jobs:
           # Pull requests need the merge base to tell what they change.
           fetch-depth: ${{ forgejo.event_name == 'pull_request' && '0' || '1' }}
 
-      # Every deploying change bumps UI/package.json, which used to rebuild
-      # all twelve images on the shared runner. A leg whose inputs the pull
-      # request leaves alone skips its build; if the diff itself fails, the
-      # leg builds and scans anyway.
+      # A leg whose inputs the pull request leaves alone skips its build. The
+      # release job bumps only the version in UI/package.json and its lockfile,
+      # which changes nothing an image installs, so a version-only change
+      # does not count (scripts/ci/image-inputs-changed.sh). If the check
+      # itself fails, the leg builds and scans anyway.
       - name: Check whether this pull request changes the image
         id: inputs
         if: forgejo.event_name == 'pull_request'
@@ -74,7 +75,7 @@ jobs:
           INPUTS: ${{ matrix.inputs }}
         run: |
           # shellcheck disable=SC2086 # INPUTS is a space-separated path list
-          if git diff --quiet "${BASE_SHA}...HEAD" -- $INPUTS scripts/ci .forgejo/workflows/image-security.yml; then
+          if ! sh scripts/ci/image-inputs-changed.sh "${BASE_SHA}" $INPUTS scripts/ci .forgejo/workflows/image-security.yml; then
             echo "This pull request does not change the ${{ matrix.id }} image; skipping it."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
@@ -126,3 +127,32 @@ jobs:
       - name: Remove the podman store
         if: always()
         run: scripts/ci/podman-store.sh remove
+
+  # Nightly and tag scans gate nothing, so a failure files (or updates) a
+  # Forgejo issue instead of going unnoticed. Pull requests show their own.
+  report:
+    name: Report the failure
+    needs: [image-security]
+    if: failure() && forgejo.event_name != 'pull_request'
+    runs-on: terrascale-builder
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: File the failure as an issue
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          REPORT_TITLE: 'Image security scan failed'
+          REPRO: |
+            # Build and scan one image the way the failed leg does, e.g. the app:
+            podman build --format docker -t ku-app:scan .
+            trivy image --severity CRITICAL,HIGH --exit-code 1 ku-app:scan
+        run: scripts/ci/report-failure.sh

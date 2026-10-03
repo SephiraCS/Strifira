@@ -12,7 +12,8 @@
 # empty the shared cache.
 #
 # Intermediate layers are never reused between jobs, so they are not
-# committed at all, and independent stages build in parallel.
+# committed at all, and independent stages build in parallel. Images use the
+# Docker format because the OCI format drops HEALTHCHECK.
 set -euo pipefail
 
 caches="${1:?usage: $0 <caches> [podman build arguments...]}"
@@ -41,4 +42,4 @@ for cache in "${names[@]}"; do
 	esac
 done
 
-exec podman build --layers=false --jobs 0 "${volumes[@]}" "$@"
+exec podman build --format docker --layers=false --jobs 0 "${volumes[@]}" "$@"

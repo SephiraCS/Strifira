@@ -3,7 +3,11 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o server ./cmd/server
+# Reported by /health; see the root Dockerfile.
+ARG KU_VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X github.com/ku/ku-backend/internal/handler.Version=${KU_VERSION}" \
+    -o server ./cmd/server
 
 FROM docker.io/library/alpine:3.24
 RUN apk add --no-cache ca-certificates && \
@@ -14,4 +18,6 @@ COPY --from=builder /app/migrations ./migrations
 RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app
 USER appuser
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1
 CMD ["./server"]
