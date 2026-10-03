@@ -135,6 +135,9 @@ func (h *DevBoxHandler) ListJobs(c echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid query parameters")
 	}
+	if !params.InRange() {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid job query parameters")
+	}
 	params.Defaults()
 	if err := validate.Struct(&params); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid job query parameters")

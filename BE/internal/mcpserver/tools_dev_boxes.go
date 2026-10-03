@@ -300,6 +300,9 @@ func registerDevBoxJobTools(s *mcp.Server, deps Deps) {
 			return nil, nil, err
 		}
 		params := dto.DevBoxJobListParams{PaginationParams: dto.PaginationParams{Page: in.Page, PerPage: in.PerPage}, BoxID: in.BoxID}
+		if !params.InRange() {
+			return nil, nil, errors.New("page must be at least 1 and per_page between 1 and 100")
+		}
 		params.Defaults()
 		if in.BoxID != "" {
 			if _, err := devBoxToolID(in.BoxID); err != nil {
