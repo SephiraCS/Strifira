@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestForgejoWebhookOpeningAutomationRequiresOpenNonDraftPR(t *testing.T) {
+func TestForgejoWebhookOpeningAutomationRequiresActivePR(t *testing.T) {
 	f := setupForgejoWebhook(t, "https://forgejo.example.test")
 	require.NoError(t, f.svc.UpdateAutoTransitions(t.Context(), f.workspace, dto.UpdateAutoTransitionsRequest{
 		Transitions: []dto.AutoTransitionRule{{Event: "pr_opened", TargetStatus: "in_progress", AssignForgejoUser: true, IsActive: true}},
@@ -29,8 +29,8 @@ func TestForgejoWebhookOpeningAutomationRequiresOpenNonDraftPR(t *testing.T) {
 		draft    bool
 		automate bool
 	}{
-		{name: "draft opened", action: "opened", state: "open", draft: true},
-		{name: "draft reopened", action: "reopened", state: "open", draft: true},
+		{name: "draft opened", action: "opened", state: "open", draft: true, automate: true},
+		{name: "draft reopened", action: "reopened", state: "open", draft: true, automate: true},
 		{name: "closed opened", action: "opened", state: "closed"},
 		{name: "closed reopened", action: "reopened", state: "closed"},
 		{name: "closed ready", action: "edited", state: "closed"},
@@ -49,8 +49,8 @@ func TestForgejoWebhookOpeningAutomationRequiresOpenNonDraftPR(t *testing.T) {
 				event["changes"] = map[string]any{"title": map[string]any{"from": "WIP: Implement " + identifier}}
 			}
 			if tc.action == "reopened" && tc.draft {
-				// Exercise the actual draft close/reopen lifecycle. Its references
-				// remain visible, but none of these deliveries may move or assign.
+				// Exercise the actual draft close/reopen lifecycle. A draft already
+				// means work started, so only the first delivery moves or assigns.
 				event["action"] = "opened"
 				opened, err := json.Marshal(event)
 				require.NoError(t, err)
