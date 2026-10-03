@@ -58,6 +58,7 @@
 		"dompurify": "^3.4.16",
 		"echarts": "^6.1.0",
 		"emoji-picker-element": "^1.29.1",
+		"highlight.js": "~11.11.1",
 		"lowlight": "^3.3.0",
 		"markdown-it": "^15.0.2",
 		"prosemirror-state": "^1.4.4",

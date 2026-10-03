@@ -4,8 +4,8 @@
 	import { onMount } from 'svelte';
 	import { beforeNavigate } from '$app/navigation';
 	import { updated } from '$app/state';
-	import ReleaseNotice from '$lib/components/shared/ReleaseNotice.svelte';
-	import { ImageLightbox } from '$lib/components/shared/image-viewer';
+	import LazyReleaseNotice from '$lib/components/shared/LazyReleaseNotice.svelte';
+	import LazyImageLightbox from '$lib/components/shared/image-viewer/LazyImageLightbox.svelte';
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -25,6 +25,6 @@
 </script>
 
 <Toaster position="bottom-right" theme={preferencesState.resolvedMode} />
-<ReleaseNotice />
-<ImageLightbox />
+<LazyReleaseNotice />
+<LazyImageLightbox />
 {@render children()}

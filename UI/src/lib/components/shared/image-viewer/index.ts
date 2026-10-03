@@ -1,4 +1,4 @@
-export { default as ImageLightbox } from './ImageLightbox.svelte';
+export { default as LazyImageLightbox } from './LazyImageLightbox.svelte';
 export { imageViewer } from './image-viewer.action';
 export { imageViewerState, type ImageViewerItem } from './image-viewer.state.svelte';
 export {
