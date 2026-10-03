@@ -376,7 +376,11 @@ func (m *Manager) processOperation(ctx context.Context, operation *domain.DevMac
 				_ = m.store.UpdateServiceRuntime(ctx, service.ID, *service.ContainerID, "stopped", "stopped", nil)
 			}
 		}
-		_ = m.store.RevokeMachineAccess(ctx, machine.ID)
+		// A stopped machine must not keep live access tickets or sessions;
+		// fail the operation so it is retried instead of reporting stopped.
+		if err := m.store.RevokeMachineAccess(ctx, machine.ID); err != nil {
+			return fmt.Errorf("revoke machine access on stop: %w", err)
+		}
 		return m.setStateAndEventForOperation(ctx, machine, operation, domain.DevMachineStatusStopped, "machine.stopped", nil, false)
 	case domain.DevMachineOpTeardown:
 		if machine.Status == domain.DevMachineStatusDestroyed {
@@ -390,7 +394,9 @@ func (m *Manager) processOperation(ctx context.Context, operation *domain.DevMac
 			return nil
 		}
 		m.cancelActiveRuns(ctx, machine.ID, nil)
-		_ = m.store.RevokeMachineAccess(ctx, machine.ID)
+		if err := m.store.RevokeMachineAccess(ctx, machine.ID); err != nil {
+			return fmt.Errorf("revoke machine access on teardown: %w", err)
+		}
 		if err := m.runtime.Teardown(ctx, machine, services); err != nil {
 			return err
 		}
@@ -1042,7 +1048,11 @@ func (m *Manager) reconcile(ctx context.Context) error {
 			Action: domain.DevMachineOpTeardown, Status: domain.DevMachineOpStatusPending,
 			Generation: machine.Generation + 1, IdempotencyKey: fmt.Sprintf("ttl-teardown:%d", machine.Generation+1), MaxAttempts: 10,
 		}
-		_ = m.store.SetDesiredAndEnqueue(ctx, machine.WorkspaceID, machine.ID, domain.DevMachineStatusDestroyed, operation)
+		if err := m.store.SetDesiredAndEnqueue(ctx, machine.WorkspaceID, machine.ID, domain.DevMachineStatusDestroyed, operation); err != nil {
+			// The machine stays listed as expired, so the next pass retries.
+			log.WithField("machine_id", machine.ID).WithError(err).Error("expired machine teardown enqueue failed")
+			continue
+		}
 		_ = m.createEvent(ctx, machine, nil, "lifecycle", "machine.expired", nil)
 	}
 
@@ -1062,7 +1072,10 @@ func (m *Manager) reconcile(ctx context.Context) error {
 				switch machine.DesiredStatus {
 				case domain.DevMachineStatusDestroyed:
 					m.cancelActiveRuns(ctx, machine.ID, nil)
-					_ = m.store.RevokeMachineAccess(ctx, machine.ID)
+					if err := m.store.RevokeMachineAccess(ctx, machine.ID); err != nil {
+						log.WithField("machine_id", machine.ID).WithError(err).Warn("teardown access revocation failed")
+						continue
+					}
 					if err := m.runtime.Teardown(ctx, machine, services); err != nil {
 						log.WithField("machine_id", machine.ID).WithError(err).Warn("teardown reconciliation failed")
 						continue
