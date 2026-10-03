@@ -50,12 +50,14 @@ async function mockActions(
 		role?: string;
 		pullRequests?: unknown[];
 		finished?: boolean;
+		olderActive?: boolean;
 	} = {}
 ) {
 	const calls = {
 		lists: [] as URL[],
 		runPages: [] as URL[],
 		branchLists: [] as URL[],
+		runGets: [] as string[],
 		jobs: [] as string[],
 		actions: [] as string[],
 		logs: [] as URL[]
@@ -95,6 +97,7 @@ async function mockActions(
 	const staleBranchRun = { ...pushRun, id: 98, title: 'Unrelated base branch run', head_sha: 'not-the-pr-head' };
 	const runsGate = { hold: false, waiting: 0, release: () => {} };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
+	if (options.olderActive) Object.assign(olderRun, { status: 'running', conclusion: '', completed_at: null });
 	const job = {
 		id: 201,
 		run_id: 101,
@@ -203,6 +206,12 @@ async function mockActions(
 			return route.fulfill({
 				json: { data, total_count: pullRuns ? 3 : 0, page: second ? 2 : 1, per_page: 20, has_more: pullRuns && !second }
 			});
+		}
+		const single = path.match(new RegExp(`^${actionsPath}/runs/(\\d+)$`));
+		if (single) {
+			calls.runGets.push(single[1]);
+			const run = [completedRun, runningRun, olderRun].find((candidate) => String(candidate.id) === single[1]);
+			return run ? route.fulfill({ json: run }) : route.fulfill({ status: 404, json: {} });
 		}
 		if (path === `${actionsPath}/runs/102/jobs`) {
 			// The running workflow spans two pages of jobs.
@@ -447,6 +456,19 @@ test('a refresh that started before older runs loaded does not discard them', as
 	await page.clock.fastForward(1000);
 	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
 	await expect(actions.getByRole('button', { name: 'Load older runs', exact: true })).toHaveCount(0);
+});
+
+test('polls only the newest page and re-checks older runs that are still active', async ({ page }) => {
+	const { calls } = await mockActions(page, { olderActive: true, finished: true });
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
+	const olderPages = calls.runPages.length;
+	await page.clock.fastForward(10001);
+	await expect.poll(() => calls.runGets).toContain('100');
+	expect(calls.runPages).toHaveLength(olderPages);
+	expect(calls.runGets.filter((id) => id !== '100')).toEqual([]);
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {

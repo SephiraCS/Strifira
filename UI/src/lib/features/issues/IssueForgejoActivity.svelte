@@ -4,6 +4,7 @@
 		cancelForgejoActionRun,
 		getCachedForgejoStatus,
 		getForgejoActionLogs,
+		getForgejoActionRun,
 		getForgejoStatus,
 		getIssueForgejoActivity,
 		listForgejoActionJobs,
@@ -298,19 +299,23 @@
 		runsByPullRequest = next;
 		await Promise.all(
 			targets.map(async (pr) => {
-				const { pages, version } = next[pr.id];
+				const { pages, version, runs: cached, hasMore: cachedHasMore } = next[pr.id];
 				try {
-					// Refresh only the pages already shown, so polling stays bounded.
-					const runs: ForgejoActionRun[] = [];
-					let hasMore = false;
-					for (let page = 1; page <= pages; page++) {
-						const result = await fetchRunPage(workspaceSlug, pr, page, requestController.signal);
-						// Pages have no snapshot: a new run can shift a run onto the next page.
-						const seen = new Set(runs.map((run) => run.id));
-						runs.push(...(result.data ?? []).filter((run) => !seen.has(run.id)));
-						hasMore = result.has_more && !!result.data?.length;
-						if (!hasMore) break;
-					}
+					// A poll costs a fixed budget however much history is shown: the
+					// newest page, plus a re-check of each older run still active.
+					// Finished older runs never change, so they stay cached.
+					const newest = await fetchRunPage(workspaceSlug, pr, 1, requestController.signal);
+					const fresh = new Map((newest.data ?? []).map((run) => [run.id, run]));
+					const older = cached.filter((run) => !fresh.has(run.id));
+					const rechecked = await Promise.all(
+						older.map((run) =>
+							runIsActive(run)
+								? getForgejoActionRun(workspaceSlug, pr.repo_id, run.id, requestController.signal).catch(() => run)
+								: run
+						)
+					);
+					const runs = [...fresh.values(), ...rechecked];
+					const hasMore = pages > 1 ? cachedHasMore : newest.has_more;
 					if (!mounted || runGeneration !== actionsGeneration) return;
 					// Older history loaded meanwhile; the next poll refreshes every page.
 					if (runsByPullRequest[pr.id]?.version !== version) return;
