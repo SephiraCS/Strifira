@@ -26,7 +26,7 @@ func (h *FavoriteHandler) List(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	favs, err := h.favSvc.List(c.Request().Context(), ws.ID, userID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	resp := make([]dto.FavoriteResponse, len(favs))
 	for i, f := range favs {
@@ -57,7 +57,7 @@ func (h *FavoriteHandler) Create(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	fav, err := h.favSvc.Create(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusCreated, dto.FavoriteResponse{
 		ID:         fav.ID.String(),
@@ -74,7 +74,7 @@ func (h *FavoriteHandler) Delete(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid ID")
 	}
 	if err := h.favSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
 }

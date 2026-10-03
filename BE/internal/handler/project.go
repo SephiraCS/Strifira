@@ -24,7 +24,7 @@ func (h *ProjectHandler) List(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	projects, err := h.projectSvc.ListByWorkspace(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	resp := make([]dto.ProjectResponse, len(projects))
 	for i, p := range projects {
@@ -54,7 +54,7 @@ func (h *ProjectHandler) Create(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	project, err := h.projectSvc.Create(c.Request().Context(), ws.ID, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusCreated, toProjectResponse(*project))
 }
@@ -88,7 +88,7 @@ func (h *ProjectHandler) Update(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	project, err := h.projectSvc.Update(c.Request().Context(), ws.ID, id, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toProjectResponse(*project))
 }
@@ -100,7 +100,7 @@ func (h *ProjectHandler) Delete(c echo.Context) error {
 	}
 	ws := c.Get("workspace").(*domain.Workspace)
 	if err := h.projectSvc.Delete(c.Request().Context(), ws.ID, id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
 }
@@ -112,7 +112,7 @@ func (h *ProjectHandler) ListByTeam(c echo.Context) error {
 	}
 	projects, err := h.projectSvc.ListByTeam(c.Request().Context(), teamID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	resp := make([]dto.ProjectResponse, len(projects))
 	for i, p := range projects {

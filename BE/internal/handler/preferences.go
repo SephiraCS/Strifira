@@ -25,7 +25,7 @@ func (h *PreferencesHandler) Get(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	prefs, err := h.prefsSvc.Get(c.Request().Context(), userID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toPreferencesResponse(prefs))
 }
@@ -49,7 +49,7 @@ func (h *PreferencesHandler) Update(c echo.Context) error {
 		if errors.Is(err, service.ErrInvalidPreferences) {
 			return response.Error(c, http.StatusBadRequest, "INVALID_PREFERENCES", err.Error())
 		}
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toPreferencesResponse(prefs))
 }

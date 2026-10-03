@@ -27,7 +27,7 @@ func (h *ViewHandler) List(c echo.Context) error {
 
 	views, err := h.viewSvc.List(c.Request().Context(), ws.ID, userID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.ViewResponse, len(views))
@@ -56,7 +56,7 @@ func (h *ViewHandler) Create(c echo.Context) error {
 
 	view, err := h.viewSvc.Create(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusCreated, toViewResponse(*view))
@@ -91,7 +91,7 @@ func (h *ViewHandler) Update(c echo.Context) error {
 
 	view, err := h.viewSvc.Update(c.Request().Context(), id, userID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, toViewResponse(*view))
@@ -106,7 +106,7 @@ func (h *ViewHandler) Delete(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 
 	if err := h.viewSvc.Delete(c.Request().Context(), id, userID); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})

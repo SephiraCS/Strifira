@@ -32,7 +32,7 @@ func (h *WorkspaceHandler) List(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	workspaces, err := h.workspaceSvc.ListByUser(c.Request().Context(), userID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	resp := make([]dto.WorkspaceResponse, len(workspaces))
 	for i, ws := range workspaces {
@@ -59,7 +59,7 @@ func (h *WorkspaceHandler) Create(c echo.Context) error {
 		if errors.Is(err, service.ErrWorkspaceSlugTaken) {
 			return response.Error(c, http.StatusConflict, "WORKSPACE_SLUG_TAKEN", "Workspace slug is already taken")
 		}
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusCreated, h.toWorkspaceResponse(c, *ws))
 }
@@ -97,7 +97,7 @@ func (h *WorkspaceHandler) Update(c echo.Context) error {
 		case errors.Is(err, service.ErrNotWorkspaceOwner):
 			return response.Error(c, http.StatusForbidden, "FORBIDDEN", "Only the workspace owner can edit workspace settings")
 		default:
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 	}
 	return response.Success(c, http.StatusOK, h.toWorkspaceResponse(c, *ws))
@@ -117,7 +117,7 @@ func (h *WorkspaceHandler) Delete(c echo.Context) error {
 		case errors.Is(err, service.ErrWorkspaceEnvironmentCleanupPending):
 			return response.Error(c, http.StatusConflict, "WORKSPACE_CLEANUP_PENDING", "Development environment image cleanup is in progress; retry workspace deletion shortly")
 		default:
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
@@ -139,7 +139,7 @@ func (h *WorkspaceHandler) Invite(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 
 	if err := h.workspaceSvc.InviteMember(c.Request().Context(), ws.ID, req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "invited"})
 }
@@ -148,7 +148,7 @@ func (h *WorkspaceHandler) ListMembers(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	members, err := h.workspaceSvc.ListMembersWithUsers(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.WorkspaceMemberResponse, 0, len(members))
@@ -186,7 +186,7 @@ func (h *WorkspaceHandler) UpdateMemberRole(c echo.Context) error {
 	}
 
 	if err := h.workspaceSvc.UpdateMemberRole(c.Request().Context(), ws.ID, userID, req.Role); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "updated"})
 }
@@ -200,7 +200,7 @@ func (h *WorkspaceHandler) RemoveMember(c echo.Context) error {
 	}
 
 	if err := h.workspaceSvc.RemoveMember(c.Request().Context(), ws.ID, userID); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "removed"})
 }

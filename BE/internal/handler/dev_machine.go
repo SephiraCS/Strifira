@@ -740,6 +740,6 @@ func machineError(c echo.Context, err error) error {
 	case errors.Is(err, service.ErrInvalidMachineInput):
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	default:
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 }

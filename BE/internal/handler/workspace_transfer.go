@@ -38,7 +38,7 @@ func (h *WorkspaceTransferHandler) Export(c echo.Context) error {
 			"workspace_slug": workspace.Slug,
 			"actor_id":       middleware.GetUserID(c).String(),
 		}).Error("workspace export failed")
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	defer os.Remove(archive.Path)
 	c.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="`+archive.Filename+`"`)
@@ -99,7 +99,7 @@ func receiveWorkspaceArchive(c echo.Context) (string, func(), error) {
 	temp, err := os.CreateTemp("", "ku-workspace-import-*.zip")
 	if err != nil {
 		cleanupMultipart()
-		return "", func() {}, response.InternalError(c)
+		return "", func() {}, response.InternalErrorErr(c, err)
 	}
 	cleanup := func() {
 		_ = os.Remove(temp.Name())
@@ -123,7 +123,7 @@ func openMultipartFile(header *multipart.FileHeader) (multipart.File, error) { r
 func transferHTTPError(c echo.Context, err error) error {
 	var transferErr *service.WorkspaceTransferError
 	if !errors.As(err, &transferErr) {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	status := http.StatusBadRequest
 	switch transferErr.Code {
