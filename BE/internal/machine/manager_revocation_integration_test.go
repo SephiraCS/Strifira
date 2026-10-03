@@ -173,3 +173,19 @@ func TestManagerTTLExpiryLogsAndRetriesFailedTeardownEnqueue(t *testing.T) {
 	require.NoError(t, env.db.Get(&events, `SELECT count(*) FROM dev_machine_events WHERE machine_id=$1 AND event_type='machine.expired'`, env.machineID))
 	assert.Equal(t, 1, events)
 }
+
+func TestManagerStopReconciliationRetriesWhenAccessRevocationFails(t *testing.T) {
+	env := newRevocationEnv(t, domain.DevMachineStatusFailed, false)
+	ctx := context.Background()
+	_, err := env.db.Exec(`UPDATE dev_machines SET desired_status='stopped' WHERE id=$1`, env.machineID)
+	require.NoError(t, err)
+	restore := env.failStatement(t, "dev_machine_access_tickets", "UPDATE")
+
+	_ = env.manager.reconcile(ctx)
+	assert.Equal(t, domain.DevMachineStatusFailed, env.status(t), "a machine whose access could not be revoked must not be recorded stopped")
+
+	// The machine stays in runtime reconciliation, so the next pass finishes.
+	restore()
+	_ = env.manager.reconcile(ctx)
+	assert.Equal(t, domain.DevMachineStatusStopped, env.status(t))
+}

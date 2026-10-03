@@ -230,6 +230,10 @@ type ProjectStatusVisibilityRepo interface {
 	ListVisibleStatuses(ctx context.Context, projectID uuid.UUID) ([]uuid.UUID, error)
 	ListProjectsForStatus(ctx context.Context, statusID uuid.UUID) ([]uuid.UUID, error)
 	ListProjectIDsByStatuses(ctx context.Context, statusIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
+	// CreateStatusWithProjects and UpdateStatusWithProjects write a status
+	// and its project visibility atomically.
+	CreateStatusWithProjects(ctx context.Context, status *domain.TeamStatus, projectIDs []uuid.UUID) error
+	UpdateStatusWithProjects(ctx context.Context, status *domain.TeamStatus, projectIDs *[]uuid.UUID) error
 }
 
 type SharedLinkRepo interface {

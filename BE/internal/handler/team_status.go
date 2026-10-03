@@ -21,7 +21,8 @@ func NewTeamStatusHandler(statusSvc *service.TeamStatusService) *TeamStatusHandl
 	return &TeamStatusHandler{statusSvc: statusSvc}
 }
 
-// teamStatusError maps scoped lookup failures to 404 and the rest to 400.
+// teamStatusError maps scoped lookup failures to 404; storage failures
+// become a logged 500 and remaining domain errors a 400.
 func teamStatusError(c echo.Context, err error) error {
 	switch {
 	case errors.Is(err, service.ErrTeamNotFound):
@@ -31,7 +32,7 @@ func teamStatusError(c echo.Context, err error) error {
 	case errors.Is(err, service.ErrStatusProjectNotFound):
 		return response.NotFound(c, "Project")
 	}
-	return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	return response.ServiceError(c, err)
 }
 
 func (h *TeamStatusHandler) List(c echo.Context) error {

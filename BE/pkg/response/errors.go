@@ -1,9 +1,12 @@
 package response
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"strings"
 
@@ -44,8 +47,11 @@ func InternalErrorErr(c echo.Context, err error) error {
 // ServiceError maps an error returned by a service to a client response
 // without leaking storage details: missing rows become 404, recognised
 // constraint violations become 4xx with a generic message, any other database
-// or infrastructure failure is logged and answered with 500, and remaining
-// (domain/validation) errors keep their message as a 400 BAD_REQUEST.
+// or infrastructure failure (see isInfrastructureError) is logged and
+// answered with 500, and remaining (domain/validation) errors keep their
+// message as a 400 BAD_REQUEST. Services still report many validation
+// failures as plain errors.New/fmt.Errorf values, so unknown errors keep the
+// 400 default; storage and transport failures are recognised by type.
 func ServiceError(c echo.Context, err error) error {
 	return ServiceErrorStatus(c, http.StatusBadRequest, "BAD_REQUEST", err)
 }
@@ -104,11 +110,23 @@ func sqlStateFromMessage(message string) (string, bool) {
 	return rest[:end], true
 }
 
-// isInfrastructureError recognises database driver failures. Errors from
-// other upstreams (e.g. an unreachable Forgejo instance) are deliberately not
-// matched: their messages are actionable for the caller.
+// isInfrastructureError recognises database driver and transport failures:
+// connection loss, truncated reads (io.EOF / io.ErrUnexpectedEOF), network
+// errors and timeouts (net.Error) and cancelled or expired contexts. None of
+// these are the caller's fault and their messages can carry addresses, so
+// they become a logged 500. Upstream clients that should surface an
+// actionable message (e.g. the Forgejo client's ErrUnavailable) translate
+// their transport errors before they reach this point.
 func isInfrastructureError(err error) bool {
 	if errors.Is(err, sql.ErrConnDone) || errors.Is(err, sql.ErrTxDone) || errors.Is(err, driver.ErrBadConn) {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
 		return true
 	}
 	var connectErr *pgconn.ConnectError

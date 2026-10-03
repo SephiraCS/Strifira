@@ -15,6 +15,12 @@ import type { WorkspaceMember } from '$lib/types/workspace';
  * own: while it is in flight they wait for it, afterwards they reuse its
  * result. When the layout has no request for the workspace (or it failed),
  * the page fetches directly, so callers always get data.
+ *
+ * A shared result is only trusted while the realtime connection could have
+ * told us it changed: it is dropped when the websocket disconnects (events
+ * sent while offline are lost; the layout reloads everything once it
+ * reconnects) and once it is older than MAX_AGE_MS, so a missed event cannot
+ * leave pages stale forever.
  */
 type Resources = {
 	teams: Team[];
@@ -32,8 +38,16 @@ const fetchers: { [K in ResourceName]: (slug: string) => Promise<Resources[K]> }
 	members: listMembers
 };
 
+const MAX_AGE_MS = 60_000;
+
+type SharedRequest = {
+	request: Promise<unknown>;
+	/** When the request resolved; null while it is in flight. */
+	settledAt: number | null;
+};
+
 let currentSlug: string | null = null;
-const requests = new Map<ResourceName, Promise<unknown>>();
+const requests = new Map<ResourceName, SharedRequest>();
 
 // A refresh (an API mutation or a realtime event) makes the shared result
 // stale. This listener is registered when the module is first imported, so it
@@ -55,6 +69,10 @@ if (typeof window !== 'undefined') {
 			}
 		}
 	});
+	window.addEventListener('ws:disconnected', (event) => {
+		const workspaceSlug = (event as CustomEvent<{ workspaceSlug?: string } | null>).detail?.workspaceSlug;
+		if (!workspaceSlug || workspaceSlug === currentSlug) requests.clear();
+	});
 }
 
 /** Forget every shared request; called when the layout switches workspace. */
@@ -70,18 +88,29 @@ export function shareWorkspaceResource<K extends ResourceName>(
 	request: Promise<Resources[K]>
 ): Promise<Resources[K]> {
 	if (slug === currentSlug) {
-		requests.set(resource, request);
-		// A failed request is not reused; the next reader fetches again.
-		request.catch(() => {
-			if (requests.get(resource) === request) requests.delete(resource);
-		});
+		const entry: SharedRequest = { request, settledAt: null };
+		requests.set(resource, entry);
+		request.then(
+			() => {
+				entry.settledAt = Date.now();
+			},
+			() => {
+				// A failed request is not reused; the next reader fetches again.
+				if (requests.get(resource) === entry) requests.delete(resource);
+			}
+		);
 	}
 	return request;
 }
 
 /** The workspace's `resource`, from the layout's latest request when there is one. */
 export function getWorkspaceResource<K extends ResourceName>(slug: string, resource: K): Promise<Resources[K]> {
-	const shared = slug === currentSlug ? (requests.get(resource) as Promise<Resources[K]> | undefined) : undefined;
+	const entry = slug === currentSlug ? requests.get(resource) : undefined;
+	if (entry && entry.settledAt !== null && Date.now() - entry.settledAt > MAX_AGE_MS) {
+		requests.delete(resource);
+		return fetchers[resource](slug);
+	}
+	const shared = entry?.request as Promise<Resources[K]> | undefined;
 	if (!shared) return fetchers[resource](slug);
 	// Hand out a copy so a page reassigning or pushing to its list never
 	// touches the array other readers received.

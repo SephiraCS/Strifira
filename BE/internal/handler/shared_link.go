@@ -97,7 +97,7 @@ func (h *SharedLinkHandler) Update(c echo.Context) error {
 		return response.NotFound(c, "Shared link")
 	}
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, h.toSharedLinkResponse(*link))

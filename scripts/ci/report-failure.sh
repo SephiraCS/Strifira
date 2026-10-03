@@ -55,14 +55,29 @@ redact() {
 		printf '%s\n' "$FORGEJO_TOKEN"
 		printf '%s\n' "${REDACT:-}"
 	} | awk 'length($0) >= 6' >"$work/literals"
+	# One pass per line with an advancing cursor: the earliest (then longest)
+	# literal is masked and scanning continues after it, so inserted markers
+	# are never rescanned (REDACT=REDACTED terminates).
 	awk -v lits="$work/literals" '
 		BEGIN { while ((getline l < lits) > 0) secrets[++n] = l }
 		{
-			for (i = 1; i <= n; i++) {
-				while ((p = index($0, secrets[i])) > 0)
-					$0 = substr($0, 1, p - 1) "[REDACTED]" substr($0, p + length(secrets[i]))
+			rest = $0
+			out = ""
+			for (;;) {
+				best = 0
+				len = 0
+				for (i = 1; i <= n; i++) {
+					p = index(rest, secrets[i])
+					if (p > 0 && (best == 0 || p < best || (p == best && length(secrets[i]) > len))) {
+						best = p
+						len = length(secrets[i])
+					}
+				}
+				if (best == 0) break
+				out = out substr(rest, 1, best - 1) "[REDACTED]"
+				rest = substr(rest, best + len)
 			}
-			print
+			print out rest
 		}' |
 		sed -E \
 			-e 's/\x1b\[[0-9;]*[A-Za-z]//g' \
@@ -70,6 +85,8 @@ redact() {
 			-e 's#([A-Za-z][A-Za-z0-9+.-]*://)[^/@ :]+:[^/@ ]+@#\1[REDACTED]@#g' \
 			-e 's/((authorization|proxy-authorization)[":]*[[:space:]]*(token|bearer|basic)?[[:space:]]*)[^[:space:]"]+/\1[REDACTED]/Ig' \
 			-e 's/(bearer[[:space:]]+)[A-Za-z0-9._~+\/=-]{8,}/\1[REDACTED]/Ig' \
+			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/Ig' \
+			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)'\''[^'\'']*'\''/\1[REDACTED]/Ig' \
 			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["]?[[:space:]]*[:=][[:space:]]*["]?)[^[:space:]"&,]+/\1[REDACTED]/Ig' \
 			-e 's/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/[REDACTED-JWT]/g' \
 			-e 's/\b(gh[pousr]|glpat|xox[abpr]|sk|kub)[_-][A-Za-z0-9_-]{16,}/[REDACTED]/g' \
@@ -128,7 +145,9 @@ while IFS="$(printf '\t')" read -r id name; do
 	{
 		printf '\n<details><summary>%s: last %s log lines (redacted)</summary>\n\n```text\n' "$name" "$log_lines"
 		# The tail before the post-job cleanup steps holds the failure.
-		awk '/⭐ Run Post |🏁  Job /{ exit } { print }' "$work/log" | tail -n "$log_lines" | redact
+		# Redact the whole log before cutting it, so a multi-line private
+		# key that starts above the tail is still recognized and masked.
+		awk '/⭐ Run Post |🏁  Job /{ exit } { print }' "$work/log" | redact | tail -n "$log_lines"
 		printf '```\n</details>\n'
 	} >>"$work/logs.md"
 done <"$work/failed"

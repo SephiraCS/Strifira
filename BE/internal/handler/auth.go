@@ -27,8 +27,9 @@ type AuthHandler struct {
 }
 
 // WithLoginThrottle enables per-email lockout after repeated failed logins.
-// It is keyed by the normalized email, never by client IP: many users share
-// one office egress IP (see the /api/auth note in cmd/server).
+// It is keyed by the email exactly as authentication matches it, never by
+// client IP: many users share one office egress IP (see the /api/auth note
+// in cmd/server).
 func (h *AuthHandler) WithLoginThrottle(lt *middleware.LoginThrottle) *AuthHandler {
 	h.loginThrottle = lt
 	return h
@@ -85,27 +86,35 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return response.ValidationError(c, details)
 	}
 
-	throttleKey := strings.ToLower(strings.TrimSpace(req.Email))
-	if h.loginThrottle != nil && h.loginThrottle.IsLocked(throttleKey) {
-		log.WithFields(log.Fields{"event": "auth.login_locked", "email": req.Email, "ip": c.RealIP()}).Warn("login rejected: account temporarily locked")
-		c.Response().Header().Set("Retry-After", strconv.Itoa(int(h.loginThrottle.LockoutDuration().Seconds())))
-		return response.Error(c, http.StatusTooManyRequests, "TOO_MANY_ATTEMPTS", "Too many failed login attempts. Try again later.")
+	// The throttle is keyed by the account identity authentication uses:
+	// emails are matched exactly, so case variants are distinct accounts
+	// and must not share (or reset) each other's failure counters.
+	throttleKey := strings.TrimSpace(req.Email)
+	outcome := middleware.LoginAborted
+	if h.loginThrottle != nil {
+		if !h.loginThrottle.Admit(throttleKey) {
+			log.WithFields(log.Fields{"event": "auth.login_locked", "email": req.Email, "ip": c.RealIP()}).Warn("login rejected: account temporarily locked")
+			c.Response().Header().Set("Retry-After", strconv.Itoa(int(h.loginThrottle.LockoutDuration().Seconds())))
+			return response.Error(c, http.StatusTooManyRequests, "TOO_MANY_ATTEMPTS", "Too many failed login attempts. Try again later.")
+		}
+		// Release the admitted slot on every path, including panics.
+		defer func() {
+			if h.loginThrottle.Finish(throttleKey, outcome) {
+				log.WithFields(log.Fields{"event": "auth.login_lockout", "email": req.Email, "ip": c.RealIP()}).Warn("account temporarily locked after repeated failed logins")
+			}
+		}()
 	}
 
 	user, accessToken, refreshToken, err := h.authService.Login(c.Request().Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
-			if h.loginThrottle != nil && h.loginThrottle.RecordFailure(throttleKey) {
-				log.WithFields(log.Fields{"event": "auth.login_lockout", "email": req.Email, "ip": c.RealIP()}).Warn("account temporarily locked after repeated failed logins")
-			}
+			outcome = middleware.LoginFailed
 			log.WithFields(log.Fields{"event": "auth.login_failed", "email": req.Email, "ip": c.RealIP()}).Warn("login failed")
 			return response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
 		}
 		return response.InternalError(c)
 	}
-	if h.loginThrottle != nil {
-		h.loginThrottle.RecordSuccess(throttleKey)
-	}
+	outcome = middleware.LoginSucceeded
 
 	log.WithFields(log.Fields{"event": "auth.login", "user_id": user.ID, "email": user.Email, "ip": c.RealIP()}).Info("user logged in")
 	h.setAuthCookies(c, accessToken, refreshToken)

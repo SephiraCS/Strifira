@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,18 +29,81 @@ import (
 type WebhookService struct {
 	webhookRepo   *repository.WebhookRepository
 	encryptionKey []byte
+	httpClient    *http.Client
 }
+
+// ErrInvalidWebhookURL marks a webhook URL rejected by validation; its
+// message is safe to show to the caller.
+var ErrInvalidWebhookURL = errors.New("invalid webhook URL")
+
+// invalidWebhookURLError keeps the validation detail while matching
+// ErrInvalidWebhookURL with errors.Is.
+type invalidWebhookURLError struct{ cause error }
+
+func (e invalidWebhookURLError) Error() string        { return "invalid webhook URL: " + e.cause.Error() }
+func (e invalidWebhookURLError) Is(target error) bool { return target == ErrInvalidWebhookURL }
 
 func NewWebhookService(webhookRepo *repository.WebhookRepository, jwtSecret string) *WebhookService {
 	return &WebhookService{
 		webhookRepo:   webhookRepo,
 		encryptionKey: crypto.DeriveKey(jwtSecret + ":webhook"),
+		httpClient:    newWebhookHTTPClient(publicWebhookIP),
+	}
+}
+
+// WithAllowedAddresses replaces the delivery-time destination check. The
+// production default (publicWebhookIP) refuses every address that
+// validate.IsBlockedIP blocks; tests use this to reach loopback receivers.
+func (s *WebhookService) WithAllowedAddresses(allowed func(net.IP) bool) *WebhookService {
+	s.httpClient = newWebhookHTTPClient(allowed)
+	return s
+}
+
+func publicWebhookIP(ip net.IP) bool { return !validate.IsBlockedIP(ip) }
+
+// errWebhookDestinationBlocked is returned when a delivery would connect to
+// an address outgoing webhooks may not reach.
+var errWebhookDestinationBlocked = errors.New("webhook destination address is not allowed")
+
+// newWebhookHTTPClient builds the delivery client. URLs are validated when
+// saved, but DNS can change afterwards and a receiver could redirect, so:
+// redirects are never followed, no environment proxy is used, and the
+// resolved address of every connection is checked against allowed right
+// before connecting (defeating DNS rebinding).
+func newWebhookHTTPClient(allowed func(net.IP) bool) *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+		Control: func(_, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return errWebhookDestinationBlocked
+			}
+			ip := net.ParseIP(host)
+			if ip == nil || !allowed(ip) {
+				return errWebhookDestinationBlocked
+			}
+			return nil
+		},
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			DialContext:           dialer.DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: time.Second,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 }
 
 func (s *WebhookService) Create(ctx context.Context, workspaceID uuid.UUID, req dto.CreateWebhookRequest) (*domain.Webhook, error) {
 	if err := validate.ValidateWebhookURL(req.URL); err != nil {
-		return nil, fmt.Errorf("invalid webhook URL: %w", err)
+		return nil, invalidWebhookURLError{err}
 	}
 
 	encSecret, err := crypto.Encrypt(req.Secret, s.encryptionKey)
@@ -74,7 +139,7 @@ func (s *WebhookService) Update(ctx context.Context, workspaceID, id uuid.UUID, 
 	}
 	if req.URL != nil {
 		if err := validate.ValidateWebhookURL(*req.URL); err != nil {
-			return nil, fmt.Errorf("invalid webhook URL: %w", err)
+			return nil, invalidWebhookURLError{err}
 		}
 		w.URL = *req.URL
 	}
@@ -185,7 +250,7 @@ func (s *WebhookService) deliver(parent context.Context, workspaceID uuid.UUID, 
 			req.Header.Set("X-Webhook-Signature", "sha256="+signature)
 			req.Header.Set("X-Webhook-Event", event)
 
-			resp, err := webhookHTTPClient.Do(req)
+			resp, err := s.httpClient.Do(req)
 			if err != nil {
 				log.WithError(err).WithField("webhook_id", w.ID).Warn("webhook delivery failed")
 				return
@@ -199,5 +264,3 @@ func (s *WebhookService) deliver(parent context.Context, workspaceID uuid.UUID, 
 	}
 	wg.Wait()
 }
-
-var webhookHTTPClient = &http.Client{Timeout: 10 * time.Second}

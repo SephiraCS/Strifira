@@ -19,6 +19,9 @@ var ErrInvalidRelation = errors.New("invalid relation")
 // ErrInvalidRelation with errors.Is.
 type invalidRelationError string
 
+// ErrRelationExists means the requested relation is already stored.
+var ErrRelationExists = repository.ErrRelationExists
+
 func (e invalidRelationError) Error() string        { return string(e) }
 func (e invalidRelationError) Is(target error) bool { return target == ErrInvalidRelation }
 
@@ -32,13 +35,21 @@ func NewIssueRelationService(relationRepo repository.IssueRelationRepo, issueRep
 }
 
 func (s *IssueRelationService) Create(ctx context.Context, workspaceID uuid.UUID, issueIdentifier string, req dto.CreateIssueRelationRequest) (*domain.IssueRelation, error) {
+	// Lookup failures are storage errors; only a missing issue is invalid
+	// caller input.
 	issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, issueIdentifier)
-	if err != nil || issue == nil {
+	if err != nil {
+		return nil, fmt.Errorf("look up issue: %w", err)
+	}
+	if issue == nil {
 		return nil, invalidRelationError("issue not found")
 	}
 
 	relatedIssue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, req.RelatedIdentifier)
-	if err != nil || relatedIssue == nil {
+	if err != nil {
+		return nil, fmt.Errorf("look up related issue: %w", err)
+	}
+	if relatedIssue == nil {
 		return nil, invalidRelationError("related issue not found")
 	}
 

@@ -493,11 +493,15 @@
 	let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let wsDestroyed = false;
 	let wsBackoffMs = 1000;
+	// Whether the socket for wsSlug has opened before: a later open is a
+	// reconnect, after which everything that changed while offline is reloaded.
+	let wsHasConnected = false;
 	const WS_BACKOFF_MAX_MS = 15_000;
 
 	$effect(() => {
 		if (slug && slug !== wsSlug) {
 			wsSlug = slug;
+			wsHasConnected = false;
 			wsBackoffMs = 1000;
 			clearWebSocketReconnect();
 			ws_conn?.close();
@@ -565,7 +569,13 @@
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
 			wsBackoffMs = 1000;
+			const resumed = wsHasConnected;
+			wsHasConnected = true;
 			window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug } }));
+			// Events sent while the socket was down are lost: reload the
+			// workspace collections (and drop the shared requests pages reuse)
+			// so nothing stays stale until the next mutation.
+			if (resumed) window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: workspaceSlug } }));
 			// Share lists drift while disconnected (starts/ends/GC); refetch.
 			if (sharesState.enabled) void sharesState.load(workspaceSlug);
 		};

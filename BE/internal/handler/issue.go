@@ -17,6 +17,7 @@ import (
 	"github.com/ku/ku-backend/pkg/sanitize"
 	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 )
 
 type IssueHandler struct {
@@ -135,9 +136,16 @@ func (h *IssueHandler) BulkCreateSubIssues(c echo.Context) error {
 		return response.ServiceError(c, err)
 	}
 
+	// The sub-issues are already committed: enrichment is best-effort so a
+	// failed lookup never reports the creation as failed (a client retry
+	// would create duplicates).
 	resp, err := h.enrichIssueList(c.Request().Context(), issues, userID, true)
 	if err != nil {
-		return response.InternalErrorErr(c, err)
+		log.WithFields(response.LogFields(c)).WithError(err).Warn("sub-issue response enrichment failed; returning basic issues")
+		resp = make([]dto.IssueResponse, len(issues))
+		for i, issue := range issues {
+			resp[i] = toIssueResponse(issue)
+		}
 	}
 	return response.Success(c, http.StatusCreated, resp)
 }

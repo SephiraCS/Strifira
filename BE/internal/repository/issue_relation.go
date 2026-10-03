@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
 	"github.com/ku/ku-backend/internal/domain"
 )
@@ -65,8 +67,22 @@ func (r *IssueRelationRepository) DeleteByIssues(ctx context.Context, issueID, r
 	return err
 }
 
+// ErrRelationExists means the relation (or its inverse) is already stored.
+var ErrRelationExists = errors.New("this relation already exists")
+
+// relationWriteError reports a violation of the relation uniqueness
+// constraint as ErrRelationExists.
+func relationWriteError(err error) error {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" &&
+		pgErr.ConstraintName == "issue_relations_issue_id_related_issue_id_type_key" {
+		return ErrRelationExists
+	}
+	return err
+}
+
 // CreateWithInverse inserts rel and, when inverse is non-nil, its inverse row
-// in one transaction so a relation is never left half-created.
+// in one transaction so a relation is never left half-created. A duplicate
+// relation reports ErrRelationExists.
 func (r *IssueRelationRepository) CreateWithInverse(ctx context.Context, rel, inverse *domain.IssueRelation) error {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -75,11 +91,11 @@ func (r *IssueRelationRepository) CreateWithInverse(ctx context.Context, rel, in
 	defer tx.Rollback()
 	query := `INSERT INTO issue_relations (id, issue_id, related_issue_id, type) VALUES ($1, $2, $3, $4) RETURNING created_at`
 	if err := tx.QueryRowContext(ctx, query, rel.ID, rel.IssueID, rel.RelatedIssueID, rel.Type).Scan(&rel.CreatedAt); err != nil {
-		return err
+		return relationWriteError(err)
 	}
 	if inverse != nil {
 		if err := tx.QueryRowContext(ctx, query, inverse.ID, inverse.IssueID, inverse.RelatedIssueID, inverse.Type).Scan(&inverse.CreatedAt); err != nil {
-			return err
+			return relationWriteError(err)
 		}
 	}
 	return tx.Commit()
@@ -88,6 +104,10 @@ func (r *IssueRelationRepository) CreateWithInverse(ctx context.Context, rel, in
 // DeleteInWorkspace deletes the relation (and its inverse row, for
 // asymmetric types) in one transaction, but only when the relation's issue
 // belongs to workspaceID. It reports whether the relation was found.
+//
+// Both rows are locked in id order before either is deleted, so concurrent
+// deletes of the two directions of one pair serialise instead of each
+// locking its own row and deadlocking on the other.
 func (r *IssueRelationRepository) DeleteInWorkspace(ctx context.Context, workspaceID, id uuid.UUID) (bool, error) {
 	tx, err := r.db.BeginTxx(ctx, nil)
 	if err != nil {
@@ -96,19 +116,25 @@ func (r *IssueRelationRepository) DeleteInWorkspace(ctx context.Context, workspa
 	defer tx.Rollback()
 	var rel domain.IssueRelation
 	err = tx.GetContext(ctx, &rel, `SELECT r.* FROM issue_relations r JOIN issues i ON i.id = r.issue_id
-		WHERE r.id = $1 AND i.workspace_id = $2 FOR UPDATE OF r`, id, workspaceID)
+		WHERE r.id = $1 AND i.workspace_id = $2`, id, workspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	if inverse := rel.Type.Inverse(); inverse != rel.Type {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_relations WHERE issue_id = $1 AND related_issue_id = $2 AND type = $3`, rel.RelatedIssueID, rel.IssueID, inverse); err != nil {
-			return false, err
-		}
+	// The pair: the relation itself plus, for asymmetric types, its inverse.
+	const pair = `id = $1 OR (issue_id = $2 AND related_issue_id = $3 AND type = $4 AND type <> $5)`
+	args := []any{id, rel.RelatedIssueID, rel.IssueID, rel.Type.Inverse(), rel.Type}
+	var locked []uuid.UUID
+	if err := tx.SelectContext(ctx, &locked, `SELECT id FROM issue_relations WHERE `+pair+` ORDER BY id FOR UPDATE`, args...); err != nil {
+		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM issue_relations WHERE id = $1`, id); err != nil {
+	// A concurrent delete may have removed the relation while we waited.
+	if !slices.Contains(locked, id) {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM issue_relations WHERE `+pair, args...); err != nil {
 		return false, err
 	}
 	return true, tx.Commit()

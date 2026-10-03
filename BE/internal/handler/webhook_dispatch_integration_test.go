@@ -7,14 +7,21 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/repository"
+	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/crypto"
 )
 
@@ -151,4 +158,120 @@ func TestOutgoingWebhooks_DispatchIgnoresCallerCancellation(t *testing.T) {
 		t.Fatalf("unexpected delivery for unsubscribed event %q", d.event)
 	case <-time.After(500 * time.Millisecond):
 	}
+}
+
+// project.updated is advertised to webhooks, so updating a project through
+// either the HTTP API or MCP must deliver it.
+func TestOutgoingWebhooks_FireForProjectUpdates(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("projhooks")
+	projectID := uuid.New()
+	_, err := env.db.Exec(`INSERT INTO projects (id,workspace_id,name) VALUES ($1,$2,'Launch')`, projectID, owner.WorkspaceID)
+	require.NoError(t, err)
+
+	receiver, deliveries := webhookReceiver(t)
+	const secret = "project-secret"
+	registerWebhook(t, env, owner.WorkspaceID, receiver.URL, secret, "project.updated")
+
+	env.mustJSON(http.MethodPatch, owner.path("/projects/"+projectID.String()), owner.Token,
+		map[string]any{"name": "Launch v2"}, http.StatusOK)
+	d, envelope := nextDelivery(t, deliveries, secret)
+	assert.Equal(t, "project.updated", d.event)
+	assert.Equal(t, "Launch v2", envelope["payload"].(map[string]any)["name"])
+
+	_, key, err := env.apiKeySvc.Create(t.Context(), owner.ID, dto.CreateAPIKeyRequest{Name: "projects"})
+	require.NoError(t, err)
+	server := httptest.NewServer(env.server)
+	t.Cleanup(server.Close)
+	client := mcp.NewClient(&mcp.Implementation{Name: "project-hooks", Version: "1"}, nil)
+	session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{
+		Endpoint:   server.URL + "/mcp",
+		HTTPClient: &http.Client{Transport: bearerTransport{key}, Timeout: 10 * time.Second},
+	}, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = session.Close() })
+	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "update_project",
+		Arguments: map[string]any{"workspace": owner.Slug, "project": projectID.String(), "status": "in_progress"}})
+	require.NoError(t, err)
+	require.False(t, res.IsError)
+	d, envelope = nextDelivery(t, deliveries, secret)
+	assert.Equal(t, "project.updated", d.event)
+	assert.Equal(t, "in_progress", envelope["payload"].(map[string]any)["status"])
+}
+
+// A receiver answering with a redirect must not make the delivery follow it
+// (it could point at an internal service).
+func TestOutgoingWebhooks_DoNotFollowRedirects(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("redirect")
+	var followed atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		followed.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(target.Close)
+	var hits atomic.Int32
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, target.URL+"/internal", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+	registerWebhook(t, env, owner.WorkspaceID, redirector.URL, "redirect-secret", "issue.updated")
+
+	env.webhookSvc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "RED-1"})
+	require.Eventually(t, func() bool { return hits.Load() == 1 }, 10*time.Second, 20*time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
+	assert.Zero(t, followed.Load(), "the redirect target must never be contacted")
+}
+
+// With the production guard, a delivery whose destination resolves to a
+// loopback address is refused at connect time, even though the URL was
+// stored (as after a DNS change).
+func TestOutgoingWebhooks_ProductionGuardRefusesLoopback(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("guard")
+	receiver, deliveries := webhookReceiver(t)
+	registerWebhook(t, env, owner.WorkspaceID, receiver.URL, "guard-secret", "issue.updated")
+	hook := logtest.NewGlobal()
+	t.Cleanup(hook.Reset)
+
+	production := service.NewWebhookService(repository.NewWebhookRepository(env.db), integrationJWTSecret)
+	production.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "GRD-1"})
+
+	require.Eventually(t, func() bool {
+		for _, entry := range hook.AllEntries() {
+			if err, ok := entry.Data["error"].(error); ok && entry.Message == "webhook delivery failed" &&
+				strings.Contains(err.Error(), "webhook destination address is not allowed") {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 20*time.Millisecond, "the refused delivery must be logged")
+	select {
+	case d := <-deliveries:
+		t.Fatalf("loopback receiver was reached with %q", d.event)
+	default:
+	}
+}
+
+// Update reports URL validation problems as 400 with their message, and
+// storage failures as a generic, logged 500.
+func TestWebhookUpdate_SeparatesValidationFromStorageErrors(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("hookupd")
+	registerWebhook(t, env, owner.WorkspaceID, "https://hooks.example.com/in", "upd-secret", "issue.updated")
+	var id string
+	require.NoError(t, env.db.Get(&id, `SELECT id FROM webhooks WHERE workspace_id=$1`, owner.WorkspaceID))
+
+	rec := env.do(http.MethodPatch, owner.path("/webhooks/"+id), owner.Token, map[string]any{"url": "ftp://example.com/in"})
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "invalid webhook URL")
+
+	_, err := env.db.Exec(`ALTER TABLE webhooks RENAME TO webhooks_away`)
+	require.NoError(t, err)
+	rec = env.do(http.MethodPatch, owner.path("/webhooks/"+id), owner.Token, map[string]any{"is_active": false})
+	_, err = env.db.Exec(`ALTER TABLE webhooks_away RENAME TO webhooks`)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "webhooks", "storage details must not leak")
 }

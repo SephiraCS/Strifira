@@ -55,30 +55,56 @@ func init() {
 	)
 }
 
-// RecordForgejoWebhook increments the webhook outcome counter. Unknown or
-// empty event names are bucketed to keep label cardinality bounded.
+// RecordForgejoWebhook increments the webhook outcome counter. The event
+// header is client-controlled (it is recorded even for unsigned deliveries),
+// so only a fixed set of Forgejo event names becomes a label; everything else
+// is bucketed as "other" and a missing header as "unknown".
 func RecordForgejoWebhook(event, result string) {
 	ForgejoWebhooks.WithLabelValues(webhookEventLabel(event), result).Inc()
+}
+
+// forgejoEvents are the Forgejo webhook event names kept as metric labels:
+// the ones HandleWebhookEvent processes plus the other common repository
+// events Forgejo sends.
+var forgejoEvents = map[string]struct{}{
+	"push": {}, "create": {}, "delete": {}, "fork": {}, "release": {},
+	"repository": {}, "wiki": {}, "package": {}, "status": {},
+	"issues": {}, "issue_assign": {}, "issue_label": {}, "issue_milestone": {}, "issue_comment": {},
+	"pull_request": {}, "pull_request_assign": {}, "pull_request_label": {}, "pull_request_milestone": {},
+	"pull_request_comment": {}, "pull_request_review_approved": {}, "pull_request_review_rejected": {},
+	"pull_request_review_comment": {}, "pull_request_sync": {}, "pull_request_review_request": {},
+	"action_run_success": {}, "action_run_failure": {}, "action_run_recover": {},
 }
 
 func webhookEventLabel(event string) string {
 	if event == "" {
 		return "unknown"
 	}
-	if len(event) > 64 {
-		return "other"
+	if _, ok := forgejoEvents[event]; ok {
+		return event
 	}
-	for _, r := range event {
-		if (r < 'a' || r > 'z') && r != '_' {
-			return "other"
-		}
+	return "other"
+}
+
+// httpMethods are the request methods kept as metric labels; any other
+// (client-chosen) method token is recorded as "other".
+var httpMethods = map[string]struct{}{
+	http.MethodGet: {}, http.MethodHead: {}, http.MethodPost: {}, http.MethodPut: {},
+	http.MethodPatch: {}, http.MethodDelete: {}, http.MethodOptions: {},
+}
+
+func methodLabel(method string) string {
+	if _, ok := httpMethods[method]; ok {
+		return method
 	}
-	return event
+	return "other"
 }
 
 // Middleware records request count and latency labelled by the matched route
 // template (c.Path()), never the raw URL, so identifiers do not explode label
-// cardinality. Unmatched requests share the "unmatched" route label.
+// cardinality. Unmatched requests share the "unmatched" route label and
+// unknown methods the "other" method label. Register it outside Recovery so
+// recovered panics are observed as the 500 Recovery writes.
 func Middleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -99,7 +125,7 @@ func Middleware() echo.MiddlewareFunc {
 					status = httpErr.Code
 				}
 			}
-			method := c.Request().Method
+			method := methodLabel(c.Request().Method)
 			httpRequests.WithLabelValues(method, route, strconv.Itoa(status)).Inc()
 			httpDuration.WithLabelValues(method, route).Observe(time.Since(start).Seconds())
 			return err

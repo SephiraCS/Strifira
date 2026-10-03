@@ -43,6 +43,9 @@ func (h *IssueRelationHandler) Create(c echo.Context) error {
 		if errors.Is(err, service.ErrInvalidRelation) {
 			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 		}
+		if errors.Is(err, service.ErrRelationExists) {
+			return response.Error(c, http.StatusConflict, "CONFLICT", "This relation already exists")
+		}
 		log.WithError(err).WithField("workspace_id", ws.ID).Error("issue relation creation failed")
 		return response.InternalError(c)
 	}

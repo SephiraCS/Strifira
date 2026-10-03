@@ -47,7 +47,7 @@ const (
 )
 
 // obsEnv is the API wired the same way cmd/server wires it (request ID,
-// recovery, metrics, logging, auth and workspace membership middleware) over
+// metrics, recovery, logging, auth and workspace membership middleware) over
 // a disposable, fully migrated database. Requests go through a real HTTP
 // listener.
 type obsEnv struct {
@@ -146,10 +146,11 @@ func setupObservability(t *testing.T) *obsEnv {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(echomw.RequestID())
-	e.Use(mw.Recovery())
 	e.Use(metrics.Middleware())
+	e.Use(mw.Recovery())
 	e.Use(mw.Logging())
 	e.GET("/metrics", metrics.Handler())
+	e.GET("/api/test/panic", func(echo.Context) error { panic("handler exploded") })
 	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
 	api := e.Group("/api", mw.Auth(obsJWTSecret))
 	wsGroup := api.Group("/workspaces/:slug", mw.WorkspaceMembership(workspaceRepo))
@@ -275,6 +276,33 @@ func TestSubIssueEndpointsReturnFullyEnrichedIssues(t *testing.T) {
 	require.NotContains(t, string(raw), "sql")
 }
 
+// Bulk sub-issue creation commits before the response is enriched; an
+// enrichment failure must not turn the committed creation into an error
+// (a client retry would duplicate the sub-issues).
+func TestBulkSubIssuesSurviveEnrichmentFailure(t *testing.T) {
+	env := setupObservability(t)
+	parent := env.createIssue(t, "Parent", nil)
+
+	// Relation summaries are only read during enrichment.
+	_, err := env.db.Exec(`ALTER TABLE issue_relations RENAME TO issue_relations_away`)
+	require.NoError(t, err)
+	status, raw := env.do(t, http.MethodPost, "/api/workspaces/obs/issues/"+parent.Identifier+"/sub-issues/bulk", dto.BulkCreateSubIssueRequest{
+		Issues: []dto.CreateSubIssueRequest{{Title: "Kept one"}, {Title: "Kept two"}},
+	})
+	_, err = env.db.Exec(`ALTER TABLE issue_relations_away RENAME TO issue_relations`)
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusCreated, status, string(raw))
+	var created []dto.IssueResponse
+	require.NoError(t, json.Unmarshal(raw, &created))
+	require.Len(t, created, 2)
+	require.Equal(t, "Kept one", created[0].Title)
+	require.NotEmpty(t, created[0].Identifier)
+	var stored int
+	require.NoError(t, env.db.Get(&stored, `SELECT count(*) FROM issues WHERE parent_id = $1`, parent.ID))
+	require.Equal(t, 2, stored)
+}
+
 func TestCycleCompleteRejectsMalformedBody(t *testing.T) {
 	env := setupObservability(t)
 	path := "/api/workspaces/obs/teams/" + env.team.ID.String() + "/cycles/" + env.cycle.ID.String() + "/complete"
@@ -362,17 +390,41 @@ func TestMetricsExposeRequestsAndForgejoWebhookOutcomes(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, deliver("push", map[string]any{"ref": "refs/heads/main"}, false))
 	require.Equal(t, http.StatusOK, deliver("issues", map[string]any{"action": "opened"}, true))
 	require.Equal(t, http.StatusInternalServerError, deliver("push", map[string]any{"commits": "not-a-list"}, true))
+	// Client-chosen event names never become labels of their own.
+	require.Equal(t, http.StatusUnauthorized, deliver("attacker_chosen_event", map[string]any{}, false))
+
+	// Client-chosen methods and unknown paths collapse to single labels.
+	rawRequest := func(method, path string) int {
+		req, err := http.NewRequest(method, env.server.URL+path, nil)
+		require.NoError(t, err)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	rawRequest("BREWCOFFEE", "/api/forgejo/webhook")
+	require.Equal(t, http.StatusNotFound, rawRequest(http.MethodGet, "/no/such/route-"+uuid.NewString()))
+
+	// A panicking handler is recovered and still counted, once, as a 500.
+	require.Equal(t, http.StatusInternalServerError, rawRequest(http.MethodGet, "/api/test/panic"))
 
 	after := env.metricsText(t)
 	require.Contains(t, after, `ku_http_requests_total{method="GET",route="/api/workspaces/:slug/issues/:identifier/sub-issues",status="200"}`)
 	require.Contains(t, after, `ku_http_request_duration_seconds_bucket{method="POST",route="/api/workspaces/:slug/issues",le="+Inf"}`)
 	require.NotContains(t, after, parent.Identifier, "route labels must use templates, not concrete paths")
 	require.NotContains(t, after, `route="/metrics"`)
+	require.NotContains(t, after, "attacker_chosen_event")
+	require.NotContains(t, after, "BREWCOFFEE")
+	require.Contains(t, after, `method="other"`)
+	require.NotContains(t, after, "/no/such/route")
+	require.Contains(t, after, `route="unmatched",status="404"`)
 
 	for _, sample := range []string{
 		`ku_forgejo_webhook_deliveries_total{event="push",result="invalid_signature"}`,
 		`ku_forgejo_webhook_deliveries_total{event="issues",result="processed"}`,
 		`ku_forgejo_webhook_deliveries_total{event="push",result="error"}`,
+		`ku_forgejo_webhook_deliveries_total{event="other",result="invalid_signature"}`,
+		`ku_http_requests_total{method="GET",route="/api/test/panic",status="500"}`,
 	} {
 		require.Equal(t, counterValue(before, sample)+1, counterValue(after, sample), sample)
 	}

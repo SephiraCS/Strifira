@@ -50,7 +50,7 @@ func (h *WebhookHandler) Create(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	w, err := h.webhookSvc.Create(c.Request().Context(), ws.ID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return webhookWriteError(c, err)
 	}
 	return response.Success(c, http.StatusCreated, toWebhookResponse(*w))
 }
@@ -70,9 +70,19 @@ func (h *WebhookHandler) Update(c echo.Context) error {
 		return response.NotFound(c, "Webhook")
 	}
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return webhookWriteError(c, err)
 	}
 	return response.Success(c, http.StatusOK, toWebhookResponse(*w))
+}
+
+// webhookWriteError answers URL validation failures with their message as a
+// 400; anything else (storage, encryption) is logged and answered with a
+// generic 500.
+func webhookWriteError(c echo.Context, err error) error {
+	if errors.Is(err, service.ErrInvalidWebhookURL) {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	}
+	return response.InternalErrorErr(c, err)
 }
 
 func (h *WebhookHandler) Delete(c echo.Context) error {

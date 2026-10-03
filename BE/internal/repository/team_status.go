@@ -19,9 +19,14 @@ func NewTeamStatusRepository(db *sqlx.DB) *TeamStatusRepository {
 }
 
 func (r *TeamStatusRepository) Create(ctx context.Context, status *domain.TeamStatus) error {
+	return insertTeamStatus(ctx, r.db, status)
+}
+
+// insertTeamStatus inserts status through db, which may be a transaction.
+func insertTeamStatus(ctx context.Context, db sqlx.QueryerContext, status *domain.TeamStatus) error {
 	query := `INSERT INTO team_statuses (id, team_id, name, slug, category, color, position, is_default)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at, updated_at`
-	return r.db.QueryRowContext(ctx, query,
+	return db.QueryRowxContext(ctx, query,
 		status.ID, status.TeamID, status.Name, status.Slug,
 		status.Category, status.Color, status.Position, status.IsDefault,
 	).Scan(&status.CreatedAt, &status.UpdatedAt)
@@ -66,9 +71,15 @@ func (r *TeamStatusRepository) ListByTeam(ctx context.Context, teamID uuid.UUID)
 }
 
 func (r *TeamStatusRepository) Update(ctx context.Context, status *domain.TeamStatus) error {
+	return updateTeamStatus(ctx, r.db, status)
+}
+
+// updateTeamStatus writes the editable fields of status through db, which
+// may be a transaction.
+func updateTeamStatus(ctx context.Context, db sqlx.QueryerContext, status *domain.TeamStatus) error {
 	query := `UPDATE team_statuses SET name = $1, color = $2, position = $3, updated_at = NOW()
 		WHERE id = $4 RETURNING updated_at`
-	return r.db.QueryRowContext(ctx, query, status.Name, status.Color, status.Position, status.ID).Scan(&status.UpdatedAt)
+	return db.QueryRowxContext(ctx, query, status.Name, status.Color, status.Position, status.ID).Scan(&status.UpdatedAt)
 }
 
 func (r *TeamStatusRepository) Delete(ctx context.Context, id uuid.UUID) error {

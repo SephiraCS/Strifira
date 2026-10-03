@@ -1100,6 +1100,13 @@ func (m *Manager) reconcile(ctx context.Context) error {
 							_ = m.store.UpdateServiceRuntime(ctx, service.ID, *service.ContainerID, "stopped", "stopped", nil)
 						}
 					}
+					// Recording stopped drops the machine from runtime
+					// reconciliation, so access must be revoked first; a
+					// failure leaves it listed and the next pass retries.
+					if err := m.store.RevokeMachineAccess(ctx, machine.ID); err != nil {
+						log.WithField("machine_id", machine.ID).WithError(err).Warn("stop access revocation failed")
+						continue
+					}
 					_, _ = m.store.SetMachineStateForOperation(ctx, machine.ID, machine.Generation, false, domain.DevMachineStatusStopped, nil, nil, nil, nil)
 					continue
 				case domain.DevMachineStatusPaused:

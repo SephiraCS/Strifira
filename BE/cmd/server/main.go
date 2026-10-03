@@ -101,7 +101,7 @@ func main() {
 	issueSvc := service.NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, notifSvc, projectRepo)
 	labelSvc := service.NewLabelService(labelRepo)
 	commentSvc := service.NewCommentService(commentRepo, issueRepo, hub, notifSvc)
-	projectSvc := service.NewProjectService(projectRepo)
+	projectSvc := service.NewProjectService(projectRepo, hub)
 	relationSvc := service.NewIssueRelationService(relationRepo, issueRepo)
 	templateSvc := service.NewIssueTemplateService(templateRepo)
 	viewSvc := service.NewViewService(viewRepo, hub)
@@ -302,8 +302,10 @@ func main() {
 
 	// Global middleware
 	e.Use(echomw.RequestID())
-	e.Use(mw.Recovery())
+	// Metrics wraps Recovery (Echo runs the first registered middleware
+	// outermost), so a recovered panic is still counted once as a 500.
 	e.Use(metrics.Middleware())
+	e.Use(mw.Recovery())
 	e.Use(mw.Logging())
 	e.Use(mw.CORS(cfg.FrontendURL))
 	e.Use(mw.SecureHeaders())

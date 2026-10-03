@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,6 +32,7 @@ import (
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
+	"github.com/ku/ku-backend/pkg/validate"
 )
 
 // integrationJWTSecret signs tokens for the HTTP integration environment.
@@ -132,7 +134,11 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	templateSvc := service.NewIssueTemplateService(templateRepo)
 	cycleSvc := service.NewCycleService(cycleRepo, teamRepo, hub, notifSvc)
 	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo, teamRepo, projectRepo)
-	webhookSvc := service.NewWebhookService(repository.NewWebhookRepository(db), integrationJWTSecret)
+	// Receivers in these tests are loopback httptest servers, which the
+	// production delivery guard refuses; everything else stays blocked.
+	webhookSvc := service.NewWebhookService(repository.NewWebhookRepository(db), integrationJWTSecret).
+		WithAllowedAddresses(func(ip net.IP) bool { return ip.IsLoopback() || !validate.IsBlockedIP(ip) })
+	projectSvc := service.NewProjectService(projectRepo, hub)
 	hub.OnBroadcast = webhookSvc.HubListener()
 	env.webhookSvc = webhookSvc
 	sharedLinkSvc := service.NewSharedLinkService(repository.NewSharedLinkRepository(db), workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, integrationJWTSecret)
@@ -146,6 +152,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	cycleH := NewCycleHandler(cycleSvc)
 	teamStatusH := NewTeamStatusHandler(teamStatusSvc)
 	webhookH := NewWebhookHandler(webhookSvc)
+	projectH := NewProjectHandler(projectSvc)
 	sharedLinkH := NewSharedLinkHandler(sharedLinkSvc, "http://ku.test")
 	forgejoH := NewForgejoHandler(service.NewForgejoService(repository.NewForgejoRepository(db), issueRepo, teamRepo, teamStatusRepo, make([]byte, 32), hub, "http://ku.test", "", nil))
 
@@ -157,6 +164,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 		Teams:        teamRepo,
 		TeamStatuses: teamStatusRepo,
 		Projects:     projectRepo,
+		ProjectSvc:   projectSvc,
 		IssueSvc:     issueSvc,
 		CommentSvc:   commentSvc,
 		RelationSvc:  relationSvc,
@@ -212,6 +220,8 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	ws.GET("/issue-templates/:id", templateH.Get)
 	ws.PATCH("/issue-templates/:id", templateH.Update, mw.RequirePermission("issue:create"))
 	ws.DELETE("/issue-templates/:id", templateH.Delete, mw.RequirePermission("issue:create"))
+	ws.PATCH("/projects/:id", projectH.Update, mw.RequirePermission("project:manage"))
+	ws.POST("/webhooks", webhookH.Create, mw.RequirePermission("workspace:manage"))
 	ws.GET("/webhooks", webhookH.List, mw.RequirePermission("workspace:manage"))
 	ws.PATCH("/webhooks/:id", webhookH.Update, mw.RequirePermission("workspace:manage"))
 	ws.DELETE("/webhooks/:id", webhookH.Delete, mw.RequirePermission("workspace:manage"))

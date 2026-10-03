@@ -28,7 +28,14 @@
 # When main has moved past the deployed commit (another merge is queued
 # behind this run), the release is left to the newer commit's run so the
 # release commit never lands on top of undeployed code. A re-run of a run
-# whose commit was already released does nothing.
+# whose commit was already released does nothing, except when main's head is
+# still this commit's tagged release commit: then a release-API or image
+# failure after the push is resumed by re-running the job, which (re)creates
+# the release idempotently and writes the outputs again.
+#
+# A push that fails because main moved on is skipped like above; any other
+# push failure (authentication, outage, protected branch, conflicting tag)
+# fails the job.
 set -eu
 
 sha=${1:?usage: $0 <deployed-sha>}
@@ -46,8 +53,62 @@ git config --local credential.helper \
 remote=${RELEASE_REMOTE:-"https://$host/$GITHUB_REPOSITORY.git"}
 git fetch --quiet --tags --force "$remote" "+refs/heads/main:refs/remotes/release/main"
 
+# notes <previous version or empty>: the release notes for $sha.
+notes() {
+	if [ -n "$1" ]; then
+		range="v$1..$sha"
+	else
+		range=$sha
+	fi
+	log=$(git log --first-parent --format='- %s' --max-count=100 "$range" | grep -v '^- chore(release): ' || :)
+	printf 'Deployed to alpha as %s.\n\n%s\n' "$sha" "${log:-- No changes recorded.}"
+}
+
+# create_release <tag> <notes>: creates the Forgejo release; an existing one
+# counts as created, so re-runs are idempotent.
+create_release() {
+	jq -n --arg tag "$1" --arg body "$2" \
+		'{tag_name: $tag, name: $tag, body: $body, draft: false, prerelease: false}' >"${TMPDIR:-/tmp}/release-request.json"
+	code=$(curl --silent --output "${TMPDIR:-/tmp}/release-response.json" --write-out '%{http_code}' --max-time 30 \
+		--header "Authorization: token $FORGEJO_TOKEN" --header 'Content-Type: application/json' \
+		--data-binary "@${TMPDIR:-/tmp}/release-request.json" "$api/releases" || :)
+	case "$code" in
+	201) echo "Created release $1." ;;
+	409) echo "Release $1 already exists." ;;
+	*) echo "Creating release $1 failed with HTTP ${code:-000}:" >&2; cat "${TMPDIR:-/tmp}/release-response.json" >&2 2>/dev/null || :; exit 1 ;;
+	esac
+}
+
+# outputs <tag> <release commit>
+outputs() {
+	{
+		echo "version=$1"
+		echo "sha=$2"
+	} >>"$output"
+}
+
+# released_tag <commit>: prints vX.Y.Z when <commit> is the release commit of
+# $sha: its only parent is $sha, its subject is "chore(release): vX.Y.Z
+# [skip ci]", and tag vX.Y.Z points at it.
+released_tag() {
+	[ "$(git rev-parse "$1^@" 2>/dev/null)" = "$sha" ] || return 1
+	t=$(git log -1 --format=%s "$1" | sed -nE 's/^chore\(release\): (v[0-9]+\.[0-9]+\.[0-9]+) \[skip ci\]$/\1/p')
+	[ -n "$t" ] || return 1
+	[ "$(git rev-parse --verify --quiet "refs/tags/$t^{commit}")" = "$1" ] || return 1
+	echo "$t"
+}
+
 main=$(git rev-parse release/main)
 if [ "$main" != "$sha" ]; then
+	if tag=$(released_tag "$main"); then
+		# A previous attempt pushed the release commit; finish what it left.
+		echo "main is at $main, the release commit of $tag for $sha; resuming the release."
+		git checkout --quiet --detach "$main"
+		previous=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$sha" 2>/dev/null | sed 's/^v//' || :)
+		create_release "$tag" "$(notes "$previous")"
+		outputs "$tag" "$main"
+		exit 0
+	fi
 	echo "main is at $main, past the deployed $sha; the newer commit's run releases."
 	exit 0
 fi
@@ -68,14 +129,7 @@ tag="v$next"
 echo "Releasing $tag (latest tag ${latest:-none}, UI/package.json $current)."
 
 # Release notes: what landed on main since the previous release.
-if [ -n "$latest" ]; then
-	range="v$latest..$sha"
-else
-	range=$sha
-fi
-notes=$(git log --first-parent --format='- %s' --max-count=100 "$range" | grep -v '^- chore(release): ' || :)
-[ -n "$notes" ] || notes="- No changes recorded."
-notes=$(printf 'Deployed to alpha as %s.\n\n%s\n' "$sha" "$notes")
+notes=$(notes "$latest")
 
 (cd UI && npm version "$next" --no-git-tag-version --allow-same-version >/dev/null)
 # info.version is the first two-space-indented "version:" in the file.
@@ -108,26 +162,24 @@ git -c user.name='forgejo-actions[bot]' -c user.email=noreply@git.terrascale.tec
 	tag --annotate "$tag" -m "$tag"
 release_sha=$(git rev-parse HEAD)
 
-# Atomic: either main and the tag both move, or neither does (main moved
-# since the fetch; the newer run releases).
+# Atomic: either main and the tag both move, or neither does. A rejected
+# push is only a race when main has since moved past the deployed commit
+# (the newer run releases); a push whose response was lost but landed
+# continues; anything else fails the job.
 if ! git push --atomic "$remote" "HEAD:refs/heads/main" "refs/tags/$tag"; then
-	echo "main moved while releasing; the newer commit's run releases." >&2
 	git tag --delete "$tag" >/dev/null
-	exit 0
+	git fetch --quiet --tags --force "$remote" "+refs/heads/main:refs/remotes/release/main"
+	main=$(git rev-parse release/main)
+	if [ "$main" = "$release_sha" ] && [ "$(released_tag "$main" || :)" = "$tag" ]; then
+		echo "The push of $tag landed despite the error; continuing."
+	elif [ "$main" != "$sha" ] && git merge-base --is-ancestor "$sha" "$main"; then
+		echo "main moved to $main while releasing; the newer commit's run releases." >&2
+		exit 0
+	else
+		echo "Pushing $tag to main failed, and main ($main) has not moved past $sha; not a race." >&2
+		exit 1
+	fi
 fi
 
-jq -n --arg tag "$tag" --arg body "$notes" \
-	'{tag_name: $tag, name: $tag, body: $body, draft: false, prerelease: false}' >"${TMPDIR:-/tmp}/release-request.json"
-code=$(curl --silent --output "${TMPDIR:-/tmp}/release-response.json" --write-out '%{http_code}' --max-time 30 \
-	--header "Authorization: token $FORGEJO_TOKEN" --header 'Content-Type: application/json' \
-	--data-binary "@${TMPDIR:-/tmp}/release-request.json" "$api/releases")
-case "$code" in
-201) echo "Created release $tag." ;;
-409) echo "Release $tag already exists." ;;
-*) echo "Creating release $tag failed with HTTP $code:" >&2; cat "${TMPDIR:-/tmp}/release-response.json" >&2; exit 1 ;;
-esac
-
-{
-	echo "version=$tag"
-	echo "sha=$release_sha"
-} >>"$output"
+create_release "$tag" "$notes"
+outputs "$tag" "$release_sha"

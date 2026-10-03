@@ -116,19 +116,10 @@ func (s *TeamStatusService) Create(ctx context.Context, workspaceID, teamID uuid
 		IsDefault: false,
 	}
 
-	if err := s.statusRepo.Create(ctx, status); err != nil {
+	// The status and its project visibility are stored in one transaction
+	// so a failure leaves neither behind.
+	if err := s.visibilityRepo.CreateStatusWithProjects(ctx, status, projectIDs); err != nil {
 		return nil, err
-	}
-
-	// Set project visibility if project IDs are provided
-	for _, pid := range projectIDs {
-		existingIDs, err := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.visibilityRepo.SetVisibleStatuses(ctx, pid, append(existingIDs, status.ID)); err != nil {
-			return nil, err
-		}
 	}
 
 	return status, nil
@@ -158,42 +149,13 @@ func (s *TeamStatusService) Update(ctx context.Context, workspaceID, teamID, id 
 		status.Position = *req.Position
 	}
 
-	if err := s.statusRepo.Update(ctx, status); err != nil {
-		return nil, err
-	}
-
-	// Update project visibility if ProjectIDs is provided
+	// The status edit and the visibility replacement commit together.
+	var visibility *[]uuid.UUID
 	if req.ProjectIDs != nil {
-		// First, remove this status from all projects
-		existingProjects, err := s.visibilityRepo.ListProjectsForStatus(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		for _, pid := range existingProjects {
-			visibleIDs, err := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
-			if err != nil {
-				return nil, err
-			}
-			filtered := make([]uuid.UUID, 0, len(visibleIDs))
-			for _, sid := range visibleIDs {
-				if sid != id {
-					filtered = append(filtered, sid)
-				}
-			}
-			if err := s.visibilityRepo.SetVisibleStatuses(ctx, pid, filtered); err != nil {
-				return nil, err
-			}
-		}
-		// Then, add this status to the specified projects
-		for _, pid := range projectIDs {
-			visibleIDs, err := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
-			if err != nil {
-				return nil, err
-			}
-			if err := s.visibilityRepo.SetVisibleStatuses(ctx, pid, append(visibleIDs, id)); err != nil {
-				return nil, err
-			}
-		}
+		visibility = &projectIDs
+	}
+	if err := s.visibilityRepo.UpdateStatusWithProjects(ctx, status, visibility); err != nil {
+		return nil, err
 	}
 
 	return status, nil
