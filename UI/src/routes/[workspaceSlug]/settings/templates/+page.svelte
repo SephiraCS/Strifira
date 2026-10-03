@@ -79,14 +79,18 @@
 		}
 	}
 
+	// The confirm dialog stays open until the request finishes, then closes
+	// in the same update that removes the row so it can move focus to a
+	// surviving control.
 	async function handleDelete(id: string) {
-		pendingDelete = null;
 		try {
 			await deleteTemplate(slug, id);
 			templates = templates.filter((t) => t.id !== id);
 			appToast.success(m['settings.templates.deleted']());
 		} catch (err: any) {
 			appToast.apiError(err, m['settings.templates.failed_delete']());
+		} finally {
+			pendingDelete = null;
 		}
 	}
 

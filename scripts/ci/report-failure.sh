@@ -176,9 +176,24 @@ fi
 # open_issues: the numbers of the open issues titled exactly $title, oldest
 # first. A failed lookup fails the reporter rather than filing a duplicate.
 query=$(jq -rn --arg t "$title" '$t | @uri')
+# The search also matches other titles, so every page is read: until an
+# empty page, which also copes with a server that caps limit below 50.
 open_issues() {
-	call GET "issues?state=open&type=issues&limit=50&q=$query" >"$work/issues.json"
-	jq -r --arg t "$title" '[.[] | select(.title == $t and (.pull_request == null)) | .number] | sort[]' "$work/issues.json"
+	: >"$work/matches"
+	page=1
+	while :; do
+		call GET "issues?state=open&type=issues&limit=50&page=$page&q=$query" >"$work/issues.json"
+		count=$(jq -er 'if type == "array" then length else error("not a list") end' "$work/issues.json")
+		[ "$count" -gt 0 ] || break
+		jq -r --arg t "$title" '.[] | select(.title == $t and (.pull_request == null)) | .number' \
+			"$work/issues.json" >>"$work/matches"
+		page=$((page + 1))
+		if [ "$page" -gt 200 ]; then
+			echo "more than 199 pages of open issues match \"$title\"; giving up" >&2
+			exit 1
+		fi
+	done
+	sort -n -u "$work/matches"
 }
 
 comment() {

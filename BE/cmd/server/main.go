@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -633,19 +634,28 @@ func main() {
 		log.Info("Shutdown signal received, draining connections")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		if err := e.Shutdown(shutdownCtx); err != nil {
-			log.WithError(err).Warn("graceful shutdown did not complete")
-		}
-		// Echo's Shutdown neither closes nor waits for hijacked WebSockets:
-		// close them (StatusGoingAway) and let their handlers clean up.
-		if err := hub.Shutdown(shutdownCtx); err != nil {
-			log.WithError(err).Warn("websocket shutdown did not complete")
-		}
-		// Finish queued webhook deliveries (including those triggered by the
-		// requests drained above) within the same deadline.
-		if err := webhookSvc.Close(shutdownCtx); err != nil {
-			log.WithError(err).Warn("webhook delivery queue did not drain")
-		}
+		// One shared deadline, concurrent work: a stalled HTTP request (e.g. a
+		// slow download) must not eat the grace period of the WebSockets.
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			if err := e.Shutdown(shutdownCtx); err != nil {
+				log.WithError(err).Warn("graceful shutdown did not complete")
+			}
+			// Webhook deliveries are flushed after HTTP draining so events
+			// from the requests drained above are still delivered.
+			if err := webhookSvc.Close(shutdownCtx); err != nil {
+				log.WithError(err).Warn("webhook delivery queue did not drain")
+			}
+		})
+		wg.Go(func() {
+			// Echo's Shutdown neither closes nor waits for hijacked
+			// WebSockets: close them (StatusGoingAway) and let their
+			// handlers clean up.
+			if err := hub.Shutdown(shutdownCtx); err != nil {
+				log.WithError(err).Warn("websocket shutdown did not complete")
+			}
+		})
+		wg.Wait()
 	}
 }
 

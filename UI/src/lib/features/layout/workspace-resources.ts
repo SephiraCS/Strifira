@@ -16,13 +16,15 @@ import type { WorkspaceMember } from '$lib/types/workspace';
  * result. When the layout has no request for the workspace (or it failed),
  * the page fetches directly, so callers always get data.
  *
- * A finished result is only reused while the realtime connection could have
- * told us it changed. Once the workspace's websocket fails or drops, events
- * are lost: every entry is dropped, and until the socket is back, finished
- * results are never reused (requests still in flight are shared). Results
- * fetched during the outage stay unreusable after recovery; the layout reloads
- * everything when the socket reconnects. Results older than MAX_AGE_MS are not
- * reused either, so a missed event cannot leave pages stale forever.
+ * A finished result is only reused if the workspace's websocket was open for
+ * the whole time since the request started, so any change to it would have
+ * emitted a refresh. The backend does not replay events, so a result fetched
+ * before the socket first opened, or while it was down, may already be stale:
+ * it is never reused once finished (requests still in flight are shared), and
+ * when the socket opens the layout reloads every such collection (see
+ * `takeUnsubscribedWorkspaceResources`). A drop clears every entry. Results
+ * older than MAX_AGE_MS are not reused either, so a missed event cannot leave
+ * pages stale forever.
  */
 type Resources = {
 	teams: Team[];
@@ -46,17 +48,16 @@ type SharedRequest = {
 	request: Promise<unknown>;
 	/** When the request resolved; null while it is in flight. */
 	settledAt: number | null;
-	/** Started while the websocket was down, so changes may have been missed. */
+	/** Started while the websocket was not open, so changes may have been missed. */
 	startedOffline: boolean;
 };
 
 let currentSlug: string | null = null;
-// Workspaces whose websocket has failed or dropped and not yet reopened. The
-// socket may report before the layout calls resetWorkspaceResources, so this
-// is kept per workspace. Before its first attempt settles a workspace counts
-// as online.
-const offlineWorkspaces = new Set<string>();
-const isOffline = () => currentSlug !== null && offlineWorkspaces.has(currentSlug);
+// Workspaces whose websocket is open. The socket may open before the layout
+// calls resetWorkspaceResources, so this is kept per workspace. Until its
+// socket first opens a workspace counts as offline.
+const connectedWorkspaces = new Set<string>();
+const isOffline = () => currentSlug === null || !connectedWorkspaces.has(currentSlug);
 const requests = new Map<ResourceName, SharedRequest>();
 
 // A refresh (an API mutation or a realtime event) makes the shared result
@@ -84,12 +85,12 @@ if (typeof window !== 'undefined') {
 	window.addEventListener('ws:disconnected', (event) => {
 		const workspaceSlug = eventWorkspace(event);
 		if (!workspaceSlug) return;
-		offlineWorkspaces.add(workspaceSlug);
+		connectedWorkspaces.delete(workspaceSlug);
 		if (workspaceSlug === currentSlug) requests.clear();
 	});
 	window.addEventListener('ws:reconnected', (event) => {
 		const workspaceSlug = eventWorkspace(event);
-		if (workspaceSlug) offlineWorkspaces.delete(workspaceSlug);
+		if (workspaceSlug) connectedWorkspaces.add(workspaceSlug);
 	});
 }
 
@@ -97,6 +98,24 @@ if (typeof window !== 'undefined') {
 export function resetWorkspaceResources(slug: string) {
 	currentSlug = slug;
 	requests.clear();
+}
+
+/** The layout closed `slug`'s socket without a disconnect event (it switched workspace). */
+export function workspaceSocketClosed(slug: string) {
+	connectedWorkspaces.delete(slug);
+}
+
+/**
+ * Called when `slug`'s socket opens: drops the shared requests that started
+ * before it was open and returns their names. Changes made between such a
+ * request's read and the subscription emitted no event, so the layout reloads
+ * these collections. Collections it has not requested yet need nothing.
+ */
+export function takeUnsubscribedWorkspaceResources(slug: string): ResourceName[] {
+	if (slug !== currentSlug) return [];
+	const stale = [...requests].filter(([, entry]) => entry.startedOffline).map(([resource]) => resource);
+	for (const resource of stale) requests.delete(resource);
+	return stale;
 }
 
 /** Record the layout's request for `resource` so pages can share it. */

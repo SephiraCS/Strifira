@@ -328,7 +328,8 @@ func TestOutgoingWebhooks_BoundedQueueDropsOverflow(t *testing.T) {
 	dispatch := func() {
 		svc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "OVR-1"})
 	}
-	droppedBefore := droppedWebhookEvents(t)
+	fullBefore := droppedWebhookEvents(t, metrics.WebhookDropQueueFull)
+	shutdownBefore := droppedWebhookEvents(t, metrics.WebhookDropShutdown)
 
 	dispatch() // taken by the only worker, which then blocks in the receiver
 	select {
@@ -338,7 +339,7 @@ func TestOutgoingWebhooks_BoundedQueueDropsOverflow(t *testing.T) {
 	}
 	dispatch() // waits in the queue
 	dispatch() // queue full: dropped
-	assert.Equal(t, droppedBefore+1, droppedWebhookEvents(t))
+	assert.Equal(t, fullBefore+1, droppedWebhookEvents(t, metrics.WebhookDropQueueFull))
 
 	unblock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -348,7 +349,7 @@ func TestOutgoingWebhooks_BoundedQueueDropsOverflow(t *testing.T) {
 
 	// After Close nothing is accepted any more.
 	dispatch()
-	assert.Equal(t, droppedBefore+2, droppedWebhookEvents(t))
+	assert.Equal(t, shutdownBefore+1, droppedWebhookEvents(t, metrics.WebhookDropShutdown))
 }
 
 // Close is bounded by its context: a stuck receiver cannot hold shutdown
@@ -377,10 +378,10 @@ func TestOutgoingWebhooks_CloseRespectsDeadline(t *testing.T) {
 	assert.Zero(t, delivered.Load())
 }
 
-func droppedWebhookEvents(t *testing.T) float64 {
+func droppedWebhookEvents(t *testing.T, reason string) float64 {
 	t.Helper()
 	var m promdto.Metric
-	require.NoError(t, metrics.WebhookEventsDropped.Write(&m))
+	require.NoError(t, metrics.WebhookEventsDropped.WithLabelValues(reason).Write(&m))
 	return m.GetCounter().GetValue()
 }
 
@@ -428,4 +429,57 @@ func TestOutgoingWebhooks_CloseAfterDeadlineDiscardsBacklog(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, failures, "only the aborted in-flight delivery is attempted")
+}
+
+// A dispatch job is bounded by one deadline for its whole fan-out: with
+// more subscribers than the queue holds and a receiver that never answers,
+// the worker gives up on the remaining subscribers at the deadline, records
+// them as dropped and returns to the queue.
+func TestOutgoingWebhooks_FanoutIsBoundedByJobDeadline(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("fanout")
+	receiver, arrived, _, release := blockingReceiver(t)
+	releaseOnce(t, release)
+	const subscribers = 6
+	for i := range subscribers {
+		registerWebhook(t, env, owner.WorkspaceID, receiver.URL, "fanout-secret-"+strconv.Itoa(i), "issue.updated")
+	}
+	hook := logtest.NewGlobal()
+	t.Cleanup(hook.Reset)
+
+	// One worker, a queue of one, a 400ms job deadline: the dispatch queues
+	// the first delivery, delivers the second itself (blocking until the
+	// deadline) and must then abandon the remaining four.
+	const jobTimeout = 400 * time.Millisecond
+	svc := service.NewWebhookService(repository.NewWebhookRepository(env.db), integrationJWTSecret).
+		WithAllowedAddresses(func(net.IP) bool { return true }).
+		WithDeliveryPool(1, 1).
+		WithJobTimeout(jobTimeout)
+	before := droppedWebhookEvents(t, metrics.WebhookDropFanoutDeadline)
+	started := time.Now()
+	svc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "FAN-1"})
+
+	require.Eventually(t, func() bool {
+		return droppedWebhookEvents(t, metrics.WebhookDropFanoutDeadline) == before+subscribers-2
+	}, 10*time.Second, 10*time.Millisecond, "the undelivered subscribers must be counted")
+	assert.Less(t, time.Since(started), jobTimeout+2*time.Second, "the job ends at its deadline, not after every subscriber")
+	var logged bool
+	for _, entry := range hook.AllEntries() {
+		if entry.Message == "webhook fan-out stopped before reaching every subscriber" {
+			logged = entry.Data["undelivered"] == subscribers-2 && entry.Data["reason"] == metrics.WebhookDropFanoutDeadline
+		}
+	}
+	assert.True(t, logged, "the dropped fan-out must be logged with its undelivered count")
+
+	// The worker is free again: it runs the queued delivery (which reaches
+	// the receiver) and the pool closes promptly.
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no delivery arrived")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, svc.Close(ctx))
+	assert.Len(t, arrived, 1, "exactly two subscribers were attempted")
 }

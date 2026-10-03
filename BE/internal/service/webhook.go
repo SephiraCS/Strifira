@@ -206,8 +206,9 @@ type webhookJob struct {
 
 // webhookPool is the bounded delivery queue and its workers.
 type webhookPool struct {
-	workers int
-	size    int
+	workers    int
+	size       int
+	jobTimeout time.Duration
 
 	start   sync.Once
 	mu      sync.RWMutex // guards closed and sends on queue
@@ -241,6 +242,12 @@ func (s *WebhookService) startPool() {
 		}
 		go func() { p.wg.Wait(); close(p.stopped) }()
 	})
+}
+
+func (s *WebhookService) closing() bool {
+	s.pool.mu.RLock()
+	defer s.pool.mu.RUnlock()
+	return s.pool.closed
 }
 
 // enqueue offers job to the queue without blocking. It reports false when
@@ -278,7 +285,10 @@ func (s *WebhookService) run(job webhookJob) {
 			log.WithField("panic", fmt.Sprintf("%v", r)).Error("webhook job panicked")
 		}
 	}()
-	ctx, cancel := context.WithTimeout(s.pool.ctx, webhookDeliveryTimeout)
+	// One deadline per job, covering the whole subscriber fan-out including
+	// any inline deliveries, so a worker always returns to the shared queue
+	// within jobTimeout.
+	ctx, cancel := context.WithTimeout(s.pool.ctx, s.jobTimeout())
 	defer cancel()
 	if job.target != nil {
 		s.deliverOne(ctx, *job.target, job.event, job.body)
@@ -289,23 +299,49 @@ func (s *WebhookService) run(job webhookJob) {
 		log.WithError(err).Warn("failed to list webhooks for dispatch")
 		return
 	}
+	targets := make([]domain.Webhook, 0, len(webhooks))
 	for _, wh := range webhooks {
-		if s.pool.ctx.Err() != nil {
-			return // shutdown timed out: drop the rest of the fan-out
+		if wh.IsActive && slices.Contains([]string(wh.Events), job.event) {
+			targets = append(targets, wh)
 		}
-		if !wh.IsActive || !slices.Contains([]string(wh.Events), job.event) {
-			continue
+	}
+	for i, wh := range targets {
+		if ctx.Err() != nil {
+			// Shutdown timed out or the job used up its deadline: the rest
+			// of the fan-out is dropped and accounted for.
+			reason := metrics.WebhookDropFanoutDeadline
+			if s.pool.ctx.Err() != nil {
+				reason = metrics.WebhookDropShutdown
+			}
+			undelivered := len(targets) - i
+			metrics.WebhookEventsDropped.WithLabelValues(reason).Add(float64(undelivered))
+			log.WithFields(log.Fields{
+				"workspace_id": job.workspaceID, "event": job.event,
+				"undelivered": undelivered, "reason": reason,
+			}).Warn("webhook fan-out stopped before reaching every subscriber")
+			return
 		}
 		delivery := webhookJob{workspaceID: job.workspaceID, event: job.event, body: job.body, target: &wh}
 		if !s.enqueue(delivery) {
 			// Fan-out overflow (or shutdown) is delivered by this worker
-			// itself: still bounded by the pool, and nothing accepted is
-			// silently lost.
-			deliveryCtx, deliveryCancel := context.WithTimeout(s.pool.ctx, webhookDeliveryTimeout)
-			s.deliverOne(deliveryCtx, wh, job.event, job.body)
-			deliveryCancel()
+			// itself, within the job's deadline.
+			s.deliverOne(ctx, wh, job.event, job.body)
 		}
 	}
+}
+
+func (s *WebhookService) jobTimeout() time.Duration {
+	if s.pool.jobTimeout > 0 {
+		return s.pool.jobTimeout
+	}
+	return webhookDeliveryTimeout
+}
+
+// WithJobTimeout overrides the per-job deadline (default 15s). It must be
+// called before the first Dispatch.
+func (s *WebhookService) WithJobTimeout(d time.Duration) *WebhookService {
+	s.pool.jobTimeout = d
+	return s
 }
 
 // Close stops accepting events and waits, until ctx ends, for queued and
@@ -359,7 +395,7 @@ func (s *WebhookService) HubListener() func(uuid.UUID, realtime.Event) {
 // X-Webhook-Signature header. It never blocks: delivery happens on the
 // bounded worker pool, independent of ctx (a finished HTTP request must not
 // abort it). When the queue is full the event is dropped, logged and
-// counted in ku_webhook_events_dropped_total.
+// counted in ku_webhook_events_dropped_total{reason="queue_full"}.
 func (s *WebhookService) Dispatch(_ context.Context, workspaceID uuid.UUID, event string, payload interface{}) {
 	body, err := json.Marshal(map[string]interface{}{
 		"event":     event,
@@ -372,7 +408,11 @@ func (s *WebhookService) Dispatch(_ context.Context, workspaceID uuid.UUID, even
 	}
 	s.startPool()
 	if !s.enqueue(webhookJob{workspaceID: workspaceID, event: event, body: body}) {
-		metrics.WebhookEventsDropped.Inc()
+		reason := metrics.WebhookDropQueueFull
+		if s.closing() {
+			reason = metrics.WebhookDropShutdown
+		}
+		metrics.WebhookEventsDropped.WithLabelValues(reason).Inc()
 		log.WithFields(log.Fields{"workspace_id": workspaceID, "event": event}).Warn("webhook queue full or closed; event dropped")
 	}
 }

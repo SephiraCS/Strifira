@@ -1,4 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
+import {
+	blockWebSocket,
+	installControllableWebSocket,
+	releaseWebSocketOpen,
+	restoreWebSocket,
+	webSocketDisconnects
+} from './support/websocket';
 
 const webhook = {
 	id: 'webhook-1',
@@ -26,7 +33,14 @@ const template = {
 	updated_at: '2026-01-01T00:00:00Z'
 };
 
-async function mockSettings(page: Page, gets: string[] = []) {
+type MockOptions = {
+	gets?: string[];
+	webhooks?: (typeof webhook)[];
+	/** Each DELETE waits for this before it is answered. */
+	deleteGate?: Promise<void>;
+};
+
+async function mockSettings(page: Page, { gets = [], webhooks = [webhook], deleteGate }: MockOptions = {}) {
 	const deletes: string[] = [];
 
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
@@ -72,12 +86,13 @@ async function mockSettings(page: Page, gets: string[] = []) {
 			});
 		}
 		if (path === '/api/workspaces/test/webhooks' && request.method() === 'GET') {
-			return route.fulfill({ json: [webhook] });
+			return route.fulfill({ json: webhooks.filter((w) => !deletes.includes(`/api/workspaces/test/webhooks/${w.id}`)) });
 		}
 		if (path === '/api/workspaces/test/issue-templates' && request.method() === 'GET') {
 			return route.fulfill({ json: [template] });
 		}
 		if (request.method() === 'DELETE') {
+			await deleteGate;
 			deletes.push(path);
 			return route.fulfill({ status: 204, body: '' });
 		}
@@ -190,73 +205,110 @@ test('the delete dialog keeps Tab inside it and returns focus to its trigger whe
 	expect(await activeLabel()).toBe(`Delete webhook ${webhook.url}`);
 });
 
-test('workspace collections reload after the realtime connection drops and reconnects', async ({ page }) => {
-	let connections = 0;
-	await page.routeWebSocket('**/api/workspaces/*/ws', (ws) => {
-		connections += 1;
-		// Drop the first connection; the layout reconnects after its backoff.
-		if (connections === 1) setTimeout(() => ws.close(), 500);
-	});
-	const gets: string[] = [];
-	await mockSettings(page, gets);
-	const projectLoads = () => gets.filter((path) => path === '/api/workspaces/test/projects').length;
-	const labelLoads = () => gets.filter((path) => path === '/api/workspaces/test/labels').length;
+test('after a confirmed delete, focus moves to the next surviving delete button, then off the emptied list', async ({
+	page
+}) => {
+	const second = { ...webhook, id: 'webhook-2', url: 'https://hooks.example.com/second' };
+	let releaseDelete = () => {};
+	const deleteGate = new Promise<void>((resolve) => (releaseDelete = resolve));
+	const deletes = await mockSettings(page, { webhooks: [webhook, second], deleteGate });
 	await page.goto('/test/settings/webhooks');
-	await expect(page.getByText(webhook.url)).toBeVisible();
 
-	// The first connection does not trigger a reload.
-	await expect.poll(() => connections).toBe(1);
-	expect(projectLoads()).toBe(1);
-	expect(labelLoads()).toBe(1);
+	const firstDelete = page.getByRole('button', { name: `Delete webhook ${webhook.url}` });
+	const secondDelete = page.getByRole('button', { name: `Delete webhook ${second.url}` });
+	await firstDelete.click();
+	const dialog = page.getByRole('alertdialog', { name: 'Delete webhook?' });
+	await dialog.getByRole('button', { name: 'Delete webhook' }).click();
 
-	// Events missed while disconnected are recovered by reloading everything.
-	await expect.poll(() => connections, { timeout: 10_000 }).toBe(2);
-	await expect.poll(projectLoads).toBe(2);
-	await expect.poll(labelLoads).toBe(2);
+	// The dialog waits for the slow DELETE; Escape cannot dismiss it meanwhile.
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeVisible();
+	releaseDelete();
+	await expect(dialog).toBeHidden();
+	await expect(firstDelete).toBeHidden();
+	expect(deletes).toEqual([`/api/workspaces/test/webhooks/${webhook.id}`]);
+	await expect(secondDelete).toBeFocused();
+
+	// With the last row gone, focus stays on a control on the page.
+	await secondDelete.press('Enter');
+	await dialog.getByRole('button', { name: 'Delete webhook' }).click();
+	await expect(dialog).toBeHidden();
+	await expect(secondDelete).toBeHidden();
+	await expect
+		.poll(() =>
+			page.evaluate(() => {
+				const active = document.activeElement;
+				return active && active !== document.body && active.isConnected ? active.tagName : null;
+			})
+		)
+		.toMatch(/^(BUTTON|A|INPUT)$/);
 });
 
-// Sends the workspace socket to an unreachable address while `__wsBlocked` is
-// set, so connection attempts fail without ever opening, and counts the
-// layout's disconnect events.
-async function installBlockableWebSocket(page: Page, blocked: boolean) {
-	await page.addInitScript((initiallyBlocked) => {
-		const w = window as unknown as { __wsBlocked: boolean; __wsDisconnects: number };
-		w.__wsBlocked = initiallyBlocked;
-		w.__wsDisconnects = 0;
-		window.addEventListener('ws:disconnected', () => (w.__wsDisconnects += 1));
-		const NativeWebSocket = window.WebSocket;
-		window.WebSocket = class extends NativeWebSocket {
-			constructor(url: string | URL, protocols?: string | string[]) {
-				super(w.__wsBlocked ? 'ws://127.0.0.1:9/' : url, protocols);
-			}
-		};
-	}, blocked);
-}
+const loads = (gets: string[], resource: string) => () =>
+	gets.filter((path) => path === `/api/workspaces/test/${resource}`).length;
 
-const disconnects = (page: Page) =>
-	page.evaluate(() => (window as unknown as { __wsDisconnects: number }).__wsDisconnects);
+test('collections read before the first socket open are reloaded when it opens', async ({ page }) => {
+	await page.routeWebSocket('**/api/workspaces/*/ws', () => {});
+	// The socket connects, but the app only sees it open once released.
+	await installControllableWebSocket(page, { holdOpen: true });
+	const gets: string[] = [];
+	await mockSettings(page, { gets });
+	const projectLoads = loads(gets, 'projects');
+	const labelLoads = loads(gets, 'labels');
+	const viewLoads = loads(gets, 'views');
+	await page.goto('/test/settings/webhooks');
+	await expect(page.getByText(webhook.url)).toBeVisible();
+	await expect.poll(projectLoads).toBe(1);
+	await expect.poll(labelLoads).toBe(1);
 
-// Lets the next attempt through and reconnects now instead of after backoff.
-async function restoreWebSocket(page: Page) {
-	await page.evaluate(() => {
-		(window as unknown as { __wsBlocked: boolean }).__wsBlocked = false;
-		window.dispatchEvent(new Event('online'));
+	// Their responses may predate a change whose event was sent before the
+	// subscription, so the shared collections are fetched again. Collections
+	// pages do not share (views) are left alone.
+	await releaseWebSocketOpen(page);
+	await expect.poll(projectLoads).toBe(2);
+	await expect.poll(labelLoads).toBe(2);
+	expect(viewLoads()).toBe(1);
+});
+
+test('workspace collections reload after the realtime connection drops and reconnects', async ({ page }) => {
+	const sockets: { close: () => Promise<void> }[] = [];
+	await page.routeWebSocket('**/api/workspaces/*/ws', (ws) => {
+		sockets.push(ws);
 	});
-}
+	await installControllableWebSocket(page, { holdOpen: true });
+	const gets: string[] = [];
+	await mockSettings(page, { gets });
+	const projectLoads = loads(gets, 'projects');
+	const labelLoads = loads(gets, 'labels');
+	await page.goto('/test/settings/webhooks');
+	await expect(page.getByText(webhook.url)).toBeVisible();
+	await expect.poll(projectLoads).toBe(1);
+
+	// The first open reloads what was read before it (see the test above).
+	await releaseWebSocketOpen(page);
+	await expect.poll(projectLoads).toBe(2);
+	await expect.poll(labelLoads).toBe(2);
+
+	// Events missed while disconnected are recovered by reloading everything.
+	await sockets[0].close();
+	await expect.poll(() => sockets.length, { timeout: 10_000 }).toBe(2);
+	await expect.poll(projectLoads).toBe(3);
+	await expect.poll(labelLoads).toBe(3);
+});
 
 test('collections reload when the first connection opens only after failed attempts', async ({ page }) => {
 	let connections = 0;
 	await page.routeWebSocket('**/api/workspaces/*/ws', () => {
 		connections += 1;
 	});
-	await installBlockableWebSocket(page, true);
+	await installControllableWebSocket(page, { blocked: true });
 	const gets: string[] = [];
-	await mockSettings(page, gets);
-	const projectLoads = () => gets.filter((path) => path === '/api/workspaces/test/projects').length;
-	const labelLoads = () => gets.filter((path) => path === '/api/workspaces/test/labels').length;
+	await mockSettings(page, { gets });
+	const projectLoads = loads(gets, 'projects');
+	const labelLoads = loads(gets, 'labels');
 	await page.goto('/test/settings/webhooks');
 	await expect(page.getByText(webhook.url)).toBeVisible();
-	await expect.poll(() => disconnects(page)).toBeGreaterThan(0);
+	await expect.poll(() => webSocketDisconnects(page)).toBeGreaterThan(0);
 	expect(projectLoads()).toBe(1);
 	expect(labelLoads()).toBe(1);
 
@@ -271,27 +323,30 @@ test('pages never reuse a collection loaded while the realtime connection is dow
 	await page.routeWebSocket('**/api/workspaces/*/ws', (ws) => {
 		sockets.push(ws);
 	});
-	await installBlockableWebSocket(page, false);
+	await installControllableWebSocket(page, { holdOpen: true });
 	const gets: string[] = [];
-	await mockSettings(page, gets);
+	await mockSettings(page, { gets });
 	// Teams are loaded by the workspace layout and, on settings pages, by the
 	// settings layout too; both reload them on a refresh.
-	const teamLoads = () => gets.filter((path) => path === '/api/workspaces/test/teams').length;
+	const teamLoads = loads(gets, 'teams');
 	await page.goto('/test/settings/webhooks');
 	await expect(page.getByText(webhook.url)).toBeVisible();
-	await expect.poll(() => sockets.length).toBe(1);
 	await expect.poll(teamLoads).toBe(2);
+	// The first open reloads teams in both layouts.
+	await releaseWebSocketOpen(page);
+	await expect.poll(() => sockets.length).toBe(1);
+	await expect.poll(teamLoads).toBe(4);
 
 	// Drop the socket and keep it down.
-	await page.evaluate(() => ((window as unknown as { __wsBlocked: boolean }).__wsBlocked = true));
+	await blockWebSocket(page);
 	await sockets[0].close();
-	await expect.poll(() => disconnects(page)).toBeGreaterThan(0);
+	await expect.poll(() => webSocketDisconnects(page)).toBeGreaterThan(0);
 
 	// A refresh during the outage reloads teams in both layouts...
 	await page.evaluate(() =>
 		window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: 'test', resources: ['teams'] } }))
 	);
-	await expect.poll(teamLoads).toBe(4);
+	await expect.poll(teamLoads).toBe(6);
 
 	// ...but the projects page fetches its own copy instead of reusing the
 	// workspace layout's.
@@ -299,10 +354,10 @@ test('pages never reuse a collection loaded while the realtime connection is dow
 	await page.keyboard.press('g');
 	await page.keyboard.press('p');
 	await expect(page).toHaveURL(/\/test\/projects$/);
-	await expect.poll(teamLoads).toBe(5);
+	await expect.poll(teamLoads).toBe(7);
 
 	// Recovery reloads everything again.
 	await restoreWebSocket(page);
 	await expect.poll(() => sockets.length).toBe(2);
-	await expect.poll(teamLoads).toBe(6);
+	await expect.poll(teamLoads).toBe(8);
 });

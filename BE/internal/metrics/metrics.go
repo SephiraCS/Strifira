@@ -16,6 +16,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// Reasons recorded by WebhookEventsDropped.
+const (
+	WebhookDropQueueFull      = "queue_full"
+	WebhookDropShutdown       = "shutdown"
+	WebhookDropFanoutDeadline = "fanout_deadline"
+)
+
 // Forgejo webhook delivery outcomes recorded by ForgejoWebhooks.
 const (
 	WebhookResultProcessed        = "processed"
@@ -44,12 +51,14 @@ var (
 		Help: "Forgejo webhook deliveries by event type and processing result.",
 	}, []string{"event", "result"})
 
-	// WebhookEventsDropped counts outgoing webhook events refused because
-	// the bounded delivery queue was full (or the server was shutting down).
-	WebhookEventsDropped = prometheus.NewCounter(prometheus.CounterOpts{
+	// WebhookEventsDropped counts outgoing webhook work that was dropped:
+	// whole events refused at Dispatch (queue_full, shutdown) and
+	// subscriber deliveries a fan-out could not reach before its deadline
+	// (fanout_deadline) or before a timed-out shutdown (shutdown).
+	WebhookEventsDropped = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "ku_webhook_events_dropped_total",
-		Help: "Outgoing webhook events dropped because the delivery queue was full or closed.",
-	})
+		Help: "Outgoing webhook events or subscriber deliveries dropped, by reason.",
+	}, []string{"reason"})
 )
 
 func init() {

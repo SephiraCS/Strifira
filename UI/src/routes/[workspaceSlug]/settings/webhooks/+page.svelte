@@ -82,14 +82,18 @@
 		}
 	}
 
+	// The confirm dialog stays open until the request finishes, then closes
+	// in the same update that removes the row so it can move focus to a
+	// surviving control.
 	async function handleDelete(id: string) {
-		pendingDelete = null;
 		try {
 			await deleteWebhook(slug, id);
 			webhooks = webhooks.filter((w) => w.id !== id);
 			appToast.success(m['settings.webhooks.deleted']());
 		} catch (err: any) {
 			appToast.apiError(err, m['settings.webhooks.failed_delete']());
+		} finally {
+			pendingDelete = null;
 		}
 	}
 

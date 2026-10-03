@@ -1,12 +1,19 @@
 package handler
 
 import (
+	"bufio"
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/labstack/echo/v4"
+
+	mw "github.com/ku/ku-backend/internal/middleware"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,4 +84,34 @@ func TestGlobalBodyLimit_ChunkedOversizedJSON(t *testing.T) {
 	status, body = chunkedRequest(t, env.server, http.MethodPost, "/api/auth/login", "",
 		[]byte(`{"email":"`+user.Email+`","password":"`+user.Password+`"}`))
 	assert.Equal(t, http.StatusOK, status, body)
+}
+
+// A client that starts a body and then withholds the rest cannot hold the
+// request open: the body read deadline fails the read and the request ends.
+func TestBodyLimit_WithheldChunkedBodyTimesOut(t *testing.T) {
+	e := echo.New()
+	e.Use(mw.BodyLimitWith(1<<20, 300*time.Millisecond))
+	e.POST("/api/test/echo-body", func(c echo.Context) error {
+		if _, err := io.ReadAll(c.Request().Body); err != nil {
+			return c.NoContent(http.StatusBadRequest)
+		}
+		return c.NoContent(http.StatusOK)
+	})
+	srv := httptest.NewServer(e)
+	t.Cleanup(srv.Close)
+
+	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	_, err = io.WriteString(conn, "POST /api/test/echo-body HTTP/1.1\r\nHost: test\r\nTransfer-Encoding: chunked\r\n"+
+		"Content-Type: application/json\r\n\r\n5\r\n{\"a\":\r\n")
+	require.NoError(t, err)
+
+	started := time.Now()
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(10*time.Second)))
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	require.NoError(t, err, "the server must answer instead of waiting for the withheld chunks")
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Less(t, time.Since(started), 5*time.Second)
 }

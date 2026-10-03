@@ -8,7 +8,12 @@
 	import { listProjects } from '$lib/api/projects';
 	import { listLabels } from '$lib/api/labels';
 	import { listMembers } from '$lib/api/members';
-	import { resetWorkspaceResources, shareWorkspaceResource } from '$lib/features/layout/workspace-resources';
+	import {
+		resetWorkspaceResources,
+		shareWorkspaceResource,
+		takeUnsubscribedWorkspaceResources,
+		workspaceSocketClosed
+	} from '$lib/features/layout/workspace-resources';
 	import { listViews } from '$lib/api/views';
 	import { listNotifications } from '$lib/api/notifications';
 	import type { Workspace } from '$lib/types/workspace';
@@ -494,14 +499,15 @@
 	let wsDestroyed = false;
 	let wsBackoffMs = 1000;
 	// Whether a socket for wsSlug failed or dropped since the last open. Events
-	// sent meanwhile are lost (including before the first open, when the
-	// initial HTTP loads may already have finished), so the next open reloads
-	// everything. A first connection that opens without a failure does not.
+	// sent meanwhile are lost, so the next open reloads everything. A first
+	// open without a failure reloads only the shared collections requested
+	// before it (see takeUnsubscribedWorkspaceResources).
 	let wsMissedEvents = false;
 	const WS_BACKOFF_MAX_MS = 15_000;
 
 	$effect(() => {
 		if (slug && slug !== wsSlug) {
+			if (wsSlug) workspaceSocketClosed(wsSlug);
 			wsSlug = slug;
 			wsMissedEvents = false;
 			wsBackoffMs = 1000;
@@ -577,7 +583,16 @@
 			// Events sent while the socket was down are lost: reload the
 			// workspace collections (and drop the shared requests pages reuse)
 			// so nothing stays stale until the next mutation.
-			if (resumed) window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: workspaceSlug } }));
+			if (resumed) {
+				window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: workspaceSlug } }));
+			} else {
+				// Collections read before the subscription may predate a change
+				// whose event was sent before it.
+				const stale = takeUnsubscribedWorkspaceResources(workspaceSlug);
+				if (stale.length > 0) {
+					window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: workspaceSlug, resources: stale } }));
+				}
+			}
 			// Share lists drift while disconnected (starts/ends/GC); refetch.
 			if (sharesState.enabled) void sharesState.load(workspaceSlug);
 		};
