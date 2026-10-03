@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -10,6 +11,7 @@ import (
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 )
 
 type IssueRelationHandler struct {
@@ -38,7 +40,11 @@ func (h *IssueRelationHandler) Create(c echo.Context) error {
 
 	rel, err := h.relationSvc.Create(c.Request().Context(), ws.ID, identifier, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		if errors.Is(err, service.ErrInvalidRelation) {
+			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		}
+		log.WithError(err).WithField("workspace_id", ws.ID).Error("issue relation creation failed")
+		return response.InternalError(c)
 	}
 
 	return response.Success(c, http.StatusCreated, toIssueRelationResponse(*rel))
@@ -67,8 +73,12 @@ func (h *IssueRelationHandler) Delete(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid relation ID")
 	}
 
-	if err := h.relationSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.relationSvc.Delete(c.Request().Context(), ws.ID, id); err != nil {
+		if errors.Is(err, service.ErrRelationNotFound) {
+			return response.NotFound(c, "Relation")
+		}
+		return response.InternalError(c)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})

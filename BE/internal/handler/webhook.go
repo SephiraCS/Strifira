@@ -1,14 +1,15 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -63,7 +64,11 @@ func (h *WebhookHandler) Update(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
-	w, err := h.webhookSvc.Update(c.Request().Context(), id, req)
+	ws := c.Get("workspace").(*domain.Workspace)
+	w, err := h.webhookSvc.Update(c.Request().Context(), ws.ID, id, req)
+	if errors.Is(err, service.ErrWebhookNotFound) {
+		return response.NotFound(c, "Webhook")
+	}
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	}
@@ -75,8 +80,12 @@ func (h *WebhookHandler) Delete(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid webhook ID")
 	}
-	if err := h.webhookSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.webhookSvc.Delete(c.Request().Context(), ws.ID, id); err != nil {
+		if errors.Is(err, service.ErrWebhookNotFound) {
+			return response.NotFound(c, "Webhook")
+		}
+		return response.InternalError(c)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
 }

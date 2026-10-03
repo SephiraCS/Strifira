@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -92,7 +94,7 @@ func (s *SharedLinkService) Create(ctx context.Context, workspaceID, userID uuid
 			return nil, fmt.Errorf("scope_id is required for team scope")
 		}
 		team, err := s.teamRepo.GetByID(ctx, *scopeID)
-		if err != nil || team == nil {
+		if err != nil || team == nil || team.WorkspaceID != workspaceID {
 			return nil, fmt.Errorf("team not found")
 		}
 	case domain.SharedLinkScopeProject:
@@ -100,7 +102,7 @@ func (s *SharedLinkService) Create(ctx context.Context, workspaceID, userID uuid
 			return nil, fmt.Errorf("scope_id is required for project scope")
 		}
 		project, err := s.projectRepo.GetByID(ctx, *scopeID)
-		if err != nil || project == nil {
+		if err != nil || project == nil || project.WorkspaceID != workspaceID {
 			return nil, fmt.Errorf("project not found")
 		}
 	case domain.SharedLinkScopeView:
@@ -108,7 +110,7 @@ func (s *SharedLinkService) Create(ctx context.Context, workspaceID, userID uuid
 			return nil, fmt.Errorf("scope_id is required for view scope")
 		}
 		view, err := s.viewRepo.GetByID(ctx, *scopeID)
-		if err != nil || view == nil {
+		if err != nil || view == nil || view.WorkspaceID != workspaceID {
 			return nil, fmt.Errorf("view not found")
 		}
 	default:
@@ -161,10 +163,25 @@ func (s *SharedLinkService) List(ctx context.Context, workspaceID uuid.UUID) ([]
 	return s.sharedLinkRepo.ListByWorkspace(ctx, workspaceID)
 }
 
-func (s *SharedLinkService) Update(ctx context.Context, id, userID uuid.UUID, req dto.UpdateSharedLinkRequest) (*domain.SharedLink, error) {
+// scopedLink loads a shared link only when it belongs to workspaceID.
+func (s *SharedLinkService) scopedLink(ctx context.Context, workspaceID, id uuid.UUID) (*domain.SharedLink, error) {
 	link, err := s.sharedLinkRepo.GetByID(ctx, id)
-	if err != nil || link == nil {
-		return nil, fmt.Errorf("shared link not found")
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSharedLinkNotFound
+		}
+		return nil, err
+	}
+	if link == nil || link.WorkspaceID != workspaceID {
+		return nil, ErrSharedLinkNotFound
+	}
+	return link, nil
+}
+
+func (s *SharedLinkService) Update(ctx context.Context, workspaceID, id, userID uuid.UUID, req dto.UpdateSharedLinkRequest) (*domain.SharedLink, error) {
+	link, err := s.scopedLink(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.IsActive != nil {
@@ -192,10 +209,9 @@ func (s *SharedLinkService) Update(ctx context.Context, id, userID uuid.UUID, re
 	return link, nil
 }
 
-func (s *SharedLinkService) Delete(ctx context.Context, id uuid.UUID) error {
-	link, err := s.sharedLinkRepo.GetByID(ctx, id)
-	if err != nil || link == nil {
-		return fmt.Errorf("shared link not found")
+func (s *SharedLinkService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
+	if _, err := s.scopedLink(ctx, workspaceID, id); err != nil {
+		return err
 	}
 	return s.sharedLinkRepo.Delete(ctx, id)
 }

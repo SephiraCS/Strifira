@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -61,4 +63,53 @@ func (r *IssueRelationRepository) GetByID(ctx context.Context, id uuid.UUID) (*d
 func (r *IssueRelationRepository) DeleteByIssues(ctx context.Context, issueID, relatedIssueID uuid.UUID, relType domain.IssueRelationType) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM issue_relations WHERE issue_id = $1 AND related_issue_id = $2 AND type = $3`, issueID, relatedIssueID, relType)
 	return err
+}
+
+// CreateWithInverse inserts rel and, when inverse is non-nil, its inverse row
+// in one transaction so a relation is never left half-created.
+func (r *IssueRelationRepository) CreateWithInverse(ctx context.Context, rel, inverse *domain.IssueRelation) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	query := `INSERT INTO issue_relations (id, issue_id, related_issue_id, type) VALUES ($1, $2, $3, $4) RETURNING created_at`
+	if err := tx.QueryRowContext(ctx, query, rel.ID, rel.IssueID, rel.RelatedIssueID, rel.Type).Scan(&rel.CreatedAt); err != nil {
+		return err
+	}
+	if inverse != nil {
+		if err := tx.QueryRowContext(ctx, query, inverse.ID, inverse.IssueID, inverse.RelatedIssueID, inverse.Type).Scan(&inverse.CreatedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// DeleteInWorkspace deletes the relation (and its inverse row, for
+// asymmetric types) in one transaction, but only when the relation's issue
+// belongs to workspaceID. It reports whether the relation was found.
+func (r *IssueRelationRepository) DeleteInWorkspace(ctx context.Context, workspaceID, id uuid.UUID) (bool, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var rel domain.IssueRelation
+	err = tx.GetContext(ctx, &rel, `SELECT r.* FROM issue_relations r JOIN issues i ON i.id = r.issue_id
+		WHERE r.id = $1 AND i.workspace_id = $2 FOR UPDATE OF r`, id, workspaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if inverse := rel.Type.Inverse(); inverse != rel.Type {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM issue_relations WHERE issue_id = $1 AND related_issue_id = $2 AND type = $3`, rel.RelatedIssueID, rel.IssueID, inverse); err != nil {
+			return false, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM issue_relations WHERE id = $1`, id); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }

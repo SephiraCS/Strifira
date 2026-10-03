@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/ku/ku-backend/internal/domain"
 )
 
 type WebhookRepository struct {
@@ -23,9 +23,11 @@ func (r *WebhookRepository) Create(ctx context.Context, w *domain.Webhook) error
 	return r.db.QueryRowContext(ctx, query, w.ID, w.WorkspaceID, w.URL, w.Secret, w.Events, w.IsActive).Scan(&w.CreatedAt, &w.UpdatedAt)
 }
 
-func (r *WebhookRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Webhook, error) {
+// GetByID returns the webhook only when it belongs to workspaceID; a foreign
+// or missing row yields (nil, nil).
+func (r *WebhookRepository) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Webhook, error) {
 	var w domain.Webhook
-	err := r.db.GetContext(ctx, &w, `SELECT * FROM webhooks WHERE id = $1`, id)
+	err := r.db.GetContext(ctx, &w, `SELECT * FROM webhooks WHERE id = $1 AND workspace_id = $2`, id, workspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -39,11 +41,17 @@ func (r *WebhookRepository) ListByWorkspace(ctx context.Context, workspaceID uui
 }
 
 func (r *WebhookRepository) Update(ctx context.Context, w *domain.Webhook) error {
-	query := `UPDATE webhooks SET url = $1, events = $2, is_active = $3, updated_at = NOW() WHERE id = $4 RETURNING updated_at`
-	return r.db.QueryRowContext(ctx, query, w.URL, w.Events, w.IsActive, w.ID).Scan(&w.UpdatedAt)
+	query := `UPDATE webhooks SET url = $1, events = $2, is_active = $3, updated_at = NOW() WHERE id = $4 AND workspace_id = $5 RETURNING updated_at`
+	return r.db.QueryRowContext(ctx, query, w.URL, w.Events, w.IsActive, w.ID, w.WorkspaceID).Scan(&w.UpdatedAt)
 }
 
-func (r *WebhookRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = $1`, id)
-	return err
+// Delete removes the webhook when it belongs to workspaceID and reports
+// whether a row was deleted.
+func (r *WebhookRepository) Delete(ctx context.Context, workspaceID, id uuid.UUID) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `DELETE FROM webhooks WHERE id = $1 AND workspace_id = $2`, id, workspaceID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
 }

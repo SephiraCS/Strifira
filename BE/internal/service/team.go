@@ -39,18 +39,12 @@ func (s *TeamService) Create(ctx context.Context, workspaceID uuid.UUID, creator
 		Icon:        req.Icon,
 	}
 
-	if err := s.teamRepo.Create(ctx, team); err != nil {
-		return nil, err
-	}
-
-	// Add creator as team member
 	member := &domain.TeamMember{
 		TeamID: team.ID,
 		UserID: creatorID,
 	}
-	_ = s.teamRepo.AddMember(ctx, member)
 
-	// Create default statuses for the new team
+	// Default statuses for the new team
 	defaultStatuses := []struct {
 		Name     string
 		Slug     string
@@ -64,8 +58,9 @@ func (s *TeamService) Create(ctx context.Context, workspaceID uuid.UUID, creator
 		{"Done", "done", domain.StatusCategoryCompleted, 4},
 		{"Cancelled", "cancelled", domain.StatusCategoryCancelled, 5},
 	}
+	statuses := make([]domain.TeamStatus, 0, len(defaultStatuses))
 	for _, ds := range defaultStatuses {
-		ts := &domain.TeamStatus{
+		statuses = append(statuses, domain.TeamStatus{
 			ID:        uuid.New(),
 			TeamID:    team.ID,
 			Name:      ds.Name,
@@ -73,8 +68,12 @@ func (s *TeamService) Create(ctx context.Context, workspaceID uuid.UUID, creator
 			Category:  ds.Category,
 			Position:  ds.Position,
 			IsDefault: true,
-		}
-		_ = s.teamStatusRepo.Create(ctx, ts)
+		})
+	}
+
+	// Team, creator membership and statuses are written atomically.
+	if err := s.teamRepo.CreateWithDefaults(ctx, team, member, statuses); err != nil {
+		return nil, err
 	}
 
 	return team, nil

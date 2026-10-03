@@ -2,29 +2,102 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"slices"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
-	"github.com/google/uuid"
 )
+
+// ErrStatusProjectNotFound means a project referenced by a status request
+// does not exist in the caller's workspace.
+var ErrStatusProjectNotFound = errors.New("project not found")
 
 type TeamStatusService struct {
 	statusRepo     repository.TeamStatusRepo
 	visibilityRepo repository.ProjectStatusVisibilityRepo
+	teamRepo       repository.TeamRepo
+	projectRepo    repository.ProjectRepo
 }
 
-func NewTeamStatusService(statusRepo repository.TeamStatusRepo, visibilityRepo repository.ProjectStatusVisibilityRepo) *TeamStatusService {
-	return &TeamStatusService{statusRepo: statusRepo, visibilityRepo: visibilityRepo}
+func NewTeamStatusService(statusRepo repository.TeamStatusRepo, visibilityRepo repository.ProjectStatusVisibilityRepo, teamRepo repository.TeamRepo, projectRepo repository.ProjectRepo) *TeamStatusService {
+	return &TeamStatusService{statusRepo: statusRepo, visibilityRepo: visibilityRepo, teamRepo: teamRepo, projectRepo: projectRepo}
 }
 
-func (s *TeamStatusService) List(ctx context.Context, teamID uuid.UUID) ([]domain.TeamStatus, error) {
+// requireTeam reports ErrTeamNotFound unless teamID is a team of workspaceID.
+func (s *TeamStatusService) requireTeam(ctx context.Context, workspaceID, teamID uuid.UUID) error {
+	team, err := s.teamRepo.GetByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team == nil || team.WorkspaceID != workspaceID {
+		return ErrTeamNotFound
+	}
+	return nil
+}
+
+// scopedStatus loads a status of a team in workspaceID. When teamID is not
+// uuid.Nil the status must also belong to that team. Foreign or missing
+// statuses report ErrTeamStatusNotFound.
+func (s *TeamStatusService) scopedStatus(ctx context.Context, workspaceID, teamID, id uuid.UUID) (*domain.TeamStatus, error) {
+	status, err := s.statusRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if status == nil || (teamID != uuid.Nil && status.TeamID != teamID) {
+		return nil, ErrTeamStatusNotFound
+	}
+	if err := s.requireTeam(ctx, workspaceID, status.TeamID); err != nil {
+		if errors.Is(err, ErrTeamNotFound) {
+			return nil, ErrTeamStatusNotFound
+		}
+		return nil, err
+	}
+	return status, nil
+}
+
+// workspaceProjects parses project IDs and verifies every one belongs to
+// workspaceID, so visibility rows are never written for foreign projects.
+func (s *TeamStatusService) workspaceProjects(ctx context.Context, workspaceID uuid.UUID, raw []string) ([]uuid.UUID, error) {
+	ids := make([]uuid.UUID, 0, len(raw))
+	for _, value := range raw {
+		pid, err := uuid.Parse(value)
+		if err != nil {
+			return nil, ErrStatusProjectNotFound
+		}
+		project, err := s.projectRepo.GetByID(ctx, pid)
+		if err != nil {
+			return nil, err
+		}
+		if project == nil || project.WorkspaceID != workspaceID {
+			return nil, ErrStatusProjectNotFound
+		}
+		if !slices.Contains(ids, pid) {
+			ids = append(ids, pid)
+		}
+	}
+	return ids, nil
+}
+
+func (s *TeamStatusService) List(ctx context.Context, workspaceID, teamID uuid.UUID) ([]domain.TeamStatus, error) {
+	if err := s.requireTeam(ctx, workspaceID, teamID); err != nil {
+		return nil, err
+	}
 	return s.statusRepo.ListByTeam(ctx, teamID)
 }
 
-func (s *TeamStatusService) Create(ctx context.Context, teamID uuid.UUID, req dto.CreateTeamStatusRequest) (*domain.TeamStatus, error) {
+func (s *TeamStatusService) Create(ctx context.Context, workspaceID, teamID uuid.UUID, req dto.CreateTeamStatusRequest) (*domain.TeamStatus, error) {
+	if err := s.requireTeam(ctx, workspaceID, teamID); err != nil {
+		return nil, err
+	}
+	projectIDs, err := s.workspaceProjects(ctx, workspaceID, req.ProjectIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	pos, err := s.statusRepo.NextPosition(ctx, teamID)
 	if err != nil {
 		return nil, err
@@ -48,25 +121,31 @@ func (s *TeamStatusService) Create(ctx context.Context, teamID uuid.UUID, req dt
 	}
 
 	// Set project visibility if project IDs are provided
-	if len(req.ProjectIDs) > 0 {
-		for _, pidStr := range req.ProjectIDs {
-			pid, err := uuid.Parse(pidStr)
-			if err != nil {
-				continue
-			}
-			existingIDs, _ := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
-			updatedIDs := append(existingIDs, status.ID)
-			_ = s.visibilityRepo.SetVisibleStatuses(ctx, pid, updatedIDs)
+	for _, pid := range projectIDs {
+		existingIDs, err := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.visibilityRepo.SetVisibleStatuses(ctx, pid, append(existingIDs, status.ID)); err != nil {
+			return nil, err
 		}
 	}
 
 	return status, nil
 }
 
-func (s *TeamStatusService) Update(ctx context.Context, id uuid.UUID, req dto.UpdateTeamStatusRequest) (*domain.TeamStatus, error) {
-	status, err := s.statusRepo.GetByID(ctx, id)
-	if err != nil || status == nil {
-		return nil, fmt.Errorf("status not found")
+// Update changes a status of a team in workspaceID. teamID may be uuid.Nil
+// when the caller only knows the workspace (MCP).
+func (s *TeamStatusService) Update(ctx context.Context, workspaceID, teamID, id uuid.UUID, req dto.UpdateTeamStatusRequest) (*domain.TeamStatus, error) {
+	status, err := s.scopedStatus(ctx, workspaceID, teamID, id)
+	if err != nil {
+		return nil, err
+	}
+	var projectIDs []uuid.UUID
+	if req.ProjectIDs != nil {
+		if projectIDs, err = s.workspaceProjects(ctx, workspaceID, *req.ProjectIDs); err != nil {
+			return nil, err
+		}
 	}
 
 	if req.Name != nil {
@@ -86,26 +165,34 @@ func (s *TeamStatusService) Update(ctx context.Context, id uuid.UUID, req dto.Up
 	// Update project visibility if ProjectIDs is provided
 	if req.ProjectIDs != nil {
 		// First, remove this status from all projects
-		existingProjects, _ := s.visibilityRepo.ListProjectsForStatus(ctx, id)
+		existingProjects, err := s.visibilityRepo.ListProjectsForStatus(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 		for _, pid := range existingProjects {
-			visibleIDs, _ := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
+			visibleIDs, err := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
+			if err != nil {
+				return nil, err
+			}
 			filtered := make([]uuid.UUID, 0, len(visibleIDs))
 			for _, sid := range visibleIDs {
 				if sid != id {
 					filtered = append(filtered, sid)
 				}
 			}
-			_ = s.visibilityRepo.SetVisibleStatuses(ctx, pid, filtered)
+			if err := s.visibilityRepo.SetVisibleStatuses(ctx, pid, filtered); err != nil {
+				return nil, err
+			}
 		}
 		// Then, add this status to the specified projects
-		for _, pidStr := range *req.ProjectIDs {
-			pid, err := uuid.Parse(pidStr)
+		for _, pid := range projectIDs {
+			visibleIDs, err := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
 			if err != nil {
-				continue
+				return nil, err
 			}
-			visibleIDs, _ := s.visibilityRepo.ListVisibleStatuses(ctx, pid)
-			updatedIDs := append(visibleIDs, id)
-			_ = s.visibilityRepo.SetVisibleStatuses(ctx, pid, updatedIDs)
+			if err := s.visibilityRepo.SetVisibleStatuses(ctx, pid, append(visibleIDs, id)); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -120,13 +207,15 @@ func (s *TeamStatusService) ListProjectsForStatus(ctx context.Context, statusID 
 	return s.visibilityRepo.ListProjectsForStatus(ctx, statusID)
 }
 
-func (s *TeamStatusService) Delete(ctx context.Context, id uuid.UUID) error {
-	status, err := s.statusRepo.GetByID(ctx, id)
-	if err != nil || status == nil {
-		return fmt.Errorf("status not found")
+// Delete removes a non-default status of a team in workspaceID. teamID may
+// be uuid.Nil when the caller only knows the workspace (MCP).
+func (s *TeamStatusService) Delete(ctx context.Context, workspaceID, teamID, id uuid.UUID) error {
+	status, err := s.scopedStatus(ctx, workspaceID, teamID, id)
+	if err != nil {
+		return err
 	}
 	if status.IsDefault {
-		return fmt.Errorf("cannot delete the default status")
+		return errors.New("cannot delete the default status")
 	}
 	return s.statusRepo.Delete(ctx, id)
 }

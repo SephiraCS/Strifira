@@ -99,7 +99,7 @@ func main() {
 	templateSvc := service.NewIssueTemplateService(templateRepo)
 	viewSvc := service.NewViewService(viewRepo, hub)
 	cycleSvc := service.NewCycleService(cycleRepo, teamRepo, hub, notifSvc)
-	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo)
+	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo, teamRepo, projectRepo)
 	favSvc := service.NewFavoriteService(favRepo)
 	prefsSvc := service.NewPreferencesService(prefsRepo)
 	aiSettingsSvc := service.NewAISettingsService(aiSettingsRepo, workspaceRepo, issueRepo, crypto.DeriveKey(cfg.JWTSecret+":ai"), cfg.AIProviderNetworkPolicy)
@@ -163,6 +163,8 @@ func main() {
 	webhookRepo := repository.NewWebhookRepository(db)
 	webhookSvc := service.NewWebhookService(webhookRepo, cfg.JWTSecret)
 	webhookH := handler.NewWebhookHandler(webhookSvc)
+	// Forward issue/comment domain events to outgoing webhooks.
+	hub.OnBroadcast = webhookSvc.HubListener()
 	sharedLinkRepo := repository.NewSharedLinkRepository(db)
 	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)

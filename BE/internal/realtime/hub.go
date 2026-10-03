@@ -98,6 +98,10 @@ type Hub struct {
 	// AuthorizeSharePresence must validate the active share, workspace and
 	// presenter token. An unwired hub refuses membership.
 	AuthorizeSharePresence func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, string) bool
+	// OnBroadcast, when set, observes every workspace-wide Broadcast (never
+	// under the lock), e.g. to forward domain events to outgoing webhooks.
+	// It must not block; wire it before the hub starts serving.
+	OnBroadcast func(workspaceID uuid.UUID, event Event)
 }
 
 func NewHub() *Hub {
@@ -182,6 +186,9 @@ func (h *Hub) Unregister(client *Client) {
 
 func (h *Hub) Broadcast(workspaceID uuid.UUID, event Event) {
 	event.Timestamp = time.Now()
+	if h.OnBroadcast != nil {
+		h.OnBroadcast(workspaceID, event)
+	}
 
 	data, err := json.Marshal(event)
 	if err != nil {

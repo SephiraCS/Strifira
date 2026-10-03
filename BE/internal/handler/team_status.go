@@ -1,14 +1,15 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -20,6 +21,19 @@ func NewTeamStatusHandler(statusSvc *service.TeamStatusService) *TeamStatusHandl
 	return &TeamStatusHandler{statusSvc: statusSvc}
 }
 
+// teamStatusError maps scoped lookup failures to 404 and the rest to 400.
+func teamStatusError(c echo.Context, err error) error {
+	switch {
+	case errors.Is(err, service.ErrTeamNotFound):
+		return response.NotFound(c, "Team")
+	case errors.Is(err, service.ErrTeamStatusNotFound):
+		return response.NotFound(c, "Status")
+	case errors.Is(err, service.ErrStatusProjectNotFound):
+		return response.NotFound(c, "Project")
+	}
+	return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+}
+
 func (h *TeamStatusHandler) List(c echo.Context) error {
 	teamIDStr := c.Param("teamId")
 	teamID, err := uuid.Parse(teamIDStr)
@@ -28,7 +42,11 @@ func (h *TeamStatusHandler) List(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	statuses, err := h.statusSvc.List(ctx, teamID)
+	ws := c.Get("workspace").(*domain.Workspace)
+	statuses, err := h.statusSvc.List(ctx, ws.ID, teamID)
+	if errors.Is(err, service.ErrTeamNotFound) {
+		return response.NotFound(c, "Team")
+	}
 	if err != nil {
 		return response.InternalError(c)
 	}
@@ -74,9 +92,10 @@ func (h *TeamStatusHandler) Create(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	status, err := h.statusSvc.Create(ctx, teamID, req)
+	ws := c.Get("workspace").(*domain.Workspace)
+	status, err := h.statusSvc.Create(ctx, ws.ID, teamID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return teamStatusError(c, err)
 	}
 	resp := toTeamStatusResponse(*status)
 	if pids, _ := h.statusSvc.ListProjectsForStatus(ctx, status.ID); len(pids) > 0 {
@@ -101,10 +120,16 @@ func (h *TeamStatusHandler) Update(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid status ID")
 	}
 
-	ctx := c.Request().Context()
-	status, err := h.statusSvc.Update(ctx, id, req)
+	teamID, err := uuid.Parse(c.Param("teamId"))
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
+
+	ctx := c.Request().Context()
+	ws := c.Get("workspace").(*domain.Workspace)
+	status, err := h.statusSvc.Update(ctx, ws.ID, teamID, id, req)
+	if err != nil {
+		return teamStatusError(c, err)
 	}
 	resp := toTeamStatusResponse(*status)
 	if pids, _ := h.statusSvc.ListProjectsForStatus(ctx, status.ID); len(pids) > 0 {
@@ -124,8 +149,14 @@ func (h *TeamStatusHandler) Delete(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid status ID")
 	}
 
-	if err := h.statusSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	teamID, err := uuid.Parse(c.Param("teamId"))
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
+
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.statusSvc.Delete(c.Request().Context(), ws.ID, teamID, id); err != nil {
+		return teamStatusError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
 }

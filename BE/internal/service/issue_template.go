@@ -3,12 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
-	"github.com/google/uuid"
 )
 
 type IssueTemplateService struct {
@@ -58,18 +57,27 @@ func (s *IssueTemplateService) Create(ctx context.Context, workspaceID, creatorI
 	return tmpl, nil
 }
 
-func (s *IssueTemplateService) GetByID(ctx context.Context, id uuid.UUID) (*domain.IssueTemplate, error) {
-	return s.templateRepo.GetByID(ctx, id)
+// GetByID returns the template only when it belongs to workspaceID;
+// otherwise ErrTemplateNotFound.
+func (s *IssueTemplateService) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*domain.IssueTemplate, error) {
+	tmpl, err := s.templateRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if tmpl == nil || tmpl.WorkspaceID != workspaceID {
+		return nil, ErrTemplateNotFound
+	}
+	return tmpl, nil
 }
 
 func (s *IssueTemplateService) ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.IssueTemplate, error) {
 	return s.templateRepo.ListByWorkspace(ctx, workspaceID)
 }
 
-func (s *IssueTemplateService) Update(ctx context.Context, id uuid.UUID, req dto.UpdateIssueTemplateRequest) (*domain.IssueTemplate, error) {
-	tmpl, err := s.templateRepo.GetByID(ctx, id)
-	if err != nil || tmpl == nil {
-		return nil, fmt.Errorf("template not found")
+func (s *IssueTemplateService) Update(ctx context.Context, workspaceID, id uuid.UUID, req dto.UpdateIssueTemplateRequest) (*domain.IssueTemplate, error) {
+	tmpl, err := s.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Title != nil {
@@ -109,6 +117,9 @@ func (s *IssueTemplateService) Update(ctx context.Context, id uuid.UUID, req dto
 	return tmpl, nil
 }
 
-func (s *IssueTemplateService) Delete(ctx context.Context, id uuid.UUID) error {
+func (s *IssueTemplateService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
+	if _, err := s.GetByID(ctx, workspaceID, id); err != nil {
+		return err
+	}
 	return s.templateRepo.Delete(ctx, id)
 }

@@ -1,15 +1,16 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -91,7 +92,10 @@ func (h *SharedLinkHandler) Update(c echo.Context) error {
 		return response.Forbidden(c)
 	}
 
-	link, err := h.sharedLinkSvc.Update(c.Request().Context(), id, userID, req)
+	link, err := h.sharedLinkSvc.Update(c.Request().Context(), ws.ID, id, userID, req)
+	if errors.Is(err, service.ErrSharedLinkNotFound) {
+		return response.NotFound(c, "Shared link")
+	}
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	}
@@ -112,8 +116,11 @@ func (h *SharedLinkHandler) Delete(c echo.Context) error {
 		return response.Forbidden(c)
 	}
 
-	if err := h.sharedLinkSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	if err := h.sharedLinkSvc.Delete(c.Request().Context(), ws.ID, id); err != nil {
+		if errors.Is(err, service.ErrSharedLinkNotFound) {
+			return response.NotFound(c, "Shared link")
+		}
+		return response.InternalError(c)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
