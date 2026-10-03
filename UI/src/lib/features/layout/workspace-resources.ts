@@ -133,10 +133,19 @@ export function getWorkspaceResource<K extends ResourceName>(slug: string, resou
 		if (isOffline() || entry.startedOffline) return fetchers[resource](slug);
 	}
 	const shared = entry?.request as Promise<Resources[K]> | undefined;
-	if (!shared) return fetchers[resource](slug);
-	// Hand out a copy so a page reassigning or pushing to its list never
-	// touches the array other readers received.
-	return shared.then((data) => [...data] as Resources[K]).catch(() => fetchers[resource](slug));
+	if (!entry || !shared) return fetchers[resource](slug);
+	// A refresh, reconnect or workspace switch can invalidate the entry while
+	// it is in flight. Its response then predates that change, so the reader
+	// goes through the replacement request (or fetches) instead.
+	const isCurrent = () => slug === currentSlug && requests.get(resource) === entry;
+	return shared.then(
+		// Hand out a copy so a page reassigning or pushing to its list never
+		// touches the array other readers received.
+		(data) => (isCurrent() ? ([...data] as Resources[K]) : getWorkspaceResource(slug, resource)),
+		// A failed request has already removed its own entry (its handler was
+		// attached first); use a replacement if there is one.
+		() => (isCurrent() ? fetchers[resource](slug) : getWorkspaceResource(slug, resource))
+	);
 }
 
 export const workspaceTeams = (slug: string) => getWorkspaceResource(slug, 'teams');

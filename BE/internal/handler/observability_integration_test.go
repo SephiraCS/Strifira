@@ -339,6 +339,38 @@ func TestCycleCompleteRejectsMalformedBody(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// The completion body is optional regardless of framing: an empty chunked
+// body (unknown length) completes the cycle, while truncated JSON is still
+// rejected. No body-limit middleware runs here, so the handler itself must
+// tell the cases apart.
+func TestCycleCompleteAcceptsEmptyChunkedBody(t *testing.T) {
+	env := setupObservability(t)
+	path := "/api/workspaces/obs/teams/" + env.team.ID.String() + "/cycles/" + env.cycle.ID.String() + "/complete"
+	send := func(body string) (int, string) {
+		req, err := http.NewRequest(http.MethodPost, env.server.URL+path, io.MultiReader(strings.NewReader(body)))
+		require.NoError(t, err)
+		req.ContentLength = -1 // unknown length: sent with Transfer-Encoding: chunked
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+env.token)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw)
+	}
+
+	status, raw := send(`{"retrospective": "went well", "carry_over": tr`)
+	require.Equal(t, http.StatusBadRequest, status, raw)
+	var completedAt sql.NullTime
+	require.NoError(t, env.db.Get(&completedAt, `SELECT completed_at FROM cycles WHERE id = $1`, env.cycle.ID))
+	require.False(t, completedAt.Valid, "truncated JSON must not complete the cycle")
+
+	status, raw = send("  \n")
+	require.Equal(t, http.StatusOK, status, raw)
+	require.NoError(t, env.db.Get(&completedAt, `SELECT completed_at FROM cycles WHERE id = $1`, env.cycle.ID))
+	require.True(t, completedAt.Valid)
+}
+
 func TestWebSocketRejectsForeignOrigins(t *testing.T) {
 	env := setupObservability(t)
 	wsURL := "ws" + strings.TrimPrefix(env.server.URL, "http") + "/api/workspaces/obs/ws"

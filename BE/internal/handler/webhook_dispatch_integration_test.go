@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -381,4 +382,50 @@ func droppedWebhookEvents(t *testing.T) float64 {
 	var m promdto.Metric
 	require.NoError(t, metrics.WebhookEventsDropped.Write(&m))
 	return m.GetCounter().GetValue()
+}
+
+// A shutdown whose deadline has already passed discards the backlog: queued
+// deliveries, queued dispatches and the rest of an in-progress subscriber
+// fan-out are never run (no request, no signing, no failure log).
+func TestOutgoingWebhooks_CloseAfterDeadlineDiscardsBacklog(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("backlog")
+	receiver, arrived, delivered, release := blockingReceiver(t)
+	releaseOnce(t, release)
+	for i := range 3 {
+		registerWebhook(t, env, owner.WorkspaceID, receiver.URL, "backlog-secret-"+strconv.Itoa(i), "issue.updated")
+	}
+	hook := logtest.NewGlobal()
+	t.Cleanup(hook.Reset)
+
+	// One worker, a queue of one: the dispatch queues the first delivery,
+	// delivers the second itself (queue full) and blocks in the receiver
+	// with the third subscriber still pending in its fan-out.
+	svc := service.NewWebhookService(repository.NewWebhookRepository(env.db), integrationJWTSecret).
+		WithAllowedAddresses(func(net.IP) bool { return true }).
+		WithDeliveryPool(1, 1)
+	svc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "BL-1"})
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first delivery never arrived")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	require.ErrorIs(t, svc.Close(ctx), context.Canceled)
+
+	select {
+	case <-arrived:
+		t.Fatal("a discarded delivery reached the receiver")
+	case <-time.After(300 * time.Millisecond):
+	}
+	assert.Zero(t, delivered.Load())
+	failures := 0
+	for _, entry := range hook.AllEntries() {
+		if entry.Message == "webhook delivery failed" {
+			failures++
+		}
+	}
+	assert.Equal(t, 1, failures, "only the aborted in-flight delivery is attempted")
 }

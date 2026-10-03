@@ -65,8 +65,9 @@ reset-dev:
 #
 # Backend suites need PostgreSQL and Redis (TEST_DATABASE_URL, REDIS_URL;
 # `make dev-start-services` locally). TEST_DATABASE_URL must name a separate
-# test database (in the environment or .env); it is migrated first, and the
-# targets refuse to run without it rather than migrate DATABASE_URL.
+# test database (in the environment or .env); it is migrated first, the
+# targets refuse to run without it, and the suites run with DATABASE_URL set
+# to it, so tests that read only DATABASE_URL never touch the app database.
 #
 # The frontend suites and the live checks build into UI/build and serve on
 # fixed ports, so `test` and `test-slow` run their parts one after another
@@ -103,10 +104,10 @@ test-migrate:
 		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/ku-server" migrate up
 
 test-fast-backend: test-migrate
-	$(DOTENV) cd BE && go test $(GO_TEST_FLAGS) -skip '$(GO_SLOW_TESTS)' ./...
+	$(DOTENV) cd BE && DATABASE_URL="$$TEST_DATABASE_URL" go test $(GO_TEST_FLAGS) -skip '$(GO_SLOW_TESTS)' ./...
 
 test-slow-backend: test-migrate
-	$(DOTENV) cd BE && go test $(GO_TEST_FLAGS) -run '$(GO_SLOW_TESTS)' ./...
+	$(DOTENV) cd BE && DATABASE_URL="$$TEST_DATABASE_URL" go test $(GO_TEST_FLAGS) -run '$(GO_SLOW_TESTS)' ./...
 
 test-fast-frontend:
 	cd UI && E2E_SUITE=fast npx playwright test $(E2E_FLAGS)

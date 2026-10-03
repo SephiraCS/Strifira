@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -146,6 +149,10 @@ func (h *CycleHandler) Update(c echo.Context) error {
 	return response.Success(c, http.StatusOK, toCycleResponse(*cycle))
 }
 
+// maxCompleteCycleBodyBytes bounds the optional completion body (a
+// retrospective and a flag).
+const maxCompleteCycleBodyBytes = 1 << 20
+
 func (h *CycleHandler) Complete(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("cycleId"))
 	if err != nil {
@@ -157,10 +164,21 @@ func (h *CycleHandler) Complete(c echo.Context) error {
 	}
 
 	var req dto.CompleteCycleRequest
-	// The body is optional: an empty body binds to the zero request, but a
-	// malformed one is rejected rather than silently ignored.
-	if err := c.Bind(&req); err != nil {
+	// The body is optional: an empty (or whitespace-only) body is the zero
+	// request, whatever its declared length (a chunked empty body has an
+	// unknown ContentLength, which Echo's binder would try to decode). A
+	// malformed or truncated body is rejected rather than silently ignored.
+	raw, err := io.ReadAll(http.MaxBytesReader(c.Response(), c.Request().Body, maxCompleteCycleBodyBytes))
+	if err != nil {
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return response.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Request body too large")
+		}
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		}
 	}
 
 	cycle, carriedOver, err := h.cycleSvc.Complete(c.Request().Context(), workspaceID, teamID, id, req)

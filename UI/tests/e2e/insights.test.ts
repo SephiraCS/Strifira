@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 
 async function plottedPixels(canvas: Locator) {
 	return canvas.evaluate((element: HTMLCanvasElement) => {
@@ -54,7 +54,9 @@ async function expectPlottedChart(page: Page, name: string, minimumPixels = 100)
 	return canvas;
 }
 
-async function mockInsights(page: Page) {
+type Team = Record<string, unknown> & { id: string; name: string };
+
+async function mockInsights(page: Page, teamsHandler?: (route: Route, defaults: Team[]) => Promise<void>) {
 	const teamId = '00000000-0000-0000-0000-000000000010';
 	let scopedOverviewRequests = 0;
 	const issueListQueries: URLSearchParams[] = [];
@@ -126,24 +128,24 @@ async function mockInsights(page: Page) {
 			});
 		}
 		if (path === '/api/workspaces/test/teams') {
-			return route.fulfill({
-				json: [
-					{
-						id: teamId,
-						name: 'Engineering',
-						key: 'ENG',
-						description: null,
-						color: '#6366f1',
-						icon: 'layers',
-						triage_enabled: false,
-						parent_auto_close_enabled: false,
-						sub_issue_auto_close_enabled: false,
-						issue_copy_prompt: null,
-						created_at: '2026-01-01T00:00:00Z',
-						updated_at: '2026-01-01T00:00:00Z'
-					}
-				]
-			});
+			const defaults: Team[] = [
+				{
+					id: teamId,
+					name: 'Engineering',
+					key: 'ENG',
+					description: null,
+					color: '#6366f1',
+					icon: 'layers',
+					triage_enabled: false,
+					parent_auto_close_enabled: false,
+					sub_issue_auto_close_enabled: false,
+					issue_copy_prompt: null,
+					created_at: '2026-01-01T00:00:00Z',
+					updated_at: '2026-01-01T00:00:00Z'
+				}
+			];
+			if (teamsHandler) return teamsHandler(route, defaults);
+			return route.fulfill({ json: defaults });
 		}
 		if (path === `/api/workspaces/test/teams/${teamId}/statuses`) {
 			return route.fulfill({
@@ -423,4 +425,49 @@ test('renders the explorer on mobile', async ({ page }) => {
 	await expectPlottedChart(page, 'insights-chart');
 	await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
 	expect(chartErrors).toEqual([]);
+});
+
+test('a teams response invalidated while in flight never overwrites the refreshed list', async ({ page }) => {
+	// Teams requests are answered by the test: each waits until it is released.
+	const pending: { route: Route; release: (teams: Team[]) => Promise<void> }[] = [];
+	let defaultTeams: Team[] = [];
+	let latestTeams: Team[] | null = null;
+	let holdTeams = false;
+	// Keep the realtime connection up so finished requests are shareable.
+	await page.routeWebSocket('**/api/workspaces/*/ws', () => {});
+	await mockInsights(page, async (route, defaults) => {
+		defaultTeams = defaults;
+		if (!holdTeams) return route.fulfill({ json: latestTeams ?? defaults });
+		pending.push({ route, release: (teams) => route.fulfill({ json: teams }) });
+	});
+	await page.goto('/test/projects');
+	await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
+
+	// The layout reloads teams; that request is still pending when insights
+	// mounts and shares it.
+	holdTeams = true;
+	const refreshTeams = () =>
+		page.evaluate(() =>
+			window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: 'test', resources: ['teams'] } }))
+		);
+	await refreshTeams();
+	await expect.poll(() => pending.length).toBe(1);
+	await page.locator('body').click({ position: { x: 1, y: 1 } });
+	await page.keyboard.press('g');
+	await page.keyboard.press('a');
+	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
+
+	// A second refresh replaces it; the replacement answers with the renamed
+	// team before the original answers with the old name.
+	await refreshTeams();
+	await expect.poll(() => pending.length).toBe(2);
+	const renamed = defaultTeams.map((team) => ({ ...team, name: 'Platform' }));
+	latestTeams = renamed;
+	holdTeams = false;
+	await pending[1].release(renamed);
+	await pending[0].release(defaultTeams);
+
+	await page.getByLabel('Team scope').click();
+	await expect(page.getByRole('option', { name: 'Platform' })).toBeVisible();
+	await expect(page.getByRole('option', { name: 'Engineering' })).toHaveCount(0);
 });

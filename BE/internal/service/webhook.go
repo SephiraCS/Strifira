@@ -263,6 +263,10 @@ func (s *WebhookService) enqueue(job webhookJob) bool {
 func (s *WebhookService) worker() {
 	defer s.pool.wg.Done()
 	for job := range s.pool.queue {
+		// After a shutdown timeout the backlog is discarded, not run.
+		if s.pool.ctx.Err() != nil {
+			continue
+		}
 		s.run(job)
 	}
 }
@@ -286,6 +290,9 @@ func (s *WebhookService) run(job webhookJob) {
 		return
 	}
 	for _, wh := range webhooks {
+		if s.pool.ctx.Err() != nil {
+			return // shutdown timed out: drop the rest of the fan-out
+		}
 		if !wh.IsActive || !slices.Contains([]string(wh.Events), job.event) {
 			continue
 		}
@@ -302,8 +309,10 @@ func (s *WebhookService) run(job webhookJob) {
 }
 
 // Close stops accepting events and waits, until ctx ends, for queued and
-// in-flight jobs to finish. When ctx ends first, in-flight deliveries are
-// aborted and the remaining queue is discarded.
+// in-flight jobs to finish. When ctx ends first (or has already ended),
+// in-flight deliveries are aborted and every job still queued, including the
+// rest of a subscriber fan-out, is discarded without being run, so Close
+// returns promptly after the deadline.
 func (s *WebhookService) Close(ctx context.Context) error {
 	p := &s.pool
 	// A pool that never started must not start after Close.
@@ -320,14 +329,18 @@ func (s *WebhookService) Close(ctx context.Context) error {
 	if !started {
 		return nil
 	}
-	select {
-	case <-p.stopped:
-		return nil
-	case <-ctx.Done():
-		p.cancel()
-		<-p.stopped
-		return ctx.Err()
+	if ctx.Err() == nil {
+		select {
+		case <-p.stopped:
+			return nil
+		case <-ctx.Done():
+		}
 	}
+	// Deadline reached: abort in-flight deliveries; workers discard the
+	// remaining queue without running it.
+	p.cancel()
+	<-p.stopped
+	return ctx.Err()
 }
 
 // HubListener returns a realtime.Hub broadcast hook that forwards every
