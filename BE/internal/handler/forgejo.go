@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/metrics"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
@@ -26,7 +28,7 @@ func (h *ForgejoHandler) Status(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	status, err := h.fjSvc.GetStatus(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, status)
 }
@@ -40,7 +42,7 @@ func (h *ForgejoHandler) Connect(c echo.Context) error {
 	}
 	account, err := h.fjSvc.Connect(c.Request().Context(), ws.ID, req.InstanceURL, req.Token)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, account)
 }
@@ -49,7 +51,7 @@ func (h *ForgejoHandler) Connect(c echo.Context) error {
 func (h *ForgejoHandler) Disconnect(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	if err := h.fjSvc.Disconnect(c.Request().Context(), ws.ID); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "disconnected"})
 }
@@ -59,7 +61,7 @@ func (h *ForgejoHandler) ListRepos(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	repos, err := h.fjSvc.ListAvailableRepos(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	if repos == nil {
 		repos = []dto.ForgejoAvailableRepoResponse{}
@@ -75,7 +77,7 @@ func (h *ForgejoHandler) LinkRepos(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
 	if err := h.fjSvc.LinkRepos(c.Request().Context(), ws.ID, req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "linked"})
 }
@@ -88,7 +90,7 @@ func (h *ForgejoHandler) UnlinkRepo(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid repo ID")
 	}
 	if err := h.fjSvc.UnlinkRepo(c.Request().Context(), ws.ID, id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "unlinked"})
 }
@@ -98,7 +100,7 @@ func (h *ForgejoHandler) ListUserMappings(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	mappings, err := h.fjSvc.ListUserMappings(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, mappings)
 }
@@ -110,7 +112,7 @@ func (h *ForgejoHandler) UpdateUserMappings(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
 	if err := h.fjSvc.UpdateUserMappings(c.Request().Context(), ws.ID, req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "updated"})
 }
@@ -120,7 +122,7 @@ func (h *ForgejoHandler) ListAutoTransitions(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	transitions, err := h.fjSvc.ListAutoTransitions(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, transitions)
 }
@@ -133,7 +135,7 @@ func (h *ForgejoHandler) UpdateAutoTransitions(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
 	if err := h.fjSvc.UpdateAutoTransitions(c.Request().Context(), ws.ID, req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "updated"})
 }
@@ -144,7 +146,7 @@ func (h *ForgejoHandler) IssueForgejoActivity(c echo.Context) error {
 	identifier := c.Param("identifier")
 	activity, err := h.fjSvc.GetIssueActivity(c.Request().Context(), ws.ID, identifier)
 	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return response.ServiceErrorStatus(c, http.StatusNotFound, "NOT_FOUND", err)
 	}
 	return response.Success(c, http.StatusOK, activity)
 }
@@ -158,7 +160,7 @@ func (h *ForgejoHandler) AgentIssueLinks(c echo.Context) error {
 	}
 	activity, err := h.fjSvc.GetIssueActivity(c.Request().Context(), ws.ID, identifier)
 	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return response.ServiceErrorStatus(c, http.StatusNotFound, "NOT_FOUND", err)
 	}
 	return response.Success(c, http.StatusOK, activity)
 }
@@ -169,23 +171,54 @@ func (h *ForgejoHandler) AgentIssueLinks(c echo.Context) error {
 func (h *ForgejoHandler) HandleWebhook(c echo.Context) error {
 	signature := firstHeader(c, "X-Forgejo-Signature", "X-Gitea-Signature", "X-Gogs-Signature")
 	eventType := firstHeader(c, "X-Forgejo-Event", "X-Gitea-Event", "X-Gogs-Event")
+	deliveryID := firstHeader(c, "X-Forgejo-Delivery", "X-Gitea-Delivery", "X-Gogs-Delivery")
+	fields := log.Fields{"event": eventType, "delivery_id": deliveryID, "ip": c.RealIP()}
 
 	body, err := io.ReadAll(c.Request().Body)
 	if err != nil {
+		metrics.RecordForgejoWebhook(eventType, metrics.WebhookResultBadRequest)
+		log.WithError(err).WithFields(fields).Warn("forgejo webhook body could not be read")
 		return c.NoContent(http.StatusBadRequest)
 	}
 
 	repo, ok := h.fjSvc.VerifyWebhookSignature(c.Request().Context(), body, signature)
 	if !ok {
+		metrics.RecordForgejoWebhook(eventType, metrics.WebhookResultInvalidSignature)
+		if name := webhookRepoFullName(body); name != "" {
+			fields["repo"] = name
+		}
+		fields["signature_present"] = signature != ""
+		log.WithFields(fields).Warn("forgejo webhook signature verification failed")
 		return c.NoContent(http.StatusUnauthorized)
 	}
+	fields["repo"] = repo.FullName
 
 	if err := h.fjSvc.HandleWebhookEvent(c.Request().Context(), eventType, body, repo); err != nil {
-		log.WithError(err).WithFields(log.Fields{"event": eventType, "repo": repo.FullName}).Error("forgejo webhook processing failed")
+		metrics.RecordForgejoWebhook(eventType, metrics.WebhookResultError)
+		log.WithError(err).WithFields(fields).Error("forgejo webhook processing failed")
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
+	metrics.RecordForgejoWebhook(eventType, metrics.WebhookResultProcessed)
 	return c.NoContent(http.StatusOK)
+}
+
+// webhookRepoFullName best-effort extracts repository.full_name from an
+// unverified payload for diagnostics only; it is never trusted for routing.
+func webhookRepoFullName(body []byte) string {
+	var payload struct {
+		Repository struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	name := payload.Repository.FullName
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	return name
 }
 
 func firstHeader(c echo.Context, names ...string) string {

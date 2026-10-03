@@ -16,6 +16,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
+	echomw "github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ku/ku-backend/internal/agent"
@@ -24,16 +25,18 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/handler"
 	"github.com/ku/ku-backend/internal/mcpserver"
+	"github.com/ku/ku-backend/internal/metrics"
 	mw "github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/crypto"
+	"github.com/ku/ku-backend/pkg/safego"
 	"github.com/ku/ku-backend/pkg/storage"
 )
 
 func main() {
-	log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+	configureLogging()
 
 	// Handle CLI subcommands
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
@@ -135,7 +138,7 @@ func main() {
 	labelH := handler.NewLabelHandler(labelSvc)
 	projectH := handler.NewProjectHandler(projectSvc)
 	notifH := handler.NewNotificationHandler(notifSvc)
-	wsH := handler.NewWSHandler(hub)
+	wsH := handler.NewWSHandler(hub, handler.WebSocketOriginPatterns([]string{cfg.FrontendURL}, cfg.Environment == "development"))
 	relationH := handler.NewIssueRelationHandler(relationSvc)
 	templateH := handler.NewIssueTemplateHandler(templateSvc)
 	viewH := handler.NewViewHandler(viewSvc)
@@ -148,15 +151,17 @@ func main() {
 	devBoxRepo := repository.NewDevBoxRepository(db)
 	devBoxSvc := service.NewDevBoxService(devBoxRepo, workspaceRepo, devMachineSvc, cfg.DemoDevMachineAllowed)
 	devBoxH := handler.NewDevBoxHandler(devBoxSvc)
-	go func() {
+	safego.Go("dev box sweeper", func() {
 		for range time.Tick(15 * time.Second) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if err := devBoxSvc.SweepExpired(ctx); err != nil {
-				log.WithError(err).Warn("failed to expire dev box jobs")
-			}
-			cancel()
+			safego.Run("dev box sweep", func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := devBoxSvc.SweepExpired(ctx); err != nil {
+					log.WithError(err).Warn("failed to expire dev box jobs")
+				}
+			})
 		}
-	}()
+	})
 	analyticsRepo := repository.NewAnalyticsRepository(db)
 	analyticsH := handler.NewAnalyticsHandler(analyticsRepo)
 	systemH := handler.NewSystemHandler(cfg.SystemUpdaterURL, cfg.SystemUpdaterToken, cfg.IsSysAdmin)
@@ -170,11 +175,11 @@ func main() {
 	hub.AuthorizeSharePresence = shareSvc.AuthorizePresence
 	// Persist presenter contact so the no-source GC grace survives restarts.
 	hub.OnPresenterSeen = func(shareID uuid.UUID) {
-		go func() {
+		safego.Go("share presenter touch", func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			shareSvc.TouchPresenterSeen(ctx, shareID)
-		}()
+		})
 	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
 	store, err := storage.New(cfg.Storage)
@@ -214,11 +219,11 @@ func main() {
 	forgejoActionsH := handler.NewForgejoActionsHandler(forgejoSvc)
 	// Forgejo Actions completion webhooks trigger CI status refreshes.
 	// Reconcile open PRs every five minutes in case a delivery is missed.
-	go forgejoSvc.ReconcileWebhookEvents(context.Background())
-	go forgejoSvc.StartStatusReconciler(context.Background(), 5*time.Minute)
+	safego.Go("forgejo webhook reconcile", func() { forgejoSvc.ReconcileWebhookEvents(context.Background()) })
+	safego.Go("forgejo status reconciler", func() { forgejoSvc.StartStatusReconciler(context.Background(), 5*time.Minute) })
 
 	// Archive completed issues once at startup and then hourly.
-	go func() {
+	safego.Go("issue auto-archive", func() {
 		archive := func() {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
@@ -232,13 +237,13 @@ func main() {
 				}
 			}
 		}
-		archive()
+		safego.Run("issue auto-archive", archive)
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			archive()
+			safego.Run("issue auto-archive", archive)
 		}
-	}()
+	})
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:           mcpServerVersion(),
@@ -266,24 +271,28 @@ func main() {
 	})
 
 	// Background: clean up expired refresh tokens every hour
-	go func() {
+	safego.Go("refresh token cleanup", func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			if err := refreshRepo.DeleteExpired(context.Background()); err != nil {
-				log.WithError(err).Warn("failed to clean up expired refresh tokens")
-			} else {
-				log.Info("expired refresh tokens cleaned up")
-			}
+			safego.Run("refresh token cleanup", func() {
+				if err := refreshRepo.DeleteExpired(context.Background()); err != nil {
+					log.WithError(err).Warn("failed to clean up expired refresh tokens")
+				} else {
+					log.Info("expired refresh tokens cleaned up")
+				}
+			})
 		}
-	}()
+	})
 
 	// Echo
 	e := echo.New()
 	e.HideBanner = true
 
 	// Global middleware
+	e.Use(echomw.RequestID())
 	e.Use(mw.Recovery())
+	e.Use(metrics.Middleware())
 	e.Use(mw.Logging())
 	e.Use(mw.CORS(cfg.FrontendURL))
 	e.Use(mw.SecureHeaders())
@@ -291,6 +300,9 @@ func main() {
 	// Health
 	e.GET("/health", healthH.Health)
 	e.GET("/ready", healthH.Ready)
+	// Prometheus scrape endpoint. Deliberately outside /api: the production
+	// Caddyfiles only proxy /api/*, /health, /ready and /uploads/*.
+	e.GET("/metrics", metrics.Handler())
 
 	// OpenAPI description (public; the Scalar reference page it feeds is
 	// served by the SPA at /docs, same-origin)
