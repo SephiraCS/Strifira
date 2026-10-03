@@ -91,6 +91,7 @@ async function mockActions(
 		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
 	const failNextLogs = { count: 0 };
 	const pushRun = { ...completedRun, id: 99, event: 'push', title: 'Push checks', run_number: 40, html_url: '' };
+	const staleBranchRun = { ...pushRun, id: 98, title: 'Unrelated base branch run', head_sha: 'not-the-pr-head' };
 	const runsGate = { hold: false, waiting: 0, release: () => {} };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
 	const job = {
@@ -179,8 +180,10 @@ async function mockActions(
 			if (url.searchParams.get('ref') === 'refs/heads/ENG-1-fix') {
 				// Push workflows on the PR's source branch.
 				calls.branchLists.push(url);
+				// Forgejo filters by head_sha; a same-named base branch run is excluded.
+				const data = [pushRun, staleBranchRun].filter((run) => run.head_sha === url.searchParams.get('head_sha'));
 				return route.fulfill({
-					json: { data: second ? [] : [pushRun], total_count: 1, page: second ? 2 : 1, per_page: 20, has_more: false }
+					json: { data, total_count: data.length, page: 1, per_page: 20, has_more: false }
 				});
 			}
 			if (second) calls.runPages.push(url);
@@ -271,12 +274,17 @@ test('shows pull request workflow runs, jobs, and plain logs on the issue and ca
 	// Push workflows on the source branch show alongside pull request runs.
 	await expect(actions.getByRole('button', { name: /Push checks/ })).toBeVisible();
 	expect(calls.branchLists[0].searchParams.get('ref')).toBe('refs/heads/ENG-1-fix');
+	expect(calls.branchLists[0].searchParams.get('head_sha')).toBe('abcdef0123456789');
+	await expect(actions.getByRole('button', { name: /Unrelated base branch run/ })).toHaveCount(0);
 	// Older history loads only on request.
 	expect(calls.lists[0].searchParams.get('per_page')).toBe('20');
 	expect(calls.runPages).toEqual([]);
 	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
 	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
 	await expect(actions.getByRole('button', { name: 'Load older runs', exact: true })).toHaveCount(0);
+	const order = await actions.locator('button[aria-expanded]').allInnerTexts();
+	const index = (title: string) => order.findIndex((text) => text.includes(title));
+	expect(index('Lint sources')).toBeLessThan(index('Push checks'));
 	// Only the run with a trusted Forgejo URL links out.
 	const links = actions.getByRole('link', { name: 'Open in Forgejo' });
 	await expect(links).toHaveCount(1);

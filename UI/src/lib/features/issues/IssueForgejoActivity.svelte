@@ -250,22 +250,35 @@
 		logsFailed = false;
 	}
 
-	// A PR's runs come from pull_request workflows (refs/pull/N/head) and from
-	// push workflows on its source branch; one page holds both, newest first.
+	// A PR's runs come from pull_request workflows (refs/pull/N/head), paged
+	// newest first. Push workflows on its source branch are added only for the
+	// PR's head commit: a fork PR's branch name may also exist in the base
+	// repository, but its head commit is never pushed there.
 	async function fetchRunPage(workspaceSlug: string, pr: ForgejoPullRequest, page: number, signal: AbortSignal) {
-		const refs = [`refs/pull/${pr.number}/head`];
-		if (pr.head_branch && !pr.head_branch.startsWith('refs/')) refs.push(`refs/heads/${pr.head_branch}`);
-		const results = await Promise.all(
-			refs.map((ref) =>
-				listForgejoActionRuns(workspaceSlug, pr.repo_id, { ref, page, perPage: RUNS_PAGE_SIZE }, signal)
-			)
+		const pullRuns = listForgejoActionRuns(
+			workspaceSlug,
+			pr.repo_id,
+			{ ref: `refs/pull/${pr.number}/head`, page, perPage: RUNS_PAGE_SIZE },
+			signal
 		);
+		const branchRuns =
+			page === 1 && pr.head_branch && pr.head_sha && !pr.head_branch.startsWith('refs/')
+				? listForgejoActionRuns(
+						workspaceSlug,
+						pr.repo_id,
+						{ ref: `refs/heads/${pr.head_branch}`, headSha: pr.head_sha, perPage: RUNS_PAGE_SIZE },
+						signal
+					)
+				: null;
+		const [pull, branch] = await Promise.all([pullRuns, branchRuns]);
 		const byId = new Map<number, ForgejoActionRun>();
-		for (const result of results) for (const run of result.data ?? []) byId.set(run.id, run);
-		return {
-			data: [...byId.values()].sort((a, b) => b.id - a.id),
-			has_more: results.some((result) => result.has_more && !!result.data?.length)
-		};
+		for (const run of pull.data ?? []) byId.set(run.id, run);
+		for (const run of branch?.data ?? []) if (run.head_sha === pr.head_sha) byId.set(run.id, run);
+		return { data: [...byId.values()], has_more: pull.has_more && !!pull.data?.length };
+	}
+
+	function newestFirst(runs: ForgejoActionRun[]): ForgejoActionRun[] {
+		return [...runs].sort((a, b) => b.id - a.id);
 	}
 
 	async function loadRuns(workspaceSlug: string, pullRequests: ForgejoPullRequest[]) {
@@ -300,7 +313,7 @@
 					// Older history loaded meanwhile; the next poll refreshes every page.
 					if (runsByPullRequest[pr.id]?.version !== version) return;
 					runsByPullRequest[pr.id] = {
-						runs,
+						runs: newestFirst(runs),
 						pages,
 						hasMore,
 						loading: false,
@@ -362,7 +375,7 @@
 			const known = new Set(current.runs.map((run) => run.id));
 			runsByPullRequest[pr.id] = {
 				...current,
-				runs: [...current.runs, ...(result.data ?? []).filter((run) => !known.has(run.id))],
+				runs: newestFirst([...current.runs, ...(result.data ?? []).filter((run) => !known.has(run.id))]),
 				pages: page,
 				hasMore: result.has_more && !!result.data?.length,
 				loadingMore: false,
