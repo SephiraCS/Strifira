@@ -28,7 +28,7 @@ func (h *CycleHandler) List(c echo.Context) error {
 
 	cycles, err := h.cycleSvc.ListByTeam(c.Request().Context(), teamID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.CycleResponse, len(cycles))
@@ -65,7 +65,7 @@ func (h *CycleHandler) Create(c echo.Context) error {
 
 	cycle, err := h.cycleSvc.Create(c.Request().Context(), teamID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusCreated, toCycleResponse(*cycle))
@@ -104,7 +104,7 @@ func (h *CycleHandler) Update(c echo.Context) error {
 
 	cycle, err := h.cycleSvc.Update(c.Request().Context(), id, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, toCycleResponse(*cycle))
@@ -117,12 +117,15 @@ func (h *CycleHandler) Complete(c echo.Context) error {
 	}
 
 	var req dto.CompleteCycleRequest
-	// Bind optional JSON body; ignore errors (body may be empty)
-	_ = c.Bind(&req)
+	// The body is optional: an empty body binds to the zero request, but a
+	// malformed one is rejected rather than silently ignored.
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
 
 	cycle, carriedOver, err := h.cycleSvc.Complete(c.Request().Context(), id, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	resp := toCycleResponse(*cycle)
@@ -139,7 +142,7 @@ func (h *CycleHandler) Velocity(c echo.Context) error {
 	}
 	points, err := h.cycleSvc.GetVelocity(c.Request().Context(), teamID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, points)
 }
@@ -151,7 +154,7 @@ func (h *CycleHandler) Delete(c echo.Context) error {
 	}
 
 	if err := h.cycleSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
@@ -165,7 +168,7 @@ func (h *CycleHandler) Burndown(c echo.Context) error {
 
 	points, err := h.cycleSvc.GetBurndown(c.Request().Context(), id)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, points)

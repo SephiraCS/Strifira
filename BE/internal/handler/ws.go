@@ -3,12 +3,15 @@ package handler
 import (
 	"context"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 	"nhooyr.io/websocket"
 )
 
@@ -23,21 +26,51 @@ const (
 )
 
 type WSHandler struct {
-	hub *realtime.Hub
+	hub            *realtime.Hub
+	originPatterns []string
 }
 
-func NewWSHandler(hub *realtime.Hub) *WSHandler {
-	return &WSHandler{hub: hub}
+// NewWSHandler accepts upgrades whose Origin is the request's own host or
+// matches one of originPatterns (host[:port] globs, see
+// WebSocketOriginPatterns). Authentication rides on the access_token cookie,
+// so accepting arbitrary origins would allow cross-site WebSocket hijacking.
+func NewWSHandler(hub *realtime.Hub, originPatterns []string) *WSHandler {
+	return &WSHandler{hub: hub, originPatterns: originPatterns}
+}
+
+// WebSocketOriginPatterns derives the allowed browser origins for the
+// realtime socket from the configured frontend URL(s). Development also
+// admits any local loopback port so Vite and preview servers keep working.
+func WebSocketOriginPatterns(frontendURLs []string, development bool) []string {
+	patterns := make([]string, 0, len(frontendURLs)+3)
+	for _, raw := range frontendURLs {
+		u, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || u.Host == "" {
+			continue
+		}
+		patterns = append(patterns, u.Host)
+	}
+	if development {
+		patterns = append(patterns, "localhost:*", "127.0.0.1:*", "[::1]:*")
+	}
+	return patterns
 }
 
 func (h *WSHandler) Handle(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	userID := middleware.GetUserID(c)
 
-	conn, err := websocket.Accept(c.Response().Writer, c.Request(), &websocket.AcceptOptions{
-		OriginPatterns: []string{"*"},
+	conn, err := websocket.Accept(c.Response(), c.Request(), &websocket.AcceptOptions{
+		OriginPatterns: h.originPatterns,
 	})
 	if err != nil {
+		if c.Response().Committed {
+			// Accept already answered (403 for a rejected Origin).
+			log.WithError(err).WithFields(log.Fields{
+				"origin": c.Request().Header.Get("Origin"), "workspace_id": ws.ID,
+			}).Warn("websocket upgrade rejected")
+			return nil
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to upgrade connection"})
 	}
 
