@@ -48,12 +48,29 @@ func WebSocketOriginPatterns(frontendURLs []string, development bool) []string {
 		if err != nil || u.Host == "" {
 			continue
 		}
-		patterns = append(patterns, u.Host)
+		patterns = append(patterns, escapeOriginGlob(u.Host))
 	}
 	if development {
-		patterns = append(patterns, "localhost:*", "127.0.0.1:*", "[::1]:*")
+		// "[" and "]" are glob metacharacters: the IPv6 loopback brackets
+		// must be escaped to match literally.
+		patterns = append(patterns, "localhost:*", "127.0.0.1:*", `\[::1\]:*`)
 	}
 	return patterns
+}
+
+// escapeOriginGlob escapes the glob metacharacters of a literal host so the
+// OriginPatterns matcher (path.Match) compares it verbatim; IPv6 hosts such
+// as "[fd00::1]:8080" would otherwise be read as character classes.
+func escapeOriginGlob(host string) string {
+	var b strings.Builder
+	for _, r := range host {
+		switch r {
+		case '\\', '*', '?', '[', ']':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (h *WSHandler) Handle(c echo.Context) error {

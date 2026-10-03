@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -92,9 +93,10 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	throttleKey := strings.TrimSpace(req.Email)
 	outcome := middleware.LoginAborted
 	if h.loginThrottle != nil {
-		if !h.loginThrottle.Admit(throttleKey) {
-			log.WithFields(log.Fields{"event": "auth.login_locked", "email": req.Email, "ip": c.RealIP()}).Warn("login rejected: account temporarily locked")
-			c.Response().Header().Set("Retry-After", strconv.Itoa(int(h.loginThrottle.LockoutDuration().Seconds())))
+		if admitted, retryAfter := h.loginThrottle.Admit(throttleKey); !admitted {
+			log.WithFields(log.Fields{"event": "auth.login_locked", "email": req.Email, "ip": c.RealIP(), "retry_after": retryAfter.String()}).Warn("login rejected: account temporarily locked or attempts in flight")
+			// Round up so a client never retries before the slot frees.
+			c.Response().Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
 			return response.Error(c, http.StatusTooManyRequests, "TOO_MANY_ATTEMPTS", "Too many failed login attempts. Try again later.")
 		}
 		// Release the admitted slot on every path, including panics.

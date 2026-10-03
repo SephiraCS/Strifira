@@ -28,10 +28,12 @@
 # When main has moved past the deployed commit (another merge is queued
 # behind this run), the release is left to the newer commit's run so the
 # release commit never lands on top of undeployed code. A re-run of a run
-# whose commit was already released does nothing, except when main's head is
-# still this commit's tagged release commit: then a release-API or image
-# failure after the push is resumed by re-running the job, which (re)creates
-# the release idempotently and writes the outputs again.
+# whose commit was already released resumes it instead: when a tagged
+# release commit of this commit is on main (whether or not main has moved on
+# since), a release-API or image failure after the push is repaired by
+# re-running the job, which (re)creates the release idempotently and writes
+# the outputs again without touching main. publish-images.sh then publishes
+# that version but only moves latest when it is still the newest release.
 #
 # A push that fails because main moved on is skipped like above; any other
 # push failure (authentication, outage, protected branch, conflicting tag)
@@ -98,15 +100,27 @@ released_tag() {
 	echo "$t"
 }
 
+# release_commit: prints the release commit of $sha on main, if any.
+release_commit() {
+	git tag --list 'v[0-9]*' --contains "$sha" | while read -r t; do
+		c=$(git rev-parse --verify --quiet "refs/tags/$t^{commit}") || continue
+		[ "$(released_tag "$c" || :)" = "$t" ] || continue
+		git merge-base --is-ancestor "$c" release/main || continue
+		echo "$c"
+		break
+	done
+}
+
 main=$(git rev-parse release/main)
 if [ "$main" != "$sha" ]; then
-	if tag=$(released_tag "$main"); then
+	if release=$(release_commit) && [ -n "$release" ]; then
 		# A previous attempt pushed the release commit; finish what it left.
-		echo "main is at $main, the release commit of $tag for $sha; resuming the release."
-		git checkout --quiet --detach "$main"
+		tag=$(released_tag "$release")
+		echo "$sha was released as $tag ($release); resuming the release (main is at $main)."
+		git checkout --quiet --detach "$release"
 		previous=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$sha" 2>/dev/null | sed 's/^v//' || :)
 		create_release "$tag" "$(notes "$previous")"
-		outputs "$tag" "$main"
+		outputs "$tag" "$release"
 		exit 0
 	fi
 	echo "main is at $main, past the deployed $sha; the newer commit's run releases."

@@ -22,8 +22,12 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+# Pull requests run per ref and yield to newer pushes. Tag and nightly runs
+# share one queue, so two of them never file the same failure issue at once
+# (Forgejo has no job-level concurrency; scripts/ci/report-failure.sh also
+# folds a duplicate opened in a race into the oldest issue).
 concurrency:
-  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.event_name == 'pull_request' && forgejo.ref || 'scheduled' }}
   cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
 
 # Trivy and podman are baked into the ts-builder job image; the Trivy

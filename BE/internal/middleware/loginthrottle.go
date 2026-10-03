@@ -47,15 +47,16 @@ func NewLoginThrottle(maxFailures int, lockoutTime time.Duration) *LoginThrottle
 	return lt
 }
 
-// LockoutDuration is how long an email stays locked after maxFailures.
-func (lt *LoginThrottle) LockoutDuration() time.Duration {
-	return lt.lockoutTime
-}
+// InFlightRetryAfter is the retry hint when an email is refused only
+// because attempts already in flight occupy every remaining slot: they
+// settle within moments (a success frees all of them).
+const InFlightRetryAfter = 2 * time.Second
 
-// Admit reserves an attempt slot for email. It returns false when the email
-// is locked or when the attempts already in flight could, if they all fail,
-// reach the lockout. Every admitted attempt must be finished with Finish.
-func (lt *LoginThrottle) Admit(email string) bool {
+// Admit reserves an attempt slot for email. When it refuses, retryAfter is
+// the remaining lockout for a locked email, or InFlightRetryAfter when the
+// attempts already in flight could, if they all failed, reach the lockout.
+// Every admitted attempt must be finished with Finish.
+func (lt *LoginThrottle) Admit(email string) (admitted bool, retryAfter time.Duration) {
 	lt.mu.Lock()
 	defer lt.mu.Unlock()
 
@@ -65,18 +66,18 @@ func (lt *LoginThrottle) Admit(email string) bool {
 		lt.attempts[email] = a
 	}
 	if a.failures >= lt.maxFailures {
-		if time.Since(a.lockedAt) < lt.lockoutTime {
-			return false
+		if remaining := lt.lockoutTime - time.Since(a.lockedAt); remaining > 0 {
+			return false, remaining
 		}
 		// The lockout expired: start counting afresh.
 		a.failures = 0
 		a.lockedAt = time.Time{}
 	}
 	if a.failures+a.inFlight >= lt.maxFailures {
-		return false
+		return false, InFlightRetryAfter
 	}
 	a.inFlight++
-	return true
+	return true, 0
 }
 
 // Finish releases the slot reserved by Admit and records its outcome. It

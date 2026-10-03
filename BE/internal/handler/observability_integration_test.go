@@ -51,6 +51,7 @@ const (
 // a disposable, fully migrated database. Requests go through a real HTTP
 // listener.
 type obsEnv struct {
+	hub       *realtime.Hub
 	db        *sqlx.DB
 	server    *httptest.Server
 	token     string
@@ -63,7 +64,20 @@ type obsEnv struct {
 	hookKey   []byte
 }
 
+// obsOptions vary the server wiring between tests.
+type obsOptions struct {
+	// development admits loopback WebSocket origins.
+	development bool
+	// frontendURLs are extra configured frontend origins.
+	frontendURLs []string
+}
+
 func setupObservability(t *testing.T) *obsEnv {
+	t.Helper()
+	return setupObservabilityWith(t, obsOptions{})
+}
+
+func setupObservabilityWith(t *testing.T, opts obsOptions) *obsEnv {
 	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -140,7 +154,7 @@ func setupObservability(t *testing.T) *obsEnv {
 
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	cycleH := handler.NewCycleHandler(cycleSvc)
-	wsH := handler.NewWSHandler(hub, handler.WebSocketOriginPatterns([]string{obsFrontendURL}, false))
+	wsH := handler.NewWSHandler(hub, handler.WebSocketOriginPatterns(append([]string{obsFrontendURL}, opts.frontendURLs...), opts.development))
 	forgejoH := handler.NewForgejoHandler(forgejoSvc)
 
 	e := echo.New()
@@ -166,7 +180,7 @@ func setupObservability(t *testing.T) *obsEnv {
 
 	token, err := jwtpkg.GenerateAccessToken(user.ID, obsJWTSecret)
 	require.NoError(t, err)
-	return &obsEnv{db: db, server: server, token: token, userID: user.ID, workspace: ws, team: team,
+	return &obsEnv{hub: hub, db: db, server: server, token: token, userID: user.ID, workspace: ws, team: team,
 		label: label, cycle: cycle, repoFull: "org/obs", hookKey: []byte(secret)}
 }
 
@@ -440,4 +454,70 @@ func counterValue(text, sample string) float64 {
 		}
 	}
 	return 0
+}
+
+// wsDial opens the realtime socket of the obs workspace with origin.
+func (env *obsEnv) wsDial(t *testing.T, origin string) (*websocket.Conn, *http.Response, error) {
+	t.Helper()
+	wsURL := "ws" + strings.TrimPrefix(env.server.URL, "http") + "/api/workspaces/obs/ws"
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+env.token)
+	if origin != "" {
+		header.Set("Origin", origin)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: header})
+}
+
+// IPv6 hosts contain glob metacharacters ("[", "]"); both the development
+// loopback rule and configured IPv6 frontends must match them literally.
+func TestWebSocketAcceptsIPv6LoopbackAndFrontendOrigins(t *testing.T) {
+	env := setupObservabilityWith(t, obsOptions{development: true, frontendURLs: []string{"http://[fd00::7]:8080"}})
+
+	for _, origin := range []string{"http://[::1]:5173", "http://[fd00::7]:8080", "http://localhost:5173"} {
+		conn, _, err := env.wsDial(t, origin)
+		require.NoError(t, err, origin)
+		conn.Close(websocket.StatusNormalClosure, "")
+	}
+	for _, origin := range []string{"http://[fd00::8]:8080", "http://:8080", "https://evil.example.test"} {
+		_, resp, err := env.wsDial(t, origin)
+		require.Error(t, err, origin)
+		require.NotNil(t, resp, origin)
+		require.Equal(t, http.StatusForbidden, resp.StatusCode, origin)
+	}
+}
+
+// Hijacked WebSockets are not drained by the HTTP server's Shutdown; the
+// hub closes them with StatusGoingAway and waits for their cleanup.
+func TestHubShutdownClosesLiveWebSockets(t *testing.T) {
+	env := setupObservability(t)
+	conn, _, err := env.wsDial(t, obsFrontendURL)
+	require.NoError(t, err)
+	readErr := make(chan error, 1)
+	go func() {
+		for {
+			if _, _, err := conn.Read(context.Background()); err != nil {
+				readErr <- err
+				return
+			}
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, env.hub.Shutdown(ctx), "every handler must unregister before the deadline")
+
+	select {
+	case err := <-readErr:
+		require.Equal(t, websocket.StatusGoingAway, websocket.CloseStatus(err))
+	case <-time.After(5 * time.Second):
+		t.Fatal("the client was not disconnected")
+	}
+
+	// Sockets opened while shutting down are closed straight away too.
+	late, _, err := env.wsDial(t, obsFrontendURL)
+	require.NoError(t, err)
+	_, _, err = late.Read(context.Background())
+	require.Equal(t, websocket.StatusGoingAway, websocket.CloseStatus(err))
 }

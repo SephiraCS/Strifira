@@ -636,6 +636,16 @@ func main() {
 		if err := e.Shutdown(shutdownCtx); err != nil {
 			log.WithError(err).Warn("graceful shutdown did not complete")
 		}
+		// Echo's Shutdown neither closes nor waits for hijacked WebSockets:
+		// close them (StatusGoingAway) and let their handlers clean up.
+		if err := hub.Shutdown(shutdownCtx); err != nil {
+			log.WithError(err).Warn("websocket shutdown did not complete")
+		}
+		// Finish queued webhook deliveries (including those triggered by the
+		// requests drained above) within the same deadline.
+		if err := webhookSvc.Close(shutdownCtx); err != nil {
+			log.WithError(err).Warn("webhook delivery queue did not drain")
+		}
 	}
 }
 

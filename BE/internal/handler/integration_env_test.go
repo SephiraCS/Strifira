@@ -138,6 +138,11 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	// production delivery guard refuses; everything else stays blocked.
 	webhookSvc := service.NewWebhookService(repository.NewWebhookRepository(db), integrationJWTSecret).
 		WithAllowedAddresses(func(ip net.IP) bool { return ip.IsLoopback() || !validate.IsBlockedIP(ip) })
+	env.t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = webhookSvc.Close(ctx)
+	})
 	projectSvc := service.NewProjectService(projectRepo, hub)
 	hub.OnBroadcast = webhookSvc.HubListener()
 	env.webhookSvc = webhookSvc

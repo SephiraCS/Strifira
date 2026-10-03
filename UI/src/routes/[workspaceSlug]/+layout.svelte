@@ -493,15 +493,17 @@
 	let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let wsDestroyed = false;
 	let wsBackoffMs = 1000;
-	// Whether the socket for wsSlug has opened before: a later open is a
-	// reconnect, after which everything that changed while offline is reloaded.
-	let wsHasConnected = false;
+	// Whether a socket for wsSlug failed or dropped since the last open. Events
+	// sent meanwhile are lost (including before the first open, when the
+	// initial HTTP loads may already have finished), so the next open reloads
+	// everything. A first connection that opens without a failure does not.
+	let wsMissedEvents = false;
 	const WS_BACKOFF_MAX_MS = 15_000;
 
 	$effect(() => {
 		if (slug && slug !== wsSlug) {
 			wsSlug = slug;
-			wsHasConnected = false;
+			wsMissedEvents = false;
 			wsBackoffMs = 1000;
 			clearWebSocketReconnect();
 			ws_conn?.close();
@@ -569,8 +571,8 @@
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
 			wsBackoffMs = 1000;
-			const resumed = wsHasConnected;
-			wsHasConnected = true;
+			const resumed = wsMissedEvents;
+			wsMissedEvents = false;
 			window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug } }));
 			// Events sent while the socket was down are lost: reload the
 			// workspace collections (and drop the shared requests pages reuse)
@@ -588,6 +590,7 @@
 			if (socket !== ws_conn) return;
 			// Only reconnect if still on the same workspace
 			if (!wsDestroyed && wsSlug === workspaceSlug) {
+				wsMissedEvents = true;
 				window.dispatchEvent(new CustomEvent('ws:disconnected', { detail: { workspaceSlug } }));
 				scheduleWebSocketReconnect(workspaceSlug);
 			}

@@ -9,8 +9,11 @@ on:
   # that includes the deploy: `fj actions dispatch ci.yml main`.
   workflow_dispatch:
 
+# Runs on main publish release images (the Release job), so they share the
+# ku-publish-images queue with build.yml's tag publications: two publishers
+# never interleave their pushes (Forgejo has no job-level concurrency).
 concurrency:
-  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  group: ${{ forgejo.ref == 'refs/heads/main' && 'ku-publish-images' || format('ku-{0}-{1}', forgejo.workflow, forgejo.ref) }}
   cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
 
 # Go, Node.js, and the Playwright browsers are baked into the ts-builder job

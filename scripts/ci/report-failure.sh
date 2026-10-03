@@ -83,7 +83,7 @@ redact() {
 			-e 's/\x1b\[[0-9;]*[A-Za-z]//g' \
 			-e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
 			-e 's#([A-Za-z][A-Za-z0-9+.-]*://)[^/@ :]+:[^/@ ]+@#\1[REDACTED]@#g' \
-			-e 's/((authorization|proxy-authorization)[":]*[[:space:]]*(token|bearer|basic)?[[:space:]]*)[^[:space:]"]+/\1[REDACTED]/Ig' \
+			-e 's/((authorization|proxy-authorization)["'\'']?[[:space:]]*[:=]?[[:space:]]*["'\'']?((token|bearer|basic|digest|negotiate)[[:space:]]+)?)[^[:space:]"'\'',}]+/\1[REDACTED]/Ig' \
 			-e 's/(bearer[[:space:]]+)[A-Za-z0-9._~+\/=-]{8,}/\1[REDACTED]/Ig' \
 			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/Ig' \
 			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)'\''[^'\'']*'\''/\1[REDACTED]/Ig' \
@@ -173,17 +173,46 @@ if [ "${REPORT_DRY_RUN:-}" = 1 ]; then
 	exit 0
 fi
 
-# Reuse the open issue with exactly this title, if there is one.
+# open_issues: the numbers of the open issues titled exactly $title, oldest
+# first. A failed lookup fails the reporter rather than filing a duplicate.
 query=$(jq -rn --arg t "$title" '$t | @uri')
-number=$(call GET "issues?state=open&type=issues&limit=50&q=$query" |
-	jq -r --arg t "$title" '[.[] | select(.title == $t and (.pull_request == null))][0].number // empty')
+open_issues() {
+	call GET "issues?state=open&type=issues&limit=50&q=$query" >"$work/issues.json"
+	jq -r --arg t "$title" '[.[] | select(.title == $t and (.pull_request == null)) | .number] | sort[]' "$work/issues.json"
+}
 
-if [ -n "$number" ]; then
+comment() {
 	jq -n --rawfile body "$work/body.md" '{body: ("Failed again.\n\n" + $body)}' >"$work/request.json"
+	call POST "issues/$1/comments" "$work/request.json" >/dev/null
+	echo "Commented on issue #$1: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/$1"
+}
+
+# Reuse the open issue with exactly this title, if there is one.
+open_issues >"$work/open"
+number=$(head -n 1 "$work/open")
+if [ -n "$number" ]; then
+	comment "$number"
+	exit 0
+fi
+
+jq -n --arg title "$title" --rawfile body "$work/body.md" '{title: $title, body: $body}' >"$work/request.json"
+call POST issues "$work/request.json" >"$work/created.json"
+number=$(jq -r '.number // empty' "$work/created.json")
+[ -n "$number" ] || { echo "the created issue has no number: $(cat "$work/created.json")" >&2; exit 1; }
+echo "Opened issue #$number: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/$number"
+
+# Lookup and creation are not atomic: two failing runs with the same title
+# (say a tag scan and the nightly one) can both open an issue. Every racer
+# then sees the same oldest open issue, so the newer ones fold their report
+# into it and close themselves, leaving exactly one open issue.
+open_issues >"$work/open"
+oldest=$(head -n 1 "$work/open")
+if [ -n "$oldest" ] && [ "$oldest" != "$number" ]; then
+	comment "$oldest"
+	jq -n --arg body "Duplicate of #$oldest, which another run opened at the same time; the report was added there." \
+		'{body: $body}' >"$work/request.json"
 	call POST "issues/$number/comments" "$work/request.json" >/dev/null
-	echo "Commented on issue #$number: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/$number"
-else
-	jq -n --arg title "$title" --rawfile body "$work/body.md" '{title: $title, body: $body}' >"$work/request.json"
-	number=$(call POST issues "$work/request.json" | jq -r .number)
-	echo "Opened issue #$number: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/$number"
+	echo '{"state":"closed"}' >"$work/request.json"
+	call PATCH "issues/$number" "$work/request.json" >/dev/null
+	echo "Closed #$number as a duplicate of #$oldest."
 fi

@@ -6,8 +6,11 @@
 # Builds ku (root Dockerfile), ku-api (BE) and ku-web (UI) from the checked
 # out commit, tagged <version> and latest under IMAGE_PREFIX, with the commit
 # baked into the API as its /health version. --push logs in to REGISTRY with
-# FORGEJO_ACTOR/FORGEJO_TOKEN and pushes both tags. Needs a podman store
-# (scripts/ci/podman-store.sh create) for the job.
+# FORGEJO_ACTOR/FORGEJO_TOKEN and pushes <version>, plus latest when
+# <version> is the newest vX.Y.Z tag (so a repaired or late older release
+# never moves latest back). Needs a podman store
+# (scripts/ci/podman-store.sh create) and the repository's tags for the job;
+# the jobs that publish serialize on the ku-publish-images concurrency group.
 set -euo pipefail
 
 version=${1:?usage: $0 <version> [--push]}
@@ -47,9 +50,22 @@ done
 [ "$status" = 0 ] || exit "$status"
 
 if [ "$push" = --push ]; then
+	# latest only moves forward: to a vX.Y.Z version at least as new as every
+	# vX.Y.Z tag in the checkout (which needs all tags). Older or other
+	# versions publish their version tag only.
+	newest=$(git tag --list 'v[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1 || :)
+	latest=false
+	if [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] &&
+		[ "$(printf '%s\n%s\n' "${newest:-0.0.0}" "${version#v}" | sort -V | tail -n 1)" = "${version#v}" ]; then
+		latest=true
+	else
+		echo "Not moving latest: $version is not a vX.Y.Z release at least as new as v${newest:-0.0.0}."
+	fi
 	for name in ku ku-api ku-web; do
 		image="${IMAGE_PREFIX}/${name}"
-		podman push "${image}:latest"
 		podman push "${image}:${version}"
+		if [ "$latest" = true ]; then
+			podman push "${image}:latest"
+		fi
 	done
 fi

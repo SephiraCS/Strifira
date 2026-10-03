@@ -2,9 +2,12 @@ package handler
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -104,4 +107,48 @@ func TestLogin_ConcurrentAttemptsCannotExceedLimit(t *testing.T) {
 	// The admitted guesses all failed, so the account is now locked.
 	assert.Equal(t, http.StatusTooManyRequests, env.do(http.MethodPost, "/api/auth/login", "",
 		map[string]string{"email": victim.Email, "password": victim.Password}).Code)
+}
+
+// Retry-After tells the truth about why a login was refused: a few seconds
+// when attempts already in flight hold every slot (they settle quickly), the
+// remaining lockout once the account is really locked.
+func TestLogin_RetryAfterReflectsDenialReason(t *testing.T) {
+	env := newIntegrationEnv(t)
+	victim := env.seedOwner("retry")
+	login := func(password string) *httptest.ResponseRecorder {
+		return env.do(http.MethodPost, "/api/auth/login", "", map[string]string{"email": victim.Email, "password": password})
+	}
+
+	// Hold every admitted attempt inside its user lookup.
+	lock, err := env.db.Beginx()
+	require.NoError(t, err)
+	_, err = lock.Exec(`LOCK TABLE users IN ACCESS EXCLUSIVE MODE`)
+	require.NoError(t, err)
+	var wg sync.WaitGroup
+	for range integrationLoginMaxFailures {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			assert.Equal(t, http.StatusUnauthorized, login("Wrong-Pass-1").Code)
+		}()
+	}
+	require.Eventually(t, func() bool {
+		var waiting int
+		_ = env.db.Get(&waiting, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`)
+		return waiting == integrationLoginMaxFailures
+	}, 10*time.Second, 10*time.Millisecond, "every slot must be held by an in-flight attempt")
+
+	rec := login(victim.Password)
+	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+	assert.Equal(t, "2", rec.Header().Get("Retry-After"), "in-flight saturation only needs a short wait")
+
+	require.NoError(t, lock.Rollback())
+	wg.Wait()
+
+	rec = login(victim.Password)
+	assert.Equal(t, http.StatusTooManyRequests, rec.Code)
+	retryAfter, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	require.NoError(t, err)
+	assert.Greater(t, retryAfter, 50, "a locked account waits out the remaining lockout")
+	assert.LessOrEqual(t, retryAfter, int(integrationLoginLockout.Seconds()))
 }

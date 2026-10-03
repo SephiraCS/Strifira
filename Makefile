@@ -64,17 +64,27 @@ reset-dev:
 #   Live checks scripts/check-*-live.* are slow.
 #
 # Backend suites need PostgreSQL and Redis (TEST_DATABASE_URL, REDIS_URL;
-# `make dev-start-services` locally); TEST_DATABASE_URL is migrated first.
+# `make dev-start-services` locally). TEST_DATABASE_URL must name a separate
+# test database (in the environment or .env); it is migrated first, and the
+# targets refuse to run without it rather than migrate DATABASE_URL.
+#
+# The frontend suites and the live checks build into UI/build and serve on
+# fixed ports, so `test` and `test-slow` run their parts one after another
+# even under `make -j` (each part still uses -j inside).
 # Locally prefix with `nice -n 19` (AGENTS.md); CI runs them as is.
 GO_SLOW_TESTS := ^TestSlow
 GO_TEST_FLAGS ?= -race -count=1 -timeout=6m
 E2E_FLAGS ?=
 
-test: test-fast test-slow
+test:
+	$(MAKE) test-fast
+	$(MAKE) test-slow
 
 test-fast: test-fast-backend test-fast-frontend
 
-test-slow: test-slow-backend test-slow-frontend test-slow-live
+test-slow:
+	$(MAKE) test-slow-backend test-slow-frontend
+	$(MAKE) test-slow-live
 
 # Formatting and vet; not a test suite, but CI runs both next to test-fast.
 check-backend: check-gofmt
@@ -85,9 +95,12 @@ check-gofmt:
 		echo "gofmt needed (run gofmt -w . in BE):"; echo "$$unformatted"; exit 1; fi
 
 test-migrate:
+	@$(DOTENV) if [ -z "$${TEST_DATABASE_URL:-}" ]; then \
+		echo "TEST_DATABASE_URL is not set: point it at a test database (never the app database)." >&2; exit 1; \
+	fi
 	$(DOTENV) cd BE && dir=$$(mktemp -d) && trap 'rm -rf "$$dir"' EXIT && \
 		go build -o "$$dir/ku-server" ./cmd/server && \
-		DATABASE_URL="$${TEST_DATABASE_URL:-$$DATABASE_URL}" "$$dir/ku-server" migrate up
+		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/ku-server" migrate up
 
 test-fast-backend: test-migrate
 	$(DOTENV) cd BE && go test $(GO_TEST_FLAGS) -skip '$(GO_SLOW_TESTS)' ./...

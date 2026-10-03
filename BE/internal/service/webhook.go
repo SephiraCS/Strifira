@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/metrics"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/pkg/crypto"
@@ -30,6 +31,7 @@ type WebhookService struct {
 	webhookRepo   *repository.WebhookRepository
 	encryptionKey []byte
 	httpClient    *http.Client
+	pool          webhookPool
 }
 
 // ErrInvalidWebhookURL marks a webhook URL rejected by validation; its
@@ -181,9 +183,152 @@ var webhookEvents = map[string]bool{
 	"project.updated": true,
 }
 
-// webhookDeliveryTimeout bounds one dispatch (listing subscribers plus every
-// delivery). Dispatch runs detached from the triggering request.
+// webhookDeliveryTimeout bounds one job (listing the subscribers of an
+// event, or one delivery). Jobs run detached from the triggering request.
 const webhookDeliveryTimeout = 15 * time.Second
+
+// Default delivery pool: a fixed number of workers drain a bounded queue so
+// webhook traffic (slow receivers, bursts of broadcasts) cannot grow
+// goroutines, sockets or database queries without limit.
+const (
+	defaultWebhookWorkers   = 8
+	defaultWebhookQueueSize = 1024
+)
+
+// webhookJob is either a dispatch (find the subscribers of event in a
+// workspace) or, when target is set, one delivery to that webhook.
+type webhookJob struct {
+	workspaceID uuid.UUID
+	event       string
+	body        []byte
+	target      *domain.Webhook
+}
+
+// webhookPool is the bounded delivery queue and its workers.
+type webhookPool struct {
+	workers int
+	size    int
+
+	start   sync.Once
+	mu      sync.RWMutex // guards closed and sends on queue
+	closed  bool
+	queue   chan webhookJob
+	wg      sync.WaitGroup
+	ctx     context.Context
+	cancel  context.CancelFunc
+	stopped chan struct{}
+}
+
+// WithDeliveryPool sizes the delivery worker pool and queue. It must be
+// called before the first Dispatch.
+func (s *WebhookService) WithDeliveryPool(workers, queueSize int) *WebhookService {
+	s.pool.workers, s.pool.size = max(workers, 1), max(queueSize, 1)
+	return s
+}
+
+func (s *WebhookService) startPool() {
+	p := &s.pool
+	p.start.Do(func() {
+		if p.workers == 0 {
+			p.workers, p.size = defaultWebhookWorkers, defaultWebhookQueueSize
+		}
+		p.queue = make(chan webhookJob, p.size)
+		p.ctx, p.cancel = context.WithCancel(context.Background())
+		p.stopped = make(chan struct{})
+		for range p.workers {
+			p.wg.Add(1)
+			go s.worker()
+		}
+		go func() { p.wg.Wait(); close(p.stopped) }()
+	})
+}
+
+// enqueue offers job to the queue without blocking. It reports false when
+// the queue is full or the pool is shutting down.
+func (s *WebhookService) enqueue(job webhookJob) bool {
+	p := &s.pool
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.closed {
+		return false
+	}
+	select {
+	case p.queue <- job:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *WebhookService) worker() {
+	defer s.pool.wg.Done()
+	for job := range s.pool.queue {
+		s.run(job)
+	}
+}
+
+func (s *WebhookService) run(job webhookJob) {
+	// A panicking delivery must not take a worker (or the process) down.
+	defer func() {
+		if r := recover(); r != nil {
+			log.WithField("panic", fmt.Sprintf("%v", r)).Error("webhook job panicked")
+		}
+	}()
+	ctx, cancel := context.WithTimeout(s.pool.ctx, webhookDeliveryTimeout)
+	defer cancel()
+	if job.target != nil {
+		s.deliverOne(ctx, *job.target, job.event, job.body)
+		return
+	}
+	webhooks, err := s.webhookRepo.ListByWorkspace(ctx, job.workspaceID)
+	if err != nil {
+		log.WithError(err).Warn("failed to list webhooks for dispatch")
+		return
+	}
+	for _, wh := range webhooks {
+		if !wh.IsActive || !slices.Contains([]string(wh.Events), job.event) {
+			continue
+		}
+		delivery := webhookJob{workspaceID: job.workspaceID, event: job.event, body: job.body, target: &wh}
+		if !s.enqueue(delivery) {
+			// Fan-out overflow (or shutdown) is delivered by this worker
+			// itself: still bounded by the pool, and nothing accepted is
+			// silently lost.
+			deliveryCtx, deliveryCancel := context.WithTimeout(s.pool.ctx, webhookDeliveryTimeout)
+			s.deliverOne(deliveryCtx, wh, job.event, job.body)
+			deliveryCancel()
+		}
+	}
+}
+
+// Close stops accepting events and waits, until ctx ends, for queued and
+// in-flight jobs to finish. When ctx ends first, in-flight deliveries are
+// aborted and the remaining queue is discarded.
+func (s *WebhookService) Close(ctx context.Context) error {
+	p := &s.pool
+	// A pool that never started must not start after Close.
+	p.start.Do(func() {})
+	p.mu.Lock()
+	started := p.queue != nil
+	if !p.closed {
+		p.closed = true
+		if started {
+			close(p.queue)
+		}
+	}
+	p.mu.Unlock()
+	if !started {
+		return nil
+	}
+	select {
+	case <-p.stopped:
+		return nil
+	case <-ctx.Done():
+		p.cancel()
+		<-p.stopped
+		return ctx.Err()
+	}
+}
 
 // HubListener returns a realtime.Hub broadcast hook that forwards every
 // webhook-eligible workspace event to the subscribed outgoing webhooks.
@@ -196,12 +341,13 @@ func (s *WebhookService) HubListener() func(uuid.UUID, realtime.Event) {
 	}
 }
 
-// Dispatch sends an event payload to all active webhooks subscribed to the event.
-// Payloads are signed with HMAC-SHA256 in the X-Webhook-Signature header.
-// It returns immediately: delivery happens in the background on a context
-// detached from ctx's cancellation (a finished HTTP request must not abort
-// it) and bounded by webhookDeliveryTimeout.
-func (s *WebhookService) Dispatch(ctx context.Context, workspaceID uuid.UUID, event string, payload interface{}) {
+// Dispatch queues an event for every active webhook of the workspace
+// subscribed to it. Payloads are signed with HMAC-SHA256 in the
+// X-Webhook-Signature header. It never blocks: delivery happens on the
+// bounded worker pool, independent of ctx (a finished HTTP request must not
+// abort it). When the queue is full the event is dropped, logged and
+// counted in ku_webhook_events_dropped_total.
+func (s *WebhookService) Dispatch(_ context.Context, workspaceID uuid.UUID, event string, payload interface{}) {
 	body, err := json.Marshal(map[string]interface{}{
 		"event":     event,
 		"payload":   payload,
@@ -211,56 +357,39 @@ func (s *WebhookService) Dispatch(ctx context.Context, workspaceID uuid.UUID, ev
 		log.WithError(err).Warn("failed to marshal webhook payload")
 		return
 	}
-	detached := context.WithoutCancel(ctx)
-	go s.deliver(detached, workspaceID, event, body)
+	s.startPool()
+	if !s.enqueue(webhookJob{workspaceID: workspaceID, event: event, body: body}) {
+		metrics.WebhookEventsDropped.Inc()
+		log.WithFields(log.Fields{"workspace_id": workspaceID, "event": event}).Warn("webhook queue full or closed; event dropped")
+	}
 }
 
-func (s *WebhookService) deliver(parent context.Context, workspaceID uuid.UUID, event string, body []byte) {
-	ctx, cancel := context.WithTimeout(parent, webhookDeliveryTimeout)
-	defer cancel()
-
-	webhooks, err := s.webhookRepo.ListByWorkspace(ctx, workspaceID)
+func (s *WebhookService) deliverOne(ctx context.Context, w domain.Webhook, event string, body []byte) {
+	secret, err := crypto.Decrypt(w.Secret, s.encryptionKey)
 	if err != nil {
-		log.WithError(err).Warn("failed to list webhooks for dispatch")
+		log.WithError(err).WithField("webhook_id", w.ID).Warn("failed to decrypt webhook secret")
 		return
 	}
 
-	var wg sync.WaitGroup
-	for _, wh := range webhooks {
-		if !wh.IsActive || !slices.Contains([]string(wh.Events), event) {
-			continue
-		}
-		wg.Add(1)
-		go func(w domain.Webhook) {
-			defer wg.Done()
-			secret, err := crypto.Decrypt(w.Secret, s.encryptionKey)
-			if err != nil {
-				log.WithError(err).WithField("webhook_id", w.ID).Warn("failed to decrypt webhook secret")
-				return
-			}
+	signature := crypto.HMACSha256(body, secret)
 
-			signature := crypto.HMACSha256(body, secret)
-
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.URL, bytes.NewReader(body))
-			if err != nil {
-				log.WithError(err).WithField("webhook_id", w.ID).Warn("failed to create webhook request")
-				return
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Webhook-Signature", "sha256="+signature)
-			req.Header.Set("X-Webhook-Event", event)
-
-			resp, err := s.httpClient.Do(req)
-			if err != nil {
-				log.WithError(err).WithField("webhook_id", w.ID).Warn("webhook delivery failed")
-				return
-			}
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
-			resp.Body.Close()
-			if resp.StatusCode >= 300 {
-				log.WithFields(log.Fields{"webhook_id": w.ID, "status": resp.StatusCode}).Warn("webhook delivery rejected")
-			}
-		}(wh)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.URL, bytes.NewReader(body))
+	if err != nil {
+		log.WithError(err).WithField("webhook_id", w.ID).Warn("failed to create webhook request")
+		return
 	}
-	wg.Wait()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Webhook-Signature", "sha256="+signature)
+	req.Header.Set("X-Webhook-Event", event)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		log.WithError(err).WithField("webhook_id", w.ID).Warn("webhook delivery failed")
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64*1024))
+	resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		log.WithFields(log.Fields{"webhook_id": w.ID, "status": resp.StatusCode}).Warn("webhook delivery rejected")
+	}
 }

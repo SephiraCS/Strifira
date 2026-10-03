@@ -18,8 +18,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+# Tag publications queue with ci.yml's runs on main, which publish the
+# automatic releases, so two publishers never interleave their pushes.
 concurrency:
-  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  group: ${{ forgejo.event_name == 'push' && 'ku-publish-images' || format('ku-{0}-{1}', forgejo.workflow, forgejo.ref) }}
   cancel-in-progress: false
 
 env:
@@ -45,6 +47,8 @@ jobs:
           github-server-url: https://git.terrascale.tech
           ref: ${{ forgejo.sha }}
           persist-credentials: false
+          # All tags: publish-images.sh only moves latest for the newest one.
+          fetch-depth: 0
 
       - name: Extract version
         id: version

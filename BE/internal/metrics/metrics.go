@@ -43,6 +43,13 @@ var (
 		Name: "ku_forgejo_webhook_deliveries_total",
 		Help: "Forgejo webhook deliveries by event type and processing result.",
 	}, []string{"event", "result"})
+
+	// WebhookEventsDropped counts outgoing webhook events refused because
+	// the bounded delivery queue was full (or the server was shutting down).
+	WebhookEventsDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ku_webhook_events_dropped_total",
+		Help: "Outgoing webhook events dropped because the delivery queue was full or closed.",
+	})
 )
 
 func init() {
@@ -52,6 +59,7 @@ func init() {
 		httpRequests,
 		httpDuration,
 		ForgejoWebhooks,
+		WebhookEventsDropped,
 	)
 }
 

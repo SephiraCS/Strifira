@@ -89,3 +89,35 @@ func TestIssueRelationDelete_OppositeRowsConcurrently(t *testing.T) {
 		require.Zero(t, env.count(`SELECT count(*) FROM issue_relations`), "the whole pair is removed")
 	}
 }
+
+// "A blocking B" and "B blocked_by A" describe the same pair. Created at the
+// same time, one must win and the other get a 409, never a deadlock (500).
+func TestIssueRelationCreate_OppositeDirectionsConcurrently(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("relrace")
+	teamID := env.createTeam(owner, "Rel", "REL")
+	first := env.createIssue(owner, teamID, "first")
+	second := env.createIssue(owner, teamID, "second")
+
+	for range 10 {
+		codes := make([]int, 2)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, req := range []struct{ from, to, kind string }{{first, second, "blocking"}, {second, first, "blocked_by"}} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				codes[i] = env.do(http.MethodPost, owner.path("/issues/"+req.from+"/relations"), owner.Token,
+					map[string]any{"related_identifier": req.to, "type": req.kind}).Code
+			}()
+		}
+		close(start)
+		wg.Wait()
+
+		assert.ElementsMatch(t, []int{http.StatusCreated, http.StatusConflict}, codes)
+		require.Equal(t, 2, env.count(`SELECT count(*) FROM issue_relations`), "exactly one pair is stored")
+		_, err := env.db.Exec(`DELETE FROM issue_relations`)
+		require.NoError(t, err)
+	}
+}

@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,11 +17,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	promdto "github.com/prometheus/client_model/go"
 	logtest "github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/metrics"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/crypto"
@@ -274,4 +278,107 @@ func TestWebhookUpdate_SeparatesValidationFromStorageErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
 	assert.NotContains(t, rec.Body.String(), "webhooks", "storage details must not leak")
+}
+
+// blockingReceiver counts deliveries and holds each one until released.
+func blockingReceiver(t *testing.T) (*httptest.Server, chan struct{}, *atomic.Int32, chan struct{}) {
+	t.Helper()
+	arrived := make(chan struct{}, 16)
+	release := make(chan struct{})
+	var delivered atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Consuming the body lets the server notice an aborted client.
+		_, _ = io.ReadAll(r.Body)
+		arrived <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		delivered.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, arrived, &delivered, release
+}
+
+// releaseOnce closes release exactly once.
+func releaseOnce(t *testing.T, release chan struct{}) func() {
+	t.Helper()
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock) // runs before the receiver's Close
+	return unblock
+}
+
+// The delivery pool is bounded: with every worker busy and the queue full,
+// further events are dropped (logged and counted) instead of piling up
+// goroutines; Close then drains what was accepted.
+func TestOutgoingWebhooks_BoundedQueueDropsOverflow(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("overload")
+	receiver, arrived, delivered, release := blockingReceiver(t)
+	unblock := releaseOnce(t, release)
+	registerWebhook(t, env, owner.WorkspaceID, receiver.URL, "overload-secret", "issue.updated")
+
+	svc := service.NewWebhookService(repository.NewWebhookRepository(env.db), integrationJWTSecret).
+		WithAllowedAddresses(func(net.IP) bool { return true }).
+		WithDeliveryPool(1, 1)
+	dispatch := func() {
+		svc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "OVR-1"})
+	}
+	droppedBefore := droppedWebhookEvents(t)
+
+	dispatch() // taken by the only worker, which then blocks in the receiver
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first delivery never arrived")
+	}
+	dispatch() // waits in the queue
+	dispatch() // queue full: dropped
+	assert.Equal(t, droppedBefore+1, droppedWebhookEvents(t))
+
+	unblock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	require.NoError(t, svc.Close(ctx), "accepted events drain on Close")
+	assert.Equal(t, int32(2), delivered.Load(), "both accepted events are delivered, the dropped one is not")
+
+	// After Close nothing is accepted any more.
+	dispatch()
+	assert.Equal(t, droppedBefore+2, droppedWebhookEvents(t))
+}
+
+// Close is bounded by its context: a stuck receiver cannot hold shutdown
+// past the deadline; the in-flight delivery is aborted.
+func TestOutgoingWebhooks_CloseRespectsDeadline(t *testing.T) {
+	env := newIntegrationEnv(t)
+	owner := env.seedOwner("deadline")
+	receiver, arrived, delivered, release := blockingReceiver(t)
+	releaseOnce(t, release)
+	registerWebhook(t, env, owner.WorkspaceID, receiver.URL, "deadline-secret", "issue.updated")
+
+	svc := service.NewWebhookService(repository.NewWebhookRepository(env.db), integrationJWTSecret).
+		WithAllowedAddresses(func(net.IP) bool { return true })
+	svc.Dispatch(context.Background(), owner.WorkspaceID, "issue.updated", map[string]string{"identifier": "DL-1"})
+	select {
+	case <-arrived:
+	case <-time.After(10 * time.Second):
+		t.Fatal("delivery never arrived")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	assert.ErrorIs(t, svc.Close(ctx), context.DeadlineExceeded)
+	assert.Less(t, time.Since(started), 5*time.Second)
+	assert.Zero(t, delivered.Load())
+}
+
+func droppedWebhookEvents(t *testing.T) float64 {
+	t.Helper()
+	var m promdto.Metric
+	require.NoError(t, metrics.WebhookEventsDropped.Write(&m))
+	return m.GetCounter().GetValue()
 }

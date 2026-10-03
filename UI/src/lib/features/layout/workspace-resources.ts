@@ -16,11 +16,13 @@ import type { WorkspaceMember } from '$lib/types/workspace';
  * result. When the layout has no request for the workspace (or it failed),
  * the page fetches directly, so callers always get data.
  *
- * A shared result is only trusted while the realtime connection could have
- * told us it changed: it is dropped when the websocket disconnects (events
- * sent while offline are lost; the layout reloads everything once it
- * reconnects) and once it is older than MAX_AGE_MS, so a missed event cannot
- * leave pages stale forever.
+ * A finished result is only reused while the realtime connection could have
+ * told us it changed. Once the workspace's websocket fails or drops, events
+ * are lost: every entry is dropped, and until the socket is back, finished
+ * results are never reused (requests still in flight are shared). Results
+ * fetched during the outage stay unreusable after recovery; the layout reloads
+ * everything when the socket reconnects. Results older than MAX_AGE_MS are not
+ * reused either, so a missed event cannot leave pages stale forever.
  */
 type Resources = {
 	teams: Team[];
@@ -44,9 +46,17 @@ type SharedRequest = {
 	request: Promise<unknown>;
 	/** When the request resolved; null while it is in flight. */
 	settledAt: number | null;
+	/** Started while the websocket was down, so changes may have been missed. */
+	startedOffline: boolean;
 };
 
 let currentSlug: string | null = null;
+// Workspaces whose websocket has failed or dropped and not yet reopened. The
+// socket may report before the layout calls resetWorkspaceResources, so this
+// is kept per workspace. Before its first attempt settles a workspace counts
+// as online.
+const offlineWorkspaces = new Set<string>();
+const isOffline = () => currentSlug !== null && offlineWorkspaces.has(currentSlug);
 const requests = new Map<ResourceName, SharedRequest>();
 
 // A refresh (an API mutation or a realtime event) makes the shared result
@@ -69,9 +79,17 @@ if (typeof window !== 'undefined') {
 			}
 		}
 	});
+	const eventWorkspace = (event: Event) =>
+		(event as CustomEvent<{ workspaceSlug?: string } | null>).detail?.workspaceSlug ?? currentSlug;
 	window.addEventListener('ws:disconnected', (event) => {
-		const workspaceSlug = (event as CustomEvent<{ workspaceSlug?: string } | null>).detail?.workspaceSlug;
-		if (!workspaceSlug || workspaceSlug === currentSlug) requests.clear();
+		const workspaceSlug = eventWorkspace(event);
+		if (!workspaceSlug) return;
+		offlineWorkspaces.add(workspaceSlug);
+		if (workspaceSlug === currentSlug) requests.clear();
+	});
+	window.addEventListener('ws:reconnected', (event) => {
+		const workspaceSlug = eventWorkspace(event);
+		if (workspaceSlug) offlineWorkspaces.delete(workspaceSlug);
 	});
 }
 
@@ -88,7 +106,7 @@ export function shareWorkspaceResource<K extends ResourceName>(
 	request: Promise<Resources[K]>
 ): Promise<Resources[K]> {
 	if (slug === currentSlug) {
-		const entry: SharedRequest = { request, settledAt: null };
+		const entry: SharedRequest = { request, settledAt: null, startedOffline: isOffline() };
 		requests.set(resource, entry);
 		request.then(
 			() => {
@@ -106,9 +124,13 @@ export function shareWorkspaceResource<K extends ResourceName>(
 /** The workspace's `resource`, from the layout's latest request when there is one. */
 export function getWorkspaceResource<K extends ResourceName>(slug: string, resource: K): Promise<Resources[K]> {
 	const entry = slug === currentSlug ? requests.get(resource) : undefined;
-	if (entry && entry.settledAt !== null && Date.now() - entry.settledAt > MAX_AGE_MS) {
-		requests.delete(resource);
-		return fetchers[resource](slug);
+	if (entry && entry.settledAt !== null) {
+		if (Date.now() - entry.settledAt > MAX_AGE_MS) {
+			requests.delete(resource);
+			return fetchers[resource](slug);
+		}
+		// Changes may have been missed while it was fetched or since.
+		if (isOffline() || entry.startedOffline) return fetchers[resource](slug);
 	}
 	const shared = entry?.request as Promise<Resources[K]> | undefined;
 	if (!shared) return fetchers[resource](slug);

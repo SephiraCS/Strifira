@@ -4,7 +4,7 @@
 
 	/**
 	 * A confirmation prompt, shown while it is mounted. Built on the bits-ui
-	 * alert dialog, which traps Tab inside the dialog, closes on Escape and
+	 * alert dialog, which traps Tab inside the dialog and closes on Escape; it
 	 * returns focus to the element that opened it when it unmounts.
 	 */
 	let {
@@ -39,13 +39,16 @@
 	const focusableSelector =
 		'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+	// The dialog has no AlertDialog.Trigger, so focus is returned here rather
+	// than left to bits-ui's default close autofocus.
 	function restoreFocus(event: Event) {
-		// bits-ui restores focus to the opener when it is still in the document.
-		if (!opener || opener.isConnected) return;
 		event.preventDefault();
+		if (opener instanceof HTMLElement && opener.isConnected) {
+			opener.focus();
+			return;
+		}
 		const container = openerAncestors.find((el) => el.isConnected);
-		const target = container?.querySelector<HTMLElement>(focusableSelector);
-		target?.focus();
+		container?.querySelector<HTMLElement>(focusableSelector)?.focus();
 	}
 </script>
 
