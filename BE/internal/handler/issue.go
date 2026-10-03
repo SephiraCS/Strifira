@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/ku/ku-backend/pkg/sanitize"
 	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
 )
 
 type IssueHandler struct {
@@ -47,93 +47,12 @@ func (h *IssueHandler) List(c echo.Context) error {
 
 	issues, total, err := h.issueSvc.List(c.Request().Context(), ws.ID, params)
 	if err != nil {
-		log.WithError(err).Error("issue list failed")
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
-	ctx := c.Request().Context()
-
-	// Batch load labels and assignees for all issues
-	issueIDs := make([]uuid.UUID, len(issues))
-	for i, issue := range issues {
-		issueIDs[i] = issue.ID
-	}
-	labelsMap, _ := h.issueSvc.GetLabelsForIssues(ctx, issueIDs)
-	assigneesMap, _ := h.issueSvc.GetAssigneesForIssues(ctx, issueIDs)
-	subscribedIssueIDs, _ := h.issueSvc.GetSubscribedIssueIDs(ctx, issueIDs, middleware.GetUserID(c))
-	subIssueCounts, _ := h.issueSvc.CountSubIssuesForIssues(ctx, issueIDs)
-	usersMap := h.usersForIssueList(ctx, issues, assigneesMap)
-	relationSummaries := make(map[uuid.UUID]domain.IssueRelationSummary)
-	if h.relationSvc != nil {
-		relationSummaries, _ = h.relationSvc.SummariesByIssues(ctx, issueIDs)
-	}
-
-	// Batch load statuses for all issues
-	statusIDSet := make(map[uuid.UUID]struct{})
-	for _, issue := range issues {
-		if issue.StatusID != nil {
-			statusIDSet[*issue.StatusID] = struct{}{}
-		}
-	}
-	statusMap := make(map[uuid.UUID]*domain.TeamStatus)
-	if len(statusIDSet) > 0 {
-		statusIDs := make([]uuid.UUID, 0, len(statusIDSet))
-		for id := range statusIDSet {
-			statusIDs = append(statusIDs, id)
-		}
-		statuses, _ := h.teamStatusRepo.GetByIDs(ctx, statusIDs)
-		for i := range statuses {
-			statusMap[statuses[i].ID] = &statuses[i]
-		}
-	}
-
-	issueResponses := make([]dto.IssueResponse, len(issues))
-	for i, issue := range issues {
-		resp := toIssueResponse(issue)
-		resp.IsSubscribed = subscribedIssueIDs[issue.ID]
-
-		// Populate labels from batch
-		if labels, ok := labelsMap[issue.ID]; ok && len(labels) > 0 {
-			resp.Labels = make([]dto.LabelResponse, len(labels))
-			for j, l := range labels {
-				resp.Labels[j] = toLabelResponse(l)
-			}
-		}
-
-		// Populate assignees from batch
-		if uids, ok := assigneesMap[issue.ID]; ok && len(uids) > 0 {
-			resp.Assignees = make([]dto.UserResponse, 0, len(uids))
-			for _, uid := range uids {
-				if user, ok := usersMap[uid]; ok {
-					resp.Assignees = append(resp.Assignees, toUserResponse(user))
-				}
-			}
-		}
-
-		// Populate status_info from batch
-		if issue.StatusID != nil {
-			if ts, ok := statusMap[*issue.StatusID]; ok {
-				resp.StatusInfo = &dto.StatusInfoResponse{
-					ID:       ts.ID.String(),
-					Name:     ts.Name,
-					Category: string(ts.Category),
-					Color:    ts.Color,
-					Position: ts.Position,
-				}
-			}
-		}
-		if count, ok := subIssueCounts[issue.ID]; ok && count.Total > 0 {
-			total := count.Total
-			done := count.Done
-			resp.SubIssueCount = &total
-			resp.SubIssueDone = &done
-		}
-		if summary, ok := relationSummaries[issue.ID]; ok {
-			h.enrichIssueRelationSummary(ctx, &resp, summary)
-		}
-
-		h.enrichUserFieldsFromMap(&resp, issue, usersMap)
-		issueResponses[i] = resp
+	issueResponses, err := h.enrichIssueList(c.Request().Context(), issues, middleware.GetUserID(c), false)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, dto.ListResponse[dto.IssueResponse]{
@@ -163,7 +82,7 @@ func (h *IssueHandler) Create(c echo.Context) error {
 
 	issue, err := h.issueSvc.Create(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	resp := toIssueResponse(*issue)
@@ -188,7 +107,7 @@ func (h *IssueHandler) CreateSubIssue(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	issue, err := h.issueSvc.CreateSubIssue(c.Request().Context(), ws.ID, userID, c.Param("identifier"), req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	resp := toIssueResponse(*issue)
@@ -213,13 +132,12 @@ func (h *IssueHandler) BulkCreateSubIssues(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	issues, err := h.issueSvc.BulkCreateSubIssues(c.Request().Context(), ws.ID, userID, c.Param("identifier"), req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
-	resp := make([]dto.IssueResponse, len(issues))
-	for i, issue := range issues {
-		resp[i] = toIssueResponse(issue)
-		h.enrichIssueResponse(c.Request().Context(), &resp[i], issue)
+	resp, err := h.enrichIssueList(c.Request().Context(), issues, userID, true)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusCreated, resp)
 }
@@ -234,7 +152,7 @@ func (h *IssueHandler) Duplicate(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	issue, err := h.issueSvc.Duplicate(c.Request().Context(), ws.ID, userID, c.Param("identifier"), req.IncludeSubIssues)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	resp := toIssueResponse(*issue)
@@ -247,7 +165,7 @@ func (h *IssueHandler) ConvertToProject(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	project, err := h.issueSvc.ConvertToProject(c.Request().Context(), ws.ID, userID, c.Param("identifier"))
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusCreated, dto.ConvertIssueToProjectResponse{Project: toProjectResponseForIssue(*project)})
 }
@@ -258,8 +176,7 @@ func (h *IssueHandler) Get(c echo.Context) error {
 
 	issue, err := h.issueSvc.GetByIdentifier(c.Request().Context(), ws.ID, identifier)
 	if err != nil {
-		log.WithError(err).Error("issue get failed")
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	if issue == nil {
 		return response.NotFound(c, "Issue")
@@ -287,7 +204,7 @@ func (h *IssueHandler) Update(c echo.Context) error {
 		if errors.Is(err, service.ErrInvalidStatus) {
 			return response.Error(c, http.StatusBadRequest, "INVALID_STATUS", "Status does not exist in the issue's team")
 		}
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	resp := toIssueResponse(*issue)
@@ -308,7 +225,7 @@ func (h *IssueHandler) setArchived(c echo.Context, archived bool) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	issue, err := h.issueSvc.SetArchived(c.Request().Context(), ws.ID, c.Param("identifier"), archived)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	resp := toIssueResponse(*issue)
 	h.enrichIssueResponse(c.Request().Context(), &resp, *issue)
@@ -319,7 +236,7 @@ func (h *IssueHandler) Subscribe(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	userID := middleware.GetUserID(c)
 	if err := h.issueSvc.Subscribe(c.Request().Context(), ws.ID, userID, c.Param("identifier")); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, dto.SubscriptionResponse{IsSubscribed: true})
 }
@@ -328,7 +245,7 @@ func (h *IssueHandler) Unsubscribe(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	userID := middleware.GetUserID(c)
 	if err := h.issueSvc.Unsubscribe(c.Request().Context(), ws.ID, userID, c.Param("identifier")); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, dto.SubscriptionResponse{IsSubscribed: false})
 }
@@ -351,7 +268,7 @@ func (h *IssueHandler) Delete(c echo.Context) error {
 	}
 
 	if err := h.issueSvc.Delete(c.Request().Context(), ws.ID, userID, identifier); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
@@ -375,7 +292,7 @@ func (h *IssueHandler) BulkUpdate(c echo.Context) error {
 
 	updated, err := h.issueSvc.BulkUpdate(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]int{"updated": updated})
@@ -404,7 +321,7 @@ func (h *IssueHandler) BulkDelete(c echo.Context) error {
 		if err.Error() == "forbidden" {
 			return response.Forbidden(c)
 		}
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]int{"deleted": deleted})
@@ -421,7 +338,7 @@ func (h *IssueHandler) ListComments(c echo.Context) error {
 
 	comments, err := h.commentSvc.ListByIssue(c.Request().Context(), issue.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	ctx := c.Request().Context()
@@ -495,7 +412,7 @@ func (h *IssueHandler) CreateComment(c echo.Context) error {
 
 	comment, err := h.commentSvc.Create(c.Request().Context(), issue.ID, userID, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	cr := h.toCommentResponse(c.Request().Context(), *comment)
@@ -514,7 +431,7 @@ func (h *IssueHandler) ResolveComment(c echo.Context) error {
 	}
 
 	if err := h.commentSvc.Resolve(c.Request().Context(), commentID); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	// Re-fetch to get updated resolved_at
@@ -535,7 +452,7 @@ func (h *IssueHandler) ReopenComment(c echo.Context) error {
 	}
 
 	if err := h.commentSvc.Reopen(c.Request().Context(), commentID); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	// Re-fetch to get updated state
@@ -550,21 +467,13 @@ func (h *IssueHandler) ListSubIssues(c echo.Context) error {
 
 	subIssues, err := h.issueSvc.ListSubIssues(c.Request().Context(), ws.ID, identifier)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 
-	resp := make([]dto.IssueResponse, len(subIssues))
-	for i, issue := range subIssues {
-		r := toIssueResponse(issue)
-		h.enrichIssueResponse(c.Request().Context(), &r, issue)
-		total, done, _ := h.issueSvc.CountSubIssues(c.Request().Context(), issue.ID)
-		if total > 0 {
-			r.SubIssueCount = &total
-			r.SubIssueDone = &done
-		}
-		resp[i] = r
+	resp, err := h.enrichIssueList(c.Request().Context(), subIssues, middleware.GetUserID(c), true)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
 	}
-
 	return response.Success(c, http.StatusOK, resp)
 }
 
@@ -579,7 +488,7 @@ func (h *IssueHandler) GetHistory(c echo.Context) error {
 
 	history, err := h.issueSvc.GetHistory(c.Request().Context(), issue.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.IssueHistoryResponse, len(history))
@@ -706,7 +615,7 @@ func (h *IssueHandler) TriageAccept(c echo.Context) error {
 
 	issue, err := h.issueSvc.Triage(c.Request().Context(), ws.ID, userID, identifier, true)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, toIssueResponse(*issue))
 }
@@ -718,9 +627,141 @@ func (h *IssueHandler) TriageDecline(c echo.Context) error {
 
 	issue, err := h.issueSvc.Triage(c.Request().Context(), ws.ID, userID, identifier, false)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, toIssueResponse(*issue))
+}
+
+// enrichIssueList builds API responses for a set of issues with a constant
+// number of batched queries (labels, assignees, users, statuses, sub-issue
+// counts, relation summaries, subscriptions). A failed load fails the whole
+// call instead of silently returning partially empty data. With withParents,
+// each distinct parent is loaded once and attached as a summary.
+func (h *IssueHandler) enrichIssueList(ctx context.Context, issues []domain.Issue, userID uuid.UUID, withParents bool) ([]dto.IssueResponse, error) {
+	issueIDs := make([]uuid.UUID, len(issues))
+	for i, issue := range issues {
+		issueIDs[i] = issue.ID
+	}
+	labelsMap, err := h.issueSvc.GetLabelsForIssues(ctx, issueIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load issue labels: %w", err)
+	}
+	assigneesMap, err := h.issueSvc.GetAssigneesForIssues(ctx, issueIDs)
+	if err != nil {
+		return nil, fmt.Errorf("load issue assignees: %w", err)
+	}
+	subscribedIssueIDs, err := h.issueSvc.GetSubscribedIssueIDs(ctx, issueIDs, userID)
+	if err != nil {
+		return nil, fmt.Errorf("load issue subscriptions: %w", err)
+	}
+	subIssueCounts, err := h.issueSvc.CountSubIssuesForIssues(ctx, issueIDs)
+	if err != nil {
+		return nil, fmt.Errorf("count sub-issues: %w", err)
+	}
+	usersMap, err := h.usersForIssueList(ctx, issues, assigneesMap)
+	if err != nil {
+		return nil, fmt.Errorf("load issue users: %w", err)
+	}
+	relationSummaries := make(map[uuid.UUID]domain.IssueRelationSummary)
+	if h.relationSvc != nil {
+		relationSummaries, err = h.relationSvc.SummariesByIssues(ctx, issueIDs)
+		if err != nil {
+			return nil, fmt.Errorf("load issue relations: %w", err)
+		}
+	}
+
+	statusIDSet := make(map[uuid.UUID]struct{})
+	for _, issue := range issues {
+		if issue.StatusID != nil {
+			statusIDSet[*issue.StatusID] = struct{}{}
+		}
+	}
+	statusMap := make(map[uuid.UUID]*domain.TeamStatus)
+	if len(statusIDSet) > 0 {
+		statusIDs := make([]uuid.UUID, 0, len(statusIDSet))
+		for id := range statusIDSet {
+			statusIDs = append(statusIDs, id)
+		}
+		statuses, err := h.teamStatusRepo.GetByIDs(ctx, statusIDs)
+		if err != nil {
+			return nil, fmt.Errorf("load issue statuses: %w", err)
+		}
+		for i := range statuses {
+			statusMap[statuses[i].ID] = &statuses[i]
+		}
+	}
+
+	parents := make(map[uuid.UUID]*dto.IssueSummaryResponse)
+	if withParents {
+		for _, issue := range issues {
+			if issue.ParentID == nil {
+				continue
+			}
+			if _, seen := parents[*issue.ParentID]; seen {
+				continue
+			}
+			parent, err := h.issueSvc.GetByID(ctx, *issue.ParentID)
+			if err != nil {
+				return nil, fmt.Errorf("load parent issue: %w", err)
+			}
+			if parent == nil {
+				parents[*issue.ParentID] = nil
+				continue
+			}
+			summary := h.toIssueSummaryResponse(ctx, *parent)
+			parents[*issue.ParentID] = &summary
+		}
+	}
+
+	issueResponses := make([]dto.IssueResponse, len(issues))
+	for i, issue := range issues {
+		resp := toIssueResponse(issue)
+		resp.IsSubscribed = subscribedIssueIDs[issue.ID]
+
+		if labels, ok := labelsMap[issue.ID]; ok && len(labels) > 0 {
+			resp.Labels = make([]dto.LabelResponse, len(labels))
+			for j, l := range labels {
+				resp.Labels[j] = toLabelResponse(l)
+			}
+		}
+
+		if uids, ok := assigneesMap[issue.ID]; ok && len(uids) > 0 {
+			resp.Assignees = make([]dto.UserResponse, 0, len(uids))
+			for _, uid := range uids {
+				if user, ok := usersMap[uid]; ok {
+					resp.Assignees = append(resp.Assignees, toUserResponse(user))
+				}
+			}
+		}
+
+		if issue.StatusID != nil {
+			if ts, ok := statusMap[*issue.StatusID]; ok {
+				resp.StatusInfo = &dto.StatusInfoResponse{
+					ID:       ts.ID.String(),
+					Name:     ts.Name,
+					Category: string(ts.Category),
+					Color:    ts.Color,
+					Position: ts.Position,
+				}
+			}
+		}
+		if issue.ParentID != nil {
+			resp.Parent = parents[*issue.ParentID]
+		}
+		if count, ok := subIssueCounts[issue.ID]; ok && count.Total > 0 {
+			total := count.Total
+			done := count.Done
+			resp.SubIssueCount = &total
+			resp.SubIssueDone = &done
+		}
+		if summary, ok := relationSummaries[issue.ID]; ok {
+			h.enrichIssueRelationSummary(ctx, &resp, summary)
+		}
+
+		h.enrichUserFieldsFromMap(&resp, issue, usersMap)
+		issueResponses[i] = resp
+	}
+	return issueResponses, nil
 }
 
 func (h *IssueHandler) enrichIssueResponse(ctx context.Context, resp *dto.IssueResponse, issue domain.Issue) {
@@ -885,7 +926,7 @@ func (h *IssueHandler) enrichUserFields(ctx context.Context, resp *dto.IssueResp
 	}
 }
 
-func (h *IssueHandler) usersForIssueList(ctx context.Context, issues []domain.Issue, assigneesMap map[uuid.UUID][]uuid.UUID) map[uuid.UUID]domain.User {
+func (h *IssueHandler) usersForIssueList(ctx context.Context, issues []domain.Issue, assigneesMap map[uuid.UUID][]uuid.UUID) (map[uuid.UUID]domain.User, error) {
 	ids := make([]uuid.UUID, 0, len(issues)*2)
 	seen := make(map[uuid.UUID]struct{}, len(issues)*2)
 	add := func(id uuid.UUID) {
@@ -906,20 +947,20 @@ func (h *IssueHandler) usersForIssueList(ctx context.Context, issues []domain.Is
 	}
 
 	if repo, ok := h.userRepo.(userBatchRepo); ok {
-		users, err := repo.ListByIDs(ctx, ids)
-		if err == nil {
-			return users
-		}
+		return repo.ListByIDs(ctx, ids)
 	}
 
 	users := make(map[uuid.UUID]domain.User, len(ids))
 	for _, id := range ids {
-		user, _ := h.userRepo.GetByID(ctx, id)
+		user, err := h.userRepo.GetByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
 		if user != nil {
 			users[id] = *user
 		}
 	}
-	return users
+	return users, nil
 }
 
 func (h *IssueHandler) enrichUserFieldsFromMap(resp *dto.IssueResponse, issue domain.Issue, users map[uuid.UUID]domain.User) {
