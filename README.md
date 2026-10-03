@@ -194,9 +194,10 @@ The `KU_DEV_` settings can also be supplied through the process environment.
 | `make migrate-down`    | Roll back migrations                  |
 | `make seed`            | Seed the database                     |
 | `make reset-dev`       | Reset dev database                    |
-| `make test`            | Run all tests                         |
-| `make test-backend`    | Backend tests only                    |
-| `make test-frontend`   | Frontend tests only                   |
+| `make test`            | Both test suites (fast, then slow)    |
+| `make test-fast`       | Fast suite: critical paths; gates every deploy |
+| `make test-slow`       | Slow suite: everything else; never blocks a deploy |
+| `make check-backend`   | gofmt and go vet                      |
 | `make lint`            | Lint everything                       |
 | `make docker-up`       | Start all (Docker)                    |
 | `make docker-down`     | Stop all (Docker)                     |
