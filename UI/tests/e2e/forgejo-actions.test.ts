@@ -407,6 +407,22 @@ test('refreshes details of a run expanded while the poll that sees it finish is 
 	expect(calls.lists.length).toBeGreaterThan(1);
 });
 
+test('a refresh that started before older runs loaded does not discard them', async ({ page }) => {
+	const { runsGate } = await mockActions(page);
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await expect(actions.getByRole('button', { name: /Deploy preview/ })).toBeVisible();
+	runsGate.hold = true;
+	await page.clock.fastForward(10001);
+	await expect.poll(() => runsGate.waiting).toBe(1);
+	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
+	runsGate.release();
+	await page.clock.fastForward(1000);
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
+	await expect(actions.getByRole('button', { name: 'Load older runs', exact: true })).toHaveCount(0);
+});
+
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {
 	await mockActions(page);
 	await page.goto('/test/actions');

@@ -66,6 +66,8 @@
 		loading: boolean;
 		loadingMore: boolean;
 		failed: boolean;
+		// Bumped when older history loads, so a refresh started earlier is dropped.
+		version: number;
 	};
 	type ExpandedRun = { pullRequestId: string; repoId: string; repoFullName: string; run: ForgejoActionRun };
 	const ACTIONS_POLL_MS = 10000;
@@ -268,11 +270,11 @@
 		for (const pr of targets)
 			next[pr.id] = runsByPullRequest[pr.id]
 				? { ...runsByPullRequest[pr.id], loading: false, loadingMore: false }
-				: { runs: [], pages: 1, hasMore: false, loading: true, loadingMore: false, failed: false };
+				: { runs: [], pages: 1, hasMore: false, loading: true, loadingMore: false, failed: false, version: 0 };
 		runsByPullRequest = next;
 		await Promise.all(
 			targets.map(async (pr) => {
-				const pages = next[pr.id].pages;
+				const { pages, version } = next[pr.id];
 				try {
 					// Refresh only the pages already shown, so polling stays bounded.
 					const runs: ForgejoActionRun[] = [];
@@ -286,7 +288,17 @@
 						if (!hasMore) break;
 					}
 					if (!mounted || runGeneration !== actionsGeneration) return;
-					runsByPullRequest[pr.id] = { runs, pages, hasMore, loading: false, loadingMore: false, failed: false };
+					// Older history loaded meanwhile; the next poll refreshes every page.
+					if (runsByPullRequest[pr.id]?.version !== version) return;
+					runsByPullRequest[pr.id] = {
+						runs,
+						pages,
+						hasMore,
+						loading: false,
+						loadingMore: runsByPullRequest[pr.id].loadingMore,
+						failed: false,
+						version
+					};
 					if (expandedRun?.pullRequestId === pr.id) {
 						const run = runs.find((candidate) => candidate.id === expandedRun?.run.id);
 						if (run) {
@@ -344,7 +356,8 @@
 				runs: [...current.runs, ...(result.data ?? []).filter((run) => !known.has(run.id))],
 				pages: page,
 				hasMore: result.has_more && !!result.data?.length,
-				loadingMore: false
+				loadingMore: false,
+				version: current.version + 1
 			};
 			// An older active run must keep the fast poll going.
 			if (anyActiveRun) schedulePoll(slug, runGeneration);
