@@ -91,6 +91,7 @@ async function mockActions(
 		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
 	const failNextLogs = { count: 0 };
 	const pushRun = { ...completedRun, id: 99, event: 'push', title: 'Push checks', run_number: 40, html_url: '' };
+	const olderPushRun = { ...pushRun, id: 97, title: 'Earlier push checks', run_number: 39 };
 	const staleBranchRun = { ...pushRun, id: 98, title: 'Unrelated base branch run', head_sha: 'not-the-pr-head' };
 	const runsGate = { hold: false, waiting: 0, release: () => {} };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
@@ -181,9 +182,12 @@ async function mockActions(
 				// Push workflows on the PR's source branch.
 				calls.branchLists.push(url);
 				// Forgejo filters by head_sha; a same-named base branch run is excluded.
-				const data = [pushRun, staleBranchRun].filter((run) => run.head_sha === url.searchParams.get('head_sha'));
+				// The head commit's branch runs span two pages.
+				const data = (second ? [olderPushRun] : [pushRun, staleBranchRun]).filter(
+					(run) => run.head_sha === url.searchParams.get('head_sha')
+				);
 				return route.fulfill({
-					json: { data, total_count: data.length, page: 1, per_page: 20, has_more: false }
+					json: { data, total_count: 2, page: second ? 2 : 1, per_page: 20, has_more: !second }
 				});
 			}
 			if (second) calls.runPages.push(url);
@@ -285,6 +289,8 @@ test('shows pull request workflow runs, jobs, and plain logs on the issue and ca
 	const order = await actions.locator('button[aria-expanded]').allInnerTexts();
 	const index = (title: string) => order.findIndex((text) => text.includes(title));
 	expect(index('Lint sources')).toBeLessThan(index('Push checks'));
+	// Older branch runs for the head commit load with the older PR runs.
+	await expect(actions.getByRole('button', { name: /Earlier push checks/ })).toBeVisible();
 	// Only the run with a trusted Forgejo URL links out.
 	const links = actions.getByRole('link', { name: 'Open in Forgejo' });
 	await expect(links).toHaveCount(1);

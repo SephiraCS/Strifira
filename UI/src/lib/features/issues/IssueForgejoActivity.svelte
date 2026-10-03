@@ -250,9 +250,9 @@
 		logsFailed = false;
 	}
 
-	// A PR's runs come from pull_request workflows (refs/pull/N/head), paged
-	// newest first. Push workflows on its source branch are added only for the
-	// PR's head commit: a fork PR's branch name may also exist in the base
+	// A PR's runs come from pull_request workflows (refs/pull/N/head) and push
+	// workflows on its source branch, both paged newest first. Branch runs are
+	// limited to the PR's head commit: a fork PR's branch name may also exist in the base
 	// repository, but its head commit is never pushed there.
 	async function fetchRunPage(workspaceSlug: string, pr: ForgejoPullRequest, page: number, signal: AbortSignal) {
 		const pullRuns = listForgejoActionRuns(
@@ -262,11 +262,11 @@
 			signal
 		);
 		const branchRuns =
-			page === 1 && pr.head_branch && pr.head_sha && !pr.head_branch.startsWith('refs/')
+			pr.head_branch && pr.head_sha && !pr.head_branch.startsWith('refs/')
 				? listForgejoActionRuns(
 						workspaceSlug,
 						pr.repo_id,
-						{ ref: `refs/heads/${pr.head_branch}`, headSha: pr.head_sha, perPage: RUNS_PAGE_SIZE },
+						{ ref: `refs/heads/${pr.head_branch}`, headSha: pr.head_sha, page, perPage: RUNS_PAGE_SIZE },
 						signal
 					)
 				: null;
@@ -274,7 +274,9 @@
 		const byId = new Map<number, ForgejoActionRun>();
 		for (const run of pull.data ?? []) byId.set(run.id, run);
 		for (const run of branch?.data ?? []) if (run.head_sha === pr.head_sha) byId.set(run.id, run);
-		return { data: [...byId.values()], has_more: pull.has_more && !!pull.data?.length };
+		// Both sources page together until each is exhausted.
+		const more = (result: typeof pull | null) => !!result?.has_more && !!result.data?.length;
+		return { data: [...byId.values()], has_more: more(pull) || more(branch) };
 	}
 
 	function newestFirst(runs: ForgejoActionRun[]): ForgejoActionRun[] {
