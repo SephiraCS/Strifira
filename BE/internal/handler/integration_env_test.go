@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -34,6 +35,13 @@ import (
 
 // integrationJWTSecret signs tokens for the HTTP integration environment.
 const integrationJWTSecret = "integration-secret-that-is-at-least-32-characters"
+
+// Login throttle settings for the integration server: small so tests can
+// reach the lockout quickly.
+const (
+	integrationLoginMaxFailures = 3
+	integrationLoginLockout     = time.Minute
+)
 
 // integrationEnv is a real HTTP stack (Echo router, auth/workspace/permission
 // middleware, handlers, services, repositories) over a freshly migrated
@@ -100,6 +108,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	hub := realtime.NewHub()
 
 	userRepo := repository.NewUserRepository(db)
+	refreshRepo := repository.NewRefreshTokenRepository(db)
 	workspaceRepo := repository.NewWorkspaceRepository(db)
 	teamRepo := repository.NewTeamRepository(db)
 	issueRepo := repository.NewIssueRepository(db)
@@ -114,6 +123,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	teamStatusRepo := repository.NewTeamStatusRepository(db)
 	visibilityRepo := repository.NewProjectStatusVisibilityRepository(db)
 
+	authSvc := service.NewAuthService(userRepo, refreshRepo, integrationJWTSecret)
 	teamSvc := service.NewTeamService(teamRepo, teamStatusRepo, hub)
 	notifSvc := service.NewNotificationService(notifRepo)
 	issueSvc := service.NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, notifSvc, projectRepo)
@@ -127,6 +137,8 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	env.webhookSvc = webhookSvc
 	sharedLinkSvc := service.NewSharedLinkService(repository.NewSharedLinkRepository(db), workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, integrationJWTSecret)
 
+	authH := NewAuthHandler(authSvc, false, nil).
+		WithLoginThrottle(mw.NewLoginThrottle(integrationLoginMaxFailures, integrationLoginLockout))
 	teamH := NewTeamHandler(teamSvc)
 	issueH := NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	relationH := NewIssueRelationHandler(relationSvc)
@@ -158,6 +170,8 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	e.Use(mw.Recovery())
 	e.Use(mw.BodyLimit())
 
+	auth := e.Group("/api/auth")
+	auth.POST("/login", authH.Login)
 	e.GET("/api/public/share/:token/issues", sharedLinkH.ListPublicIssues)
 	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
 	// Stand-in for the workspace import routes, which enforce their own

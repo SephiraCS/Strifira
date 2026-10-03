@@ -221,7 +221,9 @@ paths:
         Exchange email + password for a 15-minute access token. The response
         sets `access_token` and rotating `refresh_token` HttpOnly cookies;
         the same access token is returned in the body for programmatic
-        clients. No rate limiting by operator directive (shared egress IPs).
+        clients. No IP-based rate limiting by operator directive (shared
+        egress IPs); instead, repeated failed logins for one email lock that
+        email for 15 minutes (429 with `Retry-After`).
       security: []
       requestBody:
         required: true
@@ -237,6 +239,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /api/auth/refresh:
     post:

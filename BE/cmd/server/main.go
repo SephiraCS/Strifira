@@ -132,7 +132,9 @@ func main() {
 
 	// Handlers
 	healthH := handler.NewHealthHandler(db)
-	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin)
+	// Per-email lockout (never per IP; see the /api/auth note below).
+	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin).
+		WithLoginThrottle(mw.NewLoginThrottle(loginMaxFailures, loginLockout))
 	workspaceH := handler.NewWorkspaceHandler(workspaceSvc)
 	teamH := handler.NewTeamHandler(teamSvc)
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
@@ -307,10 +309,11 @@ func main() {
 	e.GET("/api/openapi.json", apidocs.SpecHandler)
 	e.GET("/api/docs", apidocs.DocsRedirect)
 
-	// Auth (public). No rate limiting or login lockout: several users share
-	// one egress IP (office NAT) and jointly exhausted the per-IP auth
-	// bucket, locking the app out for whole networks while other networks
-	// worked. Operator directive 2026-09-13: remove all access rate limits.
+	// Auth (public). No IP-based rate limiting: several users share one
+	// egress IP (office NAT) and jointly exhausted the per-IP auth bucket,
+	// locking the app out for whole networks while other networks worked
+	// (operator directive 2026-09-13). Login brute force is instead bounded
+	// per email by the LoginThrottle wired into authH above.
 	auth := e.Group("/api/auth")
 	auth.POST("/register", authH.Register)
 	auth.POST("/login", authH.Login)
@@ -622,8 +625,13 @@ func main() {
 	}
 }
 
-// shutdownTimeout bounds connection draining on SIGINT/SIGTERM.
-const shutdownTimeout = 25 * time.Second
+const (
+	// loginMaxFailures failed logins for one email lock it for loginLockout.
+	loginMaxFailures = 10
+	loginLockout     = 15 * time.Minute
+	// shutdownTimeout bounds connection draining on SIGINT/SIGTERM.
+	shutdownTimeout = 25 * time.Second
+)
 
 func mcpServerVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {

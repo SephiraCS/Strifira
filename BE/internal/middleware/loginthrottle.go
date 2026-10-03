@@ -28,6 +28,11 @@ func NewLoginThrottle(maxFailures int, lockoutTime time.Duration) *LoginThrottle
 	return lt
 }
 
+// LockoutDuration is how long an email stays locked after maxFailures.
+func (lt *LoginThrottle) LockoutDuration() time.Duration {
+	return lt.lockoutTime
+}
+
 // IsLocked returns true if the email is currently locked out.
 func (lt *LoginThrottle) IsLocked(email string) bool {
 	lt.mu.Lock()

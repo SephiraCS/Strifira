@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,15 @@ type AuthHandler struct {
 	authService   *service.AuthService
 	secureCookie  bool
 	isSysAdmin    func(uuid.UUID) bool
+	loginThrottle *middleware.LoginThrottle
+}
+
+// WithLoginThrottle enables per-email lockout after repeated failed logins.
+// It is keyed by the normalized email, never by client IP: many users share
+// one office egress IP (see the /api/auth note in cmd/server).
+func (h *AuthHandler) WithLoginThrottle(lt *middleware.LoginThrottle) *AuthHandler {
+	h.loginThrottle = lt
+	return h
 }
 
 func NewAuthHandler(authService *service.AuthService, secureCookie bool, isSysAdmin func(uuid.UUID) bool) *AuthHandler {
@@ -75,13 +85,26 @@ func (h *AuthHandler) Login(c echo.Context) error {
 		return response.ValidationError(c, details)
 	}
 
+	throttleKey := strings.ToLower(strings.TrimSpace(req.Email))
+	if h.loginThrottle != nil && h.loginThrottle.IsLocked(throttleKey) {
+		log.WithFields(log.Fields{"event": "auth.login_locked", "email": req.Email, "ip": c.RealIP()}).Warn("login rejected: account temporarily locked")
+		c.Response().Header().Set("Retry-After", strconv.Itoa(int(h.loginThrottle.LockoutDuration().Seconds())))
+		return response.Error(c, http.StatusTooManyRequests, "TOO_MANY_ATTEMPTS", "Too many failed login attempts. Try again later.")
+	}
+
 	user, accessToken, refreshToken, err := h.authService.Login(c.Request().Context(), req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) {
+			if h.loginThrottle != nil && h.loginThrottle.RecordFailure(throttleKey) {
+				log.WithFields(log.Fields{"event": "auth.login_lockout", "email": req.Email, "ip": c.RealIP()}).Warn("account temporarily locked after repeated failed logins")
+			}
 			log.WithFields(log.Fields{"event": "auth.login_failed", "email": req.Email, "ip": c.RealIP()}).Warn("login failed")
 			return response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "Invalid email or password")
 		}
 		return response.InternalError(c)
+	}
+	if h.loginThrottle != nil {
+		h.loginThrottle.RecordSuccess(throttleKey)
 	}
 
 	log.WithFields(log.Fields{"event": "auth.login", "user_id": user.ID, "email": user.Email, "ip": c.RealIP()}).Info("user logged in")
