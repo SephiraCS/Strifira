@@ -249,16 +249,22 @@
 		await Promise.all(
 			targets.map(async (pr) => {
 				try {
-					const result = await listForgejoActionRuns(
-						workspaceSlug,
-						pr.repo_id,
-						{ ref: `refs/pull/${pr.number}/head` },
-						requestController.signal
-					);
+					// Follow every page so older runs, and any still active, stay visible.
+					const runs: ForgejoActionRun[] = [];
+					for (let page = 1; ; page++) {
+						const result = await listForgejoActionRuns(
+							workspaceSlug,
+							pr.repo_id,
+							{ ref: `refs/pull/${pr.number}/head`, page, perPage: 100 },
+							requestController.signal
+						);
+						runs.push(...(result.data ?? []));
+						if (!result.has_more || !result.data?.length) break;
+					}
 					if (!mounted || runGeneration !== actionsGeneration) return;
-					runsByPullRequest[pr.id] = { runs: result.data ?? [], loading: false, failed: false };
+					runsByPullRequest[pr.id] = { runs, loading: false, failed: false };
 					if (expandedRun?.pullRequestId === pr.id) {
-						const run = result.data?.find((candidate) => candidate.id === expandedRun?.run.id);
+						const run = runs.find((candidate) => candidate.id === expandedRun?.run.id);
 						if (run) {
 							if (cancelRequested === run.id && !isActiveAction(actionStatus(run.status, run.conclusion)))
 								cancelRequested = null;
@@ -279,10 +285,17 @@
 		const target = expandedRun;
 		if (target) {
 			await loadJobs(workspaceSlug, target, true);
+			// A newer refresh or another selection supersedes this one; starting
+			// logs now would abort the current log request.
+			if (!mounted || runGeneration !== actionsGeneration || !sameRun(expandedRun, target)) return;
 			const job = selectedJob;
-			if (job && expandedRun?.run.id === target.run.id) await loadLogs(workspaceSlug, target, job, true);
+			if (job) await loadLogs(workspaceSlug, target, job, true);
 		}
 		if (mounted && runGeneration === actionsGeneration) schedulePoll(workspaceSlug, runGeneration);
+	}
+
+	function sameRun(a: ExpandedRun | null, b: ExpandedRun): boolean {
+		return !!a && a.pullRequestId === b.pullRequestId && a.repoId === b.repoId && a.run.id === b.run.id;
 	}
 
 	function schedulePoll(workspaceSlug: string, runGeneration: number) {
@@ -329,7 +342,7 @@
 				loaded.push(...(result.data ?? []));
 				if (!result.has_more || !result.data?.length) break;
 			}
-			if (!mounted || requestController.signal.aborted || expandedRun?.run.id !== target.run.id) return;
+			if (!mounted || requestController.signal.aborted || !sameRun(expandedRun, target)) return;
 			jobs = loaded;
 			jobsFailed = false;
 		} catch {
@@ -372,7 +385,8 @@
 				current.attempt,
 				requestController.signal
 			);
-			if (!mounted || requestController.signal.aborted || selectedJob?.id !== job.id) return;
+			if (!mounted || requestController.signal.aborted || selectedJob?.id !== job.id || !sameRun(expandedRun, target))
+				return;
 			logs = result;
 			logsFailed = false;
 		} catch {

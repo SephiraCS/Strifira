@@ -53,6 +53,7 @@ async function mockActions(
 ) {
 	const calls = {
 		lists: [] as URL[],
+		runPages: [] as URL[],
 		jobs: [] as string[],
 		actions: [] as string[],
 		logs: [] as URL[]
@@ -165,10 +166,20 @@ async function mockActions(
 			});
 		if (path === '/api/workspaces/test/issues/ENG-1') return route.fulfill({ json: issue });
 		if (path === `${actionsPath}/runs`) {
-			calls.lists.push(url);
-			const data = url.searchParams.get('ref') === 'refs/pull/7/head' ? [completedRun, runningRun] : [];
+			// Runs span two pages; the active run is only on the second one.
+			const second = url.searchParams.get('page') === '2';
+			if (second) calls.runPages.push(url);
+			else calls.lists.push(url);
+			const pullRuns = url.searchParams.get('ref') === 'refs/pull/7/head';
+			const data = pullRuns ? [second ? runningRun : completedRun] : [];
 			return route.fulfill({
-				json: { data, total_count: data.length, page: 1, per_page: 20, has_more: false }
+				json: {
+					data,
+					total_count: pullRuns ? 2 : 0,
+					page: second ? 2 : 1,
+					per_page: 100,
+					has_more: pullRuns && !second
+				}
 			});
 		}
 		if (path === `${actionsPath}/runs/102/jobs`) {
@@ -238,6 +249,9 @@ test('shows pull request workflow runs, jobs, and plain logs on the issue and ca
 	await expect(actions.getByRole('button', { name: /Build application/ })).toContainText('#42');
 	await expect(actions.getByRole('button', { name: /Build application/ })).toContainText('1m 0s');
 	expect(calls.lists[0].searchParams.get('ref')).toBe('refs/pull/7/head');
+	// The active run comes from the second page of runs.
+	await expect(actions.getByRole('button', { name: /Deploy preview/ }).first()).toBeVisible();
+	expect(calls.runPages[0].searchParams.get('page')).toBe('2');
 	// Only the run with a trusted Forgejo URL links out.
 	const links = actions.getByRole('link', { name: 'Open in Forgejo' });
 	await expect(links).toHaveCount(1);

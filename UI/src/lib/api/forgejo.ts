@@ -102,10 +102,10 @@ function actionsPath(slug: string, repoId: string): string {
 export function listForgejoActionRuns(
 	slug: string,
 	repoId: string,
-	filters: { page?: number; status?: string; ref?: string } = {},
+	filters: { page?: number; perPage?: number; status?: string; ref?: string } = {},
 	signal?: AbortSignal
 ): Promise<ForgejoActionsPage<ForgejoActionRun>> {
-	const query = new URLSearchParams({ page: String(filters.page ?? 1), per_page: '20' });
+	const query = new URLSearchParams({ page: String(filters.page ?? 1), per_page: String(filters.perPage ?? 20) });
 	if (filters.status) query.set('status', filters.status);
 	if (filters.ref) query.set('ref', filters.ref.startsWith('refs/') ? filters.ref : `refs/heads/${filters.ref}`);
 	return api.fetch(`${actionsPath(slug, repoId)}/runs?${query}`, { signal });
