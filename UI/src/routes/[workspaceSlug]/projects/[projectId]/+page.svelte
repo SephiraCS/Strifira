@@ -7,7 +7,6 @@
 	import { issuesState } from '$lib/features/issues/issues.state.svelte';
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
 	import { listCycles } from '$lib/api/cycles';
-	import { listTeams } from '$lib/api/teams';
 	import type { Project, ProjectStatus } from '$lib/types/project';
 	import type { Cycle } from '$lib/types/cycle';
 	import type { Team } from '$lib/types/team';
@@ -47,6 +46,7 @@
 	import Settings2 from '@lucide/svelte/icons/settings-2';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
+	import { workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const projectId = $derived(page.params.projectId ?? '');
@@ -68,6 +68,15 @@
 	let developmentReady = $state(false);
 	let savingDevelopment = $state(false);
 	let canManageDevelopment = $state(false);
+	const developmentSettingsLabel = $derived(
+		developmentLoading
+			? m['projects.development.loading']()
+			: developmentReady
+				? canManageDevelopment
+					? m['projects.development.settings']()
+					: m['projects.development.view_settings']()
+				: m['projects.development.unavailable']()
+	);
 	let developmentRequestVersion = 0;
 	let developmentSaveVersion = 0;
 	const projectTeam = $derived(project?.team_id ? teams.find(t => t.id === project!.team_id) : null);
@@ -114,7 +123,7 @@
 			if (firstTeamId) {
 				teamStatusesState.load(s, firstTeamId);
 			}
-			teams = await listTeams(s);
+			teams = await workspaceTeams(s);
 			const allCycles: Cycle[] = [];
 			for (const team of teams) {
 				const tc = await listCycles(s, team.id);
@@ -280,7 +289,7 @@
 				</Popover.Root>
 			</div>
 			<div class="flex items-center gap-2">
-				<Button variant="ghost" size="icon-sm" disabled={developmentLoading || !developmentReady} onclick={() => (developmentOpen = true)} title={developmentLoading ? m['projects.development.loading']() : developmentReady ? canManageDevelopment ? m['projects.development.settings']() : m['projects.development.view_settings']() : m['projects.development.unavailable']()}><Settings2 size={15} /></Button>
+				<Button variant="ghost" size="icon-sm" disabled={developmentLoading || !developmentReady} onclick={() => (developmentOpen = true)} title={developmentSettingsLabel} aria-label={developmentSettingsLabel}><Settings2 size={15} /></Button>
 				<!-- View switcher -->
 				<div class="flex rounded-md border border-[var(--app-border)]">
 					<button

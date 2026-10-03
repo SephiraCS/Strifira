@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { listTeamProjects, createProject } from '$lib/api/projects';
-	import { listTeams } from '$lib/api/teams';
 	import type { Project, ProjectStatus } from '$lib/types/project';
 	import type { Team } from '$lib/types/team';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
@@ -17,6 +16,7 @@
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
+	import { workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const teamId = $derived(page.params.teamId ?? '');
@@ -34,7 +34,7 @@
 		loading = true;
 		Promise.all([
 			listTeamProjects(slug, teamId),
-			listTeams(slug)
+			workspaceTeams(slug)
 		]).then(([p, t]) => {
 			projects = p;
 			teams = t;

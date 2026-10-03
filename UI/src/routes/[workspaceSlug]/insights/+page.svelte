@@ -15,7 +15,6 @@
 	import TeamIcon from '$lib/components/shared/TeamIcon.svelte';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import ErrorState from '$lib/components/shared/ErrorState.svelte';
-	import { listTeams } from '$lib/api/teams';
 	import { listTeamStatuses } from '$lib/api/team-statuses';
 	import {
 		defaultDateRange,
@@ -35,6 +34,7 @@
 	import AnalyticsDateRangePicker from '$lib/features/analytics/AnalyticsDateRangePicker.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
+	import { workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	type Tab = 'overview' | 'explore';
@@ -78,7 +78,7 @@
 	async function loadTeams(requestSlug: string) {
 		teamsLoading = true;
 		try {
-			teams = await listTeams(requestSlug);
+			teams = await workspaceTeams(requestSlug);
 			if (selectedTeamId !== 'workspace' && !teams.some((team) => team.id === selectedTeamId)) {
 				selectedTeamId = 'workspace';
 			}

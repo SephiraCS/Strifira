@@ -11,6 +11,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import OctagonAlert from '@lucide/svelte/icons/octagon-alert';
 	import { appToast } from '$lib/features/toast/toast';
+	import { m } from '$lib/paraglide/messages.js';
 
 	let {
 		open = $bindable(false),
@@ -36,15 +37,15 @@
 
 	const RELATION_OPTIONS: Array<{
 		type: RelationType;
-		label: string;
-		description: string;
+		label: () => string;
+		description: () => string;
 		Icon: any;
 		activeClass: string;
 	}> = [
-		{ type: 'related', label: 'Related', description: 'Connect a related issue', Icon: Link, activeClass: 'border-[var(--app-accent)] bg-[var(--app-accent)]/10 text-[var(--color-text-primary)]' },
-		{ type: 'blocked_by', label: 'Blocked by', description: 'This issue is blocked', Icon: Ban, activeClass: 'border-red-500/40 bg-red-500/10 text-red-400' },
-		{ type: 'blocking', label: 'Blocking', description: 'This issue blocks another', Icon: OctagonAlert, activeClass: 'border-red-500/40 bg-red-500/10 text-red-400' },
-		{ type: 'duplicate', label: 'Duplicate', description: 'Mark as duplicate', Icon: Copy, activeClass: 'border-purple-400/40 bg-purple-400/10 text-purple-300' }
+		{ type: 'related', label: () => m['issue.relations.related'](), description: () => m['issue.relations.related_desc'](), Icon: Link, activeClass: 'border-[var(--app-accent)] bg-[var(--app-accent)]/10 text-[var(--color-text-primary)]' },
+		{ type: 'blocked_by', label: () => m['issue.blocked_by'](), description: () => m['issue.relations.blocked_by_desc'](), Icon: Ban, activeClass: 'border-red-500/40 bg-red-500/10 text-red-400' },
+		{ type: 'blocking', label: () => m['issue.blocking'](), description: () => m['issue.relations.blocking_desc'](), Icon: OctagonAlert, activeClass: 'border-red-500/40 bg-red-500/10 text-red-400' },
+		{ type: 'duplicate', label: () => m['issue.duplicate'](), description: () => m['issue.relations.duplicate_desc'](), Icon: Copy, activeClass: 'border-purple-400/40 bg-purple-400/10 text-purple-300' }
 	];
 
 	let selectedType = $state<RelationType>('related');
@@ -151,7 +152,7 @@
 	async function selectIssue(issue: Issue) {
 		try {
 			await createRelation(slug, identifier, { related_identifier: issue.identifier, type: selectedType });
-			appToast.success('Relation added');
+			appToast.success(m['issue.relations.added']());
 			try {
 				await oncreated?.();
 			} catch {
@@ -159,7 +160,7 @@
 			}
 			close();
 		} catch (err: any) {
-			appToast.apiError(err, 'Failed to add relation');
+			appToast.apiError(err, m['bulkActions.toast.failed_relation']());
 		}
 	}
 
@@ -218,7 +219,7 @@
 			style="background: rgba(0,0,0,{visible ? 0.5 : 0}); transition: background {ANIM_DURATION}ms ease;"
 			onclick={close}
 			tabindex={-1}
-			aria-label="Close"
+			aria-label={m['common.close']()}
 		></button>
 
 		<div
@@ -228,8 +229,8 @@
 			<div class="border-b border-[var(--app-border)] p-3">
 				<div class="mb-2 flex items-center justify-between gap-3 px-1">
 					<div>
-						<h2 class="text-sm font-medium text-[var(--color-text-primary)]">Add relation</h2>
-						<p class="text-xs text-[var(--color-text-tertiary)]">Choose how {identifier} relates to another issue.</p>
+						<h2 class="text-sm font-medium text-[var(--color-text-primary)]">{m['issue.add_relation']()}</h2>
+						<p class="text-xs text-[var(--color-text-tertiary)]">{m['issue.relations.choose_type']({ identifier })}</p>
 					</div>
 					<span class="hidden rounded-md border border-[var(--app-border)] px-2 py-1 text-[11px] text-[var(--color-text-tertiary)] sm:block">Esc</span>
 				</div>
@@ -245,8 +246,8 @@
 						>
 							<Icon size={15} class="shrink-0" />
 							<span class="min-w-0">
-								<span class="block truncate text-xs font-medium">{option.label}</span>
-								<span class="hidden truncate text-[10px] text-[var(--color-text-tertiary)] sm:block">{option.description}</span>
+								<span class="block truncate text-xs font-medium">{option.label()}</span>
+								<span class="hidden truncate text-[10px] text-[var(--color-text-tertiary)] sm:block">{option.description()}</span>
 							</span>
 						</button>
 					{/each}
@@ -257,9 +258,9 @@
 			<input
 				id="relation-picker-search"
 				type="text"
-				aria-label="Search issues"
+				aria-label={m['issue.picker.search_label']()}
 				bind:value={searchQuery}
-				placeholder="Search issues..."
+				placeholder={m['issue.picker.search_placeholder']()}
 				autofocus
 				class="w-full border-b border-[var(--app-border)] bg-transparent px-4 py-4 text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
 			/>
@@ -267,8 +268,8 @@
 			<div class="max-h-[58vh] min-h-[20rem] overflow-y-auto py-2">
 				{#if canSearchIssues(searchQuery) || showingRecent || searchResults.length > 0}
 					<div class="flex items-center justify-between px-3 py-1">
-						<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{showingRecent && !canSearchIssues(searchQuery) ? 'Recent issues' : 'Issues'}</span>
-						<span class="text-[10px] text-[var(--color-text-tertiary)]">{selectedOption.label}</span>
+						<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{showingRecent && !canSearchIssues(searchQuery) ? m['issue.picker.recent_issues']() : m['common.issues']()}</span>
+						<span class="text-[10px] text-[var(--color-text-tertiary)]">{selectedOption.label()}</span>
 					</div>
 					{#if searching}
 						<div class="flex items-center justify-center py-8">
@@ -299,16 +300,16 @@
 										</span>
 									</div>
 								</div>
-								<span class="mt-0.5 hidden shrink-0 text-xs text-[var(--color-text-tertiary)] sm:inline">{selectedOption.label}</span>
+								<span class="mt-0.5 hidden shrink-0 text-xs text-[var(--color-text-tertiary)] sm:inline">{selectedOption.label()}</span>
 							</button>
 						{/each}
 					{:else}
-						<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">No issues found</p>
+						<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['sidebar.no_issues_found']()}</p>
 					{/if}
 				{:else if searchQuery.trim()}
-					<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">Keep typing to search issues</p>
+					<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['issue.picker.keep_typing']()}</p>
 				{:else}
-					<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">Start typing to search issues</p>
+					<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['issue.picker.start_typing']()}</p>
 				{/if}
 			</div>
 		</div>

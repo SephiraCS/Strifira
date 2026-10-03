@@ -331,7 +331,7 @@
 	</div>
 	{#if status === 'error'}
 		<div class="p-3">
-			<Alert variant="destructive"><AlertDescription>{statusMessage}{#if gatewayOrigin} <a href={gatewayOrigin} target="_blank" rel="noreferrer" class="underline">Open the terminal gateway</a>, accept the local certificate if prompted, then reconnect.{/if}</AlertDescription></Alert>
+			<Alert variant="destructive"><AlertDescription>{statusMessage}{#if gatewayOrigin} <a href={gatewayOrigin} target="_blank" rel="noreferrer" class="underline">{m['machines.gateway_open']()}</a>{m['machines.gateway_accept_certificate']()}{/if}</AlertDescription></Alert>
 		</div>
 	{/if}
 	<div bind:this={terminalElement} class="min-h-0 flex-1 overflow-hidden p-2" data-testid="native-terminal"></div>

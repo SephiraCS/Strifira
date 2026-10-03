@@ -13,6 +13,7 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { appToast } from '$lib/features/toast/toast';
+	import { m } from '$lib/paraglide/messages.js';
 
 	let {
 		slug,
@@ -30,11 +31,11 @@
 	let loading = $state(true);
 	let expanded = $state(true);
 
-	const RELATION_LABELS: Record<RelationType, string> = {
-		related: 'Related to',
-		blocked_by: 'Blocked by',
-		blocking: 'Blocking',
-		duplicate: 'Duplicate of'
+	const RELATION_LABELS: Record<RelationType, () => string> = {
+		related: () => m['issue.relations.related_to'](),
+		blocked_by: () => m['issue.blocked_by'](),
+		blocking: () => m['issue.blocking'](),
+		duplicate: () => m['issue.relations.duplicate_of']()
 	};
 
 	const RELATION_ICONS: Record<RelationType, any> = {
@@ -57,7 +58,7 @@
 	let groupedRelations = $derived(
 		RELATION_TYPES.map((type) => ({
 			type,
-			label: RELATION_LABELS[type],
+			label: RELATION_LABELS[type](),
 			items: relations.filter((r) => r.type === type)
 		})).filter((group) => group.items.length > 0)
 	);
@@ -87,7 +88,7 @@
 			await deleteRelation(slug, identifier, relationId);
 			relations = relations.filter((r) => r.id !== relationId);
 		} catch (err: any) {
-			appToast.apiError(err, 'Failed to remove relation');
+			appToast.apiError(err, m['issue.relations.failed_remove']());
 		}
 	}
 </script>
@@ -100,7 +101,7 @@
 					<Collapsible.Trigger class="flex min-w-0 flex-1 items-center gap-2 text-sm text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
 						<ChevronRight size={14} class="transition-transform {expanded ? 'rotate-90' : ''}" />
 						<Link size={14} class="shrink-0" />
-						<span class="font-medium">Relations</span>
+						<span class="font-medium">{m['issue.relations.title']()}</span>
 						{#if relationCount > 0}
 							<span class="rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-xs text-[var(--color-text-tertiary)]">
 								{relationCount}
@@ -111,7 +112,8 @@
 					<button
 						onclick={(e) => { e.stopPropagation(); openAdd(); }}
 						class="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
-						title="Add relation"
+						title={m['issue.add_relation']()}
+						aria-label={m['issue.add_relation']()}
 					>
 						<Plus size={13} />
 					</button>
@@ -139,13 +141,14 @@
 												{:else}
 													<div class="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-xs text-[var(--color-text-tertiary)]">
 														<Link size={13} class="shrink-0 opacity-60" />
-														<span>Unavailable issue</span>
+														<span>{m['issue.relations.unavailable_issue']()}</span>
 													</div>
 												{/if}
 												<button
 													onclick={() => handleRemoveRelation(relation.id)}
-													class="ml-1 shrink-0 rounded p-1 text-[var(--color-text-tertiary)] opacity-0 transition-opacity hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] group-hover/relation:opacity-100"
-													title="Remove relation"
+													class="ml-1 shrink-0 rounded p-1 text-[var(--color-text-tertiary)] opacity-0 transition-opacity hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-primary)] group-hover/relation:opacity-100 focus-visible:opacity-100"
+													title={m['issue.relations.remove']()}
+													aria-label={m['issue.relations.remove']()}
 												>
 													<X size={12} />
 												</button>

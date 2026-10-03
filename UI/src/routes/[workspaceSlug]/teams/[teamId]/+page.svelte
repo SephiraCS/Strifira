@@ -19,10 +19,6 @@
 	import { showIssueCreatedToast } from '$lib/features/issues/issue-created-toast';
 	import SaveViewDialog from '$lib/components/shared/SaveViewDialog.svelte';
 	import * as Popover from '$lib/components/ui/popover';
-	import { listTeams } from '$lib/api/teams';
-	import { listProjects } from '$lib/api/projects';
-	import { listLabels } from '$lib/api/labels';
-	import { listMembers } from '$lib/api/members';
 	import { listCycles } from '$lib/api/cycles';
 	import type { Team } from '$lib/types/team';
 	import type { Project } from '$lib/types/project';
@@ -54,6 +50,7 @@
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
 	import { viewLayoutState, setSessionViewLayout } from '$lib/features/issues/view-layout.state.svelte';
 	import { loadCollapsedGroups, saveCollapsedGroups } from '$lib/features/issues/collapsed-groups';
+	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const teamId = $derived(page.params.teamId ?? '');
@@ -128,7 +125,7 @@
 					// at the next refresh, when its re-averaged sort_order lands
 					// beyond page 1.
 					issuesState.load(s, getIssueParams(), true, layout === 'board'),
-					Promise.all([listTeams(s), listProjects(s), listLabels(s), listMembers(s), listCycles(s, t)]).then(
+					Promise.all([workspaceTeams(s), workspaceProjects(s), workspaceLabels(s), workspaceMembers(s), listCycles(s, t)]).then(
 						([te, p, l, m, c]) => {
 							if (currentInitialization !== initializationId || s !== slug || t !== teamId) return;
 							teams = te;

@@ -8,6 +8,7 @@
 	import { listProjects } from '$lib/api/projects';
 	import { listLabels } from '$lib/api/labels';
 	import { listMembers } from '$lib/api/members';
+	import { resetWorkspaceResources, shareWorkspaceResource } from '$lib/features/layout/workspace-resources';
 	import { listViews } from '$lib/api/views';
 	import { listNotifications } from '$lib/api/notifications';
 	import type { Workspace } from '$lib/types/workspace';
@@ -95,7 +96,10 @@
 		try {
 			// Team icons need the icon set; fetch it alongside the teams.
 			loadLucideLibrary();
-			const [ws, t] = await Promise.all([getWorkspace(workspaceSlug), listTeams(workspaceSlug)]);
+			const [ws, t] = await Promise.all([
+				getWorkspace(workspaceSlug),
+				shareWorkspaceResource(workspaceSlug, 'teams', listTeams(workspaceSlug))
+			]);
 			if (!isCurrent()) return;
 			// Ancillary requests must never hold the shell or mounted view hostage.
 			workspace = ws;
@@ -143,7 +147,7 @@
 				void loadAncillary(
 					resource,
 					workspaceSlug,
-					() => listProjects(workspaceSlug),
+					() => shareWorkspaceResource(workspaceSlug, 'projects', listProjects(workspaceSlug)),
 					(data) => {
 						projects = data;
 						sidebarState.projects = data;
@@ -154,7 +158,7 @@
 				void loadAncillary(
 					resource,
 					workspaceSlug,
-					() => listLabels(workspaceSlug),
+					() => shareWorkspaceResource(workspaceSlug, 'labels', listLabels(workspaceSlug)),
 					(data) => (labels = data)
 				);
 				break;
@@ -162,7 +166,7 @@
 				void loadAncillary(
 					resource,
 					workspaceSlug,
-					() => listMembers(workspaceSlug),
+					() => shareWorkspaceResource(workspaceSlug, 'members', listMembers(workspaceSlug)),
 					(data) => (members = data)
 				);
 				break;
@@ -259,6 +263,7 @@
 			views = [];
 			sidebarState.teams = [];
 			sidebarState.projects = [];
+			resetWorkspaceResources(slug);
 			void loadWorkspaceData(slug);
 		}
 	});
@@ -336,7 +341,7 @@
 		}
 	]);
 
-	const shortcutEngine = createShortcutEngine(shortcutDefs);
+	const shortcutEngine = createShortcutEngine(() => shortcutDefs);
 
 	onMount(() => {
 		document.addEventListener('keydown', shortcutEngine.handler);

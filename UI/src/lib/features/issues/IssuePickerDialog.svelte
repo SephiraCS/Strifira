@@ -5,13 +5,14 @@
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import { m } from '$lib/paraglide/messages.js';
 
 	let {
 		open = $bindable(false),
 		slug,
-		title = 'Select issue',
-		description = 'Search for an issue.',
-		actionLabel = 'Select',
+		title = m['issue.picker.select_issue'](),
+		description = m['issue.picker.search_description'](),
+		actionLabel = m['issue.picker.select'](),
 		excludeIds = [],
 		onselect
 	}: {
@@ -233,7 +234,7 @@
 			style="background: rgba(0,0,0,{visible ? 0.5 : 0}); transition: background {ANIM_DURATION}ms ease;"
 			onclick={close}
 			tabindex={-1}
-			aria-label="Close"
+			aria-label={m['common.close']()}
 		></button>
 
 		<div
@@ -251,7 +252,7 @@
 						type="text"
 						aria-label={title}
 						bind:value={searchQuery}
-						placeholder="Search issues..."
+						placeholder={m['issue.picker.search_placeholder']()}
 						autofocus
 						class="w-full border-b border-[var(--app-border)] bg-transparent px-4 py-4 text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)]"
 					/>
@@ -259,7 +260,7 @@
 					<div class="max-h-[68vh] min-h-[22rem] overflow-y-auto py-2">
 						{#if canSearchIssues(searchQuery) || showingRecent || searchResults.length > 0}
 							<div class="px-3 py-1">
-								<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{showingRecent && !canSearchIssues(searchQuery) ? 'Recent issues' : 'Issues'}</span>
+								<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{showingRecent && !canSearchIssues(searchQuery) ? m['issue.picker.recent_issues']() : m['common.issues']()}</span>
 							</div>
 							{#if searching}
 								<div class="flex items-center justify-center py-8">
@@ -302,12 +303,12 @@
 									</button>
 								{/each}
 							{:else}
-								<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">No issues found</p>
+								<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['sidebar.no_issues_found']()}</p>
 							{/if}
 						{:else if searchQuery.trim()}
-							<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">Keep typing to search issues</p>
+							<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['issue.picker.keep_typing']()}</p>
 						{:else}
-							<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">Start typing to search issues</p>
+							<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['issue.picker.start_typing']()}</p>
 						{/if}
 					</div>
 			</div>

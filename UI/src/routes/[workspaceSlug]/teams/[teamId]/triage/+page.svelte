@@ -55,9 +55,9 @@
 			await triageAccept(slug, identifier);
 			issues = issues.filter((i) => i.identifier !== identifier);
 			selectedIndex = Math.min(selectedIndex, issues.length - 1);
-			appToast.success('Issue accepted');
+			appToast.success(m['triage.accepted']());
 		} catch (err: any) {
-			appToast.apiError(err, 'Failed to accept');
+			appToast.apiError(err, m['triage.failed_accept']());
 		}
 	}
 
@@ -66,9 +66,9 @@
 			await triageDecline(slug, identifier);
 			issues = issues.filter((i) => i.identifier !== identifier);
 			selectedIndex = Math.min(selectedIndex, issues.length - 1);
-			appToast.success('Issue declined');
+			appToast.success(m['triage.declined']());
 		} catch (err: any) {
-			appToast.apiError(err, 'Failed to decline');
+			appToast.apiError(err, m['triage.failed_decline']());
 		}
 	}
 
@@ -117,7 +117,7 @@
 				{/if}
 				<span class="flex items-center gap-1.5 font-medium text-[var(--color-text-primary)]">
 					<ShieldCheck size={14} class="shrink-0" />
-					Triage
+					{m['sidebar.triage']()}
 				</span>
 			</nav>
 			<Badge variant="outline" class="text-[10px]">{issues.length}</Badge>
@@ -126,8 +126,8 @@
 		<div class="flex-1 overflow-y-auto">
 			{#if !loading && issues.length === 0}
 				<EmptyState
-					title="All triaged"
-					description="No issues waiting for triage"
+					title={m['triage.all_triaged']()}
+					description={m['triage.none_waiting']()}
 				/>
 			{:else}
 				{#each issues as issue, i}
@@ -158,12 +158,12 @@
 				<div class="flex items-center gap-2">
 					<Button size="sm" onclick={() => handleAccept(selectedIssue!.identifier)} class="gap-1.5">
 						<CheckCircle2 size={14} />
-						Accept
+						{m['triage.accept']()}
 						<Kbd class="ml-1">1</Kbd>
 					</Button>
 					<Button variant="outline" size="sm" onclick={() => handleDecline(selectedIssue!.identifier)} class="gap-1.5">
 						<XCircle size={14} />
-						Decline
+						{m['triage.decline']()}
 						<Kbd class="ml-1">3</Kbd>
 					</Button>
 				</div>
@@ -179,14 +179,14 @@
 
 				<div class="mt-6 grid grid-cols-2 gap-3 text-sm">
 					<div class="flex items-center gap-2">
-						<span class="w-20 text-[var(--color-text-tertiary)]">Status</span>
+						<span class="w-20 text-[var(--color-text-tertiary)]">{m['issue.status']()}</span>
 						<div class="flex items-center gap-1.5 text-[var(--color-text-secondary)]">
 							<IssueStatusIcon status={selectedIssue.status} />
 							{selectedIssue.status.replace('_', ' ')}
 						</div>
 					</div>
 					<div class="flex items-center gap-2">
-						<span class="w-20 text-[var(--color-text-tertiary)]">Priority</span>
+						<span class="w-20 text-[var(--color-text-tertiary)]">{m['issue.priority']()}</span>
 						<div class="flex items-center gap-1.5 text-[var(--color-text-secondary)]">
 							<IssuePriorityIcon priority={selectedIssue.priority} />
 							{selectedIssue.priority}
@@ -196,15 +196,15 @@
 
 				<!-- Keyboard hint -->
 				<div class="mt-8 flex items-center gap-4 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-4 py-3">
-					<span class="text-xs text-[var(--color-text-tertiary)]">Keyboard shortcuts:</span>
+					<span class="text-xs text-[var(--color-text-tertiary)]">{m['triage.keyboard_shortcuts']()}</span>
 					<div class="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
-						<Kbd>1</Kbd> Accept
+						<Kbd>1</Kbd> {m['triage.accept']()}
 					</div>
 					<div class="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
-						<Kbd>3</Kbd> Decline
+						<Kbd>3</Kbd> {m['triage.decline']()}
 					</div>
 					<div class="flex items-center gap-1 text-xs text-[var(--color-text-secondary)]">
-						<Kbd>J</Kbd><Kbd>K</Kbd> Navigate
+						<Kbd>J</Kbd><Kbd>K</Kbd> {m['triage.navigate']()}
 					</div>
 				</div>
 			</div>
@@ -212,8 +212,8 @@
 			<div class="flex h-full items-center justify-center">
 				<div class="text-center">
 					<CheckCircle2 size={40} class="mx-auto text-[var(--color-success)]" />
-					<p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">All caught up!</p>
-					<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">No issues waiting for triage</p>
+					<p class="mt-3 text-sm font-medium text-[var(--color-text-primary)]">{m['triage.all_caught_up']()}</p>
+					<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['triage.none_waiting']()}</p>
 				</div>
 			</div>
 		{/if}

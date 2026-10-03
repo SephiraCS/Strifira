@@ -1,0 +1,94 @@
+import { listLabels } from '$lib/api/labels';
+import { listMembers } from '$lib/api/members';
+import { listProjects } from '$lib/api/projects';
+import { listTeams } from '$lib/api/teams';
+import type { Label } from '$lib/types/label';
+import type { Project } from '$lib/types/project';
+import type { Team } from '$lib/types/team';
+import type { WorkspaceMember } from '$lib/types/workspace';
+
+/**
+ * The workspace layout loads teams, projects, labels and members for the
+ * sidebar, command palette and dialogs, and reloads each one whenever an API
+ * mutation or realtime event emits `app:refresh` for it. Pages that need the
+ * same collections share the layout's latest request instead of sending their
+ * own: while it is in flight they wait for it, afterwards they reuse its
+ * result. When the layout has no request for the workspace (or it failed),
+ * the page fetches directly, so callers always get data.
+ */
+type Resources = {
+	teams: Team[];
+	projects: Project[];
+	labels: Label[];
+	members: WorkspaceMember[];
+};
+
+type ResourceName = keyof Resources;
+
+const fetchers: { [K in ResourceName]: (slug: string) => Promise<Resources[K]> } = {
+	teams: listTeams,
+	projects: listProjects,
+	labels: listLabels,
+	members: listMembers
+};
+
+let currentSlug: string | null = null;
+const requests = new Map<ResourceName, Promise<unknown>>();
+
+// A refresh (an API mutation or a realtime event) makes the shared result
+// stale. This listener is registered when the module is first imported, so it
+// runs before any component's `app:refresh` handler: a handler that reads a
+// resource before the layout has reloaded it fetches its own fresh copy.
+if (typeof window !== 'undefined') {
+	window.addEventListener('app:refresh', (event) => {
+		const detail = (event as CustomEvent<{ slug?: string; resources?: string[] } | null>).detail;
+		if (detail?.slug && detail.slug !== currentSlug) return;
+		const resources = detail?.resources;
+		if (!resources || resources.length === 0) {
+			requests.clear();
+			return;
+		}
+		for (const resource of Object.keys(fetchers) as ResourceName[]) {
+			// The layout reloads teams together with the workspace itself.
+			if (resources.includes(resource) || (resource === 'teams' && resources.includes('workspace'))) {
+				requests.delete(resource);
+			}
+		}
+	});
+}
+
+/** Forget every shared request; called when the layout switches workspace. */
+export function resetWorkspaceResources(slug: string) {
+	currentSlug = slug;
+	requests.clear();
+}
+
+/** Record the layout's request for `resource` so pages can share it. */
+export function shareWorkspaceResource<K extends ResourceName>(
+	slug: string,
+	resource: K,
+	request: Promise<Resources[K]>
+): Promise<Resources[K]> {
+	if (slug === currentSlug) {
+		requests.set(resource, request);
+		// A failed request is not reused; the next reader fetches again.
+		request.catch(() => {
+			if (requests.get(resource) === request) requests.delete(resource);
+		});
+	}
+	return request;
+}
+
+/** The workspace's `resource`, from the layout's latest request when there is one. */
+export function getWorkspaceResource<K extends ResourceName>(slug: string, resource: K): Promise<Resources[K]> {
+	const shared = slug === currentSlug ? (requests.get(resource) as Promise<Resources[K]> | undefined) : undefined;
+	if (!shared) return fetchers[resource](slug);
+	// Hand out a copy so a page reassigning or pushing to its list never
+	// touches the array other readers received.
+	return shared.then((data) => [...data] as Resources[K]).catch(() => fetchers[resource](slug));
+}
+
+export const workspaceTeams = (slug: string) => getWorkspaceResource(slug, 'teams');
+export const workspaceProjects = (slug: string) => getWorkspaceResource(slug, 'projects');
+export const workspaceLabels = (slug: string) => getWorkspaceResource(slug, 'labels');
+export const workspaceMembers = (slug: string) => getWorkspaceResource(slug, 'members');

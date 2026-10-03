@@ -321,6 +321,25 @@ test('team board initial load follows every page of the team issues', async ({ p
 	expect(issueRequests).toContain('3');
 });
 
+test('the legacy /board route redirects to the team page before rendering', async ({ page }) => {
+	await mockTeamBoard(page);
+	const boardPath = `/test/teams/${teamId}/board`;
+	const visited: string[] = [];
+	page.on('framenavigated', (frame) => {
+		if (frame === page.mainFrame()) visited.push(new URL(frame.url()).pathname);
+	});
+
+	await page.goto(boardPath);
+
+	await expect(page).toHaveURL(new RegExp(`/test/teams/${teamId}$`));
+	await page.locator('[data-issue-drop-zone]').first().waitFor({ state: 'visible' });
+	await expect(page.getByText(VICTIM_TITLE)).toBeVisible();
+	expect(visited.at(-1)).toBe(`/test/teams/${teamId}`);
+	// The redirect replaces the entry: going back must not land on /board.
+	await page.goBack();
+	expect(new URL(page.url()).pathname).not.toBe(boardPath);
+});
+
 test('identical background refreshes cause no DOM churn on the board', async ({ page }) => {
 	const { issueRequests } = await mockTeamBoard(page);
 

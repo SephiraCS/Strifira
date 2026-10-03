@@ -69,12 +69,15 @@ export type ShortcutDef = {
 
 const SEQUENCE_TIMEOUT = 500; // ms
 
-export function createShortcutEngine(defs: ShortcutDef[]) {
+/**
+ * Pass a getter when the definitions are reactive (e.g. a `$derived` list whose
+ * labels follow the active language) so every key press sees the current list.
+ */
+export function createShortcutEngine(defs: ShortcutDef[] | (() => ShortcutDef[])) {
 	let pendingKeys: string[] = [];
 	let pendingTimer: ReturnType<typeof setTimeout> | null = null;
 
-	const sequences = defs.filter((d) => d.keys && d.keys.length > 0);
-	const singles = defs.filter((d) => d.key && !d.keys);
+	const currentDefs = typeof defs === 'function' ? defs : () => defs;
 
 	function resetPending() {
 		pendingKeys = [];
@@ -95,6 +98,9 @@ export function createShortcutEngine(defs: ShortcutDef[]) {
 		}
 
 		const key = e.key.toLowerCase();
+		const defs = currentDefs();
+		const sequences = defs.filter((d) => d.keys && d.keys.length > 0);
+		const singles = defs.filter((d) => d.key && !d.keys);
 
 		// Check single-key shortcuts with modifiers first
 		for (const s of singles) {
@@ -147,5 +153,10 @@ export function createShortcutEngine(defs: ShortcutDef[]) {
 		}
 	}
 
-	return { handler, defs };
+	return {
+		handler,
+		get defs() {
+			return currentDefs();
+		}
+	};
 }
