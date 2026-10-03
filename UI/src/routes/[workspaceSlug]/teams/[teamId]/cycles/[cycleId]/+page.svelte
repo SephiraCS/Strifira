@@ -5,8 +5,6 @@
 	import { getCycle, completeCycle, updateCycle, deleteCycle, listCycles } from '$lib/api/cycles';
 	import CompleteCycleDialog from '$lib/features/cycles/CompleteCycleDialog.svelte';
 	import { updateIssue } from '$lib/api/issues';
-	import { listMembers } from '$lib/api/members';
-	import { listLabels } from '$lib/api/labels';
 	import { getWorkspace } from '$lib/api/workspaces';
 	import { issuesState } from '$lib/features/issues/issues.state.svelte';
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
@@ -40,6 +38,7 @@
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { hasPermission } from '$lib/security/permissions';
 	import type { Role } from '$lib/security/roles';
+	import { workspaceLabels, workspaceMembers } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const teamId = $derived(page.params.teamId ?? '');
@@ -81,8 +80,8 @@
 		try {
 			const [c, m, l, cyc, workspace] = await Promise.all([
 				getCycle(slug, teamId, cycleId),
-				listMembers(slug),
-				listLabels(slug),
+				workspaceMembers(slug),
+				workspaceLabels(slug),
 				listCycles(slug, teamId),
 				getWorkspace(slug)
 			]);

@@ -4,10 +4,6 @@
 	import { goto } from '$app/navigation';
 	import { getView, updateView, deleteView } from '$lib/api/views';
 	import { listIssues } from '$lib/api/issues';
-	import { listMembers } from '$lib/api/members';
-	import { listLabels } from '$lib/api/labels';
-	import { listTeams } from '$lib/api/teams';
-	import { listProjects } from '$lib/api/projects';
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import type { View, ViewFilter } from '$lib/types/view';
@@ -38,6 +34,7 @@
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
+	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const viewId = $derived(page.params.viewId ?? '');
@@ -71,7 +68,7 @@
 		const v = viewId;
 		if (!s || !v) return;
 		loading = true;
-		Promise.all([getView(s, v), listMembers(s), listLabels(s), listTeams(s), listProjects(s)])
+		Promise.all([getView(s, v), workspaceMembers(s), workspaceLabels(s), workspaceTeams(s), workspaceProjects(s)])
 			.then(async ([viewData, m, l, t, p]) => {
 				view = viewData;
 				members = m;
