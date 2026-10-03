@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -669,27 +670,28 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 		issueIDs = append(issueIDs, issue.ID)
 	}
 	currentGreen := pr.State == "open" && pr.ChecksGreen && headSHA != ""
-	if currentGreen {
-		existing, err := s.fRepo.ListIssueIDsForPR(ctx, pr.ID)
-		if err != nil {
-			return err
-		}
+	active := pr.State == "open" || pr.State == "draft"
+	existing, err := s.fRepo.ListIssueIDsForPR(ctx, pr.ID)
+	if err != nil {
+		return err
+	}
+	handled := make(map[uuid.UUID]bool)
+	if active {
 		for _, issue := range linkedIssues {
-			alreadyLinked := false
-			for _, id := range existing {
-				if id == issue.ID {
-					alreadyLinked = true
-					break
-				}
-			}
-			if alreadyLinked {
+			if slices.Contains(existing, issue.ID) {
 				continue
 			}
-			// Persist the new link after its inherited green transition succeeds,
-			// so failed automation remains retryable on the next delivery.
-			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, "pr_checks_green", issue, pr.AuthorLogin, pr); err != nil {
+			// A newly referenced issue inherits the PR's current stage: drafts
+			// and edited bodies still mean work has started. Persist the link
+			// after the transition succeeds so failures stay retryable.
+			transition := "pr_opened"
+			if currentGreen {
+				transition = "pr_checks_green"
+			}
+			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, transition, issue, pr.AuthorLogin, pr); err != nil {
 				return err
 			}
+			handled[issue.ID] = true
 		}
 	}
 	if err := s.fRepo.ReplacePRIssueLinks(ctx, pr, issueIDs); err != nil {
@@ -703,7 +705,7 @@ func (s *ForgejoService) processPullRequestEvent(ctx context.Context, payload []
 	ready := event.Action == "edited" && event.Changes.Title != nil && isDraftTitle(event.Changes.Title.From)
 	for _, issue := range linkedIssues {
 		switch {
-		case !currentGreen && pr.State == "open" && (event.Action == "opened" || event.Action == "reopened" || ready):
+		case active && !handled[issue.ID] && !currentGreen && (event.Action == "opened" || event.Action == "reopened" || ready):
 			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, "pr_opened", issue, event.PullRequest.User.Login, pr); err != nil {
 				return err
 			}
@@ -1041,13 +1043,11 @@ func (s *ForgejoService) relinkPullRequestReferences(ctx context.Context, repo *
 			continue
 		}
 		event := "pr_opened"
-		if green {
+		if green && pr.State != "draft" {
 			event = "pr_checks_green"
 		}
-		if pr.State != "draft" {
-			if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, event, issue, pr.AuthorLogin, pr); err != nil {
-				return err
-			}
+		if err := s.applyAutoTransitionForPR(ctx, repo.WorkspaceID, event, issue, pr.AuthorLogin, pr); err != nil {
+			return err
 		}
 		ids = append(ids, issue.ID)
 	}
@@ -1146,7 +1146,9 @@ func (s *ForgejoService) syncOpenPRChecks(ctx context.Context) {
 				continue
 			}
 			seen[*pr.HeadSHA] = true
-			_ = s.refreshChecksForSHA(ctx, &repos[i], *pr.HeadSHA)
+			if err := s.refreshChecksForSHA(ctx, &repos[i], *pr.HeadSHA); err != nil {
+				log.WithError(err).WithFields(log.Fields{"repo": repos[i].FullName, "pr": pr.Number}).Warn("failed to reconcile Forgejo checks")
+			}
 		}
 	}
 }
@@ -1290,6 +1292,15 @@ func (s *ForgejoService) applyAutoTransitionOnce(ctx context.Context, workspaceI
 	if err != nil {
 		return err
 	}
+	if targetStatus != nil {
+		past, err := s.issuePastStatus(ctx, issue, targetStatus)
+		if err != nil {
+			return err
+		}
+		if past {
+			targetStatus = nil
+		}
+	}
 	oldStatus := string(issue.Status)
 	newStatus := oldStatus
 	statusChanged := false
@@ -1389,6 +1400,20 @@ func (s *ForgejoService) automationTargetStatus(ctx context.Context, workspaceID
 		return nil, fmt.Errorf("automation target status %q is missing from the issue's team", slug)
 	}
 	return status, nil
+}
+
+// Automation only advances an issue through its team's workflow: a second PR
+// or branch must not pull an issue in review back to In Progress.
+func (s *ForgejoService) issuePastStatus(ctx context.Context, issue *domain.Issue, target *domain.TeamStatus) (bool, error) {
+	if issue.StatusID == nil || *issue.StatusID == target.ID {
+		return false, nil
+	}
+	current, err := s.teamStatusRepo.GetByID(ctx, *issue.StatusID)
+	if err != nil || current == nil {
+		return false, err
+	}
+	return current.TeamID == target.TeamID && current.Slug == string(issue.Status) &&
+		current.Category == domain.StatusCategoryStarted && current.Position > target.Position, nil
 }
 
 func (s *ForgejoService) applyStatusAutomation(ctx context.Context, workspaceID uuid.UUID, issue *domain.Issue, visited map[uuid.UUID]bool, expectedPR *domain.ForgejoPullRequest) error {
@@ -1588,7 +1613,7 @@ func (s *ForgejoService) GetIssueActivity(ctx context.Context, workspaceID uuid.
 			ChecksGreen: pr.ChecksGreen, AuthorLogin: pr.AuthorLogin, AuthorAvatarURL: avatarURL,
 			HTMLURL: pr.HTMLURL, HeadBranch: headBranch, HeadSHA: headSHA, BaseBranch: baseBranch,
 			Additions: pr.Additions, Deletions: pr.Deletions,
-			RepoFullName: pr.RepoFullName, MergedAt: pr.MergedAt,
+			RepoID: pr.ForgejoRepoID.String(), RepoFullName: pr.RepoFullName, MergedAt: pr.MergedAt,
 			CreatedAt: pr.CreatedAt, UpdatedAt: pr.UpdatedAt,
 		})
 	}
@@ -1599,8 +1624,8 @@ func (s *ForgejoService) GetIssueActivity(ctx context.Context, workspaceID uuid.
 			htmlURL = *b.HTMLURL
 		}
 		resp.Branches = append(resp.Branches, dto.ForgejoBranchResponse{
-			ID: b.ID.String(), Name: b.Name, HTMLURL: htmlURL, RepoFullName: b.RepoFullName,
-			CreatedAt: b.CreatedAt,
+			ID: b.ID.String(), Name: b.Name, HTMLURL: htmlURL,
+			RepoID: b.ForgejoRepoID.String(), RepoFullName: b.RepoFullName, CreatedAt: b.CreatedAt,
 		})
 	}
 

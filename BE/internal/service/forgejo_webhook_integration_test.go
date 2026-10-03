@@ -427,7 +427,7 @@ func TestForgejoWebhookClosingKeywordsCompleteEveryIssueWithoutMergeRule(t *test
 func TestForgejoWebhookChecksFailureRetriesSameSHAWithoutLatchingGreen(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/repos/org/project/commits/head-commit/status", r.URL.Path)
-		fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","state":"success"}]}`)
+		fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","status":"success"}]}`)
 	}))
 	t.Cleanup(server.Close)
 	f := setupForgejoWebhook(t, server.URL)
@@ -463,7 +463,7 @@ func TestForgejoWebhookChecksFailureRetriesSameSHAWithoutLatchingGreen(t *testin
 func TestForgejoWebhookOldReferencesFollowTeamKeyRename(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/repos/org/project/commits/head-commit/status", r.URL.Path)
-		fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","state":"success"}]}`)
+		fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","status":"success"}]}`)
 	}))
 	t.Cleanup(server.Close)
 	f := setupForgejoWebhook(t, server.URL)
@@ -565,7 +565,7 @@ func TestForgejoWebhookOldHeadChecksCannotMoveUpdatedPullRequest(t *testing.T) {
 		notifyRequested()
 		select {
 		case <-released:
-			fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","state":"success"}]}`)
+			fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","status":"success"}]}`)
 		case <-r.Context().Done():
 		}
 	}))
@@ -620,7 +620,7 @@ func TestForgejoWebhookOldHeadChecksCannotMoveUpdatedPullRequest(t *testing.T) {
 func TestForgejoWebhookGreenOpenedRedeliveryCatchesRestoredReference(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v1/repos/org/project/commits/head-commit/status", r.URL.Path)
-		fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","state":"success"}]}`)
+		fmt.Fprint(w, `{"sha":"head-commit","state":"success","total_count":1,"statuses":[{"context":"test","status":"success"}]}`)
 	}))
 	t.Cleanup(server.Close)
 	f := setupForgejoWebhook(t, server.URL)
@@ -666,4 +666,50 @@ func TestForgejoWebhookGreenOpenedRedeliveryCatchesRestoredReference(t *testing.
 	require.NoError(t, err)
 	require.Len(t, activity.PullRequests, 1)
 	assert.True(t, activity.PullRequests[0].ChecksGreen)
+}
+
+func (f *forgejoWebhookFixture) draftPullRequest(t *testing.T, number int, action, title, body string) []byte {
+	t.Helper()
+	return f.payload(t, map[string]any{"action": action, "number": number, "pull_request": map[string]any{
+		"number": number, "title": title, "body": body, "state": "open", "draft": true, "merged": false,
+		"head":     map[string]any{"ref": "wip/no-reference", "sha": "draft-head"},
+		"base":     map[string]any{"ref": "main"},
+		"user":     map[string]any{"login": "pusher"},
+		"html_url": fmt.Sprintf("%s/org/project/pulls/%d", f.repo.InstanceURL, number),
+	}})
+}
+
+func TestForgejoWebhookDraftPullRequestStartsEveryReferencedIssue(t *testing.T) {
+	f := setupForgejoWebhook(t, "https://forgejo.example.test")
+	second := f.addIssue(t, f.team, f.todoID, 2, "FA-2")
+	require.NoError(t, f.svc.UpdateAutoTransitions(t.Context(), f.workspace, dto.UpdateAutoTransitionsRequest{
+		Transitions: []dto.AutoTransitionRule{{Event: "pr_opened", TargetStatus: "in_progress", AssignForgejoUser: true, IsActive: true}},
+	}))
+	require.NoError(t, f.deliver(t, "pull_request", f.draftPullRequest(t, 9, "opened", "WIP: Implement FA-1", "")))
+	assert.Equal(t, "in_progress", f.issueStatusSlug(t, f.issueID), "a draft PR means work has started")
+	assert.Equal(t, "todo", f.issueStatusSlug(t, second))
+
+	// Referencing another issue by editing the body starts it too.
+	require.NoError(t, f.deliver(t, "pull_request", f.draftPullRequest(t, 9, "edited", "WIP: Implement FA-1", "Also covers FA-2")))
+	assert.Equal(t, "in_progress", f.issueStatusSlug(t, second))
+	assert.Contains(t, f.issueAssigneeIDs(t, second), f.pusherID.String())
+	assert.Equal(t, 1, f.historyCount(t, f.issueID, "status"), "redelivery for an already linked issue must not replay")
+}
+
+func TestForgejoWebhookAutomationNeverMovesAnIssueBackwards(t *testing.T) {
+	f := setupForgejoWebhook(t, "https://forgejo.example.test")
+	reviewID := f.addStatus(t, f.team, "pr", "started", 2)
+	_, err := f.db.ExecContext(t.Context(), `UPDATE issues SET status='pr', status_id=$1 WHERE id=$2`, reviewID, f.issueID)
+	require.NoError(t, err)
+	require.NoError(t, f.svc.UpdateAutoTransitions(t.Context(), f.workspace, dto.UpdateAutoTransitionsRequest{
+		Transitions: []dto.AutoTransitionRule{
+			{Event: "branch_created", TargetStatus: "in_progress", AssignForgejoUser: true, IsActive: true},
+			{Event: "pr_opened", TargetStatus: "in_progress", AssignForgejoUser: true, IsActive: true},
+		},
+	}))
+	require.NoError(t, f.deliver(t, "create", f.createBranch(t, "follow-up/FA-1", "pusher")))
+	require.NoError(t, f.deliver(t, "pull_request", f.pullRequestFor(t, 11, "FA-1", "opened", "", "pusher", false)))
+	assert.Equal(t, "pr", f.issueStatusSlug(t, f.issueID), "a second branch or PR must not pull a reviewed issue back")
+	assert.Equal(t, 0, f.historyCount(t, f.issueID, "status"))
+	assert.Contains(t, f.issueAssigneeIDs(t, f.issueID), f.pusherID.String(), "assignment still applies")
 }

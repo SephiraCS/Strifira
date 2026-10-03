@@ -1,7 +1,27 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
-	import { getCachedForgejoStatus, getForgejoStatus, getIssueForgejoActivity } from '$lib/api/forgejo';
-	import type { ForgejoIssueActivity, ForgejoStatus } from '$lib/types/forgejo';
+	import {
+		cancelForgejoActionRun,
+		getCachedForgejoStatus,
+		getForgejoActionLogs,
+		getForgejoStatus,
+		getIssueForgejoActivity,
+		listForgejoActionJobs,
+		listForgejoActionRuns
+	} from '$lib/api/forgejo';
+	import type {
+		ForgejoActionJob,
+		ForgejoActionLogs,
+		ForgejoActionRun,
+		ForgejoIssueActivity,
+		ForgejoPullRequest,
+		ForgejoStatus
+	} from '$lib/types/forgejo';
+	import ActionStatus from '$lib/features/forgejo/ActionStatus.svelte';
+	import { actionDuration, actionStatus, isActiveAction, plainActionLogs } from '$lib/features/forgejo/actions';
+	import { safeForgejoActionsUrl } from '$lib/security/forgejo-url';
+	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { formatRelativeTime } from '$lib/utils/format';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale } from '$lib/paraglide/runtime.js';
@@ -14,6 +34,9 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import CheckCircle2 from '@lucide/svelte/icons/circle-check';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import Workflow from '@lucide/svelte/icons/workflow';
+	import Square from '@lucide/svelte/icons/square';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { appToast } from '$lib/features/toast/toast';
 
 	let { slug, identifier, issueId }: { slug: string; identifier: string; issueId: string } = $props();
@@ -33,6 +56,37 @@
 	let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 	let controller: AbortController | undefined;
+
+	// Forgejo Actions runs for each linked pull request, keyed by pull request id.
+	type PullRequestRuns = { runs: ForgejoActionRun[]; loading: boolean; failed: boolean };
+	type ExpandedRun = { pullRequestId: string; repoId: string; repoFullName: string; run: ForgejoActionRun };
+	const ACTIONS_POLL_MS = 10000;
+	let runsByPullRequest = $state<Record<string, PullRequestRuns>>({});
+	let expandedRun = $state<ExpandedRun | null>(null);
+	let jobs = $state<ForgejoActionJob[]>([]);
+	let jobsLoading = $state(false);
+	let jobsFailed = $state(false);
+	let selectedJob = $state<ForgejoActionJob | null>(null);
+	let logs = $state<ForgejoActionLogs | null>(null);
+	let logsLoading = $state(false);
+	let logsFailed = $state(false);
+	let cancelTarget = $state<ExpandedRun | null>(null);
+	let cancelBusy = $state(false);
+	let cancelRequested = $state<number | null>(null);
+	let actionsGeneration = 0;
+	let runsController: AbortController | undefined;
+	let jobsController: AbortController | undefined;
+	let logsController: AbortController | undefined;
+	let pollTimer: ReturnType<typeof setTimeout> | undefined;
+
+	const actionPullRequests = $derived(activity?.pull_requests.filter((pr) => pr.repo_id) ?? []);
+	const canManageActions = $derived(sidebarState.workspaceRole === 'owner');
+	const anyActiveRun = $derived(
+		Object.values(runsByPullRequest).some((entry) =>
+			entry.runs.some((run) => isActiveAction(actionStatus(run.status, run.conclusion)))
+		)
+	);
+	const logContent = $derived(logs ? plainActionLogs(logs.content) : '');
 
 	const hasActivity = $derived(
 		activity && (activity.pull_requests.length > 0 || activity.branches.length > 0 || activity.commits.length > 0)
@@ -59,6 +113,7 @@
 			refreshing = false;
 			refreshQueued = false;
 			freshStatusQueued = false;
+			resetActions();
 			void refresh(workspaceSlug, issueIdentifier, generation);
 		});
 	});
@@ -76,7 +131,10 @@
 		try {
 			const status = await (freshStatus ? getForgejoStatus(workspaceSlug) : getCachedForgejoStatus(workspaceSlug));
 			if (!mounted || requestGeneration !== generation) return;
-			if (!status.connected || connection?.instance_url !== status.instance_url) activity = null;
+			if (!status.connected || connection?.instance_url !== status.instance_url) {
+				activity = null;
+				resetActions();
+			}
 			connection = status;
 			if (!status.connected) return;
 			const result = await getIssueForgejoActivity(
@@ -85,7 +143,10 @@
 				status.instance_url ?? '',
 				requestController.signal
 			);
-			if (mounted && requestGeneration === generation) activity = result;
+			if (mounted && requestGeneration === generation) {
+				activity = result;
+				void loadRuns(workspaceSlug, result.pull_requests);
+			}
 		} catch {
 			if (mounted && requestGeneration === generation) failed = true;
 		} finally {
@@ -140,6 +201,7 @@
 			controller?.abort();
 			clearTimeout(refreshTimer);
 			clearTimeout(copiedTimer);
+			resetActions();
 			window.removeEventListener('ws:forgejo:pr_updated', handleForgejoUpdate);
 			window.removeEventListener('ws:forgejo:branch_created', handleForgejoUpdate);
 			window.removeEventListener('ws:forgejo:commit_pushed', handleForgejoUpdate);
@@ -147,6 +209,190 @@
 			window.removeEventListener('ws:reconnected', handleReconnected);
 		};
 	});
+
+	function resetActions() {
+		actionsGeneration++;
+		runsController?.abort();
+		clearTimeout(pollTimer);
+		runsByPullRequest = {};
+		closeRun();
+		cancelTarget = null;
+		cancelRequested = null;
+	}
+
+	function closeRun() {
+		jobsController?.abort();
+		logsController?.abort();
+		expandedRun = null;
+		jobs = [];
+		jobsLoading = false;
+		jobsFailed = false;
+		selectedJob = null;
+		logs = null;
+		logsLoading = false;
+		logsFailed = false;
+	}
+
+	async function loadRuns(workspaceSlug: string, pullRequests: ForgejoPullRequest[]) {
+		const runGeneration = ++actionsGeneration;
+		runsController?.abort();
+		clearTimeout(pollTimer);
+		const requestController = new AbortController();
+		runsController = requestController;
+		const targets = pullRequests.filter((pr) => pr.repo_id);
+		const next: Record<string, PullRequestRuns> = {};
+		for (const pr of targets)
+			next[pr.id] = runsByPullRequest[pr.id]
+				? { ...runsByPullRequest[pr.id], loading: false }
+				: { runs: [], loading: true, failed: false };
+		runsByPullRequest = next;
+		await Promise.all(
+			targets.map(async (pr) => {
+				try {
+					const result = await listForgejoActionRuns(
+						workspaceSlug,
+						pr.repo_id,
+						{ ref: `refs/pull/${pr.number}/head` },
+						requestController.signal
+					);
+					if (!mounted || runGeneration !== actionsGeneration) return;
+					runsByPullRequest[pr.id] = { runs: result.data ?? [], loading: false, failed: false };
+					if (expandedRun?.pullRequestId === pr.id) {
+						const run = result.data?.find((candidate) => candidate.id === expandedRun?.run.id);
+						if (run) {
+							if (cancelRequested === run.id && !isActiveAction(actionStatus(run.status, run.conclusion)))
+								cancelRequested = null;
+							expandedRun = { ...expandedRun, run };
+						}
+					}
+				} catch {
+					if (!mounted || runGeneration !== actionsGeneration || requestController.signal.aborted) return;
+					// Keep previously loaded runs visible when a background refresh fails.
+					const previous = runsByPullRequest[pr.id];
+					runsByPullRequest[pr.id] = { runs: previous?.runs ?? [], loading: false, failed: !previous?.runs.length };
+				}
+			})
+		);
+		if (mounted && runGeneration === actionsGeneration) schedulePoll(workspaceSlug, runGeneration);
+	}
+
+	function schedulePoll(workspaceSlug: string, runGeneration: number) {
+		clearTimeout(pollTimer);
+		if (!anyActiveRun) return;
+		pollTimer = setTimeout(() => {
+			if (!mounted || runGeneration !== actionsGeneration || !activity) return;
+			if (document.visibilityState === 'hidden') {
+				schedulePoll(workspaceSlug, runGeneration);
+				return;
+			}
+			void loadRuns(workspaceSlug, activity.pull_requests);
+			if (expandedRun) {
+				void loadJobs(workspaceSlug, expandedRun, true);
+				if (selectedJob) void loadLogs(workspaceSlug, expandedRun, selectedJob, true);
+			}
+		}, ACTIONS_POLL_MS);
+	}
+
+	function toggleRun(pr: ForgejoPullRequest, run: ForgejoActionRun) {
+		if (expandedRun?.pullRequestId === pr.id && expandedRun.run.id === run.id) {
+			closeRun();
+			return;
+		}
+		closeRun();
+		expandedRun = { pullRequestId: pr.id, repoId: pr.repo_id, repoFullName: pr.repo_full_name, run };
+		void loadJobs(slug, expandedRun);
+	}
+
+	async function loadJobs(workspaceSlug: string, target: ExpandedRun, background = false) {
+		jobsController?.abort();
+		const requestController = new AbortController();
+		jobsController = requestController;
+		if (!background) {
+			jobsLoading = true;
+			jobsFailed = false;
+		}
+		try {
+			const result = await listForgejoActionJobs(
+				workspaceSlug,
+				target.repoId,
+				target.run.id,
+				1,
+				requestController.signal
+			);
+			if (!mounted || requestController.signal.aborted || expandedRun?.run.id !== target.run.id) return;
+			jobs = result.data ?? [];
+			jobsFailed = false;
+		} catch {
+			if (!background && !requestController.signal.aborted) jobsFailed = true;
+		} finally {
+			if (jobsController === requestController) jobsLoading = false;
+		}
+	}
+
+	function toggleJob(job: ForgejoActionJob) {
+		if (!expandedRun) return;
+		if (selectedJob?.id === job.id) {
+			logsController?.abort();
+			selectedJob = null;
+			logs = null;
+			logsLoading = false;
+			logsFailed = false;
+			return;
+		}
+		selectedJob = job;
+		logs = null;
+		void loadLogs(slug, expandedRun, job);
+	}
+
+	async function loadLogs(workspaceSlug: string, target: ExpandedRun, job: ForgejoActionJob, background = false) {
+		logsController?.abort();
+		const requestController = new AbortController();
+		logsController = requestController;
+		if (!background) {
+			logsLoading = true;
+			logsFailed = false;
+		}
+		const current = jobs.find((candidate) => candidate.id === job.id) ?? job;
+		try {
+			const result = await getForgejoActionLogs(
+				workspaceSlug,
+				target.repoId,
+				target.run.id,
+				current.id,
+				current.attempt,
+				requestController.signal
+			);
+			if (!mounted || requestController.signal.aborted || selectedJob?.id !== job.id) return;
+			logs = result;
+			logsFailed = false;
+		} catch {
+			if (!background && !requestController.signal.aborted) logsFailed = true;
+		} finally {
+			if (logsController === requestController) logsLoading = false;
+		}
+	}
+
+	async function cancelRun() {
+		const target = cancelTarget;
+		if (!target || !canManageActions || cancelBusy) return;
+		const workspaceSlug = slug;
+		cancelBusy = true;
+		try {
+			await cancelForgejoActionRun(workspaceSlug, target.repoId, target.run.id);
+			appToast.success(m['forgejo_actions.requested']());
+			cancelRequested = target.run.id;
+			if (activity && workspaceSlug === slug) void loadRuns(workspaceSlug, activity.pull_requests);
+		} catch (error) {
+			appToast.apiError(error, m['forgejo_actions.failed_action']());
+		} finally {
+			cancelBusy = false;
+			cancelTarget = null;
+		}
+	}
+
+	function runUrl(run: ForgejoActionRun, repoFullName: string): string | null {
+		return safeForgejoActionsUrl(run.html_url, repoFullName, connection?.instance_url ?? '');
+	}
 
 	async function copyBranch(name: string) {
 		const requestGeneration = generation;
@@ -330,6 +576,181 @@
 					</p>
 				{/if}
 			</div>
+			{#if actionPullRequests.length > 0}
+				<section
+					aria-label={m['forgejo_actions.title']()}
+					class="space-y-2 border-t border-[var(--app-border)] px-3 py-2.5"
+				>
+					<div
+						class="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]"
+					>
+						<Workflow size={12} />
+						{m['issue.forgejo.actions']()}
+						{#if anyActiveRun}<span
+								class="ml-auto h-1.5 w-1.5 rounded-full bg-blue-500"
+								title={m['forgejo_actions.active']()}
+							></span>{/if}
+					</div>
+					{#each actionPullRequests as pr (pr.id)}
+						{@const entry = runsByPullRequest[pr.id]}
+						<div class="space-y-1">
+							{#if actionPullRequests.length > 1}<div class="text-[10px] text-[var(--color-text-tertiary)]">
+									{pr.repo_full_name}#{pr.number}
+								</div>{/if}
+							{#if !entry || entry.loading}
+								<div class="flex items-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)]">
+									<LoaderCircle size={11} class="animate-spin" />{m['forgejo_actions.loading']()}
+								</div>
+							{:else if entry.failed}
+								<p role="alert" class="text-[10px] text-red-500">{m['forgejo_actions.failed_load']()}</p>
+							{:else if entry.runs.length === 0}
+								<p class="text-[10px] text-[var(--color-text-tertiary)]">{m['issue.forgejo.no_runs']()}</p>
+							{:else}
+								{#each entry.runs as run (run.id)}
+									{@const open = expandedRun?.pullRequestId === pr.id && expandedRun.run.id === run.id}
+									{@const duration = actionDuration(run.started_at, run.completed_at)}
+									{@const url = runUrl(run, pr.repo_full_name)}
+									{@const active = isActiveAction(actionStatus(run.status, run.conclusion))}
+									<div class="-mx-1.5 rounded-md {open ? 'bg-[var(--color-bg-hover)]' : ''}">
+										<div class="flex items-center gap-1 rounded-md text-xs hover:bg-[var(--color-bg-hover)]">
+											<button
+												onclick={() => toggleRun(pr, run)}
+												aria-expanded={open}
+												class="flex min-w-0 flex-1 items-center gap-1.5 p-1.5 text-left"
+											>
+												<ChevronRight
+													size={11}
+													class="shrink-0 text-[var(--color-text-tertiary)] transition-transform {open
+														? 'rotate-90'
+														: ''}"
+												/>
+												<ActionStatus status={run.status} conclusion={run.conclusion} compact />
+												<span class="min-w-0 flex-1 truncate text-[var(--color-text-primary)]"
+													>{run.title ||
+														run.name ||
+														m['forgejo_actions.run_number']({ n: run.run_number || run.id })}</span
+												>
+												<span class="shrink-0 text-[10px] text-[var(--color-text-tertiary)]"
+													>{run.name || run.workflow_id} · #{run.run_number || run.id}{duration
+														? ` · ${duration}`
+														: ''}</span
+												>
+											</button>
+											{#if url}<a
+													href={url}
+													target="_blank"
+													rel="noopener noreferrer"
+													aria-label={m['forgejo_actions.open_forgejo']()}
+													title={m['forgejo_actions.open_forgejo']()}
+													class="mr-1 shrink-0 rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-[var(--color-text-secondary)]"
+													><ExternalLink size={12} /></a
+												>{/if}
+										</div>
+										{#if open && expandedRun}
+											<div class="space-y-1.5 px-1.5 pb-2 pl-[22px]">
+												{#if canManageActions && active}
+													<div class="flex items-center gap-2">
+														<button
+															onclick={() => (cancelTarget = expandedRun)}
+															disabled={cancelBusy || cancelRequested === run.id}
+															class="inline-flex items-center gap-1 rounded border border-[var(--app-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50"
+															><Square size={9} />{m['forgejo_actions.cancel_run']()}</button
+														>
+														{#if cancelRequested === run.id}<span
+																role="status"
+																class="text-[10px] text-[var(--color-text-tertiary)]"
+																>{m['forgejo_actions.requested']()}</span
+															>{/if}
+													</div>
+												{/if}
+												{#if jobsLoading}
+													<LoaderCircle
+														size={11}
+														class="animate-spin text-[var(--color-text-tertiary)]"
+														aria-label={m['forgejo_actions.loading']()}
+													/>
+												{:else if jobsFailed}
+													<p role="alert" class="text-[10px] text-red-500">{m['forgejo_actions.failed_details']()}</p>
+												{:else}
+													{#if jobs.length === 0}
+														<p class="text-[10px] text-[var(--color-text-tertiary)]">
+															{m['forgejo_actions.no_jobs']()}
+														</p>
+													{:else}
+														<ul aria-label={m['forgejo_actions.jobs']()} class="space-y-0.5">
+															{#each jobs as job (job.id)}
+																<li>
+																	<button
+																		onclick={() => toggleJob(job)}
+																		aria-pressed={selectedJob?.id === job.id}
+																		class="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] hover:bg-[var(--color-bg-tertiary)] {selectedJob?.id ===
+																		job.id
+																			? 'bg-[var(--color-bg-tertiary)]'
+																			: ''}"
+																	>
+																		<ActionStatus status={job.status} conclusion={job.conclusion} compact />
+																		<span class="min-w-0 flex-1 truncate">{job.name}</span>
+																		{#if job.attempt > 1}<span
+																				class="shrink-0 text-[10px] text-[var(--color-text-tertiary)]"
+																				>{m['forgejo_actions.attempt']({ n: job.attempt })}</span
+																			>{/if}
+																	</button>
+																</li>
+															{/each}
+														</ul>
+													{/if}
+												{/if}
+												{#if selectedJob}
+													{#if logsFailed}
+														<p role="alert" class="text-[10px] text-red-500">{m['forgejo_actions.failed_logs']()}</p>
+													{:else if logs}
+														{#if logs.truncated}<p class="text-[10px] text-amber-500">
+																{m['forgejo_actions.truncated_logs']({ n: Math.round(logs.max_bytes / 1048576) })}
+															</p>{/if}
+														<!-- svelte-ignore a11y_no_noninteractive_tabindex (Scrollable logs need keyboard focus.) -->
+														<pre
+															role="region"
+															tabindex="0"
+															aria-label={m['forgejo_actions.logs']()}
+															class="max-h-64 overflow-auto rounded border border-[var(--app-border)] bg-[var(--color-bg-primary)] p-2 font-mono text-[10px] leading-4 text-[var(--color-text-secondary)]">{logContent ||
+																m['forgejo_actions.no_logs']()}</pre>
+													{:else if logsLoading}
+														<LoaderCircle
+															size={11}
+															class="animate-spin text-[var(--color-text-tertiary)]"
+															aria-label={m['forgejo_actions.loading']()}
+														/>
+													{/if}
+												{/if}
+											</div>
+										{/if}
+									</div>
+								{/each}
+							{/if}
+						</div>
+					{/each}
+				</section>
+			{/if}
 		{/if}
 	</div>
 {/if}
+
+<AlertDialog.Root
+	open={cancelTarget !== null}
+	onOpenChange={(open) => {
+		if (!open && !cancelBusy) cancelTarget = null;
+	}}
+	><AlertDialog.Content
+		><AlertDialog.Header
+			><AlertDialog.Title>{m['forgejo_actions.confirm_cancel_title']()}</AlertDialog.Title><AlertDialog.Description
+				>{m['forgejo_actions.confirm_cancel_desc']()}</AlertDialog.Description
+			></AlertDialog.Header
+		><AlertDialog.Footer
+			><AlertDialog.Cancel disabled={cancelBusy}>{m['common.cancel']()}</AlertDialog.Cancel><AlertDialog.Action
+				variant="destructive"
+				onclick={cancelRun}
+				disabled={cancelBusy}>{m['forgejo_actions.cancel_run']()}</AlertDialog.Action
+			></AlertDialog.Footer
+		></AlertDialog.Content
+	></AlertDialog.Root
+>

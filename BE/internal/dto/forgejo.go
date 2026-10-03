@@ -82,6 +82,7 @@ type ForgejoPullRequestResponse struct {
 	BaseBranch      string     `json:"base_branch"`
 	Additions       int        `json:"additions"`
 	Deletions       int        `json:"deletions"`
+	RepoID          string     `json:"repo_id"`
 	RepoFullName    string     `json:"repo_full_name"`
 	MergedAt        *time.Time `json:"merged_at"`
 	CreatedAt       time.Time  `json:"created_at"`
@@ -92,6 +93,7 @@ type ForgejoBranchResponse struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
 	HTMLURL      string    `json:"html_url"`
+	RepoID       string    `json:"repo_id"`
 	RepoFullName string    `json:"repo_full_name"`
 	CreatedAt    time.Time `json:"created_at"`
 }

@@ -16,9 +16,9 @@ func TestCombinedStatusReadsAllPagesBeforePassingChecks(t *testing.T) {
 		pages = append(pages, r.URL.Query().Get("page"))
 		w.Header().Set("X-Total-Count", "2")
 		if r.URL.Query().Get("page") == "1" {
-			fmt.Fprint(w, `{"sha":"abc","state":"success","total_count":1,"statuses":[{"context":"first","state":"success"}]}`)
+			fmt.Fprint(w, `{"sha":"abc","state":"success","total_count":1,"statuses":[{"context":"first","status":"success"}]}`)
 		} else {
-			fmt.Fprint(w, `{"sha":"abc","state":"failure","total_count":1,"statuses":[{"context":"second","state":"failure"}]}`)
+			fmt.Fprint(w, `{"sha":"abc","state":"failure","total_count":1,"statuses":[{"context":"second","status":"failure"}]}`)
 		}
 	}))
 	defer server.Close()
@@ -35,9 +35,9 @@ func TestCombinedStatusRequiresSuccessAndTreatsSkippedAsNeutral(t *testing.T) {
 		name, body string
 		pass       bool
 	}{
-		{"success and skipped", `{"statuses":[{"context":"build","state":"success"},{"context":"release","state":"skipped"}]}`, true},
-		{"only skipped", `{"statuses":[{"context":"release","state":"skipped"}]}`, false},
-		{"pending and success", `{"statuses":[{"context":"build","state":"success"},{"context":"test","state":"pending"}]}`, false},
+		{"success and skipped", `{"statuses":[{"context":"build","status":"success"},{"context":"release","status":"skipped"}]}`, true},
+		{"only skipped", `{"statuses":[{"context":"release","status":"skipped"}]}`, false},
+		{"pending and success", `{"statuses":[{"context":"build","status":"success"},{"context":"test","status":"pending"}]}`, false},
 		{"none", `{"statuses":[]}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

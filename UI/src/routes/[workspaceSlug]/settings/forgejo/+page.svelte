@@ -494,9 +494,6 @@
 		<p class="mt-1 text-sm text-[var(--color-text-tertiary)]">
 			{m['settings.forgejo.desc']()}
 		</p>
-		{#if status?.connected && status.repos.length > 0}
-			<Button variant="outline" size="sm" href="/{slug}/actions" class="mt-3">{m['forgejo_actions.title']()}</Button>
-		{/if}
 	</div>
 
 	{#if loading}
