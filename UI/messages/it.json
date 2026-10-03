@@ -1844,6 +1844,7 @@
 	"issue.forgejo.refresh": "Aggiorna attività di codice",
 	"issue.forgejo.actions": "Actions",
 	"issue.forgejo.no_runs": "Nessuna esecuzione di workflow per questa pull request.",
+	"issue.forgejo.older_runs": "Carica esecuzioni precedenti",
 	"settings.forgejo.review_created_auto": "Lo stato PR viene creato automaticamente nei team che ne hanno bisogno.",
 	"common.toast.failed_load_dialog": "Impossibile caricare la finestra della segnalazione",
 	"dev_boxes.failed_logs_terminal": "Impossibile caricare l’output rimanente. Seleziona Aggiorna per riprovare.",

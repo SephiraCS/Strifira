@@ -600,12 +600,13 @@ func prStateFromEvent(payload fjWebhookPR) string {
 	switch {
 	case payload.PullRequest.Merged:
 		return "merged"
+	case payload.PullRequest.State != "open":
+		// A closed draft is closed; only open PRs can be drafts.
+		return "closed"
 	case payload.PullRequest.Draft:
 		return "draft"
-	case payload.PullRequest.State == "open":
-		return "open"
 	default:
-		return "closed"
+		return "open"
 	}
 }
 

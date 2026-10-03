@@ -49,6 +49,7 @@ async function mockActions(
 	options: {
 		role?: string;
 		pullRequests?: unknown[];
+		finished?: boolean;
 	} = {}
 ) {
 	const calls = {
@@ -85,6 +86,9 @@ async function mockActions(
 		html_url: 'https://evil.example.com/run',
 		completed_at: null as string | null
 	};
+	if (options.finished)
+		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
+	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
 	const job = {
 		id: 201,
 		run_id: 101,
@@ -166,20 +170,14 @@ async function mockActions(
 			});
 		if (path === '/api/workspaces/test/issues/ENG-1') return route.fulfill({ json: issue });
 		if (path === `${actionsPath}/runs`) {
-			// Runs span two pages; the active run is only on the second one.
+			// The newest page holds both current runs; older history is on page 2.
 			const second = url.searchParams.get('page') === '2';
 			if (second) calls.runPages.push(url);
 			else calls.lists.push(url);
 			const pullRuns = url.searchParams.get('ref') === 'refs/pull/7/head';
-			const data = pullRuns ? [second ? runningRun : completedRun] : [];
+			const data = pullRuns ? (second ? [olderRun] : [completedRun, runningRun]) : [];
 			return route.fulfill({
-				json: {
-					data,
-					total_count: pullRuns ? 2 : 0,
-					page: second ? 2 : 1,
-					per_page: 100,
-					has_more: pullRuns && !second
-				}
+				json: { data, total_count: pullRuns ? 3 : 0, page: second ? 2 : 1, per_page: 20, has_more: pullRuns && !second }
 			});
 		}
 		if (path === `${actionsPath}/runs/102/jobs`) {
@@ -249,9 +247,12 @@ test('shows pull request workflow runs, jobs, and plain logs on the issue and ca
 	await expect(actions.getByRole('button', { name: /Build application/ })).toContainText('#42');
 	await expect(actions.getByRole('button', { name: /Build application/ })).toContainText('1m 0s');
 	expect(calls.lists[0].searchParams.get('ref')).toBe('refs/pull/7/head');
-	// The active run comes from the second page of runs.
-	await expect(actions.getByRole('button', { name: /Deploy preview/ }).first()).toBeVisible();
-	expect(calls.runPages[0].searchParams.get('page')).toBe('2');
+	// Older history loads only on request.
+	expect(calls.lists[0].searchParams.get('per_page')).toBe('20');
+	expect(calls.runPages).toEqual([]);
+	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
+	await expect(actions.getByRole('button', { name: 'Load older runs', exact: true })).toHaveCount(0);
 	// Only the run with a trusted Forgejo URL links out.
 	const links = actions.getByRole('link', { name: 'Open in Forgejo' });
 	await expect(links).toHaveCount(1);
@@ -294,7 +295,7 @@ test('skips pull requests without a linked repository id', async ({ page }) => {
 	expect(calls.lists).toEqual([]);
 });
 
-test('polls active issue runs and stops once every run has finished', async ({ page }) => {
+test('polls active runs fast, then keeps a slow discovery poll while the PR is open', async ({ page }) => {
 	const { calls, runningRun } = await mockActions(page);
 	await page.clock.install();
 	const actions = await openIssue(page);
@@ -307,8 +308,19 @@ test('polls active issue runs and stops once every run has finished', async ({ p
 	runningRun.completed_at = '2026-09-30T12:03:00Z';
 	await page.clock.fastForward(10001);
 	await expect.poll(() => calls.lists.length).toBe(3);
-	await page.clock.fastForward(30001);
+	await page.clock.fastForward(20000);
 	expect(calls.lists).toHaveLength(3);
+	await page.clock.fastForward(10001);
+	await expect.poll(() => calls.lists.length).toBe(4);
+});
+
+test('stops polling a merged pull request once its runs finish', async ({ page }) => {
+	const { calls } = await mockActions(page, { pullRequests: [{ ...pullRequest, state: 'merged' }], finished: true });
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await expect(actions.getByRole('button', { name: /Deploy preview/ })).toBeVisible();
+	await page.clock.fastForward(60001);
+	expect(calls.lists).toHaveLength(1);
 });
 
 test('loads every job page and refreshes open logs on the tick that sees a run finish', async ({ page }) => {
@@ -325,7 +337,7 @@ test('loads every job page and refreshes open logs on the tick that sees a run f
 	await page.clock.fastForward(10001);
 	await expect(actions.locator('pre')).toHaveText('Deploy finished\n');
 	const lists = calls.lists.length;
-	await page.clock.fastForward(30001);
+	await page.clock.fastForward(20000);
 	expect(calls.lists).toHaveLength(lists);
 });
 

@@ -1816,6 +1816,7 @@
 	"issue.forgejo.refresh": "重新整理程式碼活動",
 	"issue.forgejo.actions": "Actions",
 	"issue.forgejo.no_runs": "此拉取請求尚無工作流程執行。",
+	"issue.forgejo.older_runs": "載入較早的執行",
 	"settings.forgejo.review_created_auto": "系統會為需要的團隊自動建立 PR 狀態。",
 	"common.toast.failed_load_dialog": "無法載入問題對話框",
 	"dev_boxes.failed_logs_terminal": "無法載入剩餘輸出。請選擇重新整理以重試。",

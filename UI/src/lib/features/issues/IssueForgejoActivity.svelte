@@ -58,9 +58,20 @@
 	let controller: AbortController | undefined;
 
 	// Forgejo Actions runs for each linked pull request, keyed by pull request id.
-	type PullRequestRuns = { runs: ForgejoActionRun[]; loading: boolean; failed: boolean };
+	// `pages` counts the newest pages loaded; older history loads on request.
+	type PullRequestRuns = {
+		runs: ForgejoActionRun[];
+		pages: number;
+		hasMore: boolean;
+		loading: boolean;
+		loadingMore: boolean;
+		failed: boolean;
+	};
 	type ExpandedRun = { pullRequestId: string; repoId: string; repoFullName: string; run: ForgejoActionRun };
 	const ACTIONS_POLL_MS = 10000;
+	// Open PRs keep a slower poll so newly queued runs appear without a webhook.
+	const ACTIONS_DISCOVERY_MS = 30000;
+	const RUNS_PAGE_SIZE = 20;
 	let runsByPullRequest = $state<Record<string, PullRequestRuns>>({});
 	let expandedRun = $state<ExpandedRun | null>(null);
 	let jobs = $state<ForgejoActionJob[]>([]);
@@ -233,6 +244,15 @@
 		logsFailed = false;
 	}
 
+	async function fetchRunPage(workspaceSlug: string, pr: ForgejoPullRequest, page: number, signal: AbortSignal) {
+		return listForgejoActionRuns(
+			workspaceSlug,
+			pr.repo_id,
+			{ ref: `refs/pull/${pr.number}/head`, page, perPage: RUNS_PAGE_SIZE },
+			signal
+		);
+	}
+
 	async function loadRuns(workspaceSlug: string, pullRequests: ForgejoPullRequest[]) {
 		const runGeneration = ++actionsGeneration;
 		runsController?.abort();
@@ -243,55 +263,85 @@
 		const next: Record<string, PullRequestRuns> = {};
 		for (const pr of targets)
 			next[pr.id] = runsByPullRequest[pr.id]
-				? { ...runsByPullRequest[pr.id], loading: false }
-				: { runs: [], loading: true, failed: false };
+				? { ...runsByPullRequest[pr.id], loading: false, loadingMore: false }
+				: { runs: [], pages: 1, hasMore: false, loading: true, loadingMore: false, failed: false };
 		runsByPullRequest = next;
 		await Promise.all(
 			targets.map(async (pr) => {
+				const pages = next[pr.id].pages;
 				try {
-					// Follow every page so older runs, and any still active, stay visible.
+					// Refresh only the pages already shown, so polling stays bounded.
 					const runs: ForgejoActionRun[] = [];
-					for (let page = 1; ; page++) {
-						const result = await listForgejoActionRuns(
-							workspaceSlug,
-							pr.repo_id,
-							{ ref: `refs/pull/${pr.number}/head`, page, perPage: 100 },
-							requestController.signal
-						);
+					let hasMore = false;
+					for (let page = 1; page <= pages; page++) {
+						const result = await fetchRunPage(workspaceSlug, pr, page, requestController.signal);
 						runs.push(...(result.data ?? []));
-						if (!result.has_more || !result.data?.length) break;
+						hasMore = result.has_more && !!result.data?.length;
+						if (!hasMore) break;
 					}
 					if (!mounted || runGeneration !== actionsGeneration) return;
-					runsByPullRequest[pr.id] = { runs, loading: false, failed: false };
+					runsByPullRequest[pr.id] = { runs, pages, hasMore, loading: false, loadingMore: false, failed: false };
 					if (expandedRun?.pullRequestId === pr.id) {
 						const run = runs.find((candidate) => candidate.id === expandedRun?.run.id);
 						if (run) {
 							if (cancelRequested === run.id && !isActiveAction(actionStatus(run.status, run.conclusion)))
 								cancelRequested = null;
 							expandedRun = { ...expandedRun, run };
-						}
+						} else closeRun();
 					}
 				} catch {
 					if (!mounted || runGeneration !== actionsGeneration || requestController.signal.aborted) return;
 					// Keep previously loaded runs visible when a background refresh fails.
 					const previous = runsByPullRequest[pr.id];
-					runsByPullRequest[pr.id] = { runs: previous?.runs ?? [], loading: false, failed: !previous?.runs.length };
+					runsByPullRequest[pr.id] = {
+						...previous,
+						loading: false,
+						loadingMore: false,
+						failed: !previous?.runs.length
+					};
 				}
 			})
 		);
 		if (!mounted || runGeneration !== actionsGeneration) return;
+		if (expandedRun && !targets.some((pr) => pr.id === expandedRun?.pullRequestId)) closeRun();
 		// Refresh open details only after the runs, so the tick that observes a
 		// run finishing also shows its final jobs and logs before polling stops.
 		const target = expandedRun;
 		if (target) {
 			await loadJobs(workspaceSlug, target, true);
-			// A newer refresh or another selection supersedes this one; starting
-			// logs now would abort the current log request.
-			if (!mounted || runGeneration !== actionsGeneration || !sameRun(expandedRun, target)) return;
+			// Starting logs for a superseded selection would abort the current request.
 			const job = selectedJob;
-			if (job) await loadLogs(workspaceSlug, target, job, true);
+			if (job && mounted && runGeneration === actionsGeneration && sameRun(expandedRun, target))
+				await loadLogs(workspaceSlug, target, job, true);
 		}
 		if (mounted && runGeneration === actionsGeneration) schedulePoll(workspaceSlug, runGeneration);
+	}
+
+	async function loadOlderRuns(pr: ForgejoPullRequest) {
+		const entry = runsByPullRequest[pr.id];
+		if (!entry || entry.loadingMore || !entry.hasMore) return;
+		const runGeneration = actionsGeneration;
+		const page = entry.pages + 1;
+		runsByPullRequest[pr.id] = { ...entry, loadingMore: true };
+		try {
+			const result = await fetchRunPage(slug, pr, page, runsController?.signal ?? new AbortController().signal);
+			if (!mounted || runGeneration !== actionsGeneration) return;
+			const current = runsByPullRequest[pr.id];
+			const known = new Set(current.runs.map((run) => run.id));
+			runsByPullRequest[pr.id] = {
+				...current,
+				runs: [...current.runs, ...(result.data ?? []).filter((run) => !known.has(run.id))],
+				pages: page,
+				hasMore: result.has_more && !!result.data?.length,
+				loadingMore: false
+			};
+			// An older active run must keep the fast poll going.
+			if (anyActiveRun) schedulePoll(slug, runGeneration);
+		} catch {
+			if (!mounted || runGeneration !== actionsGeneration) return;
+			runsByPullRequest[pr.id] = { ...runsByPullRequest[pr.id], loadingMore: false };
+			appToast.error(m['forgejo_actions.failed_load']());
+		}
 	}
 
 	function sameRun(a: ExpandedRun | null, b: ExpandedRun): boolean {
@@ -300,15 +350,19 @@
 
 	function schedulePoll(workspaceSlug: string, runGeneration: number) {
 		clearTimeout(pollTimer);
-		if (!anyActiveRun) return;
-		pollTimer = setTimeout(() => {
-			if (!mounted || runGeneration !== actionsGeneration || !activity) return;
-			if (document.visibilityState === 'hidden') {
-				schedulePoll(workspaceSlug, runGeneration);
-				return;
-			}
-			void loadRuns(workspaceSlug, activity.pull_requests);
-		}, ACTIONS_POLL_MS);
+		const watching = actionPullRequests.some((pr) => pr.state === 'open' || pr.state === 'draft');
+		if (!anyActiveRun && !watching) return;
+		pollTimer = setTimeout(
+			() => {
+				if (!mounted || runGeneration !== actionsGeneration || !activity) return;
+				if (document.visibilityState === 'hidden') {
+					schedulePoll(workspaceSlug, runGeneration);
+					return;
+				}
+				void loadRuns(workspaceSlug, activity.pull_requests);
+			},
+			anyActiveRun ? ACTIONS_POLL_MS : ACTIONS_DISCOVERY_MS
+		);
 	}
 
 	function toggleRun(pr: ForgejoPullRequest, run: ForgejoActionRun) {
@@ -750,6 +804,16 @@
 										{/if}
 									</div>
 								{/each}
+								{#if entry.hasMore}
+									<button
+										onclick={() => loadOlderRuns(pr)}
+										disabled={entry.loadingMore}
+										class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-tertiary)] disabled:opacity-50"
+										>{#if entry.loadingMore}<LoaderCircle size={10} class="animate-spin" />{/if}{m[
+											'issue.forgejo.older_runs'
+										]()}</button
+									>
+								{/if}
 							{/if}
 						</div>
 					{/each}

@@ -1816,6 +1816,7 @@
 	"issue.forgejo.refresh": "刷新代码活动",
 	"issue.forgejo.actions": "Actions",
 	"issue.forgejo.no_runs": "此拉取请求暂无工作流运行。",
+	"issue.forgejo.older_runs": "加载更早的运行",
 	"settings.forgejo.review_created_auto": "系统会为需要的团队自动创建 PR 状态。",
 	"common.toast.failed_load_dialog": "无法加载问题对话框",
 	"dev_boxes.failed_logs_terminal": "无法加载剩余输出。请选择刷新以重试。",

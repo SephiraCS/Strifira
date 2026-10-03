@@ -1848,6 +1848,7 @@
 	"issue.forgejo.refresh": "Refresh code activity",
 	"issue.forgejo.actions": "Actions",
 	"issue.forgejo.no_runs": "No workflow runs for this pull request yet.",
+	"issue.forgejo.older_runs": "Load older runs",
 	"settings.forgejo.review_created_auto": "The PR status is created automatically in teams that need it.",
 	"common.toast.failed_load_dialog": "Failed to load the issue dialog"
 }
