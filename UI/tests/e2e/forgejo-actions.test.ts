@@ -89,6 +89,7 @@ async function mockActions(
 	if (options.finished)
 		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
 	const failNextLogs = { count: 0 };
+	const runsGate = { hold: false, waiting: 0, release: () => {} };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
 	const job = {
 		id: 201,
@@ -176,7 +177,13 @@ async function mockActions(
 			if (second) calls.runPages.push(url);
 			else calls.lists.push(url);
 			const pullRuns = url.searchParams.get('ref') === 'refs/pull/7/head';
-			const data = pullRuns ? (second ? [olderRun] : [completedRun, runningRun]) : [];
+			// Snapshot at request time, so a held response reports the state it saw.
+			const data = structuredClone(pullRuns ? (second ? [olderRun] : [completedRun, runningRun]) : []);
+			if (runsGate.hold && !second) {
+				runsGate.hold = false;
+				runsGate.waiting++;
+				await new Promise<void>((resolve) => (runsGate.release = resolve));
+			}
 			return route.fulfill({
 				json: { data, total_count: pullRuns ? 3 : 0, page: second ? 2 : 1, per_page: 20, has_more: pullRuns && !second }
 			});
@@ -231,7 +238,7 @@ async function mockActions(
 		}
 		return route.fulfill({ json: [] });
 	});
-	return { calls, runningRun, failNextLogs };
+	return { calls, runningRun, failNextLogs, runsGate };
 }
 
 async function openIssue(page: Page) {
@@ -376,6 +383,28 @@ test('retries the final logs refresh after a transient failure when a run finish
 	const settled = calls.lists.length;
 	await page.clock.fastForward(60001);
 	expect(calls.lists).toHaveLength(settled);
+});
+
+test('refreshes details of a run expanded while the poll that sees it finish is in flight', async ({ page }) => {
+	const { calls, runningRun, runsGate } = await mockActions(page);
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await expect(actions.getByRole('button', { name: /Deploy preview/ })).toBeVisible();
+	runningRun.status = 'success';
+	runningRun.conclusion = 'success';
+	runningRun.completed_at = '2026-09-30T12:03:00Z';
+	runsGate.hold = true;
+	await page.clock.fastForward(10001);
+	await expect.poll(() => runsGate.waiting).toBe(1);
+	// Expanded while the poll is pending: the job still looks like it is running.
+	runningRun.status = 'running';
+	await actions.getByRole('button', { name: /Deploy preview/ }).click();
+	await actions.getByRole('button', { name: /Deploy preview job/ }).click();
+	await expect(actions.locator('pre')).toHaveText('Deploying\n');
+	runningRun.status = 'success';
+	runsGate.release();
+	await expect(actions.locator('pre')).toHaveText('Deploy finished\n');
+	expect(calls.lists.length).toBeGreaterThan(1);
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {
