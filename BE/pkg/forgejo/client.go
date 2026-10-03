@@ -122,8 +122,10 @@ type PRBranch struct {
 }
 
 // CommitStatus is a single status context on a commit.
+// Forgejo reports each context's result as "status"; only the combined
+// response carries a top-level "state".
 type CommitStatus struct {
-	State       string `json:"state"`
+	State       string `json:"status"`
 	Context     string `json:"context"`
 	Description string `json:"description"`
 	TargetURL   string `json:"target_url"`

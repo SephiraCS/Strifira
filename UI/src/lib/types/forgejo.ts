@@ -44,6 +44,8 @@ export interface ForgejoPullRequest {
 	additions: number;
 	deletions: number;
 	repo_full_name: string;
+	/** ku repository UUID, used to query the repository's Forgejo Actions. */
+	repo_id: string;
 	merged_at: string | null;
 	created_at: string;
 	updated_at: string;
@@ -54,6 +56,8 @@ export interface ForgejoBranch {
 	name: string;
 	html_url: string;
 	repo_full_name: string;
+	/** ku repository UUID. */
+	repo_id: string;
 	created_at: string;
 }
 
