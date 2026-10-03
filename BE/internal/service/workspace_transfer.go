@@ -608,7 +608,6 @@ func (s *WorkspaceTransferService) Import(ctx context.Context, path, name, slug 
 		stagedKeys = append(stagedKeys, storageKey)
 		sourceRow["storage_key"] = storageKey
 		delete(sourceRow, "archive_path")
-		_ = assetIDMap
 	}
 
 	tx, err := s.repo.Begin(ctx)

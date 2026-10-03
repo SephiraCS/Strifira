@@ -12,7 +12,7 @@ import (
 
 func TestRateLimitReturnsRetryAfter(t *testing.T) {
 	e := echo.New()
-	handler := RateLimit(0.5, 1)(func(c echo.Context) error {
+	handler := MachineTokenRateLimit(0.5, 1)(func(c echo.Context) error {
 		return c.NoContent(http.StatusNoContent)
 	})
 
