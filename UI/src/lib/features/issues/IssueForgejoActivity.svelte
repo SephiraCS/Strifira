@@ -228,6 +228,7 @@
 		runsByPullRequest = {};
 		closeRun();
 		cancelTarget = null;
+		cancelBusy = false;
 		cancelRequested = null;
 	}
 
@@ -275,7 +276,9 @@
 					let hasMore = false;
 					for (let page = 1; page <= pages; page++) {
 						const result = await fetchRunPage(workspaceSlug, pr, page, requestController.signal);
-						runs.push(...(result.data ?? []));
+						// Pages have no snapshot: a new run can shift a run onto the next page.
+						const seen = new Set(runs.map((run) => run.id));
+						runs.push(...(result.data ?? []).filter((run) => !seen.has(run.id)));
 						hasMore = result.has_more && !!result.data?.length;
 						if (!hasMore) break;
 					}
@@ -454,17 +457,23 @@
 		const target = cancelTarget;
 		if (!target || !canManageActions || cancelBusy) return;
 		const workspaceSlug = slug;
+		// generation changes with the issue or workspace; a late response must
+		// not touch the state of the issue now shown.
+		const requestGeneration = generation;
 		cancelBusy = true;
 		try {
 			await cancelForgejoActionRun(workspaceSlug, target.repoId, target.run.id);
 			appToast.success(m['forgejo_actions.requested']());
+			if (requestGeneration !== generation) return;
 			cancelRequested = target.run.id;
-			if (activity && workspaceSlug === slug) void loadRuns(workspaceSlug, activity.pull_requests);
+			if (activity) void loadRuns(workspaceSlug, activity.pull_requests);
 		} catch (error) {
 			appToast.apiError(error, m['forgejo_actions.failed_action']());
 		} finally {
-			cancelBusy = false;
-			cancelTarget = null;
+			if (requestGeneration === generation) {
+				cancelBusy = false;
+				cancelTarget = null;
+			}
 		}
 	}
 
