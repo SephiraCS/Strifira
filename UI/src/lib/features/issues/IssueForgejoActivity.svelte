@@ -277,7 +277,10 @@
 		for (const run of branch?.data ?? []) if (run.head_sha === pr.head_sha) byId.set(run.id, run);
 		// Both sources page together until each is exhausted.
 		const more = (result: typeof pull | null) => !!result?.has_more && !!result.data?.length;
-		return { data: [...byId.values()], has_more: more(pull) || more(branch) };
+		const sources = [pull, branch].flatMap((result) =>
+			result ? [{ ids: (result.data ?? []).map((run) => run.id), hasMore: more(result) }] : []
+		);
+		return { data: [...byId.values()], has_more: more(pull) || more(branch), sources };
 	}
 
 	function newestFirst(runs: ForgejoActionRun[]): ForgejoActionRun[] {
@@ -302,26 +305,35 @@
 				const { pages, version, runs: cached, hasMore: cachedHasMore } = next[pr.id];
 				try {
 					// A poll costs a fixed budget however much history is shown: the
-					// newest page, plus a re-check of each older run still active.
-					// Finished older runs never change, so they stay cached.
+					// newest page, plus a re-check of older runs that are active or
+					// expanded (a finished run can be re-run in Forgejo).
 					const newest = await fetchRunPage(workspaceSlug, pr, 1, requestController.signal);
 					const fresh = new Map((newest.data ?? []).map((run) => [run.id, run]));
-					const older = cached.filter((run) => !fresh.has(run.id));
+					// If the newest page no longer overlaps the cached history, runs
+					// may be missing in between: restart pagination from that page.
+					// Each source pages independently, so check every one for a gap.
+					const cachedIds = new Set(cached.map((run) => run.id));
+					const overlaps =
+						!cached.length ||
+						newest.sources.every((source) => !source.hasMore || source.ids.some((id) => cachedIds.has(id)));
+					const expandedId = expandedRun?.pullRequestId === pr.id ? expandedRun.run.id : null;
+					const older = cached.filter((run) => !fresh.has(run.id) && (overlaps || run.id === expandedId));
 					const rechecked = await Promise.all(
 						older.map((run) =>
-							runIsActive(run)
+							runIsActive(run) || run.id === expandedId
 								? getForgejoActionRun(workspaceSlug, pr.repo_id, run.id, requestController.signal).catch(() => run)
 								: run
 						)
 					);
 					const runs = [...fresh.values(), ...rechecked];
-					const hasMore = pages > 1 ? cachedHasMore : newest.has_more;
+					const hasMore = overlaps && pages > 1 ? cachedHasMore : newest.has_more;
+					const keptPages = overlaps ? pages : 1;
 					if (!mounted || runGeneration !== actionsGeneration) return;
-					// Older history loaded meanwhile; the next poll refreshes every page.
+					// Older history loaded meanwhile; the next poll reconciles it.
 					if (runsByPullRequest[pr.id]?.version !== version) return;
 					runsByPullRequest[pr.id] = {
 						runs: newestFirst(runs),
-						pages,
+						pages: keptPages,
 						hasMore,
 						loading: false,
 						loadingMore: runsByPullRequest[pr.id].loadingMore,
@@ -333,8 +345,10 @@
 						if (run) {
 							if (cancelRequested === run.id && !isActiveAction(actionStatus(run.status, run.conclusion)))
 								cancelRequested = null;
-							// The selected run just finished: its details need one final refresh.
-							if (runIsActive(expandedRun.run) && !runIsActive(run)) detailsStale = true;
+							// The selected run finished or changed (e.g. a job was re-run in
+							// Forgejo): its details need a refresh.
+							if ((runIsActive(expandedRun.run) && !runIsActive(run)) || run.updated_at !== expandedRun.run.updated_at)
+								detailsStale = true;
 							expandedRun = { ...expandedRun, run };
 						} else closeRun();
 					}

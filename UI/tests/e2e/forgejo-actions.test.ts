@@ -92,11 +92,13 @@ async function mockActions(
 	if (options.finished)
 		Object.assign(runningRun, { status: 'success', conclusion: 'success', completed_at: '2026-09-30T12:03:00Z' });
 	const failNextLogs = { count: 0 };
+	const burst = { on: false };
 	const pushRun = { ...completedRun, id: 99, event: 'push', title: 'Push checks', run_number: 40, html_url: '' };
 	const olderPushRun = { ...pushRun, id: 97, title: 'Earlier push checks', run_number: 39 };
 	const staleBranchRun = { ...pushRun, id: 98, title: 'Unrelated base branch run', head_sha: 'not-the-pr-head' };
 	const runsGate = { hold: false, waiting: 0, release: () => {} };
 	const olderRun = { ...completedRun, id: 100, title: 'Lint sources', run_number: 41, html_url: '' };
+	const burstRun = { ...completedRun, id: 300, title: 'Burst run', run_number: 60, html_url: '' };
 	if (options.olderActive) Object.assign(olderRun, { status: 'running', conclusion: '', completed_at: null });
 	const job = {
 		id: 201,
@@ -197,7 +199,9 @@ async function mockActions(
 			else calls.lists.push(url);
 			const pullRuns = url.searchParams.get('ref') === 'refs/pull/7/head';
 			// Snapshot at request time, so a held response reports the state it saw.
-			const data = structuredClone(pullRuns ? (second ? [olderRun] : [completedRun, runningRun]) : []);
+			// A burst of new runs fills the newest page without overlapping history.
+			const newest = burst.on ? [burstRun] : [completedRun, runningRun];
+			const data = structuredClone(pullRuns ? (second ? [olderRun] : newest) : []);
 			if (runsGate.hold && !second) {
 				runsGate.hold = false;
 				runsGate.waiting++;
@@ -238,7 +242,7 @@ async function mockActions(
 				json: { content: done ? 'Deploy finished\n' : 'Deploying\n', truncated: false, max_bytes: 2097152 }
 			});
 		}
-		if (path === `${actionsPath}/runs/101/jobs`) {
+		if (path === `${actionsPath}/runs/101/jobs` || path === `${actionsPath}/runs/100/jobs`) {
 			calls.jobs.push(path);
 			return route.fulfill({
 				json: { data: [job], total_count: 1, page: 1, per_page: 100, has_more: false }
@@ -263,7 +267,7 @@ async function mockActions(
 		}
 		return route.fulfill({ json: [] });
 	});
-	return { calls, runningRun, failNextLogs, runsGate };
+	return { calls, runningRun, failNextLogs, runsGate, burst, olderRun };
 }
 
 async function openIssue(page: Page) {
@@ -469,6 +473,36 @@ test('polls only the newest page and re-checks older runs that are still active'
 	await expect.poll(() => calls.runGets).toContain('100');
 	expect(calls.runPages).toHaveLength(olderPages);
 	expect(calls.runGets.filter((id) => id !== '100')).toEqual([]);
+});
+
+test('restarts history paging when the newest page no longer overlaps it', async ({ page }) => {
+	const { burst } = await mockActions(page);
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toBeVisible();
+	await expect(actions.getByRole('button', { name: 'Load older runs', exact: true })).toHaveCount(0);
+	burst.on = true;
+	await page.clock.fastForward(10001);
+	await expect(actions.getByRole('button', { name: /Burst run/ })).toBeVisible();
+	// Runs between the burst and the cached history stay reachable.
+	await expect(actions.getByRole('button', { name: 'Load older runs', exact: true })).toBeVisible();
+	await expect(actions.getByRole('button', { name: /Lint sources/ })).toHaveCount(0);
+});
+
+test('re-checks an expanded older run and refreshes its details after a re-run', async ({ page }) => {
+	const { calls, olderRun } = await mockActions(page);
+	await page.clock.install();
+	const actions = await openIssue(page);
+	await actions.getByRole('button', { name: 'Load older runs', exact: true }).click();
+	await actions.getByRole('button', { name: /Lint sources/ }).click();
+	await expect(actions.getByRole('list', { name: 'Jobs' })).toBeVisible();
+	const jobs = calls.jobs.filter((path) => path.endsWith('/runs/100/jobs')).length;
+	// A job is re-run in Forgejo: the finished run changes.
+	olderRun.updated_at = '2026-09-30T13:00:00Z';
+	await page.clock.fastForward(10001);
+	await expect.poll(() => calls.runGets).toContain('100');
+	await expect.poll(() => calls.jobs.filter((path) => path.endsWith('/runs/100/jobs')).length).toBeGreaterThan(jobs);
 });
 
 test('removes Actions from navigation and redirects the old workspace page to issues', async ({ page }) => {
