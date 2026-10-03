@@ -1,0 +1,12 @@
+# Scoped, expiring exceptions for findings with no upstream fix. Each entry
+# names the exact path, why it is accepted, and when it must be re-checked.
+vulnerabilities:
+  # http-cache-semantics 4.2.0 is the latest release and Trivy lists no fixed
+  # version. This copy is bundled inside the npm CLI in the dev-machine agent
+  # and IDE images, used only to cache registry responses for the image's own
+  # npm installs. It is not reachable from a ku service.
+  - id: CVE-2026-93748
+    paths:
+      - usr/local/lib/node_modules/npm/node_modules/http-cache-semantics/package.json
+    statement: No fixed release; npm-internal client cache only (TS-423).
+    expired_at: 2026-11-02

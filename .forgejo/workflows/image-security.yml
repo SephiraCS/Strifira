@@ -122,7 +122,8 @@ jobs:
           mkdir -p "${TRIVY_CACHE_DIR}"
           flock "${TRIVY_CACHE_DIR}/db.lock" trivy image --download-db-only
           trivy image --cache-backend memory --skip-db-update \
-            --input "${PODMAN_STORE}/image.tar" --severity CRITICAL,HIGH --exit-code 1
+            --input "${PODMAN_STORE}/image.tar" --severity CRITICAL,HIGH --exit-code 1 \
+            --ignorefile .trivyignore.yaml
 
       - name: Remove the podman store
         if: always()

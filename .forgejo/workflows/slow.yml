@@ -89,15 +89,12 @@ jobs:
       - name: Slow suite (browser)
         run: make test-slow-frontend E2E_FLAGS="--workers=2"
 
-      - name: Upload the Playwright report
+      # Artifacts are unavailable on this runner; keep failure context in the log.
+      - name: Print failure context
         if: failure()
-        uses: https://data.forgejo.org/actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: playwright-report-slow
-          path: |
-            UI/playwright-report
-            UI/test-results
-          retention-days: 14
+        working-directory: UI
+        run: |
+          find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
   live:
     name: Slow Suite (live checks)
