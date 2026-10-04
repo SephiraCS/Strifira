@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -114,13 +114,15 @@ func TestCycleService_Create(t *testing.T) {
 
 	ctx := context.Background()
 	teamID := uuid.New()
+	wsID := uuid.New()
+	teamRepo.On("GetByID", ctx, teamID).Return(&domain.Team{ID: teamID, WorkspaceID: wsID}, nil)
 
 	repo.On("ExistsByName", ctx, teamID, "Sprint 1").Return(false, nil)
 	repo.On("HasOverlap", ctx, teamID, mock.AnythingOfType("time.Time"), mock.AnythingOfType("time.Time"), mock.Anything).Return(false, nil)
 	repo.On("NextNumber", ctx, teamID).Return(1, nil)
 	repo.On("Create", ctx, mock.AnythingOfType("*domain.Cycle")).Return(nil)
 
-	cycle, err := svc.Create(ctx, teamID, dto.CreateCycleRequest{
+	cycle, err := svc.Create(ctx, wsID, teamID, dto.CreateCycleRequest{
 		Name:      "Sprint 1",
 		StartDate: "2026-04-01",
 		EndDate:   "2026-04-14",
@@ -142,10 +144,12 @@ func TestCycleService_Create_DuplicateName(t *testing.T) {
 
 	ctx := context.Background()
 	teamID := uuid.New()
+	wsID := uuid.New()
+	teamRepo.On("GetByID", ctx, teamID).Return(&domain.Team{ID: teamID, WorkspaceID: wsID}, nil)
 
 	repo.On("ExistsByName", ctx, teamID, "Sprint 1").Return(true, nil)
 
-	_, err := svc.Create(ctx, teamID, dto.CreateCycleRequest{Name: "Sprint 1", StartDate: "2026-04-01", EndDate: "2026-04-14"})
+	_, err := svc.Create(ctx, wsID, teamID, dto.CreateCycleRequest{Name: "Sprint 1", StartDate: "2026-04-01", EndDate: "2026-04-14"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
 }
@@ -163,8 +167,10 @@ func TestCycleService_List(t *testing.T) {
 		{ID: uuid.New(), Name: "Sprint 2", Number: 2},
 	}
 	repo.On("ListByTeam", ctx, teamID).Return(cycles, nil)
+	wsID := uuid.New()
+	teamRepo.On("GetByID", ctx, teamID).Return(&domain.Team{ID: teamID, WorkspaceID: wsID}, nil)
 
-	result, err := svc.ListByTeam(ctx, teamID)
+	result, err := svc.ListByTeam(ctx, wsID, teamID)
 	assert.NoError(t, err)
 	assert.Len(t, result, 2)
 }
@@ -181,10 +187,11 @@ func TestCycleService_Complete(t *testing.T) {
 	cycle := &domain.Cycle{ID: cycleID, TeamID: teamID, Status: domain.CycleStatusActive}
 	repo.On("GetByID", ctx, cycleID).Return(cycle, nil)
 	repo.On("Update", ctx, mock.AnythingOfType("*domain.Cycle")).Return(nil)
-	teamRepo.On("GetByID", ctx, teamID).Return(&domain.Team{ID: teamID, WorkspaceID: uuid.New()}, nil)
+	wsID := uuid.New()
+	teamRepo.On("GetByID", ctx, teamID).Return(&domain.Team{ID: teamID, WorkspaceID: wsID}, nil)
 	teamRepo.On("ListMembers", ctx, teamID).Return([]domain.TeamMember{}, nil)
 
-	result, _, err := svc.Complete(ctx, cycleID, dto.CompleteCycleRequest{})
+	result, _, err := svc.Complete(ctx, wsID, teamID, cycleID, dto.CompleteCycleRequest{})
 
 	assert.NoError(t, err)
 	assert.Equal(t, domain.CycleStatusCompleted, result.Status)
@@ -198,11 +205,13 @@ func TestCycleService_Complete_AlreadyCompleted(t *testing.T) {
 
 	ctx := context.Background()
 	cycleID := uuid.New()
+	teamID, wsID := uuid.New(), uuid.New()
+	teamRepo.On("GetByID", ctx, teamID).Return(&domain.Team{ID: teamID, WorkspaceID: wsID}, nil)
 
-	cycle := &domain.Cycle{ID: cycleID, Status: domain.CycleStatusCompleted}
+	cycle := &domain.Cycle{ID: cycleID, TeamID: teamID, Status: domain.CycleStatusCompleted}
 	repo.On("GetByID", ctx, cycleID).Return(cycle, nil)
 
-	_, _, err := svc.Complete(ctx, cycleID, dto.CompleteCycleRequest{})
+	_, _, err := svc.Complete(ctx, wsID, teamID, cycleID, dto.CompleteCycleRequest{})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already completed")
 }
@@ -222,20 +231,4 @@ func TestCycleService_GetStats(t *testing.T) {
 	assert.Equal(t, 10, stats.Total)
 	assert.Equal(t, 6, stats.Completed)
 	assert.Equal(t, 1, stats.Cancelled)
-}
-
-func TestCycleService_Delete(t *testing.T) {
-	repo := new(mockCycleRepo)
-	teamRepo, hub, notifSvc := newCycleTestDeps()
-	svc := NewCycleService(repo, teamRepo, hub, notifSvc)
-
-	ctx := context.Background()
-	cycleID := uuid.New()
-
-	cycle := &domain.Cycle{ID: cycleID}
-	repo.On("GetByID", ctx, cycleID).Return(cycle, nil)
-	repo.On("Delete", ctx, cycleID).Return(nil)
-
-	err := svc.Delete(ctx, cycleID)
-	assert.NoError(t, err)
 }

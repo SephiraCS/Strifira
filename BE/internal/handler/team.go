@@ -13,6 +13,7 @@ import (
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 )
 
 type TeamHandler struct {
@@ -53,7 +54,11 @@ func (h *TeamHandler) Create(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	team, err := h.teamSvc.Create(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
-		return response.Error(c, http.StatusConflict, "CONFLICT", err.Error())
+		if errors.Is(err, repository.ErrTeamKeyCollision) {
+			return response.Error(c, http.StatusConflict, "CONFLICT", err.Error())
+		}
+		log.WithError(err).WithField("workspace_id", ws.ID).Error("team creation failed")
+		return response.InternalError(c)
 	}
 	return response.Success(c, http.StatusCreated, toTeamResponse(*team))
 }

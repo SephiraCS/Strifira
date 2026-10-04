@@ -279,7 +279,7 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, err
 		}
-		state, err := deps.StatusSvc.Create(ctx, team.ID, dto.CreateTeamStatusRequest{Name: in.Name, Category: in.Category, Color: in.Color})
+		state, err := deps.StatusSvc.Create(ctx, w.workspace.ID, team.ID, dto.CreateTeamStatusRequest{Name: in.Name, Category: in.Category, Color: in.Color})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create state: %w", err)
 		}
@@ -297,7 +297,7 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 		Color     *string `json:"color,omitempty"`
 		Position  *int    `json:"position,omitempty"`
 	}) (*mcp.CallToolResult, any, error) {
-		_, _, err := writeGuard(ctx, deps, in.Workspace, domain.PermTeamManage)
+		_, w, err := writeGuard(ctx, deps, in.Workspace, domain.PermTeamManage)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -305,7 +305,7 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("state_id must be a UUID")
 		}
-		state, err := deps.StatusSvc.Update(ctx, stateID, dto.UpdateTeamStatusRequest{Name: in.Name, Color: in.Color, Position: in.Position})
+		state, err := deps.StatusSvc.Update(ctx, w.workspace.ID, uuid.Nil, stateID, dto.UpdateTeamStatusRequest{Name: in.Name, Color: in.Color, Position: in.Position})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to update state: %w", err)
 		}
@@ -320,7 +320,7 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 		Workspace string `json:"workspace"`
 		StateID   string `json:"state_id"`
 	}) (*mcp.CallToolResult, any, error) {
-		_, _, err := writeGuard(ctx, deps, in.Workspace, domain.PermTeamManage)
+		_, w, err := writeGuard(ctx, deps, in.Workspace, domain.PermTeamManage)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -328,7 +328,7 @@ func registerEntityTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("state_id must be a UUID")
 		}
-		if err := deps.StatusSvc.Delete(ctx, stateID); err != nil {
+		if err := deps.StatusSvc.Delete(ctx, w.workspace.ID, uuid.Nil, stateID); err != nil {
 			return nil, nil, fmt.Errorf("failed to delete state: %w", err)
 		}
 		return nil, map[string]string{"status": "deleted"}, nil
@@ -656,7 +656,7 @@ func registerIssueExtraTools(s *mcp.Server, deps Deps) {
 		Workspace  string `json:"workspace"`
 		RelationID string `json:"relation_id"`
 	}) (*mcp.CallToolResult, any, error) {
-		_, _, err := writeGuard(ctx, deps, in.Workspace, domain.PermIssueUpdate)
+		_, w, err := writeGuard(ctx, deps, in.Workspace, domain.PermIssueUpdate)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -667,7 +667,7 @@ func registerIssueExtraTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("relation_id must be a UUID")
 		}
-		if err := deps.RelationSvc.Delete(ctx, relID); err != nil {
+		if err := deps.RelationSvc.Delete(ctx, w.workspace.ID, relID); err != nil {
 			return nil, nil, fmt.Errorf("failed to delete relation: %w", err)
 		}
 		return nil, map[string]string{"status": "deleted"}, nil

@@ -11,6 +11,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Switch } from '$lib/components/ui/switch';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
+	import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
@@ -23,6 +24,7 @@
 	let webhooks = $state<Webhook[]>([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
+	let pendingDelete = $state<Webhook | null>(null);
 
 	let newUrl = $state('');
 	let newSecret = $state('');
@@ -80,6 +82,9 @@
 		}
 	}
 
+	// The confirm dialog stays open until the request finishes, then closes
+	// in the same update that removes the row so it can move focus to a
+	// surviving control.
 	async function handleDelete(id: string) {
 		try {
 			await deleteWebhook(slug, id);
@@ -87,6 +92,8 @@
 			appToast.success(m['settings.webhooks.deleted']());
 		} catch (err: any) {
 			appToast.apiError(err, m['settings.webhooks.failed_delete']());
+		} finally {
+			pendingDelete = null;
 		}
 	}
 
@@ -150,8 +157,10 @@
 							<Button
 								variant="ghost"
 								size="icon-sm"
-								onclick={() => handleDelete(webhook.id)}
+								onclick={() => (pendingDelete = webhook)}
 								class="text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+								aria-label={m['settings.webhooks.delete_named']({ url: webhook.url })}
+								title={m['settings.webhooks.delete']()}
 							>
 								<Trash2 size={14} />
 							</Button>
@@ -162,6 +171,17 @@
 		{/if}
 	</div>
 </div>
+
+{#if pendingDelete}
+	{@const webhook = pendingDelete}
+	<ConfirmDialog
+		title={m['settings.webhooks.delete_title']()}
+		message={m['settings.webhooks.delete_message']({ url: webhook.url })}
+		confirmLabel={m['settings.webhooks.delete']()}
+		onconfirm={() => handleDelete(webhook.id)}
+		oncancel={() => (pendingDelete = null)}
+	/>
+{/if}
 
 <Dialog.Root bind:open={showCreate}>
 	<Dialog.Content class="sm:max-w-[480px] border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-0 overflow-hidden rounded-xl">

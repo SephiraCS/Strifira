@@ -9,8 +9,11 @@ on:
   # that includes the deploy: `fj actions dispatch ci.yml main`.
   workflow_dispatch:
 
+# Runs on main publish release images (the Release job), so they share the
+# ku-publish-images queue with build.yml's tag publications: two publishers
+# never interleave their pushes (Forgejo has no job-level concurrency).
 concurrency:
-  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  group: ${{ forgejo.ref == 'refs/heads/main' && 'ku-publish-images' || format('ku-{0}-{1}', forgejo.workflow, forgejo.ref) }}
   cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
 
 # Go, Node.js, and the Playwright browsers are baked into the ts-builder job
@@ -19,6 +22,12 @@ concurrency:
 # Every push to main deploys to alpha: the image is built and staged in
 # Harbor while the tests run, and the ku instance is rolled once the backend
 # and frontend tests pass. The alpha side is HomeLab ops/ku/deploy.sh.
+#
+# Tests (AGENTS.md): integration tests only, in two suites. This workflow
+# runs the fast suite (`make test-fast`), which gates the deploy; the slow
+# suite (`make test-slow`) runs in slow.yml and never blocks it. After a
+# good deploy the Release job bumps the version, tags and publishes it;
+# pull requests never edit versions (scripts/ci/release.sh).
 jobs:
   backend-test:
     name: Backend Tests
@@ -77,7 +86,10 @@ jobs:
           podman exec ku-postgres pg_isready -h 127.0.0.1 -U ku -d ku_test
           podman exec ku-redis redis-cli ping
 
-      - name: Apply migrations and run tests with coverage
+      # A hung test panics at -timeout=6m (with every goroutine's stack)
+      # instead of running into the job timeout.
+      - name: Fast suite (backend) with coverage
+        working-directory: .
         env:
           DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
           TEST_DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
@@ -85,9 +97,15 @@ jobs:
           JWT_SECRET: test-secret-that-is-at-least-32-characters-long
         run: |
           set -euo pipefail
-          go run ./cmd/server migrate up
-          go test ./... -race -coverprofile=coverage.out -covermode=atomic -count=1
-          go tool cover -func=coverage.out | tail -1
+          make test-fast-backend \
+            GO_TEST_FLAGS="-race -count=1 -timeout=6m -coverprofile=coverage.out -covermode=atomic"
+          (cd BE && go tool cover -func=coverage.out | tail -1)
+
+      # Runs even when tests fail, so both problems show in one run.
+      - name: Check formatting
+        if: success() || failure()
+        working-directory: .
+        run: make check-gofmt
 
       - name: Remove the podman store
         if: always()
@@ -114,15 +132,18 @@ jobs:
       - name: Svelte check
         run: npm run check
 
-      - name: Unit tests
-        run: npm run test:unit
-
-  # A job of its own so the production build and browser run overlap the
-  # type check instead of queueing behind it.
+  # The fast browser suite (FAST_SPECS in UI/playwright.config.ts), split
+  # across three runners. Each shard builds the app itself: this runner
+  # serves neither the v4 nor the legacy artifact protocol (see ts-reviewer
+  # CI). Workers stay at two per shard.
   frontend-e2e:
-    name: Frontend Browser Tests
+    name: Frontend Browser Tests (${{ matrix.shard }}/3)
     runs-on: terrascale-builder
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     defaults:
       run:
         working-directory: UI
@@ -136,13 +157,25 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
 
+      - name: Build
+        run: npm run build
+
       # Installs only what the job image lacks for this Playwright version
-      # (a no-op once the baked browsers match), then runs the browser tests;
-      # the Playwright web server builds the app first.
-      - name: Browser tests
+      # (a no-op once the baked browsers match).
+      - name: Fast suite (browser)
+        working-directory: .
+        env:
+          E2E_PREBUILT: '1'
         run: |
-          npx playwright install chromium ffmpeg
-          npm run test:e2e -- --workers=2
+          (cd UI && npx playwright install chromium ffmpeg)
+          make test-fast-frontend E2E_FLAGS="--shard=${{ matrix.shard }}/3 --workers=2"
+
+      # Artifacts are unavailable on this runner, so failure context goes to
+      # the retained job log instead.
+      - name: Print failure context
+        if: failure()
+        run: |
+          find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
   web-check:
     name: Marketing Site Checks
@@ -186,7 +219,7 @@ jobs:
         run: scripts/ci/podman-store.sh create stage-image
 
       - name: Build the image
-        run: scripts/ci/build-image.sh go,npm --tag "ku:${{ forgejo.sha }}" .
+        run: scripts/ci/build-image.sh go,npm --build-arg "KU_VERSION=${{ forgejo.sha }}" --tag "ku:${{ forgejo.sha }}" .
 
       - name: Stage the image in Harbor
         env:
@@ -205,7 +238,10 @@ jobs:
     needs: [backend-test, frontend-check, frontend-e2e, stage-image]
     if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      # Public endpoint of the alpha instance (HomeLab services/ku.md).
+      ALPHA_HEALTH_URL: https://ku.mariogk.com/health
     steps:
       - name: Check out the source revision
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -213,7 +249,97 @@ jobs:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
+      # The commit to name in rollback instructions: what the public
+      # endpoint serves now, or (for images older than the version field)
+      # the last fully green push to main.
+      - name: Record the running commit
+        id: previous
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: |
+          set -u
+          previous=$(curl --silent --fail --max-time 10 "${ALPHA_HEALTH_URL}" | jq -r '.version // empty' 2>/dev/null || true)
+          if ! printf '%s' "$previous" | grep -Eq '^[0-9a-f]{40}$'; then
+            previous=$(curl --silent --fail --max-time 10 --header "Authorization: token ${FORGEJO_TOKEN}" \
+              "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/runs?workflow_id=ci.yml&event=push&status=success&limit=5" \
+              | jq -r --arg sha "${{ forgejo.sha }}" '[.workflow_runs[] | select(.commit_sha != $sha)][0].commit_sha // "unknown"' 2>/dev/null || echo unknown)
+          fi
+          echo "Alpha runs ${previous} before this deploy."
+          echo "sha=${previous}" >> "$GITHUB_OUTPUT"
+
       - name: Roll the ku instance
         env:
           ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
         run: scripts/alpha-deploy.sh roll "${{ forgejo.sha }}"
+
+      # ku-deploy only checks alpha's loopback; this checks what users get.
+      - name: Verify the deployed commit
+        run: scripts/ci/verify-deploy.sh "${ALPHA_HEALTH_URL}" "${{ forgejo.sha }}" "${{ steps.previous.outputs.sha }}"
+
+      - name: Explain the rollback
+        if: failure()
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.sha }}
+        run: |
+          echo "::error::Deploy of ${{ forgejo.sha }} failed. Alpha ran ${PREVIOUS:-unknown} before it."
+          echo "ku-deploy rolls back by itself when the new image never turns healthy."
+          echo "To roll back by hand, on alpha: sudo -u ku-deploy /usr/local/sbin/ku-deploy roll ${PREVIOUS:-<previous sha>}"
+
+  # Cuts the next patch release of the deployed commit: bumps UI/package.json
+  # and the OpenAPI version in a "[skip ci]" commit on main, tags it, creates
+  # the release, pushes the images built from it, and rolls alpha to that
+  # release commit so it serves the new version. It runs after the deploy
+  # and never blocks it. No loop: Forgejo starts no workflow for
+  # pushes made with the job token (see scripts/ci/release.sh).
+  release:
+    name: Release
+    needs: [deploy]
+    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
+    runs-on: terrascale-builder
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
+    env:
+      REGISTRY: git.terrascale.tech
+      IMAGE_PREFIX: git.terrascale.tech/terrascale
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Bump the version, tag and create the release
+        id: release
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: scripts/ci/release.sh "${{ forgejo.sha }}"
+
+      - name: Create the podman store
+        if: steps.release.outputs.version != ''
+        run: scripts/ci/podman-store.sh create release
+
+      - name: Build and push the release images
+        if: steps.release.outputs.version != ''
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
+        run: scripts/ci/publish-images.sh "${{ steps.release.outputs.version }}" --push
+
+      # The release commit carries the new version and release manifest the
+      # UI serves; roll alpha to it (only from the commit it bumps).
+      - name: Deploy the release commit to alpha
+        if: steps.release.outputs.version != ''
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+          ALPHA_HEALTH_URL: https://ku.mariogk.com/health
+        run: >-
+          scripts/ci/deploy-release.sh "${ALPHA_HEALTH_URL}"
+          "${IMAGE_PREFIX}/ku:${{ steps.release.outputs.version }}"
+          "${{ steps.release.outputs.sha }}" "${{ steps.release.outputs.deployed }}"
+
+      - name: Remove the podman store
+        if: always()
+        run: scripts/ci/podman-store.sh remove

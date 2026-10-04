@@ -11,7 +11,6 @@ import (
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
-	log "github.com/sirupsen/logrus"
 )
 
 type NotificationHandler struct {
@@ -39,8 +38,7 @@ func (h *NotificationHandler) List(c echo.Context) error {
 	}
 
 	if err != nil {
-		log.WithError(err).Error("failed to list notifications")
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.NotificationResponse, len(items))
@@ -67,7 +65,7 @@ func (h *NotificationHandler) Update(c echo.Context) error {
 	}
 	n, err := h.notifSvc.Update(c.Request().Context(), id, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -89,7 +87,7 @@ func (h *NotificationHandler) Snooze(c echo.Context) error {
 	}
 	n, err := h.notifSvc.Snooze(c.Request().Context(), id, until)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -101,7 +99,7 @@ func (h *NotificationHandler) Unsnooze(c echo.Context) error {
 	}
 	n, err := h.notifSvc.Unsnooze(c.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -113,7 +111,7 @@ func (h *NotificationHandler) MarkRead(c echo.Context) error {
 	}
 	n, err := h.notifSvc.MarkRead(c.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -125,7 +123,7 @@ func (h *NotificationHandler) MarkUnread(c echo.Context) error {
 	}
 	n, err := h.notifSvc.MarkUnread(c.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -137,7 +135,7 @@ func (h *NotificationHandler) Archive(c echo.Context) error {
 	}
 	n, err := h.notifSvc.Archive(c.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -149,7 +147,7 @@ func (h *NotificationHandler) Unarchive(c echo.Context) error {
 	}
 	n, err := h.notifSvc.Unarchive(c.Request().Context(), id)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toNotifResponse(*n))
 }
@@ -157,7 +155,7 @@ func (h *NotificationHandler) Unarchive(c echo.Context) error {
 func (h *NotificationHandler) MarkAllRead(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	if err := h.notifSvc.MarkAllRead(c.Request().Context(), userID); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "done"})
 }

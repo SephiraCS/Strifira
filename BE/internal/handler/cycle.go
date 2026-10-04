@@ -1,14 +1,18 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -20,15 +24,39 @@ func NewCycleHandler(cycleSvc *service.CycleService) *CycleHandler {
 	return &CycleHandler{cycleSvc: cycleSvc}
 }
 
-func (h *CycleHandler) List(c echo.Context) error {
+// cycleScope returns the workspace and the parsed :teamId path parameter.
+func cycleScope(c echo.Context) (workspaceID, teamID uuid.UUID, ok bool) {
+	ws := c.Get("workspace").(*domain.Workspace)
 	teamID, err := uuid.Parse(c.Param("teamId"))
 	if err != nil {
+		return uuid.Nil, uuid.Nil, false
+	}
+	return ws.ID, teamID, true
+}
+
+// cycleError maps scoped lookup failures to 404 and everything else to 400.
+func cycleError(c echo.Context, err error) error {
+	switch {
+	case errors.Is(err, service.ErrTeamNotFound):
+		return response.NotFound(c, "Team")
+	case errors.Is(err, service.ErrCycleNotFound):
+		return response.NotFound(c, "Cycle")
+	}
+	return response.ServiceError(c, err)
+}
+
+func (h *CycleHandler) List(c echo.Context) error {
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
 
-	cycles, err := h.cycleSvc.ListByTeam(c.Request().Context(), teamID)
+	cycles, err := h.cycleSvc.ListByTeam(c.Request().Context(), workspaceID, teamID)
+	if errors.Is(err, service.ErrTeamNotFound) {
+		return response.NotFound(c, "Team")
+	}
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	resp := make([]dto.CycleResponse, len(cycles))
@@ -46,8 +74,8 @@ func (h *CycleHandler) List(c echo.Context) error {
 }
 
 func (h *CycleHandler) Create(c echo.Context) error {
-	teamID, err := uuid.Parse(c.Param("teamId"))
-	if err != nil {
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
 
@@ -63,9 +91,9 @@ func (h *CycleHandler) Create(c echo.Context) error {
 		return response.ValidationError(c, details)
 	}
 
-	cycle, err := h.cycleSvc.Create(c.Request().Context(), teamID, req)
+	cycle, err := h.cycleSvc.Create(c.Request().Context(), workspaceID, teamID, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return cycleError(c, err)
 	}
 
 	return response.Success(c, http.StatusCreated, toCycleResponse(*cycle))
@@ -76,10 +104,17 @@ func (h *CycleHandler) Get(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid cycle ID")
 	}
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
 
-	cycle, err := h.cycleSvc.GetByID(c.Request().Context(), id)
-	if err != nil || cycle == nil {
-		return response.NotFound(c, "Cycle")
+	cycle, err := h.cycleSvc.GetByID(c.Request().Context(), workspaceID, teamID, id)
+	if err != nil {
+		if errors.Is(err, service.ErrCycleNotFound) {
+			return response.NotFound(c, "Cycle")
+		}
+		return response.InternalError(c)
 	}
 
 	r := toCycleResponse(*cycle)
@@ -96,33 +131,59 @@ func (h *CycleHandler) Update(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid cycle ID")
 	}
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
 
 	var req dto.UpdateCycleRequest
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
 
-	cycle, err := h.cycleSvc.Update(c.Request().Context(), id, req)
+	cycle, err := h.cycleSvc.Update(c.Request().Context(), workspaceID, teamID, id, req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return cycleError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, toCycleResponse(*cycle))
 }
+
+// maxCompleteCycleBodyBytes bounds the optional completion body (a
+// retrospective and a flag).
+const maxCompleteCycleBodyBytes = 1 << 20
 
 func (h *CycleHandler) Complete(c echo.Context) error {
 	id, err := uuid.Parse(c.Param("cycleId"))
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid cycle ID")
 	}
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
 
 	var req dto.CompleteCycleRequest
-	// Bind optional JSON body; ignore errors (body may be empty)
-	_ = c.Bind(&req)
-
-	cycle, carriedOver, err := h.cycleSvc.Complete(c.Request().Context(), id, req)
+	// The body is optional: an empty (or whitespace-only) body is the zero
+	// request, whatever its declared length (a chunked empty body has an
+	// unknown ContentLength, which Echo's binder would try to decode). A
+	// malformed or truncated body is rejected rather than silently ignored.
+	raw, err := io.ReadAll(http.MaxBytesReader(c.Response(), c.Request().Body, maxCompleteCycleBodyBytes))
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return response.Error(c, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "Request body too large")
+		}
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := json.Unmarshal(raw, &req); err != nil {
+			return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+		}
+	}
+
+	cycle, carriedOver, err := h.cycleSvc.Complete(c.Request().Context(), workspaceID, teamID, id, req)
+	if err != nil {
+		return cycleError(c, err)
 	}
 
 	resp := toCycleResponse(*cycle)
@@ -133,13 +194,16 @@ func (h *CycleHandler) Complete(c echo.Context) error {
 }
 
 func (h *CycleHandler) Velocity(c echo.Context) error {
-	teamID, err := uuid.Parse(c.Param("teamId"))
-	if err != nil {
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
 	}
-	points, err := h.cycleSvc.GetVelocity(c.Request().Context(), teamID)
+	points, err := h.cycleSvc.GetVelocity(c.Request().Context(), workspaceID, teamID)
+	if errors.Is(err, service.ErrTeamNotFound) {
+		return response.NotFound(c, "Team")
+	}
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, points)
 }
@@ -149,9 +213,13 @@ func (h *CycleHandler) Delete(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid cycle ID")
 	}
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
 
-	if err := h.cycleSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	if err := h.cycleSvc.Delete(c.Request().Context(), workspaceID, teamID, id); err != nil {
+		return cycleError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
@@ -162,10 +230,14 @@ func (h *CycleHandler) Burndown(c echo.Context) error {
 	if err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid cycle ID")
 	}
+	workspaceID, teamID, ok := cycleScope(c)
+	if !ok {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid team ID")
+	}
 
-	points, err := h.cycleSvc.GetBurndown(c.Request().Context(), id)
+	points, err := h.cycleSvc.GetBurndown(c.Request().Context(), workspaceID, teamID, id)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return cycleError(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, points)

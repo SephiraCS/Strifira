@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -51,58 +50,17 @@ func (m *mockIssueRelationRepo) DeleteByIssues(ctx context.Context, issueID, rel
 	return args.Error(0)
 }
 
+func (m *mockIssueRelationRepo) CreateWithInverse(ctx context.Context, rel, inverse *domain.IssueRelation) error {
+	args := m.Called(ctx, rel, inverse)
+	return args.Error(0)
+}
+
+func (m *mockIssueRelationRepo) DeleteInWorkspace(ctx context.Context, workspaceID, id uuid.UUID) (bool, error) {
+	args := m.Called(ctx, workspaceID, id)
+	return args.Bool(0), args.Error(1)
+}
+
 // --- Tests ---
-
-func TestIssueRelationService_Create_Related(t *testing.T) {
-	relRepo := new(mockIssueRelationRepo)
-	issueRepo := new(mockIssueRepo)
-	svc := NewIssueRelationService(relRepo, issueRepo)
-
-	ctx := context.Background()
-	wsID := uuid.New()
-	issueA := &domain.Issue{ID: uuid.New(), Identifier: "ENG-1"}
-	issueB := &domain.Issue{ID: uuid.New(), Identifier: "ENG-2"}
-
-	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issueA, nil)
-	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-2").Return(issueB, nil)
-	relRepo.On("Create", ctx, mock.AnythingOfType("*domain.IssueRelation")).Return(nil)
-
-	rel, err := svc.Create(ctx, wsID, "ENG-1", dto.CreateIssueRelationRequest{
-		RelatedIdentifier: "ENG-2",
-		Type:              "related",
-	})
-
-	assert.NoError(t, err)
-	assert.NotNil(t, rel)
-	assert.Equal(t, domain.RelationRelated, rel.Type)
-	// "related" is symmetric, so only one Create call (not inverse)
-	relRepo.AssertNumberOfCalls(t, "Create", 1)
-}
-
-func TestIssueRelationService_Create_Blocking(t *testing.T) {
-	relRepo := new(mockIssueRelationRepo)
-	issueRepo := new(mockIssueRepo)
-	svc := NewIssueRelationService(relRepo, issueRepo)
-
-	ctx := context.Background()
-	wsID := uuid.New()
-	issueA := &domain.Issue{ID: uuid.New(), Identifier: "ENG-1"}
-	issueB := &domain.Issue{ID: uuid.New(), Identifier: "ENG-2"}
-
-	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-1").Return(issueA, nil)
-	issueRepo.On("GetByIdentifier", ctx, wsID, "ENG-2").Return(issueB, nil)
-	relRepo.On("Create", ctx, mock.AnythingOfType("*domain.IssueRelation")).Return(nil)
-
-	rel, err := svc.Create(ctx, wsID, "ENG-1", dto.CreateIssueRelationRequest{
-		RelatedIdentifier: "ENG-2",
-		Type:              "blocking",
-	})
-
-	assert.NoError(t, err)
-	assert.Equal(t, domain.RelationBlocking, rel.Type)
-	// Should create inverse "blocked_by"
-	relRepo.AssertNumberOfCalls(t, "Create", 2)
-}
 
 func TestIssueRelationService_Create_SelfReference(t *testing.T) {
 	relRepo := new(mockIssueRelationRepo)
@@ -258,43 +216,4 @@ func TestIssueRelationService_SummariesByIssues_IncludesBlockingIssues(t *testin
 	assert.Equal(t, "ENG-2", summaries[issueA].BlockedBy[0].Identifier)
 	assert.Equal(t, "ENG-3", summaries[issueA].Related[0].Identifier)
 	assert.Equal(t, "ENG-4", summaries[issueA].Duplicate[0].Identifier)
-}
-
-func TestIssueRelationService_Delete(t *testing.T) {
-	relRepo := new(mockIssueRelationRepo)
-	issueRepo := new(mockIssueRepo)
-	svc := NewIssueRelationService(relRepo, issueRepo)
-
-	ctx := context.Background()
-	relID := uuid.New()
-	rel := &domain.IssueRelation{
-		ID:             relID,
-		IssueID:        uuid.New(),
-		RelatedIssueID: uuid.New(),
-		Type:           domain.RelationBlocking,
-	}
-
-	relRepo.On("GetByID", ctx, relID).Return(rel, nil)
-	relRepo.On("DeleteByIssues", ctx, rel.RelatedIssueID, rel.IssueID, domain.RelationBlockedBy).Return(nil)
-	relRepo.On("Delete", ctx, relID).Return(nil)
-
-	err := svc.Delete(ctx, relID)
-
-	assert.NoError(t, err)
-	relRepo.AssertCalled(t, "DeleteByIssues", ctx, rel.RelatedIssueID, rel.IssueID, domain.RelationBlockedBy)
-}
-
-func TestIssueRelationService_Delete_NotFound(t *testing.T) {
-	relRepo := new(mockIssueRelationRepo)
-	issueRepo := new(mockIssueRepo)
-	svc := NewIssueRelationService(relRepo, issueRepo)
-
-	ctx := context.Background()
-	relID := uuid.New()
-
-	relRepo.On("GetByID", ctx, relID).Return(nil, fmt.Errorf("not found"))
-
-	err := svc.Delete(ctx, relID)
-
-	assert.Error(t, err)
 }

@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { getShareMeta, listShareIssues } from '$lib/api/public';
+	import { m } from '$lib/paraglide/messages.js';
 	import type { PublicShareMeta, PublicIssue, PublicStatus } from '$lib/types/shared-link';
 	import type { PaginatedResponse } from '$lib/types/common';
 	import type { ViewFilter, ViewLayout } from '$lib/types/view';
@@ -86,7 +87,7 @@
 			meta = await getShareMeta(token);
 			await loadIssues();
 		} catch {
-			error = 'This shared link is not available or has expired.';
+			error = m['share_page.unavailable']();
 		} finally {
 			loading = false;
 		}
@@ -110,7 +111,7 @@
 			totalCount = result.total_count;
 			hasMore = result.has_more;
 		} catch {
-			error = 'Failed to load issues.';
+			error = m['share_page.failed_load']();
 		}
 	}
 
@@ -183,7 +184,7 @@
 </script>
 
 <svelte:head>
-	<title>{meta ? `${meta.scope_name} - ${meta.workspace_name}` : 'Shared View'}</title>
+	<title>{meta ? `${meta.scope_name} - ${meta.workspace_name}` : m['share_page.title']()}</title>
 </svelte:head>
 
 {#if loading}
@@ -205,10 +206,10 @@
 				<span class="text-sm font-medium text-[var(--color-text-primary)]">{meta.scope_name}</span>
 			</div>
 			<span class="rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-text-tertiary)] uppercase tracking-wider">
-				Read only
+				{m['share_page.read_only']()}
 			</span>
 			<div class="flex-1"></div>
-			<span class="text-xs text-[var(--color-text-tertiary)]">{totalCount} issues</span>
+			<span class="text-xs text-[var(--color-text-tertiary)]">{m['share_page.issue_count']({ count: totalCount })}</span>
 			{#if meta.statuses && meta.statuses.length > 0}
 				<ViewSwitcher bind:layout />
 			{/if}
@@ -224,7 +225,7 @@
 				type="text"
 				value={searchValue}
 				oninput={handleSearchInput}
-				placeholder="Search..."
+				placeholder={m['sharedComponents.filter_builder.search_placeholder']()}
 				class="h-7 w-40 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] pl-7 pr-2 text-xs text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--app-accent)]"
 			/>
 		</div>
@@ -236,12 +237,12 @@
 					<button class="flex items-center gap-1 rounded-md border {filters.status ? 'border-[var(--app-accent)]/30 bg-[var(--app-accent)]/10 text-[var(--app-accent-light)]' : 'border-[var(--app-border)] text-[var(--color-text-tertiary)]'} px-2 py-0.5 text-xs hover:bg-[var(--color-bg-hover)]">
 						<CircleDashed size={12} />
 						{#if getStatusValues().length === 0}
-							Status
+							{m['issue.status']()}
 						{:else if getStatusValues().length === 1}
 							{@const st = meta.statuses?.find(s => s.id === getStatusValues()[0])}
-							{st?.name ?? 'Status'}
+							{st?.name ?? m['issue.status']()}
 						{:else}
-							{getStatusValues().length} statuses
+							{m['share_page.statuses_count']({ count: getStatusValues().length })}
 						{/if}
 					</button>
 				</Popover.Trigger>
@@ -266,11 +267,11 @@
 				<button class="flex items-center gap-1 rounded-md border {filters.priority ? 'border-[var(--app-accent)]/30 bg-[var(--app-accent)]/10 text-[var(--app-accent-light)]' : 'border-[var(--app-border)] text-[var(--color-text-tertiary)]'} px-2 py-0.5 text-xs hover:bg-[var(--color-bg-hover)]">
 					<Signal size={12} />
 					{#if getPriorityValues().length === 0}
-						Priority
+						{m['issue.priority']()}
 					{:else if getPriorityValues().length === 1}
 						{getPriorityLabel(Number(getPriorityValues()[0]) as IssuePriority)}
 					{:else}
-						{getPriorityValues().length} priorities
+						{m['share_page.priorities_count']({ count: getPriorityValues().length })}
 					{/if}
 				</button>
 			</Popover.Trigger>
@@ -292,7 +293,7 @@
 
 		{#if hasFilters}
 			<button onclick={clearFilters} class="text-xs text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
-				Clear filters
+				{m['common.clear_filters']()}
 			</button>
 		{/if}
 	</div>
@@ -304,7 +305,7 @@
 		<div class="flex-1 overflow-y-auto py-1">
 			{#if issues.length === 0}
 				<div class="flex h-40 items-center justify-center">
-					<p class="text-sm text-[var(--color-text-tertiary)]">No issues found</p>
+					<p class="text-sm text-[var(--color-text-tertiary)]">{m['sidebar.no_issues_found']()}</p>
 				</div>
 			{:else if groupedByStatus.length > 0}
 				{#each groupedByStatus as group (group.statusId)}

@@ -22,6 +22,7 @@ import (
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/pkg/crypto"
 	fj "github.com/ku/ku-backend/pkg/forgejo"
+	"github.com/ku/ku-backend/pkg/safego"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -1125,7 +1126,7 @@ func (s *ForgejoService) StartStatusReconciler(ctx context.Context, interval tim
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.syncOpenPRChecks(ctx)
+			safego.Run("forgejo status reconciler", func() { s.syncOpenPRChecks(ctx) })
 		}
 	}
 }

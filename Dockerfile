@@ -22,19 +22,35 @@ WORKDIR /app
 COPY BE/go.mod BE/go.sum ./
 RUN go mod download
 COPY BE/ .
-RUN CGO_ENABLED=0 go build -trimpath -o server ./cmd/server
+# The commit is baked into the binary and reported by /health, so CI can
+# verify that the rolled instance runs the commit it deployed.
+ARG KU_VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X github.com/ku/ku-backend/internal/handler.Version=${KU_VERSION}" \
+    -o server ./cmd/server
 
 # Stage 4: Final image
 FROM docker.io/library/alpine:3.24
-RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates su-exec && \
+    addgroup -S ku && adduser -S -G ku -h /app/.home ku
 WORKDIR /app
 COPY --from=caddy-builder /go/caddy /usr/bin/caddy
 COPY --from=be-builder /app/server .
 COPY --from=be-builder /app/migrations ./migrations
 COPY --from=ui-builder /app/build /srv
-RUN mkdir -p /app/uploads
+# Readable by the unprivileged user whatever the checkout's umask was.
+RUN chmod -R a+rX /app/server /app/migrations /srv && \
+    mkdir -p /app/uploads /app/.home && chown ku:ku /app/uploads /app/.home
 
 COPY <<'EOF' /etc/caddy/Caddyfile
+{
+	# Bound connection draining on SIGTERM: without it a long-lived stream
+	# or idle keep-alive connection could hold Caddy (and the container)
+	# open indefinitely. The start script kills anything still running
+	# after its own, slightly longer, deadline.
+	grace_period 20s
+}
+
 :3000 {
 	header {
 		X-Content-Type-Options nosniff
@@ -93,8 +109,15 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 EOF
 RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
-# Sources an optional mounted env file, applies migrations (retried while the
-# database is still coming up), then runs the API behind Caddy.
+# Runs as root only long enough to read the mounted env file (root-owned on
+# alpha) and hand the uploads volume to the ku user; migrations, the API and
+# Caddy then run unprivileged. The uploads tree predates the non-root image,
+# so it is re-owned on start; an older (root) image still writes it fine.
+#
+# The API and Caddy run side by side, and the container must not outlive
+# either: busybox sh has no `wait -n`, so the script polls both and stops the
+# container (non-zero) as soon as one exits, letting the runtime restart it
+# or ku-deploy roll back instead of serving 502s behind a live Caddy.
 COPY <<'EOF' /app/start.sh
 #!/bin/sh
 set -eu
@@ -105,8 +128,15 @@ if [ -f /secrets/ku.env ]; then
 	set +a
 fi
 
+if [ "$(id -u)" = 0 ]; then
+	chown -R ku:ku /app/uploads
+	run_as="su-exec ku"
+else
+	run_as=""
+fi
+
 attempt=1
-until ./server migrate up; do
+until $run_as ./server migrate up; do
 	if [ "$attempt" -ge 20 ]; then
 		echo "[ku] migrations failed after $attempt attempts" >&2
 		exit 1
@@ -116,10 +146,44 @@ until ./server migrate up; do
 	sleep 3
 done
 
-./server &
-exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+$run_as ./server &
+server=$!
+$run_as caddy run --config /etc/caddy/Caddyfile --adapter caddyfile &
+caddy=$!
+
+# Forward SIGTERM, give both processes a bounded grace period (the API
+# drains for up to 25s, Caddy for 20s), then SIGKILL whatever is left so
+# neither a shutdown nor the child-failure path can hang the container.
+stop() {
+	kill -TERM "$server" "$caddy" 2>/dev/null || true
+	waited=0
+	while [ "$waited" -lt 30 ] && { kill -0 "$server" 2>/dev/null || kill -0 "$caddy" 2>/dev/null; }; do
+		sleep 1
+		waited=$((waited + 1))
+	done
+	kill -KILL "$server" "$caddy" 2>/dev/null || true
+	wait "$server" 2>/dev/null || true
+	wait "$caddy" 2>/dev/null || true
+}
+trap 'stop; exit 143' TERM INT
+
+while kill -0 "$server" 2>/dev/null && kill -0 "$caddy" 2>/dev/null; do
+	sleep 1
+done
+if kill -0 "$server" 2>/dev/null; then
+	echo "[ku] caddy exited; stopping the container" >&2
+else
+	echo "[ku] the API server exited; stopping the container" >&2
+fi
+stop
+exit 1
 EOF
 RUN chmod +x /app/start.sh
 
+ENV HOME=/app/.home XDG_CONFIG_HOME=/app/.home/config XDG_DATA_HOME=/app/.home/data
 EXPOSE 3000
+# Docker-format images only (scripts/ci/build-image.sh builds with
+# --format docker); Incus on alpha ignores it and ku-deploy polls /health.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1
 ENTRYPOINT ["/app/start.sh"]

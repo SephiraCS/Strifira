@@ -105,10 +105,10 @@
 								{/if}
 							</div>
 						</div>
-						<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+						<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
 							<Popover.Root open={menuOpenId === label.id} onOpenChange={(open) => { menuOpenId = open ? label.id : null; }}>
-								<Popover.Trigger>
-									<Button variant="ghost" size="icon-sm" class="h-7 w-7">
+								<Popover.Trigger aria-label={m['settings.labels.actions_named']({ name: label.name })}>
+									<Button variant="ghost" size="icon-sm" class="h-7 w-7" tabindex={-1} aria-hidden="true">
 										<Ellipsis size={14} />
 									</Button>
 								</Popover.Trigger>

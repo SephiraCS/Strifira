@@ -3,8 +3,8 @@ package middleware
 import (
 	"time"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 )
 
 func Logging() echo.MiddlewareFunc {
@@ -15,11 +15,12 @@ func Logging() echo.MiddlewareFunc {
 			latency := time.Since(start)
 
 			log.WithFields(log.Fields{
-				"method":  c.Request().Method,
-				"path":    c.Request().URL.Path,
-				"status":  c.Response().Status,
-				"latency": latency.String(),
-				"ip":      c.RealIP(),
+				"method":     c.Request().Method,
+				"path":       c.Request().URL.Path,
+				"status":     c.Response().Status,
+				"latency":    latency.String(),
+				"ip":         c.RealIP(),
+				"request_id": c.Response().Header().Get(echo.HeaderXRequestID),
 			}).Info("request")
 
 			return err

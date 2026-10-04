@@ -4,19 +4,24 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/pkg/sanitize"
-	"github.com/google/uuid"
 )
 
 type ProjectService struct {
 	projectRepo repository.ProjectRepo
+	hub         *realtime.Hub
 }
 
-func NewProjectService(projectRepo repository.ProjectRepo) *ProjectService {
-	return &ProjectService{projectRepo: projectRepo}
+// NewProjectService builds the project service. hub may be nil; when set,
+// successful updates are broadcast workspace-wide as project.updated (which
+// also feeds outgoing webhooks subscribed to that event).
+func NewProjectService(projectRepo repository.ProjectRepo, hub *realtime.Hub) *ProjectService {
+	return &ProjectService{projectRepo: projectRepo, hub: hub}
 }
 
 func (s *ProjectService) Create(ctx context.Context, workspaceID uuid.UUID, req dto.CreateProjectRequest) (*domain.Project, error) {
@@ -95,6 +100,10 @@ func (s *ProjectService) Update(ctx context.Context, workspaceID, id uuid.UUID, 
 
 	if err := s.projectRepo.Update(ctx, project); err != nil {
 		return nil, err
+	}
+	// Broadcast from the service so every caller (HTTP and MCP) emits it.
+	if s.hub != nil {
+		s.hub.Broadcast(workspaceID, realtime.Event{Type: "project.updated", Payload: project})
 	}
 	return project, nil
 }

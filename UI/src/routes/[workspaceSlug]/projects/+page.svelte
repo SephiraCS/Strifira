@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { listProjects, createProject } from '$lib/api/projects';
-	import { listTeams } from '$lib/api/teams';
+	import { createProject, listProjects } from '$lib/api/projects';
 	import type { Project, ProjectStatus } from '$lib/types/project';
 	import type { Team } from '$lib/types/team';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
@@ -14,6 +13,7 @@
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
+	import { workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	let projects = $state<Project[]>([]);
@@ -27,7 +27,9 @@
 
 	onMount(async () => {
 		try {
-			[projects, teams] = await Promise.all([listProjects(slug), listTeams(slug)]);
+			// Projects are fetched fresh: their issue-progress stats change with
+			// every issue mutation, which does not refresh the layout's copy.
+			[projects, teams] = await Promise.all([listProjects(slug), workspaceTeams(slug)]);
 		} finally {
 			loading = false;
 		}

@@ -17,6 +17,7 @@ ARG CODEX_VERSION=0.145.0
 ARG BRACE_EXPANSION_VERSION=5.0.11
 ARG IP_ADDRESS_VERSION=10.3.1
 ARG SHELL_QUOTE_VERSION=1.9.0
+ARG BASIC_FTP_VERSION=6.2.1
 ARG JS_YAML_VERSION=4.3.2
 ARG TAR_VERSION=7.5.21
 ARG UNDICI_VERSION=7.29.1
@@ -50,10 +51,12 @@ RUN apt-get update \
     && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
          "js-yaml@${JS_YAML_VERSION}" "shell-quote@${SHELL_QUOTE_VERSION}" "tar@${TAR_VERSION}" \
-    && rm -rf /usr/lib/code-server/node_modules/js-yaml \
+         "basic-ftp@${BASIC_FTP_VERSION}" \
+    && rm -rf /usr/lib/code-server/node_modules/js-yaml /usr/lib/code-server/node_modules/basic-ftp \
          /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
          /usr/lib/code-server/lib/vscode/node_modules/tar \
     && cp -a /tmp/code-server-patches/node_modules/js-yaml /usr/lib/code-server/node_modules/ \
+    && cp -a /tmp/code-server-patches/node_modules/basic-ftp /usr/lib/code-server/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/shell-quote /usr/lib/code-server/lib/vscode/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/tar /usr/lib/code-server/lib/vscode/node_modules/ \
     && node -e 'const fs=require("fs"),path="/usr/lib/code-server/lib/vscode/extensions/npm/package.json",manifest=JSON.parse(fs.readFileSync(path));manifest.name="npm-support";fs.writeFileSync(path,JSON.stringify(manifest,null,2)+"\n")' \

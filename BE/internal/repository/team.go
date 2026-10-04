@@ -35,6 +35,41 @@ func (r *TeamRepository) Create(ctx context.Context, team *domain.Team) error {
 	return tx.Commit()
 }
 
+// CreateWithDefaults inserts the team, its creator membership and its
+// initial workflow statuses in one transaction: a team is never left
+// without its creator or statuses.
+func (r *TeamRepository) CreateWithDefaults(ctx context.Context, team *domain.Team, creator *domain.TeamMember, statuses []domain.TeamStatus) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := reserveTeamKey(ctx, tx, team.ID, team.WorkspaceID, team.Key); err != nil {
+		return err
+	}
+	if err := tx.QueryRowContext(ctx, `INSERT INTO teams (id, workspace_id, name, key, description, color, icon) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING created_at, updated_at`,
+		team.ID, team.WorkspaceID, team.Name, team.Key, team.Description, team.Color, team.Icon).Scan(&team.CreatedAt, &team.UpdatedAt); err != nil {
+		return teamKeyError(err)
+	}
+	if creator != nil {
+		creator.TeamID = team.ID
+		if err := tx.QueryRowContext(ctx, `INSERT INTO team_members (team_id, user_id) VALUES ($1, $2) RETURNING created_at`,
+			creator.TeamID, creator.UserID).Scan(&creator.CreatedAt); err != nil {
+			return err
+		}
+	}
+	for i := range statuses {
+		st := &statuses[i]
+		st.TeamID = team.ID
+		if err := tx.QueryRowContext(ctx, `INSERT INTO team_statuses (id, team_id, name, slug, category, color, position, is_default)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING created_at, updated_at`,
+			st.ID, st.TeamID, st.Name, st.Slug, st.Category, st.Color, st.Position, st.IsDefault).Scan(&st.CreatedAt, &st.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (r *TeamRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Team, error) {
 	var team domain.Team
 	err := r.db.GetContext(ctx, &team, `SELECT * FROM teams WHERE id = $1`, id)

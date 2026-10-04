@@ -1,4 +1,4 @@
-.PHONY: dev dev-all dev-backend dev-frontend dev-start-services dev-reset migrate-up migrate-down seed reset-dev test test-backend test-frontend lint docker-up docker-down ensure-trivy scan scan-backend scan-frontend
+.PHONY: dev dev-all dev-backend dev-frontend dev-start-services dev-reset migrate-up migrate-down seed reset-dev test test-fast test-slow test-fast-backend test-fast-frontend test-slow-backend test-slow-frontend test-slow-live test-migrate check-backend check-gofmt lint docker-up docker-down ensure-trivy scan scan-backend scan-frontend
 
 # Load .env into shell commands
 DOTENV := $(shell [ -f .env ] && echo "set -a && . ./.env && set +a &&" || echo "")
@@ -52,14 +52,83 @@ seed:
 reset-dev:
 	bash scripts/reset_dev.sh
 
-test: test-backend test-frontend
+# Tests (AGENTS.md): integration tests only, in exactly two suites.
+#
+#   fast  critical paths; blocks every deploy to alpha (ci.yml).
+#   slow  everything else; runs in slow.yml after each push to main and
+#         nightly, files a Forgejo issue on failure, never blocks a deploy.
+#
+# Membership:
+#   Go          tests named TestSlow* are slow; every other test is fast.
+#   Playwright  FAST_SPECS in UI/playwright.config.ts; other specs are slow.
+#   Live checks scripts/check-*-live.* are slow.
+#
+# Backend suites need PostgreSQL and Redis (TEST_DATABASE_URL, REDIS_URL;
+# `make dev-start-services` locally). TEST_DATABASE_URL must name a separate
+# test database (in the environment or .env); it is migrated first, the
+# targets refuse to run without it or when it names the .env DATABASE_URL
+# (scripts/ci/check-test-database.sh), and the suites run with DATABASE_URL
+# set to it, so tests that read only DATABASE_URL never touch the app database.
+#
+# The frontend suites and the live checks build into UI/build and serve on
+# fixed ports, so `test` and `test-slow` run their parts one after another
+# even under `make -j` (each part still uses -j inside).
+# Locally prefix with `nice -n 19` (AGENTS.md); CI runs them as is.
+GO_SLOW_TESTS := ^TestSlow
+GO_TEST_FLAGS ?= -race -count=1 -timeout=6m
+E2E_FLAGS ?=
 
-test-backend:
-	$(DOTENV) cd BE && go test ./...
+test:
+	$(MAKE) test-fast
+	$(MAKE) test-slow
 
-test-frontend:
-	cd UI && npm run test:unit
-	cd UI && npm run test:e2e
+test-fast: test-fast-backend test-fast-frontend
+
+test-slow:
+	$(MAKE) test-slow-backend test-slow-frontend
+	$(MAKE) test-slow-live
+
+# Formatting and vet; not a test suite, but CI runs both next to test-fast.
+check-backend: check-gofmt
+	cd BE && go vet ./...
+
+check-gofmt:
+	@cd BE && unformatted=$$(gofmt -l .) && if [ -n "$$unformatted" ]; then \
+		echo "gofmt needed (run gofmt -w . in BE):"; echo "$$unformatted"; exit 1; fi
+
+test-migrate:
+	@$(DOTENV) sh scripts/ci/check-test-database.sh
+	$(DOTENV) cd BE && dir=$$(mktemp -d) && trap 'rm -rf "$$dir"' EXIT && \
+		go build -o "$$dir/ku-server" ./cmd/server && \
+		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/ku-server" migrate up
+
+test-fast-backend: test-migrate
+	$(DOTENV) cd BE && DATABASE_URL="$$TEST_DATABASE_URL" go test $(GO_TEST_FLAGS) -skip '$(GO_SLOW_TESTS)' ./...
+
+test-slow-backend: test-migrate
+	$(DOTENV) cd BE && DATABASE_URL="$$TEST_DATABASE_URL" go test $(GO_TEST_FLAGS) -run '$(GO_SLOW_TESTS)' ./...
+
+test-fast-frontend:
+	cd UI && E2E_SUITE=fast npx playwright test $(E2E_FLAGS)
+
+test-slow-frontend:
+	cd UI && E2E_SUITE=slow npx playwright test $(E2E_FLAGS)
+
+# Disposable PostgreSQL/backend/browser checks. The AI provider check needs a
+# real provider and runs only when KU_LIVE_PROVIDER_KEY, KU_LIVE_PROVIDER_URL
+# and KU_LIVE_PROVIDER_MODEL are set. check-dev-box-live.py needs an
+# authenticated coding CLI on a dev VM and is run by hand only.
+test-slow-live:
+	node scripts/check-screen-share-live.mjs
+	@if [ -n "$${KU_LIVE_PROVIDER_KEY:-}" ] && [ -n "$${KU_LIVE_PROVIDER_URL:-}" ] && [ -n "$${KU_LIVE_PROVIDER_MODEL:-}" ]; then \
+		dir=$$(mktemp -d) && trap 'rm -rf "$$dir"' EXIT && umask 077 && \
+		printf 'CLIPROXYAPI_API_KEY=%s\n' "$$KU_LIVE_PROVIDER_KEY" >"$$dir/provider.env" && \
+		python3 scripts/check-ai-provider-live.py --provider-env-file "$$dir/provider.env" \
+			--provider-base-url "$$KU_LIVE_PROVIDER_URL" --model "$$KU_LIVE_PROVIDER_MODEL" \
+			$${KU_LIVE_PROVIDER_TRUST_ORIGIN:+--trust-provider-origin}; \
+	else \
+		echo "Skipping the AI provider live check: KU_LIVE_PROVIDER_KEY/_URL/_MODEL are not set."; \
+	fi
 
 lint:
 	cd BE && golangci-lint run ./...

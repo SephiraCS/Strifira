@@ -72,12 +72,12 @@ func (h *AvatarHandler) Upload(c echo.Context) error {
 
 	previous, err := h.avatarRepo.GetByUserID(c.Request().Context(), userID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	key := fmt.Sprintf("avatars/%s.%s", uuid.New().String(), strings.TrimPrefix(extOf(upload.filename, upload.contentType), "."))
 	if err := h.storePut(c, key, upload.file, upload.contentType); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	avatar := &domain.UserAvatar{
@@ -89,7 +89,7 @@ func (h *AvatarHandler) Upload(c echo.Context) error {
 		Size:        upload.size,
 	}
 	if err := h.avatarRepo.Upsert(c.Request().Context(), avatar); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	user, err := h.userRepo.GetByID(c.Request().Context(), userID)
@@ -99,7 +99,7 @@ func (h *AvatarHandler) Upload(c echo.Context) error {
 	avatarURL := avatarURLFor(user.ID, avatar.UpdatedAt)
 	user.AvatarURL = &avatarURL
 	if err := h.userRepo.Update(c.Request().Context(), user); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	h.deletePreviousObject(c, previous != nil, func() string { return previous.StorageKey }, key)
@@ -114,11 +114,11 @@ func (h *AvatarHandler) Remove(c echo.Context) error {
 
 	avatar, err := h.avatarRepo.GetByUserID(c.Request().Context(), userID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	if avatar != nil {
 		if err := h.avatarRepo.Delete(c.Request().Context(), userID); err != nil {
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 		h.deleteStorageObject(c, avatar.StorageKey)
 	}
@@ -129,7 +129,7 @@ func (h *AvatarHandler) Remove(c echo.Context) error {
 	}
 	user.AvatarURL = nil
 	if err := h.userRepo.Update(c.Request().Context(), user); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, user)
@@ -165,12 +165,12 @@ func (h *AvatarHandler) UploadWorkspace(c echo.Context) error {
 
 	previous, err := h.wsAvatarRepo.GetByWorkspaceID(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	key := fmt.Sprintf("workspace-avatars/%s.%s", uuid.New().String(), strings.TrimPrefix(extOf(upload.filename, upload.contentType), "."))
 	if err := h.storePut(c, key, upload.file, upload.contentType); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	avatar := &domain.WorkspaceAvatar{
@@ -182,13 +182,13 @@ func (h *AvatarHandler) UploadWorkspace(c echo.Context) error {
 		Size:        upload.size,
 	}
 	if err := h.wsAvatarRepo.Upsert(c.Request().Context(), avatar); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	logoURL := workspaceLogoURLFor(ws.ID, avatar.UpdatedAt)
 	ws.LogoURL = &logoURL
 	if err := h.workspaceRepo.Update(c.Request().Context(), ws); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	h.deletePreviousObject(c, previous != nil, func() string { return previous.StorageKey }, key)
@@ -202,18 +202,18 @@ func (h *AvatarHandler) RemoveWorkspace(c echo.Context) error {
 
 	avatar, err := h.wsAvatarRepo.GetByWorkspaceID(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	if avatar != nil {
 		if err := h.wsAvatarRepo.Delete(c.Request().Context(), ws.ID); err != nil {
-			return response.InternalError(c)
+			return response.InternalErrorErr(c, err)
 		}
 		h.deleteStorageObject(c, avatar.StorageKey)
 	}
 
 	ws.LogoURL = nil
 	if err := h.workspaceRepo.Update(c.Request().Context(), ws); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, ws)
@@ -292,7 +292,7 @@ func respondAvatarUploadError(c echo.Context, err error) error {
 	if errors.As(err, &ve) {
 		return response.Error(c, ve.status, "BAD_REQUEST", ve.message)
 	}
-	return response.InternalError(c)
+	return response.InternalErrorErr(c, err)
 }
 
 // readAvatarUpload performs the shared request-side validation for avatar

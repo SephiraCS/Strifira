@@ -2,14 +2,16 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
-	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -24,7 +26,44 @@ func NewCycleService(cycleRepo repository.CycleRepo, teamRepo repository.TeamRep
 	return &CycleService{cycleRepo: cycleRepo, teamRepo: teamRepo, hub: hub, notifSvc: notifSvc}
 }
 
-func (s *CycleService) Create(ctx context.Context, teamID uuid.UUID, req dto.CreateCycleRequest) (*domain.Cycle, error) {
+// requireTeam reports ErrTeamNotFound unless teamID is a team of workspaceID.
+func (s *CycleService) requireTeam(ctx context.Context, workspaceID, teamID uuid.UUID) error {
+	team, err := s.teamRepo.GetByID(ctx, teamID)
+	if err != nil {
+		return err
+	}
+	if team == nil || team.WorkspaceID != workspaceID {
+		return ErrTeamNotFound
+	}
+	return nil
+}
+
+// scopedCycle loads a cycle only when it belongs to teamID and that team
+// belongs to workspaceID; otherwise ErrCycleNotFound.
+func (s *CycleService) scopedCycle(ctx context.Context, workspaceID, teamID, id uuid.UUID) (*domain.Cycle, error) {
+	if err := s.requireTeam(ctx, workspaceID, teamID); err != nil {
+		if errors.Is(err, ErrTeamNotFound) {
+			return nil, ErrCycleNotFound
+		}
+		return nil, err
+	}
+	cycle, err := s.cycleRepo.GetByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrCycleNotFound
+		}
+		return nil, err
+	}
+	if cycle == nil || cycle.TeamID != teamID {
+		return nil, ErrCycleNotFound
+	}
+	return cycle, nil
+}
+
+func (s *CycleService) Create(ctx context.Context, workspaceID, teamID uuid.UUID, req dto.CreateCycleRequest) (*domain.Cycle, error) {
+	if err := s.requireTeam(ctx, workspaceID, teamID); err != nil {
+		return nil, err
+	}
 	exists, err := s.cycleRepo.ExistsByName(ctx, teamID, req.Name)
 	if err != nil {
 		return nil, err
@@ -77,18 +116,21 @@ func (s *CycleService) Create(ctx context.Context, teamID uuid.UUID, req dto.Cre
 	return cycle, nil
 }
 
-func (s *CycleService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Cycle, error) {
-	return s.cycleRepo.GetByID(ctx, id)
+func (s *CycleService) GetByID(ctx context.Context, workspaceID, teamID, id uuid.UUID) (*domain.Cycle, error) {
+	return s.scopedCycle(ctx, workspaceID, teamID, id)
 }
 
-func (s *CycleService) ListByTeam(ctx context.Context, teamID uuid.UUID) ([]domain.Cycle, error) {
+func (s *CycleService) ListByTeam(ctx context.Context, workspaceID, teamID uuid.UUID) ([]domain.Cycle, error) {
+	if err := s.requireTeam(ctx, workspaceID, teamID); err != nil {
+		return nil, err
+	}
 	return s.cycleRepo.ListByTeam(ctx, teamID)
 }
 
-func (s *CycleService) Update(ctx context.Context, id uuid.UUID, req dto.UpdateCycleRequest) (*domain.Cycle, error) {
-	cycle, err := s.cycleRepo.GetByID(ctx, id)
-	if err != nil || cycle == nil {
-		return nil, fmt.Errorf("cycle not found")
+func (s *CycleService) Update(ctx context.Context, workspaceID, teamID, id uuid.UUID, req dto.UpdateCycleRequest) (*domain.Cycle, error) {
+	cycle, err := s.scopedCycle(ctx, workspaceID, teamID, id)
+	if err != nil {
+		return nil, err
 	}
 
 	if req.Name != nil {
@@ -145,10 +187,10 @@ func (s *CycleService) Update(ctx context.Context, id uuid.UUID, req dto.UpdateC
 	return cycle, nil
 }
 
-func (s *CycleService) Complete(ctx context.Context, id uuid.UUID, req dto.CompleteCycleRequest) (*domain.Cycle, int, error) {
-	cycle, err := s.cycleRepo.GetByID(ctx, id)
-	if err != nil || cycle == nil {
-		return nil, 0, fmt.Errorf("cycle not found")
+func (s *CycleService) Complete(ctx context.Context, workspaceID, teamID, id uuid.UUID, req dto.CompleteCycleRequest) (*domain.Cycle, int, error) {
+	cycle, err := s.scopedCycle(ctx, workspaceID, teamID, id)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	if cycle.Status == domain.CycleStatusCompleted {
@@ -187,14 +229,16 @@ func (s *CycleService) Complete(ctx context.Context, id uuid.UUID, req dto.Compl
 	return cycle, carriedOver, nil
 }
 
-func (s *CycleService) GetVelocity(ctx context.Context, teamID uuid.UUID) ([]dto.VelocityPoint, error) {
+func (s *CycleService) GetVelocity(ctx context.Context, workspaceID, teamID uuid.UUID) ([]dto.VelocityPoint, error) {
+	if err := s.requireTeam(ctx, workspaceID, teamID); err != nil {
+		return nil, err
+	}
 	return s.cycleRepo.VelocityData(ctx, teamID, 20)
 }
 
-func (s *CycleService) Delete(ctx context.Context, id uuid.UUID) error {
-	cycle, err := s.cycleRepo.GetByID(ctx, id)
-	if err != nil || cycle == nil {
-		return fmt.Errorf("cycle not found")
+func (s *CycleService) Delete(ctx context.Context, workspaceID, teamID, id uuid.UUID) error {
+	if _, err := s.scopedCycle(ctx, workspaceID, teamID, id); err != nil {
+		return err
 	}
 	return s.cycleRepo.Delete(ctx, id)
 }
@@ -211,10 +255,10 @@ func (s *CycleService) GetStats(ctx context.Context, cycleID uuid.UUID) (*dto.Cy
 	}, nil
 }
 
-func (s *CycleService) GetBurndown(ctx context.Context, cycleID uuid.UUID) ([]dto.BurndownPoint, error) {
-	cycle, err := s.cycleRepo.GetByID(ctx, cycleID)
-	if err != nil || cycle == nil {
-		return nil, fmt.Errorf("cycle not found")
+func (s *CycleService) GetBurndown(ctx context.Context, workspaceID, teamID, cycleID uuid.UUID) ([]dto.BurndownPoint, error) {
+	cycle, err := s.scopedCycle(ctx, workspaceID, teamID, cycleID)
+	if err != nil {
+		return nil, err
 	}
 	if cycle.StartDate == nil || cycle.EndDate == nil {
 		return nil, fmt.Errorf("cycle must have start and end dates")

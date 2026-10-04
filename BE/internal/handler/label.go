@@ -3,12 +3,12 @@ package handler
 import (
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -24,7 +24,7 @@ func (h *LabelHandler) List(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	labels, err := h.labelSvc.ListByWorkspace(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	resp := make([]dto.LabelResponse, len(labels))
 	for i, l := range labels {
@@ -49,7 +49,7 @@ func (h *LabelHandler) Create(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	label, err := h.labelSvc.Create(c.Request().Context(), ws.ID, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusCreated, toLabelResponse(*label))
 }
@@ -66,7 +66,7 @@ func (h *LabelHandler) Update(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	label, err := h.labelSvc.Update(c.Request().Context(), ws.ID, id, req)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, toLabelResponse(*label))
 }
@@ -78,7 +78,7 @@ func (h *LabelHandler) Delete(c echo.Context) error {
 	}
 	ws := c.Get("workspace").(*domain.Workspace)
 	if err := h.labelSvc.Delete(c.Request().Context(), ws.ID, id); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
 }

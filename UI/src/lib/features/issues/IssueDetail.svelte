@@ -15,11 +15,11 @@
 	import * as Sheet from '$lib/components/ui/sheet';
 	import { StatusSelector, PrioritySelector } from './selectors';
 	import { sanitizeHtml } from '$lib/security/sanitize';
-	import { listMembers } from '$lib/api/members';
 	import type { WorkspaceMember } from '$lib/types/workspace';
 	import { mentionInteractivity } from '$lib/components/shared/mention/mention-interactivity.action';
 	import { imageViewer } from '$lib/components/shared/image-viewer';
 	import HistoryAssignees from './HistoryAssignees.svelte';
+	import { workspaceMembers } from '$lib/features/layout/workspace-resources';
 
 	let {
 		issue,
@@ -56,7 +56,7 @@
 		const [c, h, m] = await Promise.all([
 			listComments(slug, issue.identifier),
 			getIssueHistory(slug, issue.identifier),
-			listMembers(slug)
+			workspaceMembers(slug)
 		]);
 		comments = c;
 		history = h;

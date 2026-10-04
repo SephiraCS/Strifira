@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -9,6 +10,20 @@ import (
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
 )
+
+// ErrInvalidRelation marks relation requests rejected for caller input
+// (unknown issues, self relations), as opposed to storage failures.
+var ErrInvalidRelation = errors.New("invalid relation")
+
+// invalidRelationError keeps the user-facing message while matching
+// ErrInvalidRelation with errors.Is.
+type invalidRelationError string
+
+// ErrRelationExists means the requested relation is already stored.
+var ErrRelationExists = repository.ErrRelationExists
+
+func (e invalidRelationError) Error() string        { return string(e) }
+func (e invalidRelationError) Is(target error) bool { return target == ErrInvalidRelation }
 
 type IssueRelationService struct {
 	relationRepo repository.IssueRelationRepo
@@ -20,18 +35,26 @@ func NewIssueRelationService(relationRepo repository.IssueRelationRepo, issueRep
 }
 
 func (s *IssueRelationService) Create(ctx context.Context, workspaceID uuid.UUID, issueIdentifier string, req dto.CreateIssueRelationRequest) (*domain.IssueRelation, error) {
+	// Lookup failures are storage errors; only a missing issue is invalid
+	// caller input.
 	issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, issueIdentifier)
-	if err != nil || issue == nil {
-		return nil, fmt.Errorf("issue not found")
+	if err != nil {
+		return nil, fmt.Errorf("look up issue: %w", err)
+	}
+	if issue == nil {
+		return nil, invalidRelationError("issue not found")
 	}
 
 	relatedIssue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, req.RelatedIdentifier)
-	if err != nil || relatedIssue == nil {
-		return nil, fmt.Errorf("related issue not found")
+	if err != nil {
+		return nil, fmt.Errorf("look up related issue: %w", err)
+	}
+	if relatedIssue == nil {
+		return nil, invalidRelationError("related issue not found")
 	}
 
 	if issue.ID == relatedIssue.ID {
-		return nil, fmt.Errorf("cannot relate an issue to itself")
+		return nil, invalidRelationError("cannot relate an issue to itself")
 	}
 
 	relType := domain.IssueRelationType(req.Type)
@@ -43,21 +66,19 @@ func (s *IssueRelationService) Create(ctx context.Context, workspaceID uuid.UUID
 		Type:           relType,
 	}
 
-	if err := s.relationRepo.Create(ctx, rel); err != nil {
-		return nil, err
-	}
-
-	// Create inverse relation for blocking/blocked_by
-	inverse := relType.Inverse()
-	if inverse != relType {
-		inverseRel := &domain.IssueRelation{
+	// Asymmetric types (blocking/blocked_by) also store the inverse row;
+	// both rows are written atomically.
+	var inverseRel *domain.IssueRelation
+	if inverse := relType.Inverse(); inverse != relType {
+		inverseRel = &domain.IssueRelation{
 			ID:             uuid.New(),
 			IssueID:        relatedIssue.ID,
 			RelatedIssueID: issue.ID,
 			Type:           inverse,
 		}
-		// Best-effort inverse creation
-		_ = s.relationRepo.Create(ctx, inverseRel)
+	}
+	if err := s.relationRepo.CreateWithInverse(ctx, rel, inverseRel); err != nil {
+		return nil, err
 	}
 
 	return rel, nil
@@ -141,19 +162,17 @@ func (s *IssueRelationService) SummariesByIssues(ctx context.Context, issueIDs [
 	return summaries, nil
 }
 
-func (s *IssueRelationService) Delete(ctx context.Context, id uuid.UUID) error {
-	rel, err := s.relationRepo.GetByID(ctx, id)
+// Delete removes a relation of an issue in workspaceID together with its
+// inverse row. Relations of other workspaces report ErrRelationNotFound.
+func (s *IssueRelationService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
+	found, err := s.relationRepo.DeleteInWorkspace(ctx, workspaceID, id)
 	if err != nil {
-		return fmt.Errorf("relation not found")
+		return err
 	}
-
-	// Delete the inverse too
-	inverse := rel.Type.Inverse()
-	if inverse != rel.Type {
-		_ = s.relationRepo.DeleteByIssues(ctx, rel.RelatedIssueID, rel.IssueID, inverse)
+	if !found {
+		return ErrRelationNotFound
 	}
-
-	return s.relationRepo.Delete(ctx, id)
+	return nil
 }
 
 func normalizeRelationForIssue(rel domain.IssueRelation, issueID uuid.UUID) (domain.IssueRelation, bool) {

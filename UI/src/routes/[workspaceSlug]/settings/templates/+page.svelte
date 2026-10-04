@@ -6,6 +6,7 @@
 	import { getStatusLabel, getPriorityLabel } from '$lib/types/issue';
 	import type { IssueStatus, IssuePriority } from '$lib/types/issue';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
+	import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
 	import RichEditor from '$lib/components/shared/RichEditor.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
@@ -23,6 +24,7 @@
 	let templates = $state<IssueTemplate[]>([]);
 	let loading = $state(true);
 	let showCreate = $state(false);
+	let pendingDelete = $state<IssueTemplate | null>(null);
 
 	let formTitle = $state('');
 	let formDescription = $state('');
@@ -77,6 +79,9 @@
 		}
 	}
 
+	// The confirm dialog stays open until the request finishes, then closes
+	// in the same update that removes the row so it can move focus to a
+	// surviving control.
 	async function handleDelete(id: string) {
 		try {
 			await deleteTemplate(slug, id);
@@ -84,6 +89,8 @@
 			appToast.success(m['settings.templates.deleted']());
 		} catch (err: any) {
 			appToast.apiError(err, m['settings.templates.failed_delete']());
+		} finally {
+			pendingDelete = null;
 		}
 	}
 
@@ -136,8 +143,10 @@
 						<Button
 							variant="ghost"
 							size="icon-sm"
-							onclick={() => handleDelete(template.id)}
-							class="opacity-0 group-hover:opacity-100 text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+							onclick={() => (pendingDelete = template)}
+							class="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+							aria-label={m['settings.templates.delete_named']({ title: template.title || m['settings.templates.untitled']() })}
+							title={m['settings.templates.delete']()}
 						>
 							<Trash2 size={14} />
 						</Button>
@@ -147,6 +156,17 @@
 		{/if}
 	</div>
 </div>
+
+{#if pendingDelete}
+	{@const template = pendingDelete}
+	<ConfirmDialog
+		title={m['settings.templates.delete_title']()}
+		message={m['settings.templates.delete_message']({ title: template.title || m['settings.templates.untitled']() })}
+		confirmLabel={m['settings.templates.delete']()}
+		onconfirm={() => handleDelete(template.id)}
+		oncancel={() => (pendingDelete = null)}
+	/>
+{/if}
 
 <Dialog.Root bind:open={showCreate}>
 	<Dialog.Content class="sm:max-w-md">
@@ -213,11 +233,11 @@
 							{priorityLabel(formPriority)}
 						</Select.Trigger>
 						<Select.Content>
-							<Select.Item value="0">No priority</Select.Item>
-							<Select.Item value="1">Urgent</Select.Item>
-							<Select.Item value="2">High</Select.Item>
-							<Select.Item value="3">Medium</Select.Item>
-							<Select.Item value="4">Low</Select.Item>
+							<Select.Item value="0">{m['common.priority.no_priority']()}</Select.Item>
+							<Select.Item value="1">{m['common.priority.urgent']()}</Select.Item>
+							<Select.Item value="2">{m['common.priority.high']()}</Select.Item>
+							<Select.Item value="3">{m['common.priority.medium']()}</Select.Item>
+							<Select.Item value="4">{m['common.priority.low']()}</Select.Item>
 						</Select.Content>
 					</Select.Root>
 				</div>

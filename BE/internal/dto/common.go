@@ -5,13 +5,29 @@ type PaginationParams struct {
 	PerPage int `query:"per_page" validate:"min=1,max=100"`
 }
 
+const (
+	DefaultPerPage = 50
+	MaxPerPage     = 100
+	// MaxPage keeps OFFSET (page*per_page) far from integer overflow.
+	MaxPage = 1_000_000
+)
+
+// Defaults fills unset values and clamps the rest into the supported range
+// (page >= 1, 1 <= per_page <= MaxPerPage). Callers such as the public share
+// list and MCP bind raw user input, so this is the single guard against
+// unbounded LIMIT/OFFSET values.
 func (p *PaginationParams) Defaults() {
-	if p.Page == 0 {
-		p.Page = 1
-	}
+	p.Page = max(1, min(p.Page, MaxPage))
 	if p.PerPage == 0 {
-		p.PerPage = 50
+		p.PerPage = DefaultPerPage
 	}
+	p.PerPage = max(1, min(p.PerPage, MaxPerPage))
+}
+
+// InRange reports whether the raw (pre-Defaults) values are acceptable for
+// endpoints that reject, rather than clamp, out-of-range pagination.
+func (p PaginationParams) InRange() bool {
+	return p.Page >= 0 && p.Page <= MaxPage && p.PerPage >= 0 && p.PerPage <= MaxPerPage
 }
 
 func (p *PaginationParams) Offset() int {

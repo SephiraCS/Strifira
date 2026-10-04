@@ -33,7 +33,7 @@ func (h *AnalyticsHandler) Overview(c echo.Context) error {
 
 	overview, err := h.repo.Overview(c.Request().Context(), ws.ID.String(), params.TeamID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, overview)
@@ -53,7 +53,7 @@ func (h *AnalyticsHandler) IssueDistribution(c echo.Context) error {
 
 	dist, err := h.repo.Distribution(c.Request().Context(), ws.ID.String(), params.TeamID)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, dist)
@@ -73,7 +73,7 @@ func (h *AnalyticsHandler) Insights(c echo.Context) error {
 
 	result, err := h.repo.Insights(c.Request().Context(), ws.ID.String(), &params)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, result)
@@ -93,7 +93,7 @@ func (h *AnalyticsHandler) Burnup(c echo.Context) error {
 
 	result, err := h.repo.Burnup(c.Request().Context(), ws.ID.String(), &params)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	return response.Success(c, http.StatusOK, result)

@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -16,6 +20,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
+	echomw "github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/ku/ku-backend/internal/agent"
@@ -24,16 +29,18 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/handler"
 	"github.com/ku/ku-backend/internal/mcpserver"
+	"github.com/ku/ku-backend/internal/metrics"
 	mw "github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/realtime"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/crypto"
+	"github.com/ku/ku-backend/pkg/safego"
 	"github.com/ku/ku-backend/pkg/storage"
 )
 
 func main() {
-	log.SetFormatter(&log.TextFormatter{FullTimestamp: true})
+	configureLogging()
 
 	// Handle CLI subcommands
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
@@ -57,6 +64,14 @@ func main() {
 
 	// Realtime hub
 	hub := realtime.NewHub()
+
+	// Background producers (sweepers, reconcilers, archivers) run on this
+	// lifecycle context and are tracked by background, so shutdown can stop
+	// them and wait for their in-flight iteration before the webhook pool
+	// they may feed is closed.
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	var background safego.Group
 
 	// Repositories
 	userRepo := repository.NewUserRepository(db)
@@ -94,12 +109,12 @@ func main() {
 	issueSvc := service.NewIssueService(issueRepo, teamRepo, teamStatusRepo, historyRepo, hub, notifSvc, projectRepo)
 	labelSvc := service.NewLabelService(labelRepo)
 	commentSvc := service.NewCommentService(commentRepo, issueRepo, hub, notifSvc)
-	projectSvc := service.NewProjectService(projectRepo)
+	projectSvc := service.NewProjectService(projectRepo, hub)
 	relationSvc := service.NewIssueRelationService(relationRepo, issueRepo)
 	templateSvc := service.NewIssueTemplateService(templateRepo)
 	viewSvc := service.NewViewService(viewRepo, hub)
 	cycleSvc := service.NewCycleService(cycleRepo, teamRepo, hub, notifSvc)
-	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo)
+	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo, teamRepo, projectRepo)
 	favSvc := service.NewFavoriteService(favRepo)
 	prefsSvc := service.NewPreferencesService(prefsRepo)
 	aiSettingsSvc := service.NewAISettingsService(aiSettingsRepo, workspaceRepo, issueRepo, crypto.DeriveKey(cfg.JWTSecret+":ai"), cfg.AIProviderNetworkPolicy)
@@ -128,14 +143,16 @@ func main() {
 
 	// Handlers
 	healthH := handler.NewHealthHandler(db)
-	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin)
+	// Per-email lockout (never per IP; see the /api/auth note below).
+	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin).
+		WithLoginThrottle(mw.NewLoginThrottle(loginMaxFailures, loginLockout))
 	workspaceH := handler.NewWorkspaceHandler(workspaceSvc)
 	teamH := handler.NewTeamHandler(teamSvc)
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	labelH := handler.NewLabelHandler(labelSvc)
 	projectH := handler.NewProjectHandler(projectSvc)
 	notifH := handler.NewNotificationHandler(notifSvc)
-	wsH := handler.NewWSHandler(hub)
+	wsH := handler.NewWSHandler(hub, handler.WebSocketOriginPatterns([]string{cfg.FrontendURL}, cfg.Environment == "development"))
 	relationH := handler.NewIssueRelationHandler(relationSvc)
 	templateH := handler.NewIssueTemplateHandler(templateSvc)
 	viewH := handler.NewViewHandler(viewSvc)
@@ -148,21 +165,23 @@ func main() {
 	devBoxRepo := repository.NewDevBoxRepository(db)
 	devBoxSvc := service.NewDevBoxService(devBoxRepo, workspaceRepo, devMachineSvc, cfg.DemoDevMachineAllowed)
 	devBoxH := handler.NewDevBoxHandler(devBoxSvc)
-	go func() {
-		for range time.Tick(15 * time.Second) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	background.Go("dev box sweeper", func() {
+		safego.Every(bgCtx, "dev box sweep", 15*time.Second, false, func(ctx context.Context) {
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
 			if err := devBoxSvc.SweepExpired(ctx); err != nil {
 				log.WithError(err).Warn("failed to expire dev box jobs")
 			}
-			cancel()
-		}
-	}()
+		})
+	})
 	analyticsRepo := repository.NewAnalyticsRepository(db)
 	analyticsH := handler.NewAnalyticsHandler(analyticsRepo)
 	systemH := handler.NewSystemHandler(cfg.SystemUpdaterURL, cfg.SystemUpdaterToken, cfg.IsSysAdmin)
 	webhookRepo := repository.NewWebhookRepository(db)
 	webhookSvc := service.NewWebhookService(webhookRepo, cfg.JWTSecret)
 	webhookH := handler.NewWebhookHandler(webhookSvc)
+	// Forward issue/comment domain events to outgoing webhooks.
+	hub.OnBroadcast = webhookSvc.HubListener()
 	sharedLinkRepo := repository.NewSharedLinkRepository(db)
 	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)
@@ -170,11 +189,11 @@ func main() {
 	hub.AuthorizeSharePresence = shareSvc.AuthorizePresence
 	// Persist presenter contact so the no-source GC grace survives restarts.
 	hub.OnPresenterSeen = func(shareID uuid.UUID) {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		background.Go("share presenter touch", func() {
+			ctx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
 			defer cancel()
 			shareSvc.TouchPresenterSeen(ctx, shareID)
-		}()
+		})
 	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
 	store, err := storage.New(cfg.Storage)
@@ -214,13 +233,13 @@ func main() {
 	forgejoActionsH := handler.NewForgejoActionsHandler(forgejoSvc)
 	// Forgejo Actions completion webhooks trigger CI status refreshes.
 	// Reconcile open PRs every five minutes in case a delivery is missed.
-	go forgejoSvc.ReconcileWebhookEvents(context.Background())
-	go forgejoSvc.StartStatusReconciler(context.Background(), 5*time.Minute)
+	background.Go("forgejo webhook reconcile", func() { forgejoSvc.ReconcileWebhookEvents(bgCtx) })
+	background.Go("forgejo status reconciler", func() { forgejoSvc.StartStatusReconciler(bgCtx, 5*time.Minute) })
 
 	// Archive completed issues once at startup and then hourly.
-	go func() {
-		archive := func() {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	background.Go("issue auto-archive", func() {
+		safego.Every(bgCtx, "issue auto-archive", time.Hour, true, func(ctx context.Context) {
+			ctx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			workspaces, err := issueRepo.AutoArchiveCompleted(ctx)
 			if err != nil {
@@ -231,14 +250,8 @@ func main() {
 					log.WithFields(log.Fields{"workspace_id": workspace.WorkspaceID, "count": workspace.IssueCount}).Info("completed issues archived")
 				}
 			}
-		}
-		archive()
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			archive()
-		}
-	}()
+		})
+	})
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
 		Version:           mcpServerVersion(),
@@ -266,41 +279,51 @@ func main() {
 	})
 
 	// Background: clean up expired refresh tokens every hour
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := refreshRepo.DeleteExpired(context.Background()); err != nil {
+	background.Go("refresh token cleanup", func() {
+		safego.Every(bgCtx, "refresh token cleanup", time.Hour, false, func(ctx context.Context) {
+			if err := refreshRepo.DeleteExpired(ctx); err != nil {
 				log.WithError(err).Warn("failed to clean up expired refresh tokens")
 			} else {
 				log.Info("expired refresh tokens cleaned up")
 			}
-		}
-	}()
+		})
+	})
 
 	// Echo
 	e := echo.New()
 	e.HideBanner = true
+	// Bound slow header delivery. No WriteTimeout: websockets and streamed
+	// downloads are long-lived.
+	e.Server.ReadHeaderTimeout = 10 * time.Second
 
 	// Global middleware
+	e.Use(echomw.RequestID())
+	// Metrics wraps Recovery (Echo runs the first registered middleware
+	// outermost), so a recovered panic is still counted once as a 500.
+	e.Use(metrics.Middleware())
 	e.Use(mw.Recovery())
 	e.Use(mw.Logging())
 	e.Use(mw.CORS(cfg.FrontendURL))
 	e.Use(mw.SecureHeaders())
+	e.Use(mw.BodyLimit())
 
 	// Health
 	e.GET("/health", healthH.Health)
 	e.GET("/ready", healthH.Ready)
+	// Prometheus scrape endpoint. Deliberately outside /api: the production
+	// Caddyfiles only proxy /api/*, /health, /ready and /uploads/*.
+	e.GET("/metrics", metrics.Handler())
 
 	// OpenAPI description (public; the Scalar reference page it feeds is
 	// served by the SPA at /docs, same-origin)
 	e.GET("/api/openapi.json", apidocs.SpecHandler)
 	e.GET("/api/docs", apidocs.DocsRedirect)
 
-	// Auth (public). No rate limiting or login lockout: several users share
-	// one egress IP (office NAT) and jointly exhausted the per-IP auth
-	// bucket, locking the app out for whole networks while other networks
-	// worked. Operator directive 2026-09-13: remove all access rate limits.
+	// Auth (public). No IP-based rate limiting: several users share one
+	// egress IP (office NAT) and jointly exhausted the per-IP auth bucket,
+	// locking the app out for whole networks while other networks worked
+	// (operator directive 2026-09-13). Login brute force is instead bounded
+	// per email by the LoginThrottle wired into authH above.
 	auth := e.Group("/api/auth")
 	auth.POST("/register", authH.Register)
 	auth.POST("/login", authH.Login)
@@ -593,10 +616,36 @@ func main() {
 	// Start
 	addr := net.JoinHostPort(cfg.BindAddress, strconv.Itoa(cfg.Port))
 	log.Infof("Starting server on %s", addr)
-	if err := e.Start(addr); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- e.Start(addr) }()
+	select {
+	case err := <-serveErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("Server failed: %v", err)
+		}
+	case <-ctx.Done():
+		log.Info("Shutdown signal received, draining connections")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		gracefulShutdown(shutdownCtx, shutdownSteps{
+			stopBackground: stopBackground,
+			waitBackground: background.Wait,
+			drainHTTP:      e.Shutdown,
+			drainWebSocket: hub.Shutdown,
+			closeWebhooks:  webhookSvc.Close,
+		})
 	}
 }
+
+const (
+	// loginMaxFailures failed logins for one email lock it for loginLockout.
+	loginMaxFailures = 10
+	loginLockout     = 15 * time.Minute
+	// shutdownTimeout bounds connection draining on SIGINT/SIGTERM.
+	shutdownTimeout = 25 * time.Second
+)
 
 func mcpServerVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {

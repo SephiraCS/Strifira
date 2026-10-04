@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/ku/ku-backend/internal/domain"
 )
 
 type ProjectStatusVisibilityRepository struct {
@@ -73,4 +74,56 @@ func (r *ProjectStatusVisibilityRepository) ListProjectIDsByStatuses(ctx context
 		result[r.StatusID] = append(result[r.StatusID], r.ProjectID)
 	}
 	return result, nil
+}
+
+// CreateStatusWithProjects inserts status and makes it visible in every
+// project of projectIDs in one transaction: either everything is stored or
+// nothing is.
+func (r *ProjectStatusVisibilityRepository) CreateStatusWithProjects(ctx context.Context, status *domain.TeamStatus, projectIDs []uuid.UUID) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := insertTeamStatus(ctx, tx, status); err != nil {
+		return err
+	}
+	if err := addStatusToProjects(ctx, tx, status.ID, projectIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpdateStatusWithProjects updates status and, when projectIDs is non-nil,
+// replaces the set of projects it is visible in, all in one transaction.
+func (r *ProjectStatusVisibilityRepository) UpdateStatusWithProjects(ctx context.Context, status *domain.TeamStatus, projectIDs *[]uuid.UUID) error {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if err := updateTeamStatus(ctx, tx, status); err != nil {
+		return err
+	}
+	if projectIDs != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM project_status_visibility WHERE status_id = $1`, status.ID); err != nil {
+			return err
+		}
+		if err := addStatusToProjects(ctx, tx, status.ID, *projectIDs); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func addStatusToProjects(ctx context.Context, tx *sqlx.Tx, statusID uuid.UUID, projectIDs []uuid.UUID) error {
+	for _, pid := range projectIDs {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO project_status_visibility (project_id, status_id) VALUES ($1, $2)
+			ON CONFLICT DO NOTHING`, pid, statusID); err != nil {
+			return err
+		}
+	}
+	return nil
 }

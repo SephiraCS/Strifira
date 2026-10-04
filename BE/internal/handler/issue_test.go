@@ -210,6 +210,11 @@ func (r *testTeamRepo) ListByWorkspace(_ context.Context, wsID uuid.UUID) ([]dom
 	return teams, nil
 }
 
+func (r *testTeamRepo) CreateWithDefaults(_ context.Context, team *domain.Team, _ *domain.TeamMember, _ []domain.TeamStatus) error {
+	r.teams[team.ID] = team
+	return nil
+}
+
 func (r *testTeamRepo) UpdateAndRenameKey(_ context.Context, _ *domain.Team, _ string) (int64, error) {
 	return 0, nil
 }

@@ -92,16 +92,16 @@ func (h *UploadHandler) Upload(c echo.Context) error {
 
 	src, err := file.Open()
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	defer src.Close()
 
 	detected, err := mimetype.DetectReader(src)
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	if _, err := src.Seek(0, io.SeekStart); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	ext := strings.ToLower(filepath.Ext(file.Filename))
@@ -117,7 +117,7 @@ func (h *UploadHandler) Upload(c echo.Context) error {
 	key := fmt.Sprintf("%s%s", uuid.New().String(), ext)
 
 	if _, err := h.store.Put(c.Request().Context(), key, src, contentType); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	asset := &domain.Asset{
@@ -130,7 +130,7 @@ func (h *UploadHandler) Upload(c echo.Context) error {
 		UploadedBy:  userID,
 	}
 	if err := h.assetRepo.Create(c.Request().Context(), asset); err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 
 	assetURL := fmt.Sprintf("/api/workspaces/%s/assets/%s", ws.Slug, asset.ID)
@@ -219,7 +219,7 @@ func (h *UploadHandler) SignIssuePromptAssets(c echo.Context) error {
 
 			token, exp, err := assettoken.Generate(h.tokenSecret, asset.ID, ws.ID, issue.ID, time.Hour)
 			if err != nil {
-				return response.InternalError(c)
+				return response.InternalErrorErr(c, err)
 			}
 			expiresAt = exp
 			signed[source.raw] = "/api/public/assets/" + token

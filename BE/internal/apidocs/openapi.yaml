@@ -157,6 +157,21 @@ paths:
                 type: object
                 additionalProperties: true
 
+  /metrics:
+    get:
+      operationId: metrics
+      tags: [Health]
+      summary: Prometheus metrics
+      description: Prometheus exposition of HTTP request counts and latency by route template, Forgejo webhook delivery outcomes and Go runtime metrics. Intended for in-cluster scraping only; the bundled reverse proxies do not route it publicly.
+      security: []
+      responses:
+        "200":
+          description: Metrics in the Prometheus text format.
+          content:
+            text/plain:
+              schema:
+                type: string
+
   /api/openapi.json:
     get:
       operationId: openapiSpec
@@ -221,7 +236,9 @@ paths:
         Exchange email + password for a 15-minute access token. The response
         sets `access_token` and rotating `refresh_token` HttpOnly cookies;
         the same access token is returned in the body for programmatic
-        clients. No rate limiting by operator directive (shared egress IPs).
+        clients. No IP-based rate limiting by operator directive (shared
+        egress IPs); instead, repeated failed logins for one email lock that
+        email for 15 minutes (429 with `Retry-After`).
       security: []
       requestBody:
         required: true
@@ -237,6 +254,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/TokenResponse"
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
 
   /api/auth/refresh:
     post:

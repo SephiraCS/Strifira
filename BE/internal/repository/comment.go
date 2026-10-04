@@ -3,9 +3,9 @@ package repository
 import (
 	"context"
 
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
+	"github.com/ku/ku-backend/internal/domain"
 )
 
 type CommentRepository struct {

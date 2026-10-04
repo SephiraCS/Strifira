@@ -23,9 +23,6 @@
 		subscribeToIssue,
 		unsubscribeFromIssue
 	} from '$lib/api/issues';
-	import { listMembers } from '$lib/api/members';
-	import { listLabels } from '$lib/api/labels';
-	import { listProjects } from '$lib/api/projects';
 	import { issuesState } from './issues.state.svelte';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
@@ -108,6 +105,7 @@
 	import Server from '@lucide/svelte/icons/server';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { ROLE_HIERARCHY } from '$lib/security/roles';
+	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	let {
 		issue,
@@ -255,9 +253,9 @@
 		const [c, h, m, l, p] = await Promise.all([
 			listComments(slug, issue.identifier),
 			getIssueHistory(slug, issue.identifier),
-			listMembers(slug),
-			listLabels(slug),
-			listProjects(slug)
+			workspaceMembers(slug),
+			workspaceLabels(slug),
+			workspaceProjects(slug)
 		]);
 		comments = c ?? [];
 		history = h ?? [];
@@ -268,7 +266,7 @@
 		listCycles(slug, issue.team_id)
 			.then((c) => (cycles = c))
 			.catch(() => {});
-		listTeams(slug)
+		workspaceTeams(slug)
 			.then((t) => (teams = t))
 			.catch(() => {});
 

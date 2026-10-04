@@ -374,7 +374,7 @@
 						<label class="block space-y-1.5"><Label>{secret}</Label><Input type="password" value={secretValues[secret] ?? ''} oninput={(event) => (secretValues[secret] = event.currentTarget.value)} autocomplete="off" required /></label>
 					{/each}
 					<div class="grid gap-3 sm:grid-cols-2">
-						<label class="space-y-1.5"><Label>{m['machines.additional_secret_name']()}</Label><Input bind:value={extraSecretName} placeholder="Optional" /></label>
+						<label class="space-y-1.5"><Label>{m['machines.additional_secret_name']()}</Label><Input bind:value={extraSecretName} placeholder={m['machines.optional_placeholder']()} /></label>
 						<label class="space-y-1.5"><Label>{m['machines.additional_secret_value']()}</Label><Input bind:value={extraSecretValue} type="password" autocomplete="off" /></label>
 					</div>
 				{/if}

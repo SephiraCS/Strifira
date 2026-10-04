@@ -8,6 +8,7 @@
 	import { listProjects } from '$lib/api/projects';
 	import { listLabels } from '$lib/api/labels';
 	import { listMembers } from '$lib/api/members';
+	import { resetWorkspaceResources, shareWorkspaceResource } from '$lib/features/layout/workspace-resources';
 	import { listViews } from '$lib/api/views';
 	import { listNotifications } from '$lib/api/notifications';
 	import type { Workspace } from '$lib/types/workspace';
@@ -95,7 +96,10 @@
 		try {
 			// Team icons need the icon set; fetch it alongside the teams.
 			loadLucideLibrary();
-			const [ws, t] = await Promise.all([getWorkspace(workspaceSlug), listTeams(workspaceSlug)]);
+			const [ws, t] = await Promise.all([
+				getWorkspace(workspaceSlug),
+				shareWorkspaceResource(workspaceSlug, 'teams', listTeams(workspaceSlug))
+			]);
 			if (!isCurrent()) return;
 			// Ancillary requests must never hold the shell or mounted view hostage.
 			workspace = ws;
@@ -143,7 +147,7 @@
 				void loadAncillary(
 					resource,
 					workspaceSlug,
-					() => listProjects(workspaceSlug),
+					() => shareWorkspaceResource(workspaceSlug, 'projects', listProjects(workspaceSlug)),
 					(data) => {
 						projects = data;
 						sidebarState.projects = data;
@@ -154,7 +158,7 @@
 				void loadAncillary(
 					resource,
 					workspaceSlug,
-					() => listLabels(workspaceSlug),
+					() => shareWorkspaceResource(workspaceSlug, 'labels', listLabels(workspaceSlug)),
 					(data) => (labels = data)
 				);
 				break;
@@ -162,7 +166,7 @@
 				void loadAncillary(
 					resource,
 					workspaceSlug,
-					() => listMembers(workspaceSlug),
+					() => shareWorkspaceResource(workspaceSlug, 'members', listMembers(workspaceSlug)),
 					(data) => (members = data)
 				);
 				break;
@@ -203,7 +207,7 @@
 			// Background reload: keep the current list on screen (loading stays
 			// false — boards render nothing while it is true). refresh() reuses
 			// the view's exact params, including board fetch-all paging.
-			if (slug && issuesState.issues.length > 0) {
+			if (issuesState.hasQueryFor(slug)) {
 				void issuesState.refresh(false);
 			}
 		}, 300);
@@ -216,12 +220,12 @@
 		if (!authReady || !slug) return;
 		if (!resources || resources.length === 0) {
 			loadWorkspaceData(slug);
-			if (issuesState.issues.length > 0) {
+			if (issuesState.hasQueryFor(slug)) {
 				scheduleIssuesRefresh();
 			}
 			return;
 		}
-		if (resources.includes('issues') && issuesState.issues.length > 0) {
+		if (resources.includes('issues') && issuesState.hasQueryFor(slug)) {
 			scheduleIssuesRefresh();
 		}
 		if (resources.includes('workspace') || resources.includes('teams')) void loadWorkspaceShell(slug);
@@ -259,6 +263,7 @@
 			views = [];
 			sidebarState.teams = [];
 			sidebarState.projects = [];
+			resetWorkspaceResources(slug);
 			void loadWorkspaceData(slug);
 		}
 	});
@@ -336,7 +341,7 @@
 		}
 	]);
 
-	const shortcutEngine = createShortcutEngine(shortcutDefs);
+	const shortcutEngine = createShortcutEngine(() => shortcutDefs);
 
 	onMount(() => {
 		document.addEventListener('keydown', shortcutEngine.handler);
@@ -488,11 +493,16 @@
 	let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let wsDestroyed = false;
 	let wsBackoffMs = 1000;
+	// Whether a socket for wsSlug failed or dropped since the last open
+	// (including attempts before the first open). Events sent meanwhile are
+	// lost, so the next open reloads everything.
+	let wsMissedEvents = false;
 	const WS_BACKOFF_MAX_MS = 15_000;
 
 	$effect(() => {
 		if (slug && slug !== wsSlug) {
 			wsSlug = slug;
+			wsMissedEvents = false;
 			wsBackoffMs = 1000;
 			clearWebSocketReconnect();
 			ws_conn?.close();
@@ -560,7 +570,13 @@
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
 			wsBackoffMs = 1000;
+			const resumed = wsMissedEvents;
+			wsMissedEvents = false;
 			window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug } }));
+			// Events sent while the socket was down are lost: reload the
+			// workspace collections so nothing stays stale until the next
+			// mutation.
+			if (resumed) window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: workspaceSlug } }));
 			// Share lists drift while disconnected (starts/ends/GC); refetch.
 			if (sharesState.enabled) void sharesState.load(workspaceSlug);
 		};
@@ -573,6 +589,7 @@
 			if (socket !== ws_conn) return;
 			// Only reconnect if still on the same workspace
 			if (!wsDestroyed && wsSlug === workspaceSlug) {
+				wsMissedEvents = true;
 				window.dispatchEvent(new CustomEvent('ws:disconnected', { detail: { workspaceSlug } }));
 				scheduleWebSocketReconnect(workspaceSlug);
 			}

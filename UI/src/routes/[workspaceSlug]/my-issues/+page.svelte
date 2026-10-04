@@ -17,10 +17,6 @@
 	import CreateIssueDialog from '$lib/features/issues/LazyCreateIssueDialog.svelte';
 	import { showIssueCreatedToast } from '$lib/features/issues/issue-created-toast';
 	import { appToast } from '$lib/features/toast/toast';
-	import { listTeams } from '$lib/api/teams';
-	import { listProjects } from '$lib/api/projects';
-	import { listLabels } from '$lib/api/labels';
-	import { listMembers } from '$lib/api/members';
 	import type { Team } from '$lib/types/team';
 	import type { Project } from '$lib/types/project';
 	import type { Label } from '$lib/types/label';
@@ -35,6 +31,7 @@
 	import BulkActionBar from '$lib/features/issues/BulkActionBar.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
+	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 
@@ -96,7 +93,7 @@
 
 	onMount(() => {
 		void loadIssues();
-		void Promise.all([listTeams(slug), listProjects(slug), listLabels(slug), listMembers(slug)]).then(
+		void Promise.all([workspaceTeams(slug), workspaceProjects(slug), workspaceLabels(slug), workspaceMembers(slug)]).then(
 			([t, p, l, m]) => {
 				teams = t;
 				projects = p;

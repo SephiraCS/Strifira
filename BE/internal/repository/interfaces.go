@@ -64,6 +64,9 @@ type WorkspaceRepo interface {
 
 type TeamRepo interface {
 	Create(ctx context.Context, team *domain.Team) error
+	// CreateWithDefaults atomically creates the team, its creator membership
+	// and its initial statuses.
+	CreateWithDefaults(ctx context.Context, team *domain.Team, creator *domain.TeamMember, statuses []domain.TeamStatus) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Team, error)
 	ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Team, error)
 	Update(ctx context.Context, team *domain.Team) error
@@ -195,6 +198,8 @@ type IssueRelationRepo interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.IssueRelation, error)
 	DeleteByIssues(ctx context.Context, issueID, relatedIssueID uuid.UUID, relType domain.IssueRelationType) error
+	CreateWithInverse(ctx context.Context, rel, inverse *domain.IssueRelation) error
+	DeleteInWorkspace(ctx context.Context, workspaceID, id uuid.UUID) (bool, error)
 }
 
 type TeamStatusRepo interface {
@@ -225,6 +230,10 @@ type ProjectStatusVisibilityRepo interface {
 	ListVisibleStatuses(ctx context.Context, projectID uuid.UUID) ([]uuid.UUID, error)
 	ListProjectsForStatus(ctx context.Context, statusID uuid.UUID) ([]uuid.UUID, error)
 	ListProjectIDsByStatuses(ctx context.Context, statusIDs []uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
+	// CreateStatusWithProjects and UpdateStatusWithProjects write a status
+	// and its project visibility atomically.
+	CreateStatusWithProjects(ctx context.Context, status *domain.TeamStatus, projectIDs []uuid.UUID) error
+	UpdateStatusWithProjects(ctx context.Context, status *domain.TeamStatus, projectIDs *[]uuid.UUID) error
 }
 
 type SharedLinkRepo interface {

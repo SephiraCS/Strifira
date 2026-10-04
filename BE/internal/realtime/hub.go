@@ -98,6 +98,17 @@ type Hub struct {
 	// AuthorizeSharePresence must validate the active share, workspace and
 	// presenter token. An unwired hub refuses membership.
 	AuthorizeSharePresence func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, string, string) bool
+	// OnBroadcast, when set, observes every workspace-wide Broadcast (never
+	// under the lock), e.g. to forward domain events to outgoing webhooks.
+	// It must not block; wire it before the hub starts serving.
+	OnBroadcast func(workspaceID uuid.UUID, event Event)
+
+	// closing is set by Shutdown: new upgrades are refused, and connections
+	// whose upgrade was admitted earlier are closed as they register.
+	closing bool
+	// upgrading counts admitted upgrades that have not registered (or
+	// failed) yet; Shutdown waits for them as well as for clients.
+	upgrading int
 }
 
 func NewHub() *Hub {
@@ -131,9 +142,77 @@ func (h *Hub) Register(conn *websocket.Conn, workspaceID, userID uuid.UUID) *Cli
 		h.clients[workspaceID] = make(map[*Client]bool)
 	}
 	h.clients[workspaceID][client] = true
+	closing := h.closing
 	h.mu.Unlock()
 
+	if closing && conn != nil {
+		go conn.Close(websocket.StatusGoingAway, "server shutting down")
+	}
 	return client
+}
+
+// BeginUpgrade admits a WebSocket upgrade before the connection is hijacked.
+// It refuses (ok=false) once Shutdown has started, so the caller can answer
+// 503 instead of upgrading. Otherwise done must be called exactly once after
+// the client is registered or the upgrade failed; until then Shutdown keeps
+// waiting, so a connection hijacked during shutdown cannot slip past it.
+func (h *Hub) BeginUpgrade() (done func(), ok bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.closing {
+		return nil, false
+	}
+	h.upgrading++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			h.mu.Lock()
+			h.upgrading--
+			h.mu.Unlock()
+		})
+	}, true
+}
+
+// Shutdown refuses new upgrades, closes every live connection with
+// StatusGoingAway and waits until admitted upgrades have settled and every
+// handler has unregistered its client, or until ctx ends. Hijacked
+// WebSockets are invisible to http.Server.Shutdown, so the server must call
+// this explicitly to let clients reconnect elsewhere and to run the
+// per-connection cleanup before the process exits.
+func (h *Hub) Shutdown(ctx context.Context) error {
+	h.mu.Lock()
+	h.closing = true
+	conns := make([]*websocket.Conn, 0)
+	for _, clients := range h.clients {
+		for client := range clients {
+			if client.conn != nil {
+				conns = append(conns, client.conn)
+			}
+		}
+	}
+	h.mu.Unlock()
+
+	for _, conn := range conns {
+		// Close performs the close handshake (bounded by the library), so
+		// connections are closed concurrently.
+		go conn.Close(websocket.StatusGoingAway, "server shutting down")
+	}
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		h.mu.RLock()
+		remaining := len(h.clients) + h.upgrading
+		h.mu.RUnlock()
+		if remaining == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (h *Hub) Unregister(client *Client) {
@@ -182,6 +261,9 @@ func (h *Hub) Unregister(client *Client) {
 
 func (h *Hub) Broadcast(workspaceID uuid.UUID, event Event) {
 	event.Timestamp = time.Now()
+	if h.OnBroadcast != nil {
+		h.OnBroadcast(workspaceID, event)
+	}
 
 	data, err := json.Marshal(event)
 	if err != nil {

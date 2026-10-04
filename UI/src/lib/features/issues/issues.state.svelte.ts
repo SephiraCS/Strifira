@@ -237,6 +237,15 @@ class IssuesState {
 		}
 	}
 
+	/**
+	 * Whether an issue query has been loaded for `slug`, so `refresh()` has
+	 * something to re-run. Unlike the result count this is true for a view
+	 * whose query matched nothing, which a refresh may now fill.
+	 */
+	hasQueryFor(slug: string): boolean {
+		return !!slug && this.currentSlug === slug;
+	}
+
 	/** Re-run the last load with its exact params (incl. board fetchAll). */
 	async refresh(showLoading = false) {
 		if (!this.currentSlug) return;

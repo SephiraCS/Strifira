@@ -63,7 +63,7 @@
 		class="flex shrink-0 flex-col border-t border-[var(--app-border)] bg-[var(--color-bg)]"
 		style="height: {dock.expanded ? dock.height + 'px' : 'auto'}"
 		role="region"
-		aria-label="Terminal dock"
+		aria-label={m['machines.terminal_dock']()}
 		data-testid="terminal-dock"
 	>
 		<div class="flex items-center border-b border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-1">

@@ -24,7 +24,7 @@ func NewAPIKeyHandler(apiKeySvc *service.APIKeyService) *APIKeyHandler {
 func (h *APIKeyHandler) List(c echo.Context) error {
 	keys, err := h.apiKeySvc.List(c.Request().Context(), middleware.GetUserID(c))
 	if err != nil {
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 	resp := make([]dto.APIKeyResponse, len(keys))
 	for i, k := range keys {
@@ -48,7 +48,7 @@ func (h *APIKeyHandler) Create(c echo.Context) error {
 
 	key, raw, err := h.apiKeySvc.Create(c.Request().Context(), middleware.GetUserID(c), req)
 	if err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusCreated, dto.CreateAPIKeyResponse{
 		APIKeyResponse: toAPIKeyResponse(*key),
@@ -62,7 +62,7 @@ func (h *APIKeyHandler) Revoke(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid API key ID")
 	}
 	if err := h.apiKeySvc.Revoke(c.Request().Context(), id, middleware.GetUserID(c)); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+		return response.ServiceError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "revoked"})
 }

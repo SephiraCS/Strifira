@@ -135,6 +135,9 @@ func (h *DevBoxHandler) ListJobs(c echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid query parameters")
 	}
+	if !params.InRange() {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid job query parameters")
+	}
 	params.Defaults()
 	if err := validate.Struct(&params); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid job query parameters")
@@ -346,6 +349,6 @@ func devBoxError(c echo.Context, err error) error {
 	case errors.Is(err, service.ErrDevBoxAuthentication):
 		return response.Unauthorized(c)
 	default:
-		return response.InternalError(c)
+		return response.InternalErrorErr(c, err)
 	}
 }

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
-	"github.com/google/uuid"
 )
 
 type LabelService struct {

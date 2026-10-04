@@ -48,7 +48,7 @@ func ValidateWebhookURL(rawURL string) error {
 		if ip == nil {
 			continue
 		}
-		if isBlockedIP(ip) {
+		if IsBlockedIP(ip) {
 			return fmt.Errorf("webhook URL must not point to a private or reserved IP address")
 		}
 	}
@@ -56,7 +56,11 @@ func ValidateWebhookURL(rawURL string) error {
 	return nil
 }
 
-func isBlockedIP(ip net.IP) bool {
+// IsBlockedIP reports whether ip is a private, loopback, link-local,
+// unspecified, multicast or metadata address that outgoing webhooks must
+// never reach. It is checked when a webhook URL is saved and again for the
+// resolved address of every connection a delivery opens.
+func IsBlockedIP(ip net.IP) bool {
 	// Private ranges (RFC 1918)
 	privateRanges := []string{
 		"10.0.0.0/8",
@@ -73,6 +77,10 @@ func isBlockedIP(ip net.IP) bool {
 	}
 	// Unspecified (0.0.0.0)
 	if ip.IsUnspecified() {
+		return true
+	}
+	// Multicast, and private ranges of either family (incl. IPv6 ULA)
+	if ip.IsMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsPrivate() {
 		return true
 	}
 

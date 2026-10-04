@@ -8,8 +8,12 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+# Pull requests run per ref and yield to newer pushes. Tag and nightly runs
+# share one queue, so two of them never file the same failure issue at once
+# (Forgejo has no job-level concurrency; scripts/ci/report-failure.sh also
+# folds a duplicate opened in a race into the oldest issue).
 concurrency:
-  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  group: ku-${{ forgejo.workflow }}-${{ forgejo.event_name == 'pull_request' && forgejo.ref || 'scheduled' }}
   cancel-in-progress: ${{ forgejo.event_name == 'pull_request' }}
 
 # govulncheck is baked into the ts-builder job image. Container images are
@@ -45,3 +49,31 @@ jobs:
       - name: Run npm audit
         working-directory: UI
         run: npm audit --audit-level=high
+
+  # Nightly and tag scans gate nothing, so a failure files (or updates) a
+  # Forgejo issue instead of going unnoticed. Pull requests show their own.
+  report:
+    name: Report the failure
+    needs: [go-security, frontend-security]
+    if: failure() && forgejo.event_name != 'pull_request'
+    runs-on: terrascale-builder
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: File the failure as an issue
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          REPORT_TITLE: 'Security scan failed'
+          REPRO: |
+            (cd BE && govulncheck ./...)
+            (cd UI && npm audit --audit-level=high)
+        run: scripts/ci/report-failure.sh

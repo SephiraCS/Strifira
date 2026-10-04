@@ -1,14 +1,27 @@
 name: Build & Push
 
-# Pull requests do not build here: image-security.yml builds every Dockerfile
-# (including the root image) when an image input changes.
+# Releases are cut automatically: after every successful Deploy to Alpha on
+# main, the Release job of ci.yml bumps the patch version, tags it, creates
+# the Forgejo release and pushes the images itself (scripts/ci/release.sh and
+# scripts/ci/publish-images.sh). Its tag push uses the job token, which never
+# starts workflows, so this workflow does not run for those releases.
+#
+# This workflow covers the rest: a v* tag pushed by a person, including one
+# created with a release in the web UI (it creates the release if missing
+# and pushes the images), and a manual dispatch, which builds the
+# checked-out commit without pushing. It never
+# commits: versions are bumped only by ci.yml. Pull requests do not build
+# here: image-security.yml builds every Dockerfile when an image input
+# changes.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
 
+# Tag publications queue with ci.yml's runs on main, which publish the
+# automatic releases, so two publishers never interleave their pushes.
 concurrency:
-  group: ku-${{ forgejo.workflow }}-${{ forgejo.ref }}
+  group: ${{ forgejo.event_name == 'push' && 'ku-publish-images' || format('ku-{0}-{1}', forgejo.workflow, forgejo.ref) }}
   cancel-in-progress: false
 
 env:
@@ -34,131 +47,58 @@ jobs:
           github-server-url: https://git.terrascale.tech
           ref: ${{ forgejo.sha }}
           persist-credentials: false
+          # All tags: publish-images.sh only moves latest for the newest one.
+          fetch-depth: 0
 
       - name: Extract version
         id: version
+        env:
+          EVENT: ${{ forgejo.event_name }}
+          REF_NAME: ${{ forgejo.ref_name }}
         run: |
-          case "${{ forgejo.event_name }}" in
-            release)
-              version="${{ forgejo.event.release.tag_name }}"
-              number="${version#v}"
-              push="true"
-              ;;
-            *)
-              version="dev-$(git rev-parse --short HEAD)"
-              number="0.0.0"
-              push="false"
-              ;;
+          case "${EVENT}" in
+            push) version="${REF_NAME}"; push=true ;;
+            *) version="dev-$(git rev-parse --short HEAD)"; push=false ;;
           esac
-
           {
             echo "version=$version"
-            echo "number=$number"
             echo "push=$push"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Bump UI version
-        if: forgejo.event_name == 'release'
-        working-directory: UI
-        env:
-          VERSION_NUMBER: ${{ steps.version.outputs.number }}
-        run: npm version "${VERSION_NUMBER}" --no-git-tag-version --allow-same-version
-
-      - name: Update public release manifest
-        if: forgejo.event_name == 'release'
+      # The temporary release-trigger.yml used to do this for pushed tags.
+      - name: Create the Forgejo release
+        if: forgejo.event_name == 'push'
         env:
           FORGEJO_TOKEN: ${{ forgejo.token }}
+          TAG: ${{ steps.version.outputs.version }}
         run: |
-          curl --fail --silent --show-error \
+          set -eu
+          code="$(curl -s -w '%{http_code}' -o /tmp/release.json \
             --header "Authorization: token ${FORGEJO_TOKEN}" \
-            "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/releases?limit=100" \
-            | jq '[.[] | select(.draft == false) | {
-                tag_name,
-                html_url,
-                body,
-                published_at: .created_at,
-                prerelease: (.prerelease // false),
-                force_upgrade: false,
-                minimum_supported_version: null,
-                upgrade_url: .html_url,
-                upgrade_message: null
-              }]' \
-            > UI/static/releases.json
-
-      # The upstream contributors list came from the GitHub API, which has no
-      # Forgejo equivalent; the README contributor section is left as authored.
-      - name: Commit version bump
-        if: forgejo.event_name == 'release'
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          git config user.name "forgejo-actions[bot]"
-          git config user.email "noreply@git.terrascale.tech"
-          git add UI/package.json UI/package-lock.json UI/static/releases.json
-
-          if git diff --cached --quiet; then
-            echo "Version is already ${VERSION}"
-          else
-            git commit -m "bump(version): ${VERSION}"
-            git push "https://${FORGEJO_ACTOR}:${FORGEJO_TOKEN}@git.terrascale.tech/TerraScale/ku.git" HEAD:main
-          fi
-
-      # The job environment presets REGISTRY_AUTH_FILE to a read-only,
-      # pull-only Harbor authfile. Copy it, add the Forgejo registry
-      # credentials, and point podman at the merged copy so base-image pulls
-      # keep working through the Harbor mirror while pushes authenticate to
-      # the Forgejo registry.
-      - name: Log in to the Forgejo container registry
-        if: forgejo.event_name == 'release'
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
-        run: |
-          set -euo pipefail
-          authfile="${RUNNER_TEMP}/ci-registry-auth.json"
-          cp "${REGISTRY_AUTH_FILE:-/dev/null}" "$authfile" 2>/dev/null || touch "$authfile"
-          printf '%s' "${FORGEJO_TOKEN}" | podman login --authfile "$authfile" "${REGISTRY}" --username "${FORGEJO_ACTOR}" --password-stdin
-          echo "REGISTRY_AUTH_FILE=$authfile" >> "$GITHUB_ENV"
+            --header 'Content-Type: application/json' \
+            --data "{\"tag_name\":\"${TAG}\",\"name\":\"${TAG}\",\"draft\":false,\"prerelease\":false}" \
+            https://git.terrascale.tech/api/v1/repos/TerraScale/ku/releases)"
+          case "${code}" in
+            201) echo "release ${TAG} created" ;;
+            409) echo "release ${TAG} already exists" ;;
+            *) echo "release creation failed with HTTP ${code}:" >&2; cat /tmp/release.json >&2; exit 1 ;;
+          esac
 
       - name: Create the podman store
         run: scripts/ci/podman-store.sh create build
 
-      # The three images share no stages, so they build concurrently.
-      - name: Build the images
+      - name: Build and push the images
         env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
           VERSION: ${{ steps.version.outputs.version }}
+          PUSH: ${{ steps.version.outputs.push }}
         run: |
-          set -euo pipefail
-          pids=()
-          for spec in ku:.:go,npm ku-api:./BE:go ku-web:./UI:go,npm; do
-            IFS=: read -r name context caches <<<"$spec"
-            image="${IMAGE_PREFIX}/${name}"
-            scripts/ci/build-image.sh "$caches" --pull \
-              --tag "${image}:latest" --tag "${image}:${VERSION}" "$context" \
-              > >(sed -u "s/^/[${name}] /") 2>&1 &
-            pids+=("$!")
-          done
-          # Wait for every build, so none still writes to the store when the
-          # job moves on to removing it.
-          status=0
-          for pid in "${pids[@]}"; do
-            wait "$pid" || status=1
-          done
-          exit "$status"
-
-      - name: Push the images
-        if: steps.version.outputs.push == 'true'
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          for name in ku ku-api ku-web; do
-            image="${IMAGE_PREFIX}/${name}"
-            podman push "${image}:latest"
-            podman push "${image}:${VERSION}"
-          done
+          if [ "${PUSH}" = true ]; then
+            scripts/ci/publish-images.sh "${VERSION}" --push
+          else
+            scripts/ci/publish-images.sh "${VERSION}"
+          fi
 
       - name: Remove the podman store
         if: always()

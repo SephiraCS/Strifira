@@ -167,6 +167,11 @@ func (m *mockTeamRepo) ListByWorkspace(ctx context.Context, workspaceID uuid.UUI
 	return args.Get(0).([]domain.Team), args.Error(1)
 }
 
+func (m *mockTeamRepo) CreateWithDefaults(ctx context.Context, team *domain.Team, creator *domain.TeamMember, statuses []domain.TeamStatus) error {
+	args := m.Called(ctx, team, creator, statuses)
+	return args.Error(0)
+}
+
 func (m *mockTeamRepo) UpdateAndRenameKey(ctx context.Context, team *domain.Team, newKey string) (int64, error) {
 	args := m.Called(ctx, team, newKey)
 	return args.Get(0).(int64), args.Error(1)

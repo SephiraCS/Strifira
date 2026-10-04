@@ -5,8 +5,8 @@ import (
 	"runtime"
 
 	"github.com/ku/ku-backend/pkg/response"
-	log "github.com/sirupsen/logrus"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 )
 
 func Recovery() echo.MiddlewareFunc {
@@ -14,9 +14,9 @@ func Recovery() echo.MiddlewareFunc {
 		return func(c echo.Context) error {
 			defer func() {
 				if r := recover(); r != nil {
-					buf := make([]byte, 2048)
+					buf := make([]byte, 64<<10)
 					n := runtime.Stack(buf, false)
-					log.WithFields(log.Fields{
+					log.WithFields(response.LogFields(c)).WithFields(log.Fields{
 						"panic": fmt.Sprintf("%v", r),
 						"stack": string(buf[:n]),
 					}).Error("panic recovered")

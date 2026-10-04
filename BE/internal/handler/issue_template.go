@@ -2,15 +2,16 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/middleware"
 	"github.com/ku/ku-backend/internal/service"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/ku/ku-backend/pkg/validate"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )
@@ -71,9 +72,13 @@ func (h *IssueTemplateHandler) Get(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid template ID")
 	}
 
-	tmpl, err := h.templateSvc.GetByID(c.Request().Context(), id)
-	if err != nil || tmpl == nil {
-		return response.NotFound(c, "Issue template")
+	ws := c.Get("workspace").(*domain.Workspace)
+	tmpl, err := h.templateSvc.GetByID(c.Request().Context(), ws.ID, id)
+	if err != nil {
+		if errors.Is(err, service.ErrTemplateNotFound) {
+			return response.NotFound(c, "Issue template")
+		}
+		return response.InternalError(c)
 	}
 
 	return response.Success(c, http.StatusOK, toIssueTemplateResponse(tmpl))
@@ -90,8 +95,12 @@ func (h *IssueTemplateHandler) Update(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
 
-	tmpl, err := h.templateSvc.Update(c.Request().Context(), id, req)
+	ws := c.Get("workspace").(*domain.Workspace)
+	tmpl, err := h.templateSvc.Update(c.Request().Context(), ws.ID, id, req)
 	if err != nil {
+		if errors.Is(err, service.ErrTemplateNotFound) {
+			return response.NotFound(c, "Issue template")
+		}
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	}
 
@@ -104,8 +113,12 @@ func (h *IssueTemplateHandler) Delete(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid template ID")
 	}
 
-	if err := h.templateSvc.Delete(c.Request().Context(), id); err != nil {
-		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.templateSvc.Delete(c.Request().Context(), ws.ID, id); err != nil {
+		if errors.Is(err, service.ErrTemplateNotFound) {
+			return response.NotFound(c, "Issue template")
+		}
+		return response.InternalError(c)
 	}
 
 	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
