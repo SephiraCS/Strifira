@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -65,6 +64,14 @@ func main() {
 
 	// Realtime hub
 	hub := realtime.NewHub()
+
+	// Background producers (sweepers, reconcilers, archivers) run on this
+	// lifecycle context and are tracked by background, so shutdown can stop
+	// them and wait for their in-flight iteration before the webhook pool
+	// they may feed is closed.
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	var background safego.Group
 
 	// Repositories
 	userRepo := repository.NewUserRepository(db)
@@ -158,16 +165,14 @@ func main() {
 	devBoxRepo := repository.NewDevBoxRepository(db)
 	devBoxSvc := service.NewDevBoxService(devBoxRepo, workspaceRepo, devMachineSvc, cfg.DemoDevMachineAllowed)
 	devBoxH := handler.NewDevBoxHandler(devBoxSvc)
-	safego.Go("dev box sweeper", func() {
-		for range time.Tick(15 * time.Second) {
-			safego.Run("dev box sweep", func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				if err := devBoxSvc.SweepExpired(ctx); err != nil {
-					log.WithError(err).Warn("failed to expire dev box jobs")
-				}
-			})
-		}
+	background.Go("dev box sweeper", func() {
+		safego.Every(bgCtx, "dev box sweep", 15*time.Second, false, func(ctx context.Context) {
+			ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			if err := devBoxSvc.SweepExpired(ctx); err != nil {
+				log.WithError(err).Warn("failed to expire dev box jobs")
+			}
+		})
 	})
 	analyticsRepo := repository.NewAnalyticsRepository(db)
 	analyticsH := handler.NewAnalyticsHandler(analyticsRepo)
@@ -184,8 +189,8 @@ func main() {
 	hub.AuthorizeSharePresence = shareSvc.AuthorizePresence
 	// Persist presenter contact so the no-source GC grace survives restarts.
 	hub.OnPresenterSeen = func(shareID uuid.UUID) {
-		safego.Go("share presenter touch", func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		background.Go("share presenter touch", func() {
+			ctx, cancel := context.WithTimeout(bgCtx, 5*time.Second)
 			defer cancel()
 			shareSvc.TouchPresenterSeen(ctx, shareID)
 		})
@@ -228,13 +233,13 @@ func main() {
 	forgejoActionsH := handler.NewForgejoActionsHandler(forgejoSvc)
 	// Forgejo Actions completion webhooks trigger CI status refreshes.
 	// Reconcile open PRs every five minutes in case a delivery is missed.
-	safego.Go("forgejo webhook reconcile", func() { forgejoSvc.ReconcileWebhookEvents(context.Background()) })
-	safego.Go("forgejo status reconciler", func() { forgejoSvc.StartStatusReconciler(context.Background(), 5*time.Minute) })
+	background.Go("forgejo webhook reconcile", func() { forgejoSvc.ReconcileWebhookEvents(bgCtx) })
+	background.Go("forgejo status reconciler", func() { forgejoSvc.StartStatusReconciler(bgCtx, 5*time.Minute) })
 
 	// Archive completed issues once at startup and then hourly.
-	safego.Go("issue auto-archive", func() {
-		archive := func() {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	background.Go("issue auto-archive", func() {
+		safego.Every(bgCtx, "issue auto-archive", time.Hour, true, func(ctx context.Context) {
+			ctx, cancel := context.WithTimeout(ctx, time.Minute)
 			defer cancel()
 			workspaces, err := issueRepo.AutoArchiveCompleted(ctx)
 			if err != nil {
@@ -245,13 +250,7 @@ func main() {
 					log.WithFields(log.Fields{"workspace_id": workspace.WorkspaceID, "count": workspace.IssueCount}).Info("completed issues archived")
 				}
 			}
-		}
-		safego.Run("issue auto-archive", archive)
-		ticker := time.NewTicker(time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			safego.Run("issue auto-archive", archive)
-		}
+		})
 	})
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
@@ -280,18 +279,14 @@ func main() {
 	})
 
 	// Background: clean up expired refresh tokens every hour
-	safego.Go("refresh token cleanup", func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			safego.Run("refresh token cleanup", func() {
-				if err := refreshRepo.DeleteExpired(context.Background()); err != nil {
-					log.WithError(err).Warn("failed to clean up expired refresh tokens")
-				} else {
-					log.Info("expired refresh tokens cleaned up")
-				}
-			})
-		}
+	background.Go("refresh token cleanup", func() {
+		safego.Every(bgCtx, "refresh token cleanup", time.Hour, false, func(ctx context.Context) {
+			if err := refreshRepo.DeleteExpired(ctx); err != nil {
+				log.WithError(err).Warn("failed to clean up expired refresh tokens")
+			} else {
+				log.Info("expired refresh tokens cleaned up")
+			}
+		})
 	})
 
 	// Echo
@@ -634,28 +629,13 @@ func main() {
 		log.Info("Shutdown signal received, draining connections")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
-		// One shared deadline, concurrent work: a stalled HTTP request (e.g. a
-		// slow download) must not eat the grace period of the WebSockets.
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			if err := e.Shutdown(shutdownCtx); err != nil {
-				log.WithError(err).Warn("graceful shutdown did not complete")
-			}
-			// Webhook deliveries are flushed after HTTP draining so events
-			// from the requests drained above are still delivered.
-			if err := webhookSvc.Close(shutdownCtx); err != nil {
-				log.WithError(err).Warn("webhook delivery queue did not drain")
-			}
+		gracefulShutdown(shutdownCtx, shutdownSteps{
+			stopBackground: stopBackground,
+			waitBackground: background.Wait,
+			drainHTTP:      e.Shutdown,
+			drainWebSocket: hub.Shutdown,
+			closeWebhooks:  webhookSvc.Close,
 		})
-		wg.Go(func() {
-			// Echo's Shutdown neither closes nor waits for hijacked
-			// WebSockets: close them (StatusGoingAway) and let their
-			// handlers clean up.
-			if err := hub.Shutdown(shutdownCtx); err != nil {
-				log.WithError(err).Warn("websocket shutdown did not complete")
-			}
-		})
-		wg.Wait()
 	}
 }
 

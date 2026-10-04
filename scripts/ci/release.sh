@@ -18,12 +18,16 @@
 #      deployed commit, tags it, and pushes both atomically to main;
 #   4. creates the Forgejo release with the first-parent commit subjects
 #      since the previous tag as notes;
-#   5. writes version=vX.Y.Z and sha=<release commit> to $GITHUB_OUTPUT.
+#   5. writes version=vX.Y.Z, sha=<release commit> and deployed=<its parent>
+#      to $GITHUB_OUTPUT; the Release job then publishes the images and rolls
+#      alpha forward to the release commit (scripts/ci/deploy-release.sh).
 #
 # No loop: the push uses the job token, and Forgejo never starts workflows
 # for changes authored with it; "[skip ci]" also keeps CI off that commit if
 # a personal token is ever used instead. The release commit only moves
-# version fields, so it needs no deploy of its own.
+# version fields and the release manifest, so it skips the test suites, but
+# the Release job still rolls alpha to it so alpha shows the new version and
+# manifest (rolling alpha starts no workflow either).
 #
 # When main has moved past the deployed commit (another merge is queued
 # behind this run), the release is left to the newer commit's run so the
@@ -85,11 +89,14 @@ create_release() {
 	esac
 }
 
-# outputs <tag> <release commit>
+# outputs <tag> <release commit>: also names the commit the release commit
+# bumps (deployed=), which alpha must still run for the Release job to roll
+# it forward to the release commit.
 outputs() {
 	{
 		echo "version=$1"
 		echo "sha=$2"
+		echo "deployed=$(git rev-parse "$2^")"
 	} >>"$output"
 }
 
@@ -128,6 +135,23 @@ resume() {
 }
 
 main=$(git rev-parse release/main)
+
+# The deployed commit is itself a release commit (CI dispatched on main right
+# after a release, or a re-run of such a run): make sure that release is
+# complete instead of cutting another one on top of a version-only commit,
+# whether or not main has moved on since, as long as it is still on main.
+parent=$(git rev-parse "$sha^@" 2>/dev/null || :)
+case "$parent" in
+*[!0-9a-f]* | '') ;;
+*)
+	if tag=$(released_tag "$sha" "$parent") && git merge-base --is-ancestor "$sha" "$main"; then
+		echo "$sha is the release commit of $tag; resuming the release (main is at $main)."
+		resume "$sha" "$tag"
+		exit 0
+	fi
+	;;
+esac
+
 if [ "$main" != "$sha" ]; then
 	if release=$(release_commit) && [ -n "$release" ]; then
 		# A previous attempt pushed the release commit; finish what it left.
@@ -139,20 +163,6 @@ if [ "$main" != "$sha" ]; then
 	echo "main is at $main, past the deployed $sha; the newer commit's run releases."
 	exit 0
 fi
-# The deployed commit is itself a release commit (CI dispatched on main right
-# after a release): make sure that release is complete instead of cutting
-# another one on top of a version-only commit.
-parent=$(git rev-parse "$sha^@" 2>/dev/null || :)
-case "$parent" in
-*[!0-9a-f]* | '') ;;
-*)
-	if tag=$(released_tag "$sha" "$parent"); then
-		echo "$sha is the release commit of $tag; resuming the release."
-		resume "$sha" "$tag"
-		exit 0
-	fi
-	;;
-esac
 if tagged=$(git describe --exact-match --tags --match 'v[0-9]*' "$sha" 2>/dev/null); then
 	echo "$sha is already released as $tagged."
 	exit 0

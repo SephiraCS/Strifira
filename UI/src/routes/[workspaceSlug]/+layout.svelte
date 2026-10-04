@@ -207,7 +207,7 @@
 			// Background reload: keep the current list on screen (loading stays
 			// false — boards render nothing while it is true). refresh() reuses
 			// the view's exact params, including board fetch-all paging.
-			if (slug && issuesState.issues.length > 0) {
+			if (issuesState.hasQueryFor(slug)) {
 				void issuesState.refresh(false);
 			}
 		}, 300);
@@ -220,12 +220,12 @@
 		if (!authReady || !slug) return;
 		if (!resources || resources.length === 0) {
 			loadWorkspaceData(slug);
-			if (issuesState.issues.length > 0) {
+			if (issuesState.hasQueryFor(slug)) {
 				scheduleIssuesRefresh();
 			}
 			return;
 		}
-		if (resources.includes('issues') && issuesState.issues.length > 0) {
+		if (resources.includes('issues') && issuesState.hasQueryFor(slug)) {
 			scheduleIssuesRefresh();
 		}
 		if (resources.includes('workspace') || resources.includes('teams')) void loadWorkspaceShell(slug);

@@ -509,3 +509,90 @@ test('pages share the layout\'s pending teams request but never reuse a finished
 	await expect.poll(() => teamLoads).toBe(2);
 	await pending[1]();
 });
+
+// Answers teams requests from the test: while held, each waits until released
+// (with a list or a failure); otherwise it gets the latest list.
+async function controlTeams(page: Page) {
+	const control = {
+		pending: [] as { fulfill: (teams: Team[]) => Promise<void>; fail: () => Promise<void> }[],
+		defaults: [] as Team[],
+		latest: null as Team[] | null,
+		hold: false
+	};
+	await mockInsights(page, async (route, defaults) => {
+		control.defaults = defaults;
+		if (!control.hold) return route.fulfill({ json: control.latest ?? defaults });
+		control.pending.push({
+			fulfill: (teams) => route.fulfill({ json: teams }),
+			fail: () => route.fulfill({ status: 500, json: { error: { message: 'boom' } } })
+		});
+	});
+	return control;
+}
+
+const refreshTeams = (page: Page) =>
+	page.evaluate(() =>
+		window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: 'test', resources: ['teams'] } }))
+	);
+
+async function openInsightsWithShortcut(page: Page) {
+	await page.locator('body').click({ position: { x: 1, y: 1 } });
+	await page.keyboard.press('g');
+	await page.keyboard.press('a');
+	await expect(page.getByRole('heading', { name: 'Insights' })).toBeVisible();
+}
+
+async function expectTeamOptions(page: Page, shown: string, absent: string) {
+	await page.getByLabel('Team scope').click();
+	await expect(page.getByRole('option', { name: shown })).toBeVisible();
+	await expect(page.getByRole('option', { name: absent })).toHaveCount(0);
+}
+
+test('a page\'s own teams fetch invalidated by a refresh never overwrites the refreshed list', async ({ page }) => {
+	const teams = await controlTeams(page);
+	await page.goto('/test/projects');
+	await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
+
+	// Nothing is pending, so insights sends its own request...
+	teams.hold = true;
+	await openInsightsWithShortcut(page);
+	await expect.poll(() => teams.pending.length).toBe(1);
+
+	// ...which a refresh supersedes with the layout's reload. The reload
+	// answers with the renamed team before insights' request answers.
+	await refreshTeams(page);
+	await expect.poll(() => teams.pending.length).toBe(2);
+	const renamed = teams.defaults.map((team) => ({ ...team, name: 'Platform' }));
+	teams.latest = renamed;
+	teams.hold = false;
+	await teams.pending[1].fulfill(renamed);
+	await teams.pending[0].fulfill(teams.defaults);
+
+	await expectTeamOptions(page, 'Platform', 'Engineering');
+});
+
+test('the retry after a shared teams request fails is invalidated by a refresh too', async ({ page }) => {
+	const teams = await controlTeams(page);
+	await page.goto('/test/projects');
+	await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible();
+
+	// Insights shares the layout's pending reload, which then fails.
+	teams.hold = true;
+	await refreshTeams(page);
+	await expect.poll(() => teams.pending.length).toBe(1);
+	await openInsightsWithShortcut(page);
+	await teams.pending[0].fail();
+
+	// Insights retries once; a refresh supersedes that retry, and the
+	// layout's reload answers first with the renamed team.
+	await expect.poll(() => teams.pending.length).toBe(2);
+	await refreshTeams(page);
+	await expect.poll(() => teams.pending.length).toBe(3);
+	const renamed = teams.defaults.map((team) => ({ ...team, name: 'Platform' }));
+	teams.latest = renamed;
+	teams.hold = false;
+	await teams.pending[2].fulfill(renamed);
+	await teams.pending[1].fulfill(teams.defaults);
+
+	await expectTeamOptions(page, 'Platform', 'Engineering');
+});

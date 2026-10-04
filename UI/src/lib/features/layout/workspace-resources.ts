@@ -11,8 +11,10 @@ import type { WorkspaceMember } from '$lib/types/workspace';
  * The workspace layout loads teams, projects, labels and members for the
  * sidebar, command palette and dialogs, and reloads each one whenever an API
  * mutation or realtime event emits `app:refresh` for it. A page that needs one
- * of these collections while the layout's request for it is still in flight
- * waits for that request instead of sending its own. Finished results are
+ * of these collections while a request for it (the layout's or another
+ * page's) is still in flight waits for that request instead of sending its
+ * own; a refresh invalidates every pending request, and readers of an
+ * invalidated one get the replacement's result. Finished results are
  * never reused: once the request settles its entry is removed, and the next
  * reader fetches fresh, because not every change to these collections emits
  * an invalidation event.
@@ -73,36 +75,62 @@ export function resetWorkspaceResources(slug: string) {
 	for (const resource of [...requests.keys()]) invalidate(resource);
 }
 
+// Make `request` the current entry for `resource`, superseding (and so
+// invalidating) any earlier pending one. It is forgotten once it settles.
+function track(resource: ResourceName, request: Promise<unknown>) {
+	invalidate(resource);
+	requests.set(resource, request);
+	const forget = () => {
+		if (requests.get(resource) === request) requests.delete(resource);
+	};
+	request.then(forget, forget);
+}
+
 /** Record the layout's request for `resource` so pages can share it while it is pending. */
 export function shareWorkspaceResource<K extends ResourceName>(
 	slug: string,
 	resource: K,
 	request: Promise<Resources[K]>
 ): Promise<Resources[K]> {
-	if (slug === currentSlug) {
-		invalidate(resource);
-		requests.set(resource, request);
-		const forget = () => {
-			if (requests.get(resource) === request) requests.delete(resource);
-		};
-		request.then(forget, forget);
-	}
+	if (slug === currentSlug) track(resource, request);
 	return request;
 }
 
-/** The workspace's `resource`: the layout's pending request when there is one, otherwise a fresh fetch. */
-export function getWorkspaceResource<K extends ResourceName>(slug: string, resource: K): Promise<Resources[K]> {
-	const shared = slug === currentSlug ? (requests.get(resource) as Promise<Resources[K]> | undefined) : undefined;
-	if (!shared) return fetchers[resource](slug);
-	// A refresh or workspace switch can invalidate the request while it is in
-	// flight. Its response then predates that change, so the reader goes
-	// through the replacement request if one is pending, or fetches fresh.
-	const replaced = () => slug !== currentSlug || invalidated.has(shared);
-	return shared.then(
+/**
+ * The workspace's `resource`: the pending request for it when there is one
+ * (the layout's or another page's), otherwise a new fetch that is tracked the
+ * same way so concurrent readers share it and refreshes invalidate it.
+ */
+export function getWorkspaceResource<K extends ResourceName>(
+	slug: string,
+	resource: K,
+	retryFailure = true
+): Promise<Resources[K]> {
+	if (slug !== currentSlug) return fetchers[resource](slug);
+	let request = requests.get(resource) as Promise<Resources[K]> | undefined;
+	if (!request) {
+		request = fetchers[resource](slug);
+		track(resource, request);
+	}
+	const pending = request;
+	// A refresh, a newer request or a workspace switch can invalidate the
+	// request while it is in flight. Its response then predates that change,
+	// so the reader goes through the replacement if one is pending, or fetches
+	// fresh. `forget` was attached first, so a settled request is out of the
+	// map by the time these handlers run.
+	const stale = () => slug !== currentSlug || invalidated.has(pending);
+	return pending.then(
 		// Hand out a copy so a page reassigning or pushing to its list never
 		// touches the array other readers received.
-		(data) => (replaced() ? getWorkspaceResource(slug, resource) : ([...data] as Resources[K])),
-		() => (replaced() ? getWorkspaceResource(slug, resource) : fetchers[resource](slug))
+		(data) => (stale() ? getWorkspaceResource(slug, resource, retryFailure) : ([...data] as Resources[K])),
+		(error) => {
+			if (stale()) return getWorkspaceResource(slug, resource, retryFailure);
+			// A failed request (e.g. the layout's) gets one fresh attempt,
+			// which is tracked like any other; a second failure is the
+			// caller's to handle.
+			if (retryFailure) return getWorkspaceResource(slug, resource, false);
+			throw error;
+		}
 	);
 }
 

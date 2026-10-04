@@ -3,8 +3,11 @@
 package safego
 
 import (
+	"context"
 	"fmt"
 	"runtime/debug"
+	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -31,4 +34,70 @@ func Run(name string, fn func()) (panicked bool) {
 	}()
 	fn()
 	return false
+}
+
+// Group tracks background goroutines so shutdown can wait for them. Each
+// goroutine is recovered like Go. Once Wait has been called the group is
+// closed: later Go calls are refused, so nothing new starts mid-shutdown.
+type Group struct {
+	mu     sync.Mutex
+	closed bool
+	wg     sync.WaitGroup
+}
+
+// Go starts fn in a tracked, recovered goroutine. It reports false (and does
+// not run fn) when the group is already closed.
+func (g *Group) Go(name string, fn func()) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return false
+	}
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		Run(name, fn)
+	}()
+	return true
+}
+
+// Wait closes the group and waits until every tracked goroutine returned,
+// or until ctx ends (returning its error). Callers cancel the goroutines'
+// context first; Wait only bounds how long their in-flight work may take.
+func (g *Group) Wait(ctx context.Context) error {
+	g.mu.Lock()
+	g.closed = true
+	g.mu.Unlock()
+	done := make(chan struct{})
+	go func() {
+		g.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Every runs fn every interval (first right away when immediate) until ctx
+// is done. Each run is recovered, so one bad tick does not stop the loop.
+func Every(ctx context.Context, name string, interval time.Duration, immediate bool, fn func(context.Context)) {
+	if immediate {
+		Run(name, func() { fn(ctx) })
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if ctx.Err() != nil {
+				return
+			}
+			Run(name, func() { fn(ctx) })
+		}
+	}
 }

@@ -287,8 +287,9 @@ jobs:
 
   # Cuts the next patch release of the deployed commit: bumps UI/package.json
   # and the OpenAPI version in a "[skip ci]" commit on main, tags it, creates
-  # the release, and pushes the images built from it. It runs after the
-  # deploy and never blocks it. No loop: Forgejo starts no workflow for
+  # the release, pushes the images built from it, and rolls alpha to that
+  # release commit so it serves the new version. It runs after the deploy
+  # and never blocks it. No loop: Forgejo starts no workflow for
   # pushes made with the job token (see scripts/ci/release.sh).
   release:
     name: Release
@@ -326,6 +327,18 @@ jobs:
           FORGEJO_TOKEN: ${{ forgejo.token }}
           FORGEJO_ACTOR: ${{ forgejo.actor }}
         run: scripts/ci/publish-images.sh "${{ steps.release.outputs.version }}" --push
+
+      # The release commit carries the new version and release manifest the
+      # UI serves; roll alpha to it (only from the commit it bumps).
+      - name: Deploy the release commit to alpha
+        if: steps.release.outputs.version != ''
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+          ALPHA_HEALTH_URL: https://ku.mariogk.com/health
+        run: >-
+          scripts/ci/deploy-release.sh "${ALPHA_HEALTH_URL}"
+          "${IMAGE_PREFIX}/ku:${{ steps.release.outputs.version }}"
+          "${{ steps.release.outputs.sha }}" "${{ steps.release.outputs.deployed }}"
 
       - name: Remove the podman store
         if: always()
