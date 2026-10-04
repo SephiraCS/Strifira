@@ -1,6 +1,7 @@
 AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
 
 # RULES
+- Never add AI attribution to commits, PR titles, or PR descriptions: no `Co-Authored-By:` trailers, no `🤖 Generated with [Claude Code]` or similar generated-by notices.
 
 ## Versioning
 - You must bump the version automatically
