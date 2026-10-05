@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.6",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.6",
+    "body": "Deployed to alpha as 5d5a2a789c0afa24742088a3d08b741b89608619.\n\n- fix(editor): Shift+Enter over an inline image no longer eats the image or the draft",
+    "published_at": "2026-10-05T20:20:30Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.6",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.4",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.4",
     "body": "Deployed to alpha as 1459bf2e35b331bf993ec081822fdbf1b6fa074c.\n\n- Ban AI attribution in commits and PRs (#17)",
