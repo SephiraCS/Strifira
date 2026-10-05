@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
  * Opt-in real WebRTC test: disposable PostgreSQL, backend, built SPA and
- * browser tabs. Requires Podman, Go, installed UI dependencies and Chromium
+ * browser tabs. Requires a container runtime (Podman, or Docker — with
+ * passwordless sudo when the socket needs it; KU_LIVE_CONTAINER overrides
+ * the command), Go, installed UI dependencies and Chromium
  * (`cd UI && npx playwright install chromium`). No deployed services or
  * application .env files are read. Container registry rewrites/auth follow
- * the operator's existing Podman configuration.
+ * the operator's existing container configuration.
  *
  * node scripts/check-screen-share-live.mjs            # build UI, then test
  * node scripts/check-screen-share-live.mjs --skip-build # use existing UI/build
@@ -64,6 +66,35 @@ const tempDir = isMain
   ? await mkdtemp(path.join(os.tmpdir(), "ku-screen-share-live-"))
   : undefined;
 const containerName = `ku-screen-share-live-${randomUUID()}`;
+
+// Podman first (rootless, no daemon); Docker next when the socket is usable
+// without escalation, then Docker through passwordless sudo. KU_LIVE_CONTAINER
+// (e.g. "sudo -n docker") overrides the detection entirely.
+async function resolveContainerCommand() {
+  const override = process.env.KU_LIVE_CONTAINER;
+  if (override) return override.trim().split(/\s+/);
+  for (const candidate of [["podman"], ["docker"], ["sudo", "-n", "docker"]]) {
+    const usable = await new Promise((resolve) => {
+      const probe = spawn(candidate[0], [...candidate.slice(1), "version"], {
+        env: toolEnv,
+        stdio: "ignore",
+      });
+      probe.once("error", () => resolve(false));
+      probe.once("exit", (code) => resolve(code === 0));
+    });
+    if (usable) return candidate;
+  }
+  throw new Error(
+    "No usable container runtime for disposable PostgreSQL: install Podman or Docker, or set KU_LIVE_CONTAINER.",
+  );
+}
+
+const container = isMain ? await resolveContainerCommand() : ["podman"];
+const runContainer = (args, options) =>
+  run(container[0], [...container.slice(1), ...args], options);
+const captureContainer = (args) =>
+  capture(container[0], [...container.slice(1), ...args]);
+
 const children = new Set();
 const sockets = new Set();
 let containerCreated = false;
@@ -274,7 +305,7 @@ async function cleanup() {
   }
   for (const child of children) terminate(child, "SIGKILL");
   if (containerCreated)
-    await run("podman", ["rm", "--force", "--ignore", containerName]);
+    await runContainer(["rm", "--force", containerName]).catch(() => {});
   await rm(tempDir, { recursive: true, force: true });
 }
 
@@ -301,11 +332,11 @@ if (isMain) {
       });
     }
     console.log(
-      "Starting disposable PostgreSQL using existing Podman registry configuration.",
+      `Starting disposable PostgreSQL on ${container.join(" ")}.`,
     );
     // Loopback-only random publish; all data disappears with this container.
     containerCreated = true;
-    await run("podman", [
+    await runContainer([
       "run",
       "--detach",
       "--rm",
@@ -323,27 +354,16 @@ if (isMain) {
       "POSTGRES_DB=ku_live",
       "docker.io/library/postgres:17-alpine",
     ]);
-    const dbMapping = await capture("podman", [
-      "port",
-      containerName,
-      "5432/tcp",
-    ]);
+    const dbMapping = (
+      await captureContainer(["port", containerName, "5432/tcp"])
+    ).trim();
     const dbPort = Number(dbMapping.match(/^127\.0\.0\.1:(\d+)$/)?.[1]);
     if (!dbPort)
       throw new Error(`Unexpected PostgreSQL port mapping: ${dbMapping}`);
     await waitUntil(async () => {
       try {
-        await run(
-          "podman",
-          [
-            "exec",
-            containerName,
-            "pg_isready",
-            "-U",
-            "postgres",
-            "-d",
-            "ku_live",
-          ],
+        await runContainer(
+          ["exec", containerName, "pg_isready", "-U", "postgres", "-d", "ku_live"],
           { stdio: "ignore" },
         );
         return true;
