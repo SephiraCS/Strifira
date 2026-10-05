@@ -11,7 +11,7 @@
 	import Image from '@tiptap/extension-image';
 	import Underline from '@tiptap/extension-underline';
 	import { Extension, InputRule } from '@tiptap/core';
-	import { Plugin, PluginKey } from 'prosemirror-state';
+	import { Plugin, PluginKey, NodeSelection, TextSelection } from 'prosemirror-state';
 	import { closeHistory } from '@tiptap/pm/history';
 	import { Decoration, DecorationSet } from 'prosemirror-view';
 	import { createLowlight } from 'lowlight';
@@ -417,6 +417,57 @@
 		}
 	});
 
+	// Shift+Enter / Enter while an inline atom (image, attachment, mention) is
+	// node-selected must insert a break beside the atom. TipTap's HardBreak and
+	// Enter commands replace the selected node instead, destroying it — one
+	// stray click on a large inline image selects it, and the next Enter erased
+	// the image from the document.
+	const InlineAtomBreakGuard = Extension.create({
+		name: 'inlineAtomBreakGuard',
+		priority: 1000,
+		addKeyboardShortcuts() {
+			const selectedInlineAtom = (): { from: number } | null => {
+				const { selection } = this.editor.state;
+				if (!(selection instanceof NodeSelection)) return null;
+				const { node, from } = selection;
+				if (!node.isAtom || node.isBlock) return null;
+				return { from };
+			};
+
+			const insertBreakBefore = () => {
+				const atom = selectedInlineAtom();
+				if (!atom) return false;
+				const hardBreak = this.editor.state.schema.nodes.hardBreak;
+				if (!hardBreak) return false;
+				return this.editor.commands.command(({ tr, dispatch }) => {
+					if (dispatch) {
+						tr.insert(atom.from, hardBreak.create());
+						tr.setSelection(TextSelection.near(tr.doc.resolve(atom.from + 1), -1));
+					}
+					return true;
+				});
+			};
+
+			const splitBefore = () => {
+				const atom = selectedInlineAtom();
+				if (!atom) return false;
+				return this.editor.commands.command(({ tr, dispatch }) => {
+					if (dispatch) {
+						tr.split(atom.from);
+						tr.setSelection(TextSelection.near(tr.doc.resolve(atom.from), -1));
+					}
+					return true;
+				});
+			};
+
+			return {
+				'Shift-Enter': insertBreakBefore,
+				'Mod-Enter': insertBreakBefore,
+				Enter: splitBefore
+			};
+		}
+	});
+
 	const UploadPlaceholderExtension = Extension.create({
 		name: 'uploadPlaceholder',
 		addProseMirrorPlugins() {
@@ -664,6 +715,7 @@
 		});
 
 		const extensions = [
+			InlineAtomBreakGuard,
 			StarterKit.configure({
 				codeBlock: false,
 				link: false,

@@ -158,53 +158,65 @@
 		if (target.hasPointerCapture?.(event.pointerId)) target.releasePointerCapture(event.pointerId);
 	}
 
-	function handleKeyDown(event: KeyboardEvent) {
+	// Keys the viewer acts on are handled in the capture phase and stopped, so
+	// they never reach an underlying dialog: Escape would otherwise also close
+	// e.g. a create-issue dialog stacked below the viewer, discarding the draft.
+	$effect(() => {
 		if (!isOpen) return;
-		switch (event.key) {
-			case 'Escape':
+		const onKeyDown = (event: KeyboardEvent) => {
+			let handled = false;
+			switch (event.key) {
+				case 'Escape':
+					close();
+					handled = true;
+					break;
+				case '+':
+				case '=':
+					zoomByStep(ZOOM_STEP);
+					handled = true;
+					break;
+				case '-':
+				case '_':
+					zoomByStep(-ZOOM_STEP);
+					handled = true;
+					break;
+				case '0':
+					resetTransform();
+					handled = true;
+					break;
+				case 'ArrowLeft':
+					if (canPan) {
+						offsetX += 50;
+						handled = true;
+					}
+					break;
+				case 'ArrowRight':
+					if (canPan) {
+						offsetX -= 50;
+						handled = true;
+					}
+					break;
+				case 'ArrowUp':
+					if (canPan) {
+						offsetY += 50;
+						handled = true;
+					}
+					break;
+				case 'ArrowDown':
+					if (canPan) {
+						offsetY -= 50;
+						handled = true;
+					}
+					break;
+			}
+			if (handled) {
 				event.preventDefault();
-				close();
-				break;
-			case '+':
-			case '=':
-				event.preventDefault();
-				zoomByStep(ZOOM_STEP);
-				break;
-			case '-':
-			case '_':
-				event.preventDefault();
-				zoomByStep(-ZOOM_STEP);
-				break;
-			case '0':
-				event.preventDefault();
-				resetTransform();
-				break;
-			case 'ArrowLeft':
-				if (canPan) {
-					offsetX += 50;
-					event.preventDefault();
-				}
-				break;
-			case 'ArrowRight':
-				if (canPan) {
-					offsetX -= 50;
-					event.preventDefault();
-				}
-				break;
-			case 'ArrowUp':
-				if (canPan) {
-					offsetY += 50;
-					event.preventDefault();
-				}
-				break;
-			case 'ArrowDown':
-				if (canPan) {
-					offsetY -= 50;
-					event.preventDefault();
-				}
-				break;
-		}
-	}
+				event.stopPropagation();
+			}
+		};
+		window.addEventListener('keydown', onKeyDown, { capture: true });
+		return () => window.removeEventListener('keydown', onKeyDown, { capture: true });
+	});
 
 	async function handleDownload() {
 		if (!current || busy) return;
@@ -240,8 +252,6 @@
 		if (current) openImageInNewTab(current.src);
 	}
 </script>
-
-<svelte:window onkeydown={handleKeyDown} />
 
 {#if isOpen && current}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

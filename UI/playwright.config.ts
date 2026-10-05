@@ -13,6 +13,7 @@ const FAST_SPECS = [
 	'login.test.ts',
 	'issues.test.ts',
 	'issue-description-recovery.test.ts',
+	'create-issue-image-breaks.test.ts',
 	'team-board.test.ts',
 	'my-issues-board.test.ts',
 	'forgejo-automation.test.ts',
