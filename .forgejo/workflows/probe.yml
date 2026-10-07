@@ -35,7 +35,7 @@ jobs:
             apiget "$api/actions/tasks?limit=300" > /tmp/tasks.json
             echo "tasks bytes: $(wc -c </tmp/tasks.json)"
             head -c 400 /tmp/tasks.json; echo
-            jq -r '((.entries // .)[]?) | [(.run_id // .runId // "?"), (.id // "?"), (.name // "?"), (.status // "?")] | @tsv' /tmp/tasks.json > /tmp/all.txt || echo "jq failed" 
+            jq -r 'if type == "array" then . elif has("entries") then .entries else [] end | .[] | [(.run_id // .runId // "?"), (.id // "?"), (.name // "?"), (.status // "?")] | @tsv' /tmp/tasks.json > /tmp/all.txt || echo "jq failed"
             grep -E "failure" /tmp/all.txt | grep -iE "release" | head -8 || echo "no failed release tasks matched"
           } >>"$out" 2>&1
           # Fetch logs for each failed Release-ish task by task id, then also by run id.
@@ -54,4 +54,4 @@ jobs:
             '!f() { echo username=forgejo-actions; echo "password=$FORGEJO_TOKEN"; }; f'
           git add "$out"
           git commit -qm "failed job logs" || true
-          git push "https://git.terrascale.tech/TerraScale/ku.git" "HEAD:refs/heads/probe-results"
+          git push "https://git.terrascale.tech/TerraScale/ku.git" "+HEAD:refs/heads/probe-results"
