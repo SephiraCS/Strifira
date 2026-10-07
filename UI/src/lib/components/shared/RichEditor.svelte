@@ -54,6 +54,7 @@
 	import Download from '@lucide/svelte/icons/download';
 	import Copy from '@lucide/svelte/icons/copy';
 	import { appToast } from '$lib/features/toast/toast';
+	import { api } from '$lib/api/client';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { sanitizeEditorOutput } from '$lib/security/sanitize';
@@ -206,6 +207,14 @@
 	);
 
 	type UploadedFile = { url: string; filename: string; size: number; contentType: string };
+	// The upload endpoint replies with the asset fields at the top level; the
+	// optional `data` wrapper keeps tests and future envelopes compatible.
+	type UploadApiResponse = {
+		data?: { url?: string; filename?: string; content_type?: string };
+		url?: string;
+		filename?: string;
+		content_type?: string;
+	};
 	type UploadPlaceholder = { id: string; pos: number; label: string; side: number };
 	type UploadPlaceholderMeta = { add?: UploadPlaceholder[]; remove?: string[] };
 
@@ -513,23 +522,25 @@
 		const form = new FormData();
 		form.append('file', file);
 		try {
-			const res = await fetch(uploadUrl, { method: 'POST', body: form, credentials: 'include' });
-			if (!res.ok) {
-				const data = await res.json().catch(() => null);
-				appToast.error(data?.error?.message ?? data?.message ?? `Failed to upload ${file.name}`);
-				return null;
-			}
-			const data = await res.json();
-			const result = data.data ?? data;
-			if (!result.url) return null;
+			// Sent through the api client so an expired access token is
+			// refreshed and the upload retried like every other authenticated
+			// request; a bare fetch would fail with 401 after the 15-minute
+			// token lifetime.
+			const data = await api.postForm<UploadApiResponse>(uploadUrl, form);
+			const result = data?.data ?? data;
+			if (!result?.url) return null;
 			return {
 				url: result.url,
 				filename: result.filename ?? file.name,
 				size: file.size,
 				contentType: result.content_type ?? file.type
 			};
-		} catch {
-			appToast.error(`Failed to upload ${file.name}`);
+		} catch (error) {
+			const message =
+				(error as { error?: { message?: string } })?.error?.message ??
+				(error as { message?: string })?.message ??
+				`Failed to upload ${file.name}`;
+			appToast.error(message);
 			return null;
 		}
 	}
