@@ -82,6 +82,7 @@
 	import SubIssuesList from './SubIssuesList.svelte';
 	import IssueForgejoActivity from './IssueForgejoActivity.svelte';
 	import { goto } from '$app/navigation';
+	import { inAppNavigation } from '$lib/features/layout/in-app-navigation.state.svelte';
 	import { sanitizeHtml } from '$lib/security/sanitize';
 	import { mentionInteractivity } from '$lib/components/shared/mention/mention-interactivity.action';
 	import { imageViewer } from '$lib/components/shared/image-viewer';
@@ -107,7 +108,12 @@
 	import Server from '@lucide/svelte/icons/server';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { ROLE_HIERARCHY } from '$lib/security/roles';
-	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
+	import {
+		workspaceLabels,
+		workspaceMembers,
+		workspaceProjects,
+		workspaceTeams
+	} from '$lib/features/layout/workspace-resources';
 
 	let {
 		issue,
@@ -347,7 +353,44 @@
 		}
 	}
 
+	// Escape leaves the issue and returns to the view it was opened from —
+	// the list or the Kanban board, whichever the user had selected (pages
+	// restore that from the session view-layout state). Bits-ui overlays
+	// (popovers, dialogs, the sub-issue create dialog) consume Escape
+	// themselves and render [data-state="open"]; the key stays theirs while
+	// one is genuinely up, so one press only closes the topmost layer.
+	// Trigger elements merely mirror the open state, and a layer's content
+	// can linger invisibly (e.g. a dev-server hot swap leaves the workspace
+	// switcher open-but-transparent), so only visible non-trigger layers
+	// claim the key.
+	function overlayOwnsEscape(): boolean {
+		return [...document.querySelectorAll<HTMLElement>('[data-state="open"]')].some(
+			(el) =>
+				!el.getAttribute('data-slot')?.endsWith('-trigger') &&
+				(typeof el.checkVisibility !== 'function' ||
+					el.checkVisibility({ opacityProperty: true, visibilityProperty: true }))
+		);
+	}
+
+	function leaveIssueOnEscape() {
+		if (overlayOwnsEscape()) return;
+		if (inAppNavigation.happened) {
+			// window.history explicitly: a local `history` holds the issue's
+			// activity log.
+			window.history.back();
+		} else {
+			// Directly loaded URL (fresh tab, deep link, reload): no app page
+			// to go back to, so land on the team's issues view; its layout
+			// follows the user's session selection.
+			goto(`/${slug}/teams/${issue.team_id}`);
+		}
+	}
+
 	const issueKeyHandler = createKeyboardHandler([
+		{
+			key: 'Escape',
+			handler: leaveIssueOnEscape
+		},
 		{
 			key: 's',
 			handler: () => {
@@ -1605,7 +1648,8 @@
 									{@const actor = historyActor(items[0].user_id)}
 									{@const createdItem = items.some((c) => c.field === 'created')}
 									{@const IconComponent = items.length > 1 && !createdItem ? Layers : historyIcon(firstField)}
-									{@const iconColor = items.length > 1 && !createdItem ? 'text-[var(--color-text-tertiary)]' : historyColor(firstField)}
+									{@const iconColor =
+										items.length > 1 && !createdItem ? 'text-[var(--color-text-tertiary)]' : historyColor(firstField)}
 									{@const textFields = [
 										...new Set(
 											items.filter((c) => c.field === 'title' || c.field === 'description').map((c) => c.field)
@@ -1637,7 +1681,9 @@
 											{/if}
 											{#if createdItem}
 												<span class="shrink-0">{m['issue.history.created']()}</span>
-												{#if textFields.length > 0 || valueItems.length > 0}<span class="text-[var(--app-border)]">|</span>{/if}
+												{#if textFields.length > 0 || valueItems.length > 0}<span class="text-[var(--app-border)]"
+														>|</span
+													>{/if}
 											{/if}
 											{#if textFields.length > 0}
 												<span
@@ -1720,7 +1766,12 @@
 										>{formatRelativeTime(comment.created_at, getLocale())}</span
 									>
 									{#if comment.resolved_at}
-										<span class="text-[11px] font-medium text-green-400">{m['issue.resolved']()}</span>
+										<span
+											class="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2 py-0.5 text-[11px] font-medium text-green-400"
+										>
+											<Check size={11} />
+											{m['issue.resolved']()}
+										</span>
 									{/if}
 									{#if replyViewers.length > 0}
 										<span class="flex items-center gap-1 ml-1">
@@ -1871,9 +1922,12 @@
 						</div>
 					{/if}
 					<div
-						class="flex items-end gap-1.5 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)] focus-within:border-[var(--color-text-tertiary)] transition-colors p-3"
+						class="flex items-start gap-2 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)] focus-within:border-[var(--color-text-tertiary)] transition-colors p-3"
 					>
-						<div class="min-w-0 flex-1 my-auto">
+						<div class="shrink-0 pt-0.5">
+							<Avatar name={authState.user?.name ?? 'U'} avatarUrl={authState.user?.avatar_url} size="xs" />
+						</div>
+						<div class="min-w-0 flex-1">
 							{#key commentVersion}
 								<RichEditor
 									content=""
@@ -1895,16 +1949,14 @@
 								/>
 							{/key}
 						</div>
-						<div class="flex shrink-0 items-center gap-1.5">
-							<button
-								onclick={handleAddComment}
-								disabled={!newComment.trim() || newComment === '<p></p>'}
-								class="rounded-full bg-[var(--app-accent)] p-1.5 text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-30 transition-colors"
-								title={m['issue.send']()}
-							>
-								<ArrowUp size={14} />
-							</button>
-						</div>
+						<button
+							onclick={handleAddComment}
+							disabled={!newComment.trim() || newComment === '<p></p>'}
+							class="self-end mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-30 transition-colors"
+							title={m['issue.send']()}
+						>
+							<ArrowUp size={14} />
+						</button>
 					</div>
 				</div>
 			</div>
