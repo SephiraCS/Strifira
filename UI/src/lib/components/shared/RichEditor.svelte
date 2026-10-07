@@ -1302,30 +1302,7 @@
 			</button>
 		</div>
 	{/if}
-	{#if editable && uploadUrl && bubbleMenu && !hideUploadButtons}
-		<div class="flex items-center justify-end gap-0.5 px-1 py-0.5">
-			<button
-				type="button"
-				onclick={() => chooseFiles(true)}
-				class={btnClass(false)}
-				title={m['sharedComponents.rich_editor.upload_image']()}
-				aria-label={m['sharedComponents.rich_editor.upload_image']()}
-			>
-				<ImagePlus size={14} />
-			</button>
-			<button
-				type="button"
-				onclick={() => chooseFiles()}
-				class={btnClass(false)}
-				title={m['sharedComponents.rich_editor.attach_files']()}
-				aria-label={m['sharedComponents.rich_editor.attach_files']()}
-			>
-				<Paperclip size={14} />
-			</button>
-		</div>
-	{/if}
-
-	{#if editable && onreworkselection && showAIButton}
+	{#if editable && !minimal && onreworkselection && showAIButton}
 		<div class="flex justify-end px-1 py-1">
 			<button
 				type="button"
@@ -1358,6 +1335,47 @@
 					<Sparkles size={14} class="ai-rewrite-spinner" />
 					<span>{m['sharedComponents.rich_editor.reworking_selection']()}</span>
 				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Minimal composers: one compact row of tools under the text instead of
+	     floating button rows above it. -->
+	{#if editable && minimal && ((uploadUrl && bubbleMenu && !hideUploadButtons) || (onreworkselection && showAIButton))}
+		<div class="flex items-center justify-end gap-0.5 pt-1">
+			{#if onreworkselection && showAIButton}
+				<button
+					type="button"
+					onpointerdown={(event) => event.preventDefault()}
+					onclick={reworkWholeDocument}
+					disabled={reworkingSelection || pendingUploads > 0}
+					class="flex h-6 w-6 items-center justify-center rounded text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)] disabled:opacity-50"
+					title={aiButtonLabel ?? m['issue.ai.improve_description']()}
+					aria-label={aiButtonLabel ?? m['issue.ai.improve_description']()}
+					aria-busy={reworkingSelection}
+				>
+					<Sparkles size={13} class={reworkingSelection ? 'ai-rewrite-spinner' : ''} />
+				</button>
+			{/if}
+			{#if uploadUrl && bubbleMenu && !hideUploadButtons}
+				<button
+					type="button"
+					onclick={() => chooseFiles(true)}
+					class="flex h-6 w-6 items-center justify-center rounded text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+					title={m['sharedComponents.rich_editor.upload_image']()}
+					aria-label={m['sharedComponents.rich_editor.upload_image']()}
+				>
+					<ImagePlus size={13} />
+				</button>
+				<button
+					type="button"
+					onclick={() => chooseFiles()}
+					class="flex h-6 w-6 items-center justify-center rounded text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-secondary)]"
+					title={m['sharedComponents.rich_editor.attach_files']()}
+					aria-label={m['sharedComponents.rich_editor.attach_files']()}
+				>
+					<Paperclip size={13} />
+				</button>
 			{/if}
 		</div>
 	{/if}
