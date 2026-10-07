@@ -143,6 +143,7 @@
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
+			e.preventDefault();
 			close();
 		} else if (e.key === 'ArrowDown') {
 			e.preventDefault();

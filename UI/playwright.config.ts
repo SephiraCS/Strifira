@@ -12,6 +12,7 @@ import { defineConfig } from '@playwright/test';
 const FAST_SPECS = [
 	'login.test.ts',
 	'issues.test.ts',
+	'issue-escape.test.ts',
 	'issue-description-recovery.test.ts',
 	'create-issue-image-breaks.test.ts',
 	'create-issue-failure-keeps-draft.test.ts',

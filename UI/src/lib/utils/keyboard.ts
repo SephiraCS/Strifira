@@ -14,6 +14,7 @@ interface Shortcut {
  */
 export function createKeyboardHandler(shortcuts: Shortcut[]): KeyHandler {
 	return (e: KeyboardEvent) => {
+		if (e.defaultPrevented) return;
 		const target = e.target as HTMLElement;
 		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
 			return;
@@ -88,6 +89,7 @@ export function createShortcutEngine(defs: ShortcutDef[] | (() => ShortcutDef[])
 	}
 
 	function handler(e: KeyboardEvent) {
+		if (e.defaultPrevented) return;
 		const target = e.target as HTMLElement;
 		if (
 			target.tagName === 'INPUT' ||

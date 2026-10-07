@@ -1,4 +1,8 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect as baseExpect, type Page } from '@playwright/test';
+
+const expect = baseExpect.configure({ timeout: 10_000 });
+test.use({ actionTimeout: 15_000 });
+test.setTimeout(60_000);
 
 // Escape must leave a full-page issue and return to the view it was opened
 // from — the Kanban board or the list, whichever the user selected — and it
@@ -287,4 +291,295 @@ test('Escape still leaves the issue when a popover lingers open but invisible', 
 
 	await expect(page).toHaveURL(new RegExp(teamUrl));
 	await expect(page.locator('div[aria-label="Backlog"]')).toBeVisible();
+});
+
+test('Escape cancels title editing before leaving the issue', async ({ page }) => {
+	await mockWorkspace(page);
+	await openTeamBoard(page);
+	await page.getByText(ISSUE_TITLE).click();
+	await expect(page).toHaveURL(new RegExp(issueUrl));
+
+	await page.getByRole('button', { name: ISSUE_TITLE, exact: true }).click();
+	const title = page.getByRole('textbox').filter({ visible: true }).first();
+	await title.fill('Unsaved title');
+	await title.press('Escape');
+
+	await expect(page.getByRole('button', { name: ISSUE_TITLE, exact: true })).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(issueUrl));
+	await page.locator('body').click({ position: { x: 500, y: 10 } });
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(new RegExp(teamUrl));
+});
+
+for (const dialog of ['command palette', 'parent picker', 'relation picker']) {
+	test(`Escape closes the ${dialog} from a button without leaving the issue`, async ({ page }) => {
+		await mockWorkspace(page);
+		await openTeamBoard(page);
+		await page.getByText(ISSUE_TITLE).click();
+		await expect(page).toHaveURL(new RegExp(issueUrl));
+
+		if (dialog === 'command palette') {
+			await page.keyboard.press('Control+k');
+		} else {
+			await page.getByRole('button', { name: 'Issue actions' }).click();
+			await page
+				.getByRole('button', { name: dialog === 'parent picker' ? 'Add parent' : 'Add relation', exact: true })
+				.click();
+		}
+		const overlay = page.locator('div.fixed.inset-0.z-50').filter({ has: page.locator('input') });
+		await expect(overlay).toBeVisible();
+		// These custom dialogs also accept Escape when focus leaves the search input.
+		await overlay.locator('button').first().focus();
+		await page.keyboard.press('Escape');
+
+		await expect(overlay).toBeHidden();
+		await expect(page).toHaveURL(new RegExp(issueUrl));
+		await page.keyboard.press('Escape');
+		await expect(page).toHaveURL(new RegExp(teamUrl));
+		await expect(page.locator('div[aria-label="Backlog"]')).toBeVisible();
+	});
+}
+
+const INBOX_NOTIFICATION = {
+	id: 'aaaaaaaa-0000-0000-0000-0000000000ea',
+	issue_id: ISSUE_ID,
+	issue_identifier: ISSUE_IDENTIFIER,
+	type: 'assigned',
+	title: 'You were assigned an Escape hatch issue',
+	read_at: '2026-01-01T00:00:00Z',
+	snoozed_until: null,
+	archived_at: null,
+	created_at: '2026-01-01T00:00:00Z'
+};
+
+async function mockInboxWorkspace(page: Page) {
+	await mockWorkspace(page);
+	await page.route(/\/api\/notifications(?:\?.*)?$/, (route) =>
+		route.fulfill({
+			json: {
+				notifications: new URL(route.request().url()).searchParams.has('tab') ? [] : [INBOX_NOTIFICATION],
+				unread_count: 0
+			}
+		})
+	);
+}
+
+for (const entry of ['direct', 'navigated']) {
+	test(`Escape closes the issue panel in a ${entry} Inbox without leaving the list`, async ({ page }) => {
+		await mockInboxWorkspace(page);
+		if (entry === 'navigated') {
+			await openTeamBoard(page);
+			await page.locator('a[href="/test/inbox"]').first().click();
+		} else {
+			await page.goto('/test/inbox');
+		}
+		const issueTitle = page.getByRole('button', { name: ISSUE_TITLE, exact: true });
+		await expect(issueTitle).toBeVisible();
+		await page.keyboard.press('Escape');
+
+		await expect(issueTitle).toBeHidden();
+		await expect(page).toHaveURL(/\/test\/inbox$/);
+		await expect(page.getByText('Select a notification to view details', { exact: true })).toBeVisible();
+		const notification = page.getByRole('button', { name: new RegExp(INBOX_NOTIFICATION.title) });
+		await expect(notification).toBeVisible();
+		// Clearing selection must allow the same notification to be opened again.
+		await notification.click();
+		await expect(issueTitle).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(issueTitle).toBeHidden();
+		if (entry === 'navigated') {
+			await page.goBack();
+			await expect(page).toHaveURL(new RegExp(teamUrl));
+			await expect(page.locator('div[aria-label="Backlog"]')).toBeVisible();
+		}
+	});
+}
+
+test('Escape closes the Inbox snooze calendar from a control and preserves the issue panel', async ({ page }) => {
+	await mockInboxWorkspace(page);
+	await page.goto('/test/inbox');
+	const issueTitle = page.getByRole('button', { name: ISSUE_TITLE, exact: true });
+	await expect(issueTitle).toBeVisible();
+	const notification = page.getByRole('button', { name: new RegExp(INBOX_NOTIFICATION.title) });
+	await notification.click({ button: 'right' });
+	await page.getByRole('menuitem', { name: 'Snooze', exact: true }).hover();
+	await page.getByRole('menuitem', { name: 'Pick date...', exact: true }).click();
+
+	const dialog = page.getByRole('dialog').filter({ hasText: 'Snooze notification' });
+	await expect(dialog).toBeVisible();
+	// Opening the calendar must give it Escape immediately, without manual focus.
+	await page.keyboard.press('Escape');
+	await expect(dialog).toBeHidden();
+	await expect(issueTitle).toBeVisible();
+	await notification.click({ button: 'right' });
+	await page.getByRole('menuitem', { name: 'Snooze', exact: true }).hover();
+	await page.getByRole('menuitem', { name: 'Pick date...', exact: true }).click();
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press('Shift+?');
+	const help = page.getByRole('dialog').filter({ hasText: 'Keyboard shortcuts' });
+	await expect(help).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(help).toBeHidden();
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole('button', { name: 'Close', exact: true }).focus();
+	await page.keyboard.press('Escape');
+
+	await expect(dialog).toBeHidden();
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+	await expect(issueTitle).toBeVisible();
+	await expect(notification).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(issueTitle).toBeHidden();
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+});
+
+test('a pending Inbox issue response does not reopen the panel after changing tabs', async ({ page }) => {
+	await mockInboxWorkspace(page);
+	let releaseIssue!: () => void;
+	const pendingIssue = new Promise<void>((resolve) => {
+		releaseIssue = resolve;
+	});
+	await page.route(`**/api/workspaces/test/issues/${ISSUE_IDENTIFIER}`, async (route) => {
+		await pendingIssue;
+		await route.fulfill({ json: ISSUE });
+	});
+	const issueRequest = page.waitForRequest(`**/api/workspaces/test/issues/${ISSUE_IDENTIFIER}`);
+	await page.goto('/test/inbox');
+	await issueRequest;
+	await page.getByRole('tab', { name: 'Snoozed', exact: true }).click();
+	await expect(page.getByText('Select a notification to view details', { exact: true })).toBeVisible();
+
+	const issueResponse = page.waitForResponse(`**/api/workspaces/test/issues/${ISSUE_IDENTIFIER}`);
+	releaseIssue();
+	await (await issueResponse).finished();
+	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+	await expect(page.getByRole('button', { name: ISSUE_TITLE, exact: true })).toBeHidden();
+	await expect(page.getByText('Select a notification to view details', { exact: true })).toBeVisible();
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+});
+
+const NEXT_ISSUE = {
+	...ISSUE,
+	id: 'aaaaaaaa-0000-0000-0000-0000000000eb',
+	identifier: 'ESC-43',
+	title: 'Next Escape issue',
+	sort_order: 1
+};
+
+test('notification refresh does not reopen an Inbox panel dismissed with Escape', async ({ page }) => {
+	await mockInboxWorkspace(page);
+	await page.goto('/test/inbox');
+	const title = page.getByRole('button', { name: ISSUE_TITLE, exact: true });
+	await expect(title).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(title).toBeHidden();
+	const refreshed = page.waitForResponse(/\/api\/notifications(?:\?.*)?$/);
+	await page.evaluate(() => window.dispatchEvent(new Event('ws:notification')));
+	await (await refreshed).finished();
+	await expect(page.getByRole('button', { name: new RegExp(INBOX_NOTIFICATION.title) })).toBeVisible();
+	await expect(title).toBeHidden();
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+});
+
+test('a pending title save does not reopen an Inbox panel dismissed with Escape', async ({ page }) => {
+	await mockInboxWorkspace(page);
+	let releaseSave!: () => void;
+	const pendingSave = new Promise<void>((resolve) => {
+		releaseSave = resolve;
+	});
+	await page.route(`**/api/workspaces/test/issues/${ISSUE_IDENTIFIER}`, async (route) => {
+		if (route.request().method() !== 'PATCH') return route.fallback();
+		await pendingSave;
+		await route.fulfill({ json: { ...ISSUE, title: 'Saved title' } });
+	});
+	await page.goto('/test/inbox');
+	await page.getByRole('button', { name: ISSUE_TITLE, exact: true }).click();
+	const input = page.getByRole('textbox').filter({ visible: true }).first();
+	await input.fill('Saved title');
+	const saveRequest = page.waitForRequest((request) => request.method() === 'PATCH');
+	await input.press('Enter');
+	await saveRequest;
+	await page.keyboard.press('Escape');
+	await expect(page.getByText('Select a notification to view details', { exact: true })).toBeVisible();
+	const saveResponse = page.waitForResponse((response) => response.request().method() === 'PATCH');
+	releaseSave();
+	await (await saveResponse).finished();
+	await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+	await expect(page.getByRole('button', { name: 'Saved title', exact: true })).toBeHidden();
+	await expect(page.getByText('Select a notification to view details', { exact: true })).toBeVisible();
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+});
+
+async function mockAdjacentIssues(page: Page) {
+	await mockWorkspace(page);
+	await page.route(/\/api\/workspaces\/test\/issues(?:\?.*)?$/, (route) =>
+		route.fulfill({
+			json: { data: [ISSUE, NEXT_ISSUE], total_count: 2, page: 1, has_more: false }
+		})
+	);
+	await page.route('**/api/workspaces/test/issues/ESC-43', (route) => route.fulfill({ json: NEXT_ISSUE }));
+}
+
+for (const entry of ['direct', 'board']) {
+	test(`Escape after switching issues from a ${entry} entry returns safely to the team`, async ({ page }) => {
+		await mockAdjacentIssues(page);
+		if (entry === 'board') {
+			await openTeamBoard(page);
+			await page.getByText(ISSUE_TITLE, { exact: true }).click();
+		} else {
+			await page.goto(issueUrl);
+		}
+		await expect(page.getByRole('button', { name: ISSUE_TITLE, exact: true })).toBeVisible();
+		await page.getByRole('button', { name: 'Next issue (J)', exact: true }).click();
+		await expect(page.getByRole('button', { name: NEXT_ISSUE.title, exact: true })).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(page).toHaveURL(new RegExp(teamUrl));
+		await expect(page.getByText(ISSUE_TITLE, { exact: true })).toBeVisible();
+		if (entry === 'board') {
+			await expect(page.locator('div[aria-label="Backlog"]')).toBeVisible();
+			await page.goForward();
+			await expect(page).toHaveURL(/\/test\/issue\/ESC-43$/);
+		}
+	});
+}
+
+test('Escape on the initial issue after browser Back uses the team fallback', async ({ page }) => {
+	await mockWorkspace(page);
+	await page.goto(issueUrl);
+	await expect(page.getByRole('button', { name: ISSUE_TITLE, exact: true })).toBeVisible();
+	await page.locator('a[href="/test/inbox"]').first().click();
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+	await page.goBack();
+	await expect(page.getByRole('button', { name: ISSUE_TITLE, exact: true })).toBeVisible();
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(new RegExp(teamUrl));
+});
+
+test('Escape closes the collapsed sidebar drawer from an inner control', async ({ page }) => {
+	await page.addInitScript(() => localStorage.setItem('sidebar_collapsed_panel', 'true'));
+	await mockWorkspace(page);
+	await page.goto(issueUrl);
+	await expect(page.getByRole('button', { name: ISSUE_TITLE, exact: true })).toBeVisible();
+	await page.locator('div.fixed.left-0.top-0.z-20').hover({ force: true });
+	const drawer = page.getByRole('button', { name: 'Close sidebar', exact: true });
+	await expect(drawer).toHaveCSS('pointer-events', 'auto');
+	await page.keyboard.press('Control+k');
+	const palette = page.locator('div.fixed.inset-0.z-50').filter({ has: page.locator('input') });
+	await expect(palette).toBeVisible();
+	await palette.locator('button').first().focus();
+	await page.keyboard.press('Escape');
+	await expect(palette).toBeHidden();
+	await expect(drawer).toHaveCSS('pointer-events', 'auto');
+	// Hover leaves keyboard focus on the issue, but Escape still belongs to the drawer.
+	await page.keyboard.press('Escape');
+	await expect(drawer).toHaveCSS('pointer-events', 'none');
+	await expect(page).toHaveURL(new RegExp(issueUrl));
+	await page.locator('div.fixed.left-0.top-0.z-20').hover({ force: true });
+	await expect(drawer).toHaveCSS('pointer-events', 'auto');
+	await drawer.locator('a[href="/test/inbox"]').focus();
+	await page.keyboard.press('Escape');
+	await expect(drawer).toHaveCSS('pointer-events', 'none');
+	await expect(page).toHaveURL(new RegExp(issueUrl));
+	await page.keyboard.press('Escape');
+	await expect(page).toHaveURL(new RegExp(teamUrl));
 });

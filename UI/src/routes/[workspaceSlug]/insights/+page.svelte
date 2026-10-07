@@ -195,7 +195,7 @@
 		else url.searchParams.set('tab', activeTab);
 		if (selectedTeamId === 'workspace') url.searchParams.delete('team');
 		else url.searchParams.set('team', selectedTeamId);
-		void goto(url.pathname + url.search, { replaceState: true, noScroll: true, keepFocus: true });
+		void goto(url.pathname + url.search, { replaceState: true, noScroll: true, keepFocus: true, state: page.state });
 	});
 </script>
 

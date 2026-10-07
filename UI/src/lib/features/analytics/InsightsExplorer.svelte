@@ -166,7 +166,7 @@
 		if (dirty) {
 			const url = new URL(page.url.href);
 			url.search = sp.toString();
-			void goto(url.pathname + url.search, { replaceState: true, noScroll: true, keepFocus: true });
+			void goto(url.pathname + url.search, { replaceState: true, noScroll: true, keepFocus: true, state: page.state });
 		}
 	});
 
