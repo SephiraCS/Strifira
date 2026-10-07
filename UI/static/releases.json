@@ -1,9 +1,20 @@
 [
   {
+    "tag_name": "v0.3.10",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.10",
+    "body": "Deployed to alpha as 7f04189e4b0b70813dac4cf2028a1e315480e48b.\n\n- ci: release failures file a Forgejo issue with their redacted logs\n- fix(issues): show who created an issue in the activity feed\n- fix(ui): pin the header on projects, views and archived-issues pages",
+    "published_at": "2026-10-07T13:58:46Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.10",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.8",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.8",
     "body": "Deployed to alpha as 697b27d58cb6af5d368beda736f42b07bb1443b9.\n\n- fix(scripts): the screen-share live check runs on Docker-only machines",
-    "published_at": "2026-10-05T21:03:18Z",
+    "published_at": "2026-10-05T21:03:19Z",
     "prerelease": false,
     "force_upgrade": false,
     "minimum_supported_version": null,
