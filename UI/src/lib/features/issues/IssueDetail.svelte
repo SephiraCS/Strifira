@@ -121,6 +121,15 @@
 		return value;
 	}
 
+	function historyActorName(userId: string): string {
+		const member = members.find((candidate) => candidate.user_id === userId);
+		if (member) return member.name || member.email;
+		if (userId === issue.creator_id && issue.creator) {
+			return issue.creator.display_name || issue.creator.name || issue.creator.email;
+		}
+		return 'Former user';
+	}
+
 	function historyFieldLabel(field: string): string {
 		switch (field) {
 			case 'assignee_id': return 'assignee';
@@ -277,7 +286,10 @@
 									<div class="h-1.5 w-1.5 rounded-full bg-[var(--color-text-tertiary)] ring-2 ring-[var(--color-bg)]"></div>
 								</div>
 								<div class="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-text-tertiary)] min-w-0">
-									{#if entry.field === 'title' || entry.field === 'description'}
+									<span class="font-medium text-[var(--color-text-secondary)]">{historyActorName(entry.user_id)}</span>
+									{#if entry.field === 'created'}
+										<span>created the issue</span>
+									{:else if entry.field === 'title' || entry.field === 'description'}
 										<span>updated <strong class="text-[var(--color-text-secondary)]">{historyFieldLabel(entry.field)}</strong></span>
 									{:else}
 										<span>changed <strong class="text-[var(--color-text-secondary)]">{historyFieldLabel(entry.field)}</strong></span>

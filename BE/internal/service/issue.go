@@ -182,6 +182,9 @@ func (s *IssueService) Create(ctx context.Context, workspaceID, creatorID uuid.U
 		return nil, err
 	}
 
+	// Record the creation so the activity feed shows who created the issue
+	s.recordHistory(ctx, issue.ID, creatorID, "created", nil, nil)
+
 	// Set labels
 	if len(req.LabelIDs) > 0 {
 		labelUUIDs := make([]uuid.UUID, len(req.LabelIDs))

@@ -450,6 +450,7 @@
 	"issue.enable_notifications": "Notify me about changes",
 	"issue.history.assignee": "assignee",
 	"issue.history.assignees": "assignees",
+	"issue.history.created": "created the issue",
 	"issue.history.cycle": "cycle",
 	"issue.history.due_date": "due date",
 	"issue.history.former_user": "Former user",

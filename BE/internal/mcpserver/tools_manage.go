@@ -564,6 +564,7 @@ func registerIssueExtraTools(s *mcp.Server, deps Deps) {
 		for _, h := range history {
 			entry := map[string]any{
 				"field":      h.Field,
+				"user_id":    h.UserID.String(),
 				"created_at": h.CreatedAt,
 			}
 			if h.OldValue != nil {

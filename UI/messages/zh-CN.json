@@ -450,6 +450,7 @@
 	"issue.enable_notifications": "有变更时通知我",
 	"issue.history.assignee": "指派人",
 	"issue.history.assignees": "指派人",
+	"issue.history.created": "创建了议题",
 	"issue.history.cycle": "周期",
 	"issue.history.due_date": "截止日期",
 	"issue.history.former_user": "前成员",

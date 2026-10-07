@@ -93,6 +93,7 @@
 	import { listTeams } from '$lib/api/teams';
 	import { getIssueCopyPrompt } from '$lib/api/ai-settings';
 	import HistoryAssignees from './HistoryAssignees.svelte';
+	import UserHoverCard from '$lib/components/shared/UserHoverCard.svelte';
 	import IssueMachineActions from '$lib/features/dev-machines/IssueMachineActions.svelte';
 	import IssueMachinePickerDialog, {
 		type IssueMachineIntent
@@ -669,6 +670,15 @@
 		}
 	}
 
+	function historyActor(userId: string): { member?: WorkspaceMember; name: string } {
+		const member = members.find((candidate) => candidate.user_id === userId);
+		if (member) return { member, name: member.name || member.email };
+		if (userId === issue.creator_id && issue.creator) {
+			return { name: issue.creator.display_name || issue.creator.name || issue.creator.email };
+		}
+		return { name: m['issue.history.former_user']() };
+	}
+
 	function historyFieldLabel(field: string): string {
 		switch (field) {
 			case 'assignee_id':
@@ -692,6 +702,8 @@
 
 	function historyIcon(field: string): typeof CircleDot {
 		switch (field) {
+			case 'created':
+				return Plus;
 			case 'status':
 			case 'status_id':
 				return CircleDot;
@@ -724,6 +736,8 @@
 
 	function historyColor(field: string): string {
 		switch (field) {
+			case 'created':
+				return 'text-green-400';
 			case 'status':
 			case 'status_id':
 				return 'text-blue-400';
@@ -1554,6 +1568,7 @@
 								const prev = acc[acc.length - 1];
 								if (
 									prev &&
+									prev.items[0].user_id === h.user_id &&
 									Math.abs(new Date(h.created_at).getTime() - new Date(prev.time).getTime()) < GROUP_THRESHOLD_MS
 								) {
 									prev.items.push(h);
@@ -1585,8 +1600,10 @@
 								{#each visibleHistory as entry}
 									{@const items = entry.items}
 									{@const firstField = items[0].field}
-									{@const IconComponent = items.length > 1 ? Layers : historyIcon(firstField)}
-									{@const iconColor = items.length > 1 ? 'text-[var(--color-text-tertiary)]' : historyColor(firstField)}
+									{@const actor = historyActor(items[0].user_id)}
+									{@const createdItem = items.some((c) => c.field === 'created')}
+									{@const IconComponent = items.length > 1 && !createdItem ? Layers : historyIcon(firstField)}
+									{@const iconColor = items.length > 1 && !createdItem ? 'text-[var(--color-text-tertiary)]' : historyColor(firstField)}
 									{@const textFields = [
 										...new Set(
 											items.filter((c) => c.field === 'title' || c.field === 'description').map((c) => c.field)
@@ -1596,6 +1613,7 @@
 										(c, i, arr) =>
 											c.field !== 'title' &&
 											c.field !== 'description' &&
+											c.field !== 'created' &&
 											arr.findIndex((x) => x.field === c.field) === i
 									)}
 									<div class="relative flex items-center gap-3 pb-2.5">
@@ -1607,6 +1625,18 @@
 										<div
 											class="flex items-center gap-1.5 text-xs text-[var(--color-text-tertiary)] min-w-0 overflow-hidden"
 										>
+											{#if actor.member}
+												<UserHoverCard
+													member={actor.member}
+													class="shrink-0 font-medium text-[var(--color-text-secondary)] outline-none"
+												/>
+											{:else}
+												<span class="shrink-0 font-medium text-[var(--color-text-secondary)]">{actor.name}</span>
+											{/if}
+											{#if createdItem}
+												<span class="shrink-0">{m['issue.history.created']()}</span>
+												{#if textFields.length > 0 || valueItems.length > 0}<span class="text-[var(--app-border)]">|</span>{/if}
+											{/if}
 											{#if textFields.length > 0}
 												<span
 													>{m['issue.updated']()}
