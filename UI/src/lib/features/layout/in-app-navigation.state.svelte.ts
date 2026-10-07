@@ -1,5 +1,5 @@
-// Whether a client-side navigation has completed in this SPA session. The
-// initial hydration ('enter') does not count: an issue URL loaded directly
-// (fresh tab, deep link, reload) has no app page to go back to, so Escape
-// must fall back to a normal navigation instead of history.back().
+// Whether the current history entry has a known previous app entry. The
+// workspace layout tracks this in page.state, including back/forward and
+// shallow navigation. Fresh loads and replacements of the initial entry
+// must fall back to normal navigation instead of history.back().
 export const inAppNavigation = $state({ happened: false });

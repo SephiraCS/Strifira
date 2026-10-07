@@ -39,7 +39,7 @@
 		if (adj) {
 			// Replace history so browser back returns to the view the
 			// issue was opened from instead of the previous issue.
-			goto(`/${slug}/issue/${adj}`, { replaceState: true });
+			goto(`/${slug}/issue/${adj}`, { replaceState: true, state: page.state });
 		}
 	}
 

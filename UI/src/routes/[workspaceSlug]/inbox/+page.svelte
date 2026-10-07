@@ -21,6 +21,7 @@
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import FullPageIssueView from '$lib/features/issues/FullPageIssueView.svelte';
 	import DueDatePickerPanel from '$lib/components/shared/DueDatePickerPanel.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tabs from '$lib/components/ui/tabs';
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import { Badge } from '$lib/components/ui/badge';
@@ -107,6 +108,7 @@
 	let loading = $state(true);
 	let activeTab = $state<TabValue>('inbox');
 	let selectedId = $state<string | null>(null);
+	let selectionDismissed = false;
 	let selectedIssue = $state<Issue | null>(null);
 	let issueLoading = $state(false);
 	let snoozeDateNotification = $state<Notification | null>(null);
@@ -129,7 +131,7 @@
 			notifications = res.notifications ?? [];
 			unreadCount = res.unread_count;
 			// Auto-select first if nothing selected
-			if (!isMobile.current && !selectedId && notifications.length > 0) {
+			if (!isMobile.current && !selectedId && !selectionDismissed && notifications.length > 0) {
 				selectNotification(notifications[0]);
 			}
 		} finally {
@@ -138,6 +140,7 @@
 	}
 
 	async function selectNotification(n: Notification) {
+		selectionDismissed = false;
 		selectedId = n.id;
 		if (!n.read_at && activeTab === 'inbox') {
 			handleMarkRead(n.id);
@@ -150,21 +153,30 @@
 		if (n.issue_identifier) {
 			issueLoading = true;
 			try {
-				selectedIssue = await getIssue(slug, n.issue_identifier);
+				const issue = await getIssue(slug, n.issue_identifier);
+				if (selectedId === n.id) selectedIssue = issue;
 			} catch {
-				selectedIssue = null;
+				if (selectedId === n.id) selectedIssue = null;
 			} finally {
-				issueLoading = false;
+				if (selectedId === n.id) issueLoading = false;
 			}
 		} else {
 			selectedIssue = null;
+			issueLoading = false;
 		}
+	}
+
+	function closeSelectedIssue() {
+		selectionDismissed = true;
+		selectedId = null;
+		selectedIssue = null;
+		issueLoading = false;
 	}
 
 	async function handleTabChange(tab: string) {
 		activeTab = tab as TabValue;
-		selectedId = null;
-		selectedIssue = null;
+		closeSelectedIssue();
+		selectionDismissed = false;
 		await loadNotifications();
 	}
 
@@ -208,7 +220,7 @@
 		if (selectedId === id) {
 			selectedId = notifications[0]?.id ?? null;
 			if (selectedId) selectNotification(notifications[0]);
-			else selectedIssue = null;
+			else closeSelectedIssue();
 		}
 	}
 
@@ -294,6 +306,7 @@
 
 	// Keyboard navigation
 	function handleKeydown(e: KeyboardEvent) {
+		if (e.defaultPrevented || snoozeDateNotification) return;
 		const target = e.target as HTMLElement;
 		if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
 
@@ -494,8 +507,9 @@
 					<FullPageIssueView
 						issue={selectedIssue}
 						{slug}
+						onclose={closeSelectedIssue}
 						onupdated={(updated) => {
-							selectedIssue = updated;
+							if (selectedIssue?.id === updated.id) selectedIssue = updated;
 						}}
 					/>
 				{/key}
@@ -514,27 +528,22 @@
 </div>
 
 {#if snoozeDateNotification}
-	<div class="fixed inset-0 z-50 flex items-start justify-center px-3 pt-[12vh]" role="dialog" aria-modal="true">
-		<button
-			class="fixed inset-0 cursor-default bg-black/50"
-			onclick={closeSnoozeDatePicker}
-			tabindex={-1}
-			aria-label={m['inbox.snooze_dialog.close_aria']()}
-		></button>
-
-		<div class="relative z-10 w-full max-w-[31rem] overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--color-bg-secondary)] shadow-2xl">
+	<Dialog.Root open={true} onOpenChange={(open) => { if (!open) closeSnoozeDatePicker(); }}>
+		<Dialog.Content
+			showCloseButton={false}
+			class="top-[12vh] max-w-[31rem] gap-0 border border-[var(--app-border)] bg-[var(--color-bg-secondary)] p-0 shadow-2xl sm:max-w-[31rem]"
+		>
 			<div class="flex items-center justify-between gap-3 border-b border-[var(--app-border)] px-4 py-3">
 				<div>
-					<h2 class="text-sm font-medium text-[var(--color-text-primary)]">{m['inbox.snooze_dialog.title']()}</h2>
-					<p class="line-clamp-1 text-xs text-[var(--color-text-tertiary)]">{snoozeDateNotification.title}</p>
+					<Dialog.Title class="text-sm font-medium text-[var(--color-text-primary)]">{m['inbox.snooze_dialog.title']()}</Dialog.Title>
+					<Dialog.Description class="line-clamp-1 text-xs text-[var(--color-text-tertiary)]">{snoozeDateNotification.title}</Dialog.Description>
 				</div>
-				<button
-					onclick={closeSnoozeDatePicker}
+				<Dialog.Close
 					class="inline-flex h-8 w-8 items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
-					title={m['inbox.snooze_dialog.close']()}
+					aria-label={m['inbox.snooze_dialog.close']()}
 				>
 					X
-				</button>
+				</Dialog.Close>
 			</div>
 
 			<DueDatePickerPanel
@@ -543,6 +552,6 @@
 				clearLabel={m['inbox.snooze_dialog.cancel']()}
 				close={closeSnoozeDatePicker}
 			/>
-		</div>
-	</div>
+		</Dialog.Content>
+	</Dialog.Root>
 {/if}

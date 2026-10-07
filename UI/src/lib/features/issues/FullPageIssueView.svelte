@@ -119,12 +119,14 @@
 		issue,
 		slug,
 		onnavigate,
-		onupdated
+		onupdated,
+		onclose
 	}: {
 		issue: Issue;
 		slug: string;
 		onnavigate?: (direction: 'prev' | 'next') => void;
 		onupdated?: (issue: Issue) => void;
+		onclose?: () => void;
 	} = $props();
 
 	let comments = $state<Comment[]>([]);
@@ -374,6 +376,10 @@
 
 	function leaveIssueOnEscape() {
 		if (overlayOwnsEscape()) return;
+		if (onclose) {
+			onclose();
+			return;
+		}
 		if (inAppNavigation.happened) {
 			// window.history explicitly: a local `history` holds the issue's
 			// activity log.

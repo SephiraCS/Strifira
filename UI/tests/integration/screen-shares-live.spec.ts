@@ -250,8 +250,14 @@ async function expectDecodedVideo(page: Page, shareId: string): Promise<void> {
 }
 
 async function expectVideoContinues(page: Page, shareId: string): Promise<void> {
-	const before = await frameCount(page, shareId);
-	await expect.poll(() => frameCount(page, shareId)).toBeGreaterThan(before + 5);
+	let before = await frameCount(page, shareId);
+	await expect
+		.poll(async () => {
+			const current = await frameCount(page, shareId);
+			if (current < before) before = current;
+			return current - before;
+		})
+		.toBeGreaterThan(5);
 }
 
 async function closeWorkspaceSocket(page: Page): Promise<void> {

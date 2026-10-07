@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { goto, afterNavigate } from '$app/navigation';
+	import { goto, beforeNavigate, afterNavigate, replaceState } from '$app/navigation';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import { getWorkspace } from '$lib/api/workspaces';
 	import { listTeams, createTeam, deleteTeam, leaveTeam } from '$lib/api/teams';
@@ -89,11 +89,24 @@
 		presenterSession.setWorkspace(slug);
 	});
 
-	// This layout stays mounted across every in-app navigation, so it is the
-	// reliable place to notice that the session has history to go back to
-	// (the initial 'enter' hydration is not a navigation).
+	let previousAppHistoryDepth = 0;
+	beforeNavigate(() => {
+		previousAppHistoryDepth = page.state.kuAppHistoryDepth ?? 0;
+	});
+
+	// A replacement carries its depth; a push starts with fresh page.state.
+	// Reset on hydration even when reloading an already marked history entry.
 	afterNavigate((nav) => {
-		if (nav.type !== 'enter') inAppNavigation.happened = true;
+		const depth =
+			nav.type === 'enter'
+				? 0
+				: (page.state.kuAppHistoryDepth ?? (nav.type === 'popstate' ? 0 : previousAppHistoryDepth + 1));
+		replaceState('', { ...page.state, kuAppHistoryDepth: depth });
+	});
+
+	// Shallow back/forward updates page.state without running afterNavigate.
+	$effect(() => {
+		inAppNavigation.happened = (page.state.kuAppHistoryDepth ?? 0) > 0;
 	});
 
 	async function loadWorkspaceShell(workspaceSlug: string) {

@@ -442,6 +442,23 @@
 
 	// Drawer state: sidebar shown as overlay when collapsed and mouse enters left edge
 	let drawerOpen = $state(false);
+
+	$effect(() => {
+		if (!drawerOpen) return;
+		function closeDrawerOnEscape(e: KeyboardEvent) {
+			const target = e.target as HTMLElement;
+			if (e.key !== 'Escape' || e.defaultPrevented || !drawerOpen ||
+				target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable ||
+				target.closest('[role="dialog"], [role="alertdialog"], [data-slot$="-content"][data-state="open"], .fixed.inset-0.z-50')) return;
+			e.preventDefault();
+			e.stopPropagation();
+			drawerOpen = false;
+			target.blur();
+		}
+		// Hover opens the drawer without moving focus; claim Escape before the page below it.
+		document.addEventListener('keydown', closeDrawerOnEscape, true);
+		return () => document.removeEventListener('keydown', closeDrawerOnEscape, true);
+	});
 	let drawerTimeout: ReturnType<typeof setTimeout> | undefined;
 	// Skip the inline sidebar's width transition when pinning from drawer
 	let skipTransition = $state(false);
@@ -621,7 +638,11 @@
 			style="background-color: {drawerOpen ? 'rgba(0,0,0,0.15)' : 'transparent'};"
 			onclick={() => (drawerOpen = false)}
 			onkeydown={(e) => {
-				if (e.key === 'Enter' || e.key === 'Escape') drawerOpen = false;
+				if (e.key === 'Enter' || e.key === 'Escape') {
+					e.preventDefault();
+					drawerOpen = false;
+					e.currentTarget.blur();
+				}
 			}}
 		>
 			<div

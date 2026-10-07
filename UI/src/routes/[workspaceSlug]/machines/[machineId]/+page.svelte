@@ -318,7 +318,7 @@
 		const url = new URL(page.url);
 		url.searchParams.delete('agent_run_id');
 		if (url.hash.startsWith('#agent-run-')) url.hash = '';
-		void goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+		void goto(url, { replaceState: true, noScroll: true, keepFocus: true, state: page.state });
 	}
 
 	async function lifecycle(action: 'start' | 'pause' | 'stop') {
