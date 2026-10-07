@@ -1,57 +1,48 @@
 name: Probe
 
-# Throwaway diagnostics: exercises the job token's registry, issue and
-# log-read capabilities and reports the outcomes to the probe-results
-# branch (the job-token git push is the one channel proven to work).
+# Throwaway diagnostics: fetches the logs of the recently failed Release and
+# report jobs through the job token (proven to work) and publishes them to
+# the probe-results branch.
 on: workflow_dispatch
 
 jobs:
   probe:
-    name: Probe job token capabilities
+    name: Fetch failed job logs
     runs-on: terrascale-builder
     timeout-minutes: 10
     permissions:
       actions: read
       contents: write
-      issues: write
-      packages: write
     steps:
       - name: Check out the probe branch
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Run the probes and publish findings
+      - name: Fetch the failed jobs' logs
         env:
           FORGEJO_TOKEN: ${{ forgejo.token }}
-          FORGEJO_ACTOR: ${{ forgejo.actor }}
         run: |
           set -u
           api=https://git.terrascale.tech/api/v1/repos/TerraScale/ku
-          reg=https://git.terrascale.tech/v2
-          {
-            echo "actor=$FORGEJO_ACTOR"
-            # Registry auth as the job token: the /v2/ ping and a push-scope probe.
-            echo "registry ping: $(curl -s -o /tmp/r1 -w '%{http_code}' -u "$FORGEJO_ACTOR:$FORGEJO_TOKEN" "$reg/")"
-            echo "registry ping body: $(head -c 200 /tmp/r1)"
-            echo "blob upload begin: $(curl -s -o /tmp/r2 -w '%{http_code}' -u "$FORGEJO_ACTOR:$FORGEJO_TOKEN" -X POST "$reg/terrascale/ku/blobs/uploads/")"
-            echo "blob upload body: $(head -c 200 /tmp/r2)"
-            # Issue creation as the job token.
-            echo "issue create: $(curl -s -o /tmp/i1 -w '%{http_code}' -H "Authorization: token $FORGEJO_TOKEN" -H 'Content-Type: application/json' -d '{"title":"probe: job token issue write"}' "$api/issues")"
-            echo "issue body: $(head -c 200 /tmp/i1)"
-            # Reading this run's job logs as the job token (report-failure.sh depends on it).
-            echo "run jobs list: $(curl -s -o /tmp/j1 -w '%{http_code}' -H "Authorization: token $FORGEJO_TOKEN" "$api/actions/runs/$GITHUB_RUN_ID/jobs")"
-            echo "run jobs body: $(head -c 200 /tmp/j1)"
-            # Repo read as the job token.
-            echo "repo read: $(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $FORGEJO_TOKEN" "$api")"
-          } > probe-results.txt 2>&1
-          cat probe-results.txt
-          # Publish through the job-token git push channel.
+          auth="Authorization: token $FORGEJO_TOKEN"
+          curl -s -H "$auth" "$api/actions/tasks?limit=300" -o /tmp/tasks.json
+          jq -r '(.entries // .)[] | select((.status // "") == "failure") | select((.name // "") | test("[Rr]elease")) | "\(.run_id) \(.id) \(.name)"' /tmp/tasks.json \
+            | sort -u | head -8 > /tmp/failed.txt
+          cat /tmp/failed.txt
+          : > probe-results.txt
+          while read -r run job name; do
+            echo "=== run $run job $job ($name) ===" >> probe-results.txt
+            curl -s -H "$auth" "$api/actions/jobs/$job/logs" >> probe-results.txt 2>&1 || echo "(log fetch failed)" >> probe-results.txt
+            echo >> probe-results.txt
+          done < /tmp/failed.txt
+          wc -c probe-results.txt
+          tail -c 400 probe-results.txt || true
           git config --local user.name probe
           git config --local user.email probe@terrascale.tech
           git config --local credential.helper \
             '!f() { echo username=forgejo-actions; echo "password=$FORGEJO_TOKEN"; }; f'
           git add probe-results.txt
-          git commit -qm "probe results"
+          git commit -qm "failed job logs"
           git push "https://git.terrascale.tech/TerraScale/ku.git" "HEAD:refs/heads/probe-results"
