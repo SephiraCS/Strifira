@@ -89,7 +89,9 @@ jobs:
 
       - name: Build and push the images
         env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
+          # Forgejo's automatic job token cannot push packages; the
+          # REGISTRY_PUSH_TOKEN secret (write:package) takes over once set.
+          FORGEJO_TOKEN: ${{ secrets.REGISTRY_PUSH_TOKEN || forgejo.token }}
           FORGEJO_ACTOR: ${{ forgejo.actor }}
           VERSION: ${{ steps.version.outputs.version }}
           PUSH: ${{ steps.version.outputs.push }}

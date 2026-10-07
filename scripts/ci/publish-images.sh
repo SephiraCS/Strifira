@@ -29,6 +29,23 @@ if [ "$push" = --push ]; then
 	printf '%s' "$FORGEJO_TOKEN" | podman login --authfile "$authfile" "$REGISTRY" \
 		--username "$FORGEJO_ACTOR" --password-stdin
 	export REGISTRY_AUTH_FILE="$authfile"
+	# Fail before minutes of image builds when the token cannot push: Forgejo's
+	# automatic job token authenticates to the registry but has no package-write
+	# scope, so every podman push ends in "authentication required". The token
+	# must come from secrets.REGISTRY_PUSH_TOKEN (a user or bot token with
+	# write:package) instead.
+	code=$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 30 \
+		--user "$FORGEJO_ACTOR:$FORGEJO_TOKEN" --request POST \
+		"https://$REGISTRY/v2/${IMAGE_PREFIX#*/}/ku/blobs/uploads/" || echo 000)
+	if [ "$code" = 401 ] || [ "$code" = 403 ]; then
+		echo "::error::This token cannot push packages to $REGISTRY (HTTP $code on the blob-upload probe)." >&2
+		echo "::error::Forgejo's automatic job token is registry-pull-only. Create an access token with" >&2
+		echo "::error::write:package scope for a member of the TerraScale org (or the terrascale-bot once" >&2
+		echo "::error::it is granted package write) and save it as the REGISTRY_PUSH_TOKEN repository" >&2
+		echo "::error::secret; the Release job then uses it automatically." >&2
+		exit 1
+	fi
+	echo "Registry push probe answered HTTP $code; continuing."
 fi
 
 # The three images share no stages, so they build concurrently. Wait for
