@@ -50,7 +50,12 @@
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
 	import { viewLayoutState, setSessionViewLayout } from '$lib/features/issues/view-layout.state.svelte';
 	import { loadCollapsedGroups, saveCollapsedGroups } from '$lib/features/issues/collapsed-groups';
-	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
+	import {
+		workspaceLabels,
+		workspaceMembers,
+		workspaceProjects,
+		workspaceTeams
+	} from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const teamId = $derived(page.params.teamId ?? '');
@@ -125,16 +130,20 @@
 					// at the next refresh, when its re-averaged sort_order lands
 					// beyond page 1.
 					issuesState.load(s, getIssueParams(), true, layout === 'board'),
-					Promise.all([workspaceTeams(s), workspaceProjects(s), workspaceLabels(s), workspaceMembers(s), listCycles(s, t)]).then(
-						([te, p, l, m, c]) => {
-							if (currentInitialization !== initializationId || s !== slug || t !== teamId) return;
-							teams = te;
-							projects = p;
-							labels = l;
-							members = m;
-							cycles = c;
-						}
-					)
+					Promise.all([
+						workspaceTeams(s),
+						workspaceProjects(s),
+						workspaceLabels(s),
+						workspaceMembers(s),
+						listCycles(s, t)
+					]).then(([te, p, l, m, c]) => {
+						if (currentInitialization !== initializationId || s !== slug || t !== teamId) return;
+						teams = te;
+						projects = p;
+						labels = l;
+						members = m;
+						cycles = c;
+					})
 				]);
 			})
 			.catch(() => {
@@ -734,6 +743,8 @@
 			showIssueCreatedToast(slug, created);
 		} catch (err: any) {
 			appToast.apiError(err, 'Failed to create issue');
+			// Keep the dialog open so the draft is not lost.
+			return false;
 		}
 	}}
 />

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate } from '$app/navigation';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import { getWorkspace } from '$lib/api/workspaces';
 	import { listTeams, createTeam, deleteTeam, leaveTeam } from '$lib/api/teams';
@@ -35,6 +35,7 @@
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
 	import { createShortcutEngine, type ShortcutDef } from '$lib/utils/keyboard';
+	import { inAppNavigation } from '$lib/features/layout/in-app-navigation.state.svelte';
 	import Menu from '@lucide/svelte/icons/menu';
 	import Search from '@lucide/svelte/icons/search';
 	import SquarePen from '@lucide/svelte/icons/square-pen';
@@ -86,6 +87,13 @@
 	$effect(() => {
 		terminalDock.setWorkspace(slug);
 		presenterSession.setWorkspace(slug);
+	});
+
+	// This layout stays mounted across every in-app navigation, so it is the
+	// reliable place to notice that the session has history to go back to
+	// (the initial 'enter' hydration is not a navigation).
+	afterNavigate((nav) => {
+		if (nav.type !== 'enter') inAppNavigation.happened = true;
 	});
 
 	async function loadWorkspaceShell(workspaceSlug: string) {
@@ -816,6 +824,8 @@
 				showIssueCreatedToast(slug, created);
 			} catch (err: any) {
 				appToast.apiError(err, m['sidebar.failed_create_issue']());
+				// Keep the dialog open so the draft is not lost.
+				return false;
 			}
 		}}
 	/>

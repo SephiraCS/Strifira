@@ -67,6 +67,8 @@
 		onbulkcreate,
 		onsubmit
 	}: {
+		// Handlers may return false (or throw) to report a failed creation:
+		// the dialog then stays open with the draft intact.
 		open: boolean;
 		slug?: string;
 		teams: Team[];
@@ -87,7 +89,7 @@
 		defaultTitle?: string;
 		parentIssue?: Issue | null;
 		onlabelcreated?: (label: Label) => void;
-		onbulkcreate?: (titles: string[]) => void;
+		onbulkcreate?: (titles: string[]) => void | boolean | Promise<void | boolean>;
 		onsubmit: (req: {
 			title: string;
 			description?: string;
@@ -102,7 +104,7 @@
 			parent_id?: string;
 			due_date?: string;
 			cycle_id?: string;
-		}) => void;
+		}) => void | boolean | Promise<void | boolean>;
 	} = $props();
 
 	let title = $state('');
@@ -246,21 +248,34 @@
 
 	const selectedStatus = $derived(teamStatusesState.statusById.get(statusId));
 
-	function handleSubmit() {
-		if (!title.trim() || !teamId || pendingUploads > 0) return;
-		onsubmit({
-			title: title.trim(),
-			description: description.trim() || undefined,
-			status_id: statusId || undefined,
-			priority,
-			team_id: teamId,
-			project_id: projectId || undefined,
-			assignee_ids: assigneeIds.length > 0 ? assigneeIds : undefined,
-			label_ids: labelIds.length > 0 ? labelIds : undefined,
-			parent_id: parentIssue?.id,
-			due_date: dueDate || undefined,
-			cycle_id: cycleId || undefined
-		});
+	let submitting = $state(false);
+
+	async function handleSubmit() {
+		if (!title.trim() || !teamId || pendingUploads > 0 || submitting) return;
+		submitting = true;
+		let result: boolean | void;
+		try {
+			result = await onsubmit({
+				title: title.trim(),
+				description: description.trim() || undefined,
+				status_id: statusId || undefined,
+				priority,
+				team_id: teamId,
+				project_id: projectId || undefined,
+				assignee_ids: assigneeIds.length > 0 ? assigneeIds : undefined,
+				label_ids: labelIds.length > 0 ? labelIds : undefined,
+				parent_id: parentIssue?.id,
+				due_date: dueDate || undefined,
+				cycle_id: cycleId || undefined
+			});
+		} catch {
+			result = false;
+		} finally {
+			submitting = false;
+		}
+		// A failed creation (false or a throw) keeps the dialog open so the
+		// user does not lose the draft they typed.
+		if (result === false) return;
 		if (createMore) {
 			title = selectedTemplate?.title || '';
 			description = selectedTemplate?.description ?? '';
@@ -298,7 +313,7 @@
 		input.click();
 	}
 
-	function handleTitlePaste(e: ClipboardEvent) {
+	async function handleTitlePaste(e: ClipboardEvent) {
 		const files = pastedFiles(e.clipboardData);
 		if (files.length > 0) {
 			e.preventDefault();
@@ -310,8 +325,9 @@
 		const titles = text.split(/\r?\n/).map(titleFromListLine).filter(Boolean);
 		if (titles.length < 2) return;
 		e.preventDefault();
-		onbulkcreate(titles);
-		if (!createMore) open = false;
+		const result = await onbulkcreate(titles);
+		// A failed bulk create keeps the dialog open with the pasted list.
+		if (result !== false && !createMore) open = false;
 	}
 
 	const STATUS_TO_CATEGORY: Record<string, StatusCategory> = {
@@ -705,12 +721,14 @@
 				<Button
 					class="max-sm:w-full"
 					size="sm"
-					disabled={!title.trim() || !teamId || pendingUploads > 0}
+					disabled={!title.trim() || !teamId || pendingUploads > 0 || submitting}
 					onclick={handleSubmit}
 				>
 					{pendingUploads > 0
 						? m['sharedComponents.create_issue.uploading_attachments']()
-						: m['sharedComponents.create_issue.create_issue']()}
+						: submitting
+							? m['sharedComponents.create_issue.creating']()
+							: m['sharedComponents.create_issue.create_issue']()}
 				</Button>
 			</div>
 		</div>

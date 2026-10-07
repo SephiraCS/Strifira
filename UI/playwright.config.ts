@@ -14,6 +14,8 @@ const FAST_SPECS = [
 	'issues.test.ts',
 	'issue-description-recovery.test.ts',
 	'create-issue-image-breaks.test.ts',
+	'create-issue-failure-keeps-draft.test.ts',
+	'upload-auth-refresh.test.ts',
 	'team-board.test.ts',
 	'my-issues-board.test.ts',
 	'forgejo-automation.test.ts',

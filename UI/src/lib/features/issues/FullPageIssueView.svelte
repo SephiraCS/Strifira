@@ -2235,6 +2235,8 @@
 			createDialogParentIssue = null;
 		} catch (err: any) {
 			appToast.apiError(err, m['issue.toast.failed_sub_issues']());
+			// Keep the dialog open so the pasted list is not lost.
+			return false;
 		}
 	}}
 	onsubmit={async (req) => {
@@ -2249,6 +2251,8 @@
 			createDialogParentIssue = null;
 		} catch (err: any) {
 			appToast.apiError(err, m['issue.toast.failed_create_issue']());
+			// Keep the dialog open so the draft is not lost.
+			return false;
 		}
 	}}
 />

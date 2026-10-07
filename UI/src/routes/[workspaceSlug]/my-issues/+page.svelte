@@ -31,7 +31,12 @@
 	import BulkActionBar from '$lib/features/issues/BulkActionBar.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
-	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
+	import {
+		workspaceLabels,
+		workspaceMembers,
+		workspaceProjects,
+		workspaceTeams
+	} from '$lib/features/layout/workspace-resources';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 
@@ -93,14 +98,17 @@
 
 	onMount(() => {
 		void loadIssues();
-		void Promise.all([workspaceTeams(slug), workspaceProjects(slug), workspaceLabels(slug), workspaceMembers(slug)]).then(
-			([t, p, l, m]) => {
-				teams = t;
-				projects = p;
-				labels = l;
-				members = m;
-			}
-		);
+		void Promise.all([
+			workspaceTeams(slug),
+			workspaceProjects(slug),
+			workspaceLabels(slug),
+			workspaceMembers(slug)
+		]).then(([t, p, l, m]) => {
+			teams = t;
+			projects = p;
+			labels = l;
+			members = m;
+		});
 	});
 
 	async function loadIssues() {
@@ -147,9 +155,7 @@
 	// Every team present in the loaded issues gets its own board section, so
 	// cross-team issues render with their own team's columns instead of
 	// silently dropping off the board.
-	const boardTeamIds = $derived([
-		...new Set(issuesState.issues.map((i) => i.team_id).filter(Boolean))
-	]);
+	const boardTeamIds = $derived([...new Set(issuesState.issues.map((i) => i.team_id).filter(Boolean))]);
 
 	$effect(() => {
 		if (layout !== 'board') return;
@@ -325,7 +331,7 @@
 				onlabelcreated={(label) => (labels = [label, ...labels.filter((existing) => existing.id !== label.id)])}
 			/>
 		</div>
-		{:else if issuesState.issues.length > 0 || !issuesState.loading}
+	{:else if issuesState.issues.length > 0 || !issuesState.loading}
 		{#if issuesState.issues.length === 0}
 			<div class="flex-1 overflow-y-auto">
 				<EmptyState
@@ -355,7 +361,9 @@
 					{@const teamIssues = issuesByStatusForTeam(teamId)}
 					{@const teamCount = Object.values(teamIssues).reduce((n, list) => n + list.length, 0)}
 					<section>
-						<div class="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--app-border)] bg-[var(--color-bg-primary)] px-6 py-2">
+						<div
+							class="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--app-border)] bg-[var(--color-bg-primary)] px-6 py-2"
+						>
 							<span class="text-xs font-medium tracking-wide uppercase text-[var(--color-text-tertiary)]">
 								{teams.find((t) => t.id === teamId)?.name ?? teamId}
 							</span>
@@ -380,7 +388,9 @@
 		<!-- First load only; later refetches keep the current board on screen
 			instead of blanking it (the old blank-flash). -->
 		<div class="flex flex-1 items-center justify-center">
-			<div class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-text-tertiary)] border-t-transparent"></div>
+			<div
+				class="h-5 w-5 animate-spin rounded-full border-2 border-[var(--color-text-tertiary)] border-t-transparent"
+			></div>
 		</div>
 	{/if}
 </div>
@@ -411,6 +421,8 @@
 			void loadIssues();
 		} catch (err: any) {
 			appToast.apiError(err, 'Failed to create issue');
+			// Keep the dialog open so the draft is not lost.
+			return false;
 		}
 	}}
 />
