@@ -69,6 +69,7 @@
 	import Bell from '@lucide/svelte/icons/bell';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import CornerDownRight from '@lucide/svelte/icons/corner-down-right';
+	import Reply from '@lucide/svelte/icons/reply';
 	import Ban from '@lucide/svelte/icons/ban';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Archive from '@lucide/svelte/icons/archive';
@@ -129,6 +130,7 @@
 	let commentVersion = $state(0);
 	let replyContents = $state<Record<string, string>>({});
 	let replyVersions = $state<Record<string, number>>({});
+	let expandedReplies = $state<Record<string, boolean>>({});
 	let editingTitle = $state(false);
 	let titleValue = $state('');
 	let statusOpen = $state(false);
@@ -1703,9 +1705,12 @@
 				<div class="mt-4 space-y-3">
 					{#each comments as comment (comment.id)}
 						{@const replyViewers = presenceState.getViewersForField(`reply-${comment.id}`)}
-						<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+						{@const hasReplyDraft = !!replyContents[comment.id]?.trim() && replyContents[comment.id] !== '<p></p>'}
+						{@const replyOpen = !!expandedReplies[comment.id] || hasReplyDraft || replyViewers.length > 0}
+						{@const replyCount = comment.replies?.length ?? 0}
+						<div class="overflow-hidden rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
 							<!-- Comment header + body -->
-							<div class="group/comment p-4">
+							<div class="group/comment px-4 py-3">
 								<div class="flex items-center gap-2">
 									<Avatar name={comment.user?.name ?? 'User'} avatarUrl={comment.user?.avatar_url} size="xs" />
 									<span class="text-[13px] font-medium text-[var(--color-text-primary)]"
@@ -1750,7 +1755,7 @@
 									</div>
 								</div>
 								<div
-									class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0"
+									class="rich-body prose prose-invert prose-sm max-w-none mt-2 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0"
 									use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}
 									use:imageViewer
 								>
@@ -1758,74 +1763,95 @@
 								</div>
 							</div>
 
-							<!-- Replies -->
-							{#if comment.replies && comment.replies.length > 0}
-								{#each comment.replies as reply (reply.id)}
-									<div class="group/reply border-t border-[var(--app-border)] px-4 py-3 pl-4">
-										<div class="flex items-center gap-2">
-											<Avatar name={reply.user?.name ?? 'User'} avatarUrl={reply.user?.avatar_url} size="xs" />
-											<span class="text-[13px] font-medium text-[var(--color-text-primary)]"
-												>{reply.user?.name ?? 'User'}</span
-											>
-											<span class="text-[11px] text-[var(--color-text-tertiary)]"
-												>{formatRelativeTime(reply.created_at, getLocale())}</span
-											>
-										</div>
+							<!-- Thread: replies and the reply composer -->
+							{#if replyCount > 0 || !comment.resolved_at}
+								<div class="border-t border-[var(--app-border)]">
+									{#each comment.replies ?? [] as reply (reply.id)}
 										<div
-											class="prose prose-invert prose-sm max-w-none mt-2.5 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0"
-											use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}
-											use:imageViewer
+											class="group/reply flex gap-2.5 border-b border-[var(--app-border)] px-4 py-2.5 transition-colors last:border-b-0 hover:bg-[var(--color-bg-hover)]/30"
 										>
-											{@html sanitizeHtml(reply.body ?? '')}
+											<div class="shrink-0 pt-0.5">
+												<Avatar name={reply.user?.name ?? 'User'} avatarUrl={reply.user?.avatar_url} size="xs" />
+											</div>
+											<div class="min-w-0 flex-1">
+												<div class="flex items-center gap-2">
+													<span class="text-xs font-medium text-[var(--color-text-primary)]"
+														>{reply.user?.name ?? 'User'}</span
+													>
+													<span class="text-[11px] text-[var(--color-text-tertiary)]"
+														>{formatRelativeTime(reply.created_at, getLocale())}</span
+													>
+												</div>
+												<div
+													class="rich-body prose prose-invert prose-sm max-w-none mt-1 text-[13px] text-[var(--color-text-primary)] [&>p:first-child]:mt-0 [&>p:last-child]:mb-0"
+													use:mentionInteractivity={{ slug, members, issues: issuesState.issues }}
+													use:imageViewer
+												>
+													{@html sanitizeHtml(reply.body ?? '')}
+												</div>
+											</div>
 										</div>
-									</div>
-								{/each}
-							{/if}
+									{/each}
 
-							<!-- Reply input (hidden when resolved) -->
-							{#if !comment.resolved_at}
-								<div class="border-t border-[var(--app-border)] px-4 py-3 flex items-start gap-3">
-									<div class="mt-0.5">
-										<Avatar name={authState.user?.name ?? 'U'} avatarUrl={authState.user?.avatar_url} size="xs" />
-									</div>
-									<div class="min-w-0 flex-1 flex items-end gap-1.5">
-										<div class="min-w-0 flex-1 my-auto">
-											{#key replyVersions[comment.id] ?? 0}
-												<RichEditor
-													content=""
-													workspaceSlug={slug}
-													placeholder={m['issue.leave_reply']()}
-													minimal={true}
-													borderless={true}
-													bubbleMenu={true}
-													uploadUrl={imageUploadUrl}
-													{members}
-													issues={issuesState.issues}
-													onupdate={(html) => {
-														replyContents[comment.id] = html;
-														replyContents = replyContents;
-													}}
-													onsubmit={() => handleReply(comment.id)}
-													remoteCursors={getRemoteCursors(`reply-${comment.id}`)}
-													onfocus={() => presenceState.sendFocus(issue.id, `reply-${comment.id}`, 0)}
-													onblur={() => presenceState.sendFocusLeave(issue.id)}
-													oncursorchange={(pos, anchor) =>
-														presenceState.sendFocus(issue.id, `reply-${comment.id}`, pos, anchor)}
-													onreworkselection={reworkCommentSelection}
-												/>
-											{/key}
-										</div>
-										<div class="flex shrink-0 items-center gap-1.5">
-											<button
-												onclick={() => handleReply(comment.id)}
-												disabled={!replyContents[comment.id]?.trim() || replyContents[comment.id] === '<p></p>'}
-												class="rounded-full bg-[var(--app-accent)] p-1.5 text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-30 transition-colors"
-												title={m['issue.send']()}
+									{#if !comment.resolved_at}
+										{#if replyOpen}
+											<div
+												class="flex items-start gap-2 px-4 py-2.5 {replyCount > 0
+													? 'border-t border-[var(--app-border)]'
+													: ''}"
 											>
-												<ArrowUp size={12} />
-											</button>
-										</div>
-									</div>
+												<div class="shrink-0 pt-0.5">
+													<Avatar name={authState.user?.name ?? 'U'} avatarUrl={authState.user?.avatar_url} size="xs" />
+												</div>
+												<div class="min-w-0 flex-1">
+													{#key replyVersions[comment.id] ?? 0}
+														<RichEditor
+															content=""
+															workspaceSlug={slug}
+															placeholder={m['issue.leave_reply']()}
+															minimal={true}
+															borderless={true}
+															bubbleMenu={true}
+															uploadUrl={imageUploadUrl}
+															{members}
+															issues={issuesState.issues}
+															onupdate={(html) => {
+																replyContents[comment.id] = html;
+																replyContents = replyContents;
+															}}
+															onsubmit={() => handleReply(comment.id)}
+															remoteCursors={getRemoteCursors(`reply-${comment.id}`)}
+															onfocus={() => presenceState.sendFocus(issue.id, `reply-${comment.id}`, 0)}
+															onblur={() => presenceState.sendFocusLeave(issue.id)}
+															oncursorchange={(pos, anchor) =>
+																presenceState.sendFocus(issue.id, `reply-${comment.id}`, pos, anchor)}
+															onreworkselection={reworkCommentSelection}
+														/>
+													{/key}
+												</div>
+												<button
+													onclick={() => handleReply(comment.id)}
+													disabled={!replyContents[comment.id]?.trim() || replyContents[comment.id] === '<p></p>'}
+													class="self-end mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] text-[var(--app-accent-foreground)] hover:bg-[var(--app-accent-hover)] disabled:opacity-30 transition-colors"
+													title={m['issue.send']()}
+												>
+													<ArrowUp size={13} />
+												</button>
+											</div>
+										{:else}
+											<div class="px-2.5 py-1.5 {replyCount > 0 ? 'border-t border-[var(--app-border)]' : ''}">
+												<button
+													onclick={() => {
+														expandedReplies[comment.id] = true;
+													}}
+													class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+												>
+													<Reply size={13} />
+													{m['issue.reply']()}
+												</button>
+											</div>
+										{/if}
+									{/if}
 								</div>
 							{/if}
 						</div>
