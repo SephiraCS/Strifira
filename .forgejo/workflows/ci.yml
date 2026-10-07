@@ -343,3 +343,35 @@ jobs:
       - name: Remove the podman store
         if: always()
         run: scripts/ci/podman-store.sh remove
+
+  # The Release job has never published its images on this Forgejo (see the
+  # TS-423 notes: the job token pushing packages was unproven). Its failure
+  # gates nothing the deploy needs, so it must be seen and owned the same
+  # way slow-suite failures are: one open issue collects the redacted log
+  # tails of every failed job.
+  report-release-failure:
+    name: Report the release failure
+    needs: [release]
+    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main' && failure()
+    runs-on: terrascale-builder
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the source revision
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: File the failure as an issue
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+          REPORT_TITLE: 'Release failed'
+          LOG_LINES: 150
+          REPRO: |
+            # The release resumes idempotently once the cause is fixed:
+            fj actions dispatch ci.yml main
+        run: scripts/ci/report-failure.sh
