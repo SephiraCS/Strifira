@@ -64,4 +64,4 @@ jobs:
             '!f() { echo username=forgejo-actions; echo "password=$FORGEJO_TOKEN"; }; f'
           git add probe-results.txt
           git commit -qm "probe results"
-          git push "https://git.terrascale.tech/TerraScale/ku.git" "HEAD:refs/heads/probe-results"
+          git push "https://git.terrascale.tech/TerraScale/ku.git" "+HEAD:refs/heads/probe-results"
