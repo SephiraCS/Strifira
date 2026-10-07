@@ -75,8 +75,8 @@
 	}
 </script>
 
-<div class="h-full">
-	<div class="flex h-[49px] items-center justify-between border-b border-[var(--app-border)] px-6">
+<div class="flex h-full flex-col">
+	<div class="flex h-[49px] shrink-0 items-center justify-between border-b border-[var(--app-border)] px-6">
 		<div class="flex items-center gap-3">
 			<SidebarToggle />
 			<nav class="flex items-center gap-1.5 text-sm">
@@ -98,40 +98,42 @@
 		</div>
 	</div>
 
-	{#if !loading && views.length === 0}
-		<EmptyState
-			title={m['views.no_team_views']()}
-			description={m['views.no_team_views_desc']()}
-		/>
-	{:else}
-		<div class="divide-y divide-[var(--app-border)]">
-			{#each views as view}
-				<div class="flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-bg-hover)]">
-					<a href="/{slug}/views/{view.id}" class="flex flex-1 items-center gap-3 min-w-0">
-						<Bookmark size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
-						<div class="min-w-0">
-							<div class="flex items-center gap-2">
-								<span class="text-sm font-medium text-[var(--color-text-primary)]">{view.name}</span>
-								{#if view.is_shared}
-									<Badge variant="outline" class="text-[10px]">{m['views.shared']()}</Badge>
+	<div class="min-h-0 flex-1 overflow-y-auto">
+		{#if !loading && views.length === 0}
+			<EmptyState
+				title={m['views.no_team_views']()}
+				description={m['views.no_team_views_desc']()}
+			/>
+		{:else}
+			<div class="divide-y divide-[var(--app-border)]">
+				{#each views as view}
+					<div class="flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-bg-hover)]">
+						<a href="/{slug}/views/{view.id}" class="flex flex-1 items-center gap-3 min-w-0">
+							<Bookmark size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+							<div class="min-w-0">
+								<div class="flex items-center gap-2">
+									<span class="text-sm font-medium text-[var(--color-text-primary)]">{view.name}</span>
+									{#if view.is_shared}
+										<Badge variant="outline" class="text-[10px]">{m['views.shared']()}</Badge>
+									{/if}
+								</div>
+								{#if view.description}
+									<p class="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">{view.description}</p>
 								{/if}
 							</div>
-							{#if view.description}
-								<p class="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">{view.description}</p>
-							{/if}
-						</div>
-					</a>
-					<button
-						onclick={() => requestDelete(view)}
-						class="shrink-0 rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-red-500"
-						title={m['views.delete_view']()}
-					>
-						<Trash2 size={14} />
-					</button>
-				</div>
-			{/each}
-		</div>
-	{/if}
+						</a>
+						<button
+							onclick={() => requestDelete(view)}
+							class="shrink-0 rounded p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)] hover:text-red-500"
+							title={m['views.delete_view']()}
+						>
+							<Trash2 size={14} />
+						</button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
 </div>
 
 <AlertDialog.Root bind:open={deleteOpen}>

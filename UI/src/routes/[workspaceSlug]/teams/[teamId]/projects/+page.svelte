@@ -69,9 +69,9 @@
 	}
 </script>
 
-<div class="h-full">
+<div class="flex h-full flex-col">
 	<div
-		class="flex h-[49px] items-center justify-between border-b border-[var(--app-border)] px-6"
+		class="flex h-[49px] shrink-0 items-center justify-between border-b border-[var(--app-border)] px-6"
 	>
 		<div class="flex items-center gap-3">
 			<SidebarToggle />
@@ -98,47 +98,49 @@
 		</button>
 	</div>
 
-	{#if !loading && projects.length === 0}
-		<EmptyState
-			title={m['projects.no_team_projects']()}
-			description={m['projects.no_team_projects_desc']()}
-			action={{ label: m['projects.new_project'](), onclick: () => (showCreateProject = true) }}
-		/>
-	{:else}
-		<div class="divide-y divide-[var(--app-border)]">
-			{#each projects as project}
-				<a
-					href="/{slug}/projects/{project.id}"
-					class="flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-bg-hover)]"
-				>
-					<div class="flex-1 min-w-0">
-						<div class="flex items-center gap-2">
-							<span class="text-sm font-medium text-[var(--color-text-primary)]">{project.name}</span>
-							<Badge variant={statusVariant(project.status)} class="text-[10px]">
-								{statusLabel(project.status)}
-							</Badge>
-						</div>
-						{#if project.description}
-							<p class="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">{project.description}</p>
-						{/if}
-					</div>
-					{#if project.progress && project.progress.total > 0}
-						<div class="flex items-center gap-2 shrink-0">
-							<div class="relative h-1.5 w-24 overflow-hidden rounded-full bg-[var(--color-bg-tertiary)]">
-								<div
-									class="absolute left-0 top-0 h-full rounded-full bg-[var(--color-success)]"
-									style="width: {project.progress.total > 0 ? (project.progress.completed / project.progress.total) * 100 : 0}%"
-								></div>
+	<div class="min-h-0 flex-1 overflow-y-auto">
+		{#if !loading && projects.length === 0}
+			<EmptyState
+				title={m['projects.no_team_projects']()}
+				description={m['projects.no_team_projects_desc']()}
+				action={{ label: m['projects.new_project'](), onclick: () => (showCreateProject = true) }}
+			/>
+		{:else}
+			<div class="divide-y divide-[var(--app-border)]">
+				{#each projects as project}
+					<a
+						href="/{slug}/projects/{project.id}"
+						class="flex items-center gap-4 px-6 py-3 hover:bg-[var(--color-bg-hover)]"
+					>
+						<div class="flex-1 min-w-0">
+							<div class="flex items-center gap-2">
+								<span class="text-sm font-medium text-[var(--color-text-primary)]">{project.name}</span>
+								<Badge variant={statusVariant(project.status)} class="text-[10px]">
+									{statusLabel(project.status)}
+								</Badge>
 							</div>
-							<span class="text-xs tabular-nums text-[var(--color-text-tertiary)]">
-								{progressPercentage(project)}%
-							</span>
+							{#if project.description}
+								<p class="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">{project.description}</p>
+							{/if}
 						</div>
-					{/if}
-				</a>
-			{/each}
-		</div>
-	{/if}
+						{#if project.progress && project.progress.total > 0}
+							<div class="flex items-center gap-2 shrink-0">
+								<div class="relative h-1.5 w-24 overflow-hidden rounded-full bg-[var(--color-bg-tertiary)]">
+									<div
+										class="absolute left-0 top-0 h-full rounded-full bg-[var(--color-success)]"
+										style="width: {project.progress.total > 0 ? (project.progress.completed / project.progress.total) * 100 : 0}%"
+									></div>
+								</div>
+								<span class="text-xs tabular-nums text-[var(--color-text-tertiary)]">
+									{progressPercentage(project)}%
+								</span>
+							</div>
+						{/if}
+					</a>
+				{/each}
+			</div>
+		{/if}
+	</div>
 </div>
 
 <CreateProjectDialog
