@@ -22,6 +22,7 @@ jobs:
           persist-credentials: false
 
       - name: Fetch the failed jobs' logs
+        shell: bash
         env:
           FORGEJO_TOKEN: ${{ forgejo.token }}
         run: |
@@ -39,14 +40,15 @@ jobs:
             grep -E "failure" /tmp/all.txt | grep -iE "release" | head -8 || echo "no failed release tasks matched"
           } >>"$out" 2>&1
           # Fetch logs for each failed Release-ish task by task id, then also by run id.
+          grep -E "failure" /tmp/all.txt | grep -iE "release" | head -8 > /tmp/targets.txt || true
           while IFS=$'\t' read -r run job name status; do
-            [ "$job" = "?" ] && continue
+            [ -z "$job" ] || [ "$job" = "?" ] && continue
             {
               echo "=== task $job run $run: $name ==="
               apiget "$api/actions/jobs/$job/logs" | tail -c 12000
               echo
             } >>"$out" 2>&1
-          done < <(grep -E "failure" /tmp/all.txt | grep -iE "release" | head -8)
+          done < /tmp/targets.txt
           wc -c "$out"
           git config --local user.name probe
           git config --local user.email probe@terrascale.tech
