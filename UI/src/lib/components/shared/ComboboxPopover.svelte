@@ -30,10 +30,16 @@
 
 	$effect(() => {
 		if (open && showSearch) {
-			requestAnimationFrame(() => inputRef?.focus());
+			requestAnimationFrame(() => {
+				if (open) inputRef?.focus();
+			});
 		}
 		if (!open) {
 			searchValue = '';
+			// The content can linger mounted through its close animation;
+			// a focused search input there would keep swallowing keyboard
+			// shortcuts (including Escape) after the popover is gone.
+			if (inputRef && document.activeElement === inputRef) inputRef.blur();
 		}
 	});
 </script>
