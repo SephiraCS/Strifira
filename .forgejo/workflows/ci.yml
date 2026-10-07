@@ -86,8 +86,9 @@ jobs:
           podman exec ku-postgres pg_isready -h 127.0.0.1 -U ku -d ku_test
           podman exec ku-redis redis-cli ping
 
-      # A hung test panics at -timeout=6m (with every goroutine's stack)
-      # instead of running into the job timeout.
+      # Limit package concurrency on the shared runner: migrated test databases
+      # and git fixtures compete for CPU and disk. The timeout covers a whole
+      # package, so allow 10m while retaining stacks before the 30m job limit.
       - name: Fast suite (backend) with coverage
         working-directory: .
         env:
@@ -98,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           make test-fast-backend \
-            GO_TEST_FLAGS="-race -count=1 -timeout=6m -coverprofile=coverage.out -covermode=atomic"
+            GO_TEST_FLAGS="-p=2 -race -count=1 -timeout=10m -coverprofile=coverage.out -covermode=atomic"
           (cd BE && go tool cover -func=coverage.out | tail -1)
 
       # Runs even when tests fail, so both problems show in one run.

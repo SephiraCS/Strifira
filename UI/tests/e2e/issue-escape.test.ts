@@ -574,6 +574,8 @@ test('Escape closes the collapsed sidebar drawer from an inner control', async (
 	await page.keyboard.press('Escape');
 	await expect(drawer).toHaveCSS('pointer-events', 'none');
 	await expect(page).toHaveURL(new RegExp(issueUrl));
+	// Leave the edge so reopening produces a fresh mouseenter.
+	await page.getByRole('button', { name: ISSUE_TITLE, exact: true }).hover();
 	await page.locator('div.fixed.left-0.top-0.z-20').hover({ force: true });
 	await expect(drawer).toHaveCSS('pointer-events', 'auto');
 	await drawer.locator('a[href="/test/inbox"]').focus();

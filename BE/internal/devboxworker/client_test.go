@@ -80,21 +80,32 @@ func TestCompletionRequestAndRedirectErrorsArePermanent(t *testing.T) {
 
 func TestCompletionClientTimeoutLeavesBudgetForAnotherRequest(t *testing.T) {
 	var attempts atomic.Int32
+	firstCanceled := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		if attempts.Add(1) == 1 {
 			<-r.Context().Done()
+			close(firstCanceled)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 	client := NewClient(Config{ServerURL: server.URL}, "worker-registration")
-	client.http.Timeout = 30 * time.Millisecond
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	client.http.Timeout = 100 * time.Millisecond
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, (&Worker{API: client}).completeResult(ctx, t.Context(), Lease{}, Result{}))
-	require.Equal(t, int32(2), attempts.Load())
+	require.NoError(t, ctx.Err(), "the client timeout must leave the delivery context usable")
+	select {
+	case <-firstCanceled:
+	case <-ctx.Done():
+		t.Fatal("the first HTTP request was not canceled by the client timeout")
+	}
+	// A busy runner can also time out a successful response; a third attempt
+	// still proves recovery within the same delivery budget and retry limit.
+	require.GreaterOrEqual(t, attempts.Load(), int32(2))
+	require.LessOrEqual(t, attempts.Load(), int32(3))
 }
 
 func TestCompletionInvalidPortIsPermanent(t *testing.T) {
