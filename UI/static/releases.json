@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.12",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.12",
+    "body": "Deployed to alpha as c041ca893ae2a4414f863caea7566fe8f687fbbc.\n\n- feat(issues): Escape leaves the full-page issue view\n- fix(editor): refresh an expired session before editor uploads\n- fix(issues): keep the create-issue draft when creation fails\n- fix(ui): tidy the issue comment section",
+    "published_at": "2026-10-07T14:58:27Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.12",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.10",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.10",
     "body": "Deployed to alpha as 7f04189e4b0b70813dac4cf2028a1e315480e48b.\n\n- ci: release failures file a Forgejo issue with their redacted logs\n- fix(issues): show who created an issue in the activity feed\n- fix(ui): pin the header on projects, views and archived-issues pages",
