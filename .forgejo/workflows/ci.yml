@@ -354,7 +354,14 @@ jobs:
   report-release-failure:
     name: Report the release failure
     needs: [release]
-    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main' && failure()
+    # failure() chained with && never fired here; always() plus the explicit
+    # needs result is the dependable form.
+    if: >-
+      always()
+      && !cancelled()
+      && needs.release.result == 'failure'
+      && forgejo.event_name != 'pull_request'
+      && forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder
     timeout-minutes: 10
     permissions:
