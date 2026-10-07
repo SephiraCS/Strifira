@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.13",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.13",
+    "body": "Deployed to alpha as a24e5d8a4229211f3076790e98659633abeee71f.\n\n- ci: name the registry-push failure and make the release reporter survive flaky checkouts\n- fix(ui): release keyboard focus when a selector popover closes",
+    "published_at": "2026-10-07T15:24:59Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.13",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.12",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.12",
     "body": "Deployed to alpha as c041ca893ae2a4414f863caea7566fe8f687fbbc.\n\n- feat(issues): Escape leaves the full-page issue view\n- fix(editor): refresh an expired session before editor uploads\n- fix(issues): keep the create-issue draft when creation fails\n- fix(ui): tidy the issue comment section",
