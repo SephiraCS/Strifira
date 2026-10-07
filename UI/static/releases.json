@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.15",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.15",
+    "body": "Deployed to alpha as f93ae6b389dee74ecb27becc9daee20ee45a41af.\n\n- Merge pull request 'fix(ui): tidy the issue comment section' (#22) from mariogk/comments-ui-refresh into main\n- Merge pull request 'fix(ui): tidy the issue comment section' (#21) from mariogk/ui-comment-section into main",
+    "published_at": "2026-10-07T18:38:27Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.15",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.14",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.14",
     "body": "Deployed to alpha as 9f6ebefc9280d1a340b920064cd1f2181438a02e.\n\n- ci: the release reporter fires on a failed release (explicit needs result)",
