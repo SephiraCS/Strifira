@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.14",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.14",
+    "body": "Deployed to alpha as 9f6ebefc9280d1a340b920064cd1f2181438a02e.\n\n- ci: the release reporter fires on a failed release (explicit needs result)",
+    "published_at": "2026-10-07T15:37:22Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.14",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.13",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.13",
     "body": "Deployed to alpha as a24e5d8a4229211f3076790e98659633abeee71f.\n\n- ci: name the registry-push failure and make the release reporter survive flaky checkouts\n- fix(ui): release keyboard focus when a selector popover closes",
