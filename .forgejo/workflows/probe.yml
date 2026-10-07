@@ -1,9 +1,8 @@
 name: Probe
 
 # Throwaway diagnostics: fetches the logs of the recently failed Release and
-# report jobs through the job token (proven to work) and publishes them to
-# the probe-results branch. Every stage is defensive: partial results are
-# pushed no matter what breaks.
+# report jobs through the job token (v1 proved push-as-job-token works) and
+# publishes them to the probe-results branch.
 on: workflow_dispatch
 
 jobs:
@@ -14,46 +13,55 @@ jobs:
     permissions:
       actions: read
       contents: write
+      issues: write
+      packages: write
     steps:
       - name: Check out the probe branch
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30af803 # v6.1.0
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Fetch the failed jobs' logs
-        shell: bash
+      - name: Run the probes and publish findings
         env:
           FORGEJO_TOKEN: ${{ forgejo.token }}
+          FORGEJO_ACTOR: ${{ forgejo.actor }}
         run: |
-          api=https://git.terrascale.tech/api/v1/repos/TerraScale/ku
-          auth="Authorization: token $FORGEJO_TOKEN"
-          out=probe-results.txt
-          : >"$out"
-          apiget() { curl -s --max-time 30 -H "$auth" "$1"; }
-          {
-            echo "probe start $(date -u)"
-            apiget "$api/actions/tasks?limit=300" > /tmp/tasks.json
-            echo "tasks bytes: $(wc -c </tmp/tasks.json)"
-            head -c 400 /tmp/tasks.json; echo
-            jq -r 'if type == "array" then . elif has("entries") then .entries else [] end | .[] | [(.run_id // .runId // "?"), (.id // "?"), (.name // "?"), (.status // "?")] | @tsv' /tmp/tasks.json > /tmp/all.txt || echo "jq failed"
-            grep -E "failure" /tmp/all.txt | grep -iE "release" | head -8 || echo "no failed release tasks matched"
-          } >>"$out" 2>&1
-          # Fetch logs for each failed Release-ish task by task id, then also by run id.
-          grep -E "failure" /tmp/all.txt | grep -iE "release" | head -8 > /tmp/targets.txt || true
-          while IFS=$'\t' read -r run job name status; do
-            [ -z "$job" ] || [ "$job" = "?" ] && continue
-            {
-              echo "=== task $job run $run: $name ==="
-              apiget "$api/actions/jobs/$job/logs" | tail -c 12000
-              echo
-            } >>"$out" 2>&1
-          done < /tmp/targets.txt
-          wc -c "$out"
+          curl -s --max-time 30 -H "Authorization: token $FORGEJO_TOKEN" \
+            "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/tasks?limit=300" -o /tmp/tasks.json
+          python3 - <<'PYEOF'
+          import json, os, urllib.request
+          token = os.environ["FORGEJO_TOKEN"]
+          api = "https://git.terrascale.tech/api/v1/repos/TerraScale/ku"
+          def get(path):
+              req = urllib.request.Request(api + path)
+              req.add_header("Authorization", "token " + token)
+              try:
+                  return urllib.request.urlopen(req, timeout=30).read().decode("utf-8", "replace")
+              except Exception as e:
+                  return "(fetch failed: %s)" % e
+          tasks = json.load(open("/tmp/tasks.json"))
+          if isinstance(tasks, dict):
+              tasks = tasks.get("entries") or []
+          lines = []
+          for t in tasks:
+              name = str(t.get("name", ""))
+              status = str(t.get("status", ""))
+              if "failure" in status and "release" in name.lower():
+                  lines.append((t.get("run_id"), t.get("id"), name))
+          out = ["matched %d failed release tasks" % len(lines)]
+          for run, job, name in lines[:6]:
+              out.append("=== task %s run %s: %s ===" % (job, run, name))
+              log = get("/actions/jobs/%s/logs" % job)
+              out.append(log[-12000:])
+          open("probe-results.txt", "w").write("\n".join(out))
+          print("wrote", sum(len(x) for x in out), "bytes")
+          PYEOF
+          head -20 probe-results.txt
           git config --local user.name probe
           git config --local user.email probe@terrascale.tech
           git config --local credential.helper \
             '!f() { echo username=forgejo-actions; echo "password=$FORGEJO_TOKEN"; }; f'
-          git add "$out"
-          git commit -qm "failed job logs" || true
-          git push "https://git.terrascale.tech/TerraScale/ku.git" "+HEAD:refs/heads/probe-results"
+          git add probe-results.txt
+          git commit -qm "probe results"
+          git push "https://git.terrascale.tech/TerraScale/ku.git" "HEAD:refs/heads/probe-results"
