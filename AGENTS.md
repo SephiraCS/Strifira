@@ -2,6 +2,7 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
 
 # RULES
 - Never add AI attribution to commits, PR titles, or PR descriptions: no `Co-Authored-By:` trailers, no `🤖 Generated with [Claude Code]` or similar generated-by notices.
+- Always commit your changes once they are done, and make sure they are deployed: push to `main`, then watch the CI pipeline (tests, deploy to alpha, automatic release and version bump) until it is green and the deployment is verified.
 
 ## Versioning
 - You must bump the version automatically
