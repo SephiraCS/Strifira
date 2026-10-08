@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.16",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.16",
+    "body": "Deployed to alpha as a5fd39059e72da2b7097febef8a6158936edcd2c.\n\n- fix(logging): surface 5xx causes, keep client IPs, drop benign proxy warns\n- TS-629: Fix security audit and CI test timing (#25)\n- Merge pull request 'TS-629: Apertar Esc para voltar' (#24) from cos/ts-629-ku-apertar-esc-para-voltar into main",
+    "published_at": "2026-10-08T17:01:08Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.16",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.15",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.15",
     "body": "Deployed to alpha as f93ae6b389dee74ecb27becc9daee20ee45a41af.\n\n- Merge pull request 'fix(ui): tidy the issue comment section' (#22) from mariogk/comments-ui-refresh into main\n- Merge pull request 'fix(ui): tidy the issue comment section' (#21) from mariogk/ui-comment-section into main",
