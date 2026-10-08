@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.17",
+    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.17",
+    "body": "Deployed to alpha as acc01970bfd4c5a6483ef9d6e746349b511619e5.\n\n- docs(agents): always commit finished work and verify its deployment\n- fix(shares): keep screen-share signaling alive through socket races\n- feat(ui): confirm workspace switches during a live share, open workspaces in new tabs",
+    "published_at": "2026-10-08T19:48:58Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.17",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.16",
     "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.16",
     "body": "Deployed to alpha as a5fd39059e72da2b7097febef8a6158936edcd2c.\n\n- fix(logging): surface 5xx causes, keep client IPs, drop benign proxy warns\n- TS-629: Fix security audit and CI test timing (#25)\n- Merge pull request 'TS-629: Apertar Esc para voltar' (#24) from cos/ts-629-ku-apertar-esc-para-voltar into main",
