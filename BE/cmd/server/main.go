@@ -292,6 +292,10 @@ func main() {
 	// Echo
 	e := echo.New()
 	e.HideBanner = true
+	// Errors that escape a handler as a return value are logged here in
+	// the app's format (Echo's default logger writes plain text without
+	// the request identity).
+	e.HTTPErrorHandler = mw.HTTPErrorHandler
 	// Bound slow header delivery. No WriteTimeout: websockets and streamed
 	// downloads are long-lived.
 	e.Server.ReadHeaderTimeout = 10 * time.Second

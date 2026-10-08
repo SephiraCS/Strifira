@@ -1,10 +1,36 @@
+{
+	# Runtime logs as JSON so Caddy and the Go API share one parseable
+	# format, and reverse_proxy logs stream to their own sink: its WARN
+	# "aborting with incomplete response" fires every time a client drops
+	# a long-poll mid-response (the MCP subscriptions/listen reconnect
+	# cycle) and is expected, not an upstream failure — only genuine proxy
+	# errors are logged.
+	log default {
+		format json
+		exclude http.handlers.reverse_proxy
+	}
+	log reverse_proxy {
+		format json
+		level ERROR
+		include http.handlers.reverse_proxy
+	}
+}
+
 {$DOMAIN:localhost} {
 	handle /health {
-		reverse_proxy backend:8080
+		reverse_proxy backend:8080 {
+			# Keep the real client IP when another proxy on a private
+			# network (operator edge router, compose network) forwards
+			# X-Forwarded-For; Caddy overwrites it with the peer address
+			# for untrusted, non-private sources.
+			trusted_proxies private_ranges
+		}
 	}
 
 	handle /ready {
-		reverse_proxy backend:8080
+		reverse_proxy backend:8080 {
+			trusted_proxies private_ranges
+		}
 	}
 
 	@upgrading file {
@@ -26,16 +52,22 @@
 
 	# API and uploads — proxy to backend
 	handle /api/* {
-		reverse_proxy backend:8080
+		reverse_proxy backend:8080 {
+			trusted_proxies private_ranges
+		}
 	}
 
 	handle /uploads/* {
-		reverse_proxy backend:8080
+		reverse_proxy backend:8080 {
+			trusted_proxies private_ranges
+		}
 	}
 
 	# WebSocket support
 	handle /api/workspaces/*/ws {
-		reverse_proxy backend:8080
+		reverse_proxy backend:8080 {
+			trusted_proxies private_ranges
+		}
 	}
 
 	# Frontend — proxy to static file server

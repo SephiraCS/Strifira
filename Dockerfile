@@ -49,6 +49,22 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 	# open indefinitely. The start script kills anything still running
 	# after its own, slightly longer, deadline.
 	grace_period 20s
+
+	# Runtime logs as JSON so Caddy and the Go API share one parseable
+	# format in the container console. reverse_proxy logs stream to their
+	# own sink below: its WARN "aborting with incomplete response" fires
+	# every time a client drops a long-poll mid-response (the MCP
+	# subscriptions/listen reconnect cycle) and is expected, not an
+	# upstream failure — only genuine proxy errors reach the console.
+	log default {
+		format json
+		exclude http.handlers.reverse_proxy
+	}
+	log reverse_proxy {
+		format json
+		level ERROR
+		include http.handlers.reverse_proxy
+	}
 }
 
 :3000 {
@@ -64,24 +80,42 @@ COPY <<'EOF' /etc/caddy/Caddyfile
 	# /index.html and every API call got the SPA instead of the backend.
 	# Same structure as selfhosting/Caddyfile.
 	handle /api/* {
-		reverse_proxy localhost:8080
+		reverse_proxy localhost:8080 {
+			# The edge proxy (on alpha: caddy-edge through the incus proxy
+			# devices) forwards the real client IP in X-Forwarded-For.
+			# Without this, Caddy treats the connection as untrusted and
+			# overwrites that header with its own view (127.0.0.1), so the
+			# API's request logs lose the client address. Loopback is the
+			# only permitted source of trusted forwarding: connections
+			# from anywhere else still get XFF rewritten to their real
+			# peer address.
+			trusted_proxies 127.0.0.1
+		}
 	}
 
 	# MCP endpoint (stateless streamable HTTP, API-key auth in the app)
 	handle /mcp* {
-		reverse_proxy localhost:8080
+		reverse_proxy localhost:8080 {
+			trusted_proxies 127.0.0.1
+		}
 	}
 
 	handle /uploads/* {
-		reverse_proxy localhost:8080
+		reverse_proxy localhost:8080 {
+			trusted_proxies 127.0.0.1
+		}
 	}
 
 	handle /health {
-		reverse_proxy localhost:8080
+		reverse_proxy localhost:8080 {
+			trusted_proxies 127.0.0.1
+		}
 	}
 
 	handle /ready {
-		reverse_proxy localhost:8080
+		reverse_proxy localhost:8080 {
+			trusted_proxies 127.0.0.1
+		}
 	}
 
 	# Hashed build assets never change, so browsers keep them for a year. A
