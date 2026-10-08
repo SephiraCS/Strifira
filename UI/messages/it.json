@@ -1622,6 +1622,7 @@
 	"shares.switch_surface": "Cambia sorgente",
 	"shares.mute": "Silenzia",
 	"shares.unmute": "Attiva audio",
+	"shares.claim_retry": "La condivisione precedente si sta ancora chiudendo — riprovo…",
 	"shares.capture_failed": "Impossibile avviare la cattura dello schermo — selettore chiuso o permesso negato.",
 	"settings.profile.avatar": "Avatar",
 	"settings.profile.avatar_desc": "Mostrato accanto al tuo nome in Ku. Carica un'immagine o incolla un URL pubblico qui sotto.",

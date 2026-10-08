@@ -179,6 +179,10 @@
 		attempt += 1;
 		clearWatchdog();
 		teardownViewerPc(); // fresh peer connection every attempt
+		// The hub relays signals only between registered members: re-announce
+		// with every attempt so a join lost to a socket race or a transient
+		// authorize failure cannot strand the retries (and the manual retry).
+		announceSharePresence(workspaceSlug, shareId, 'viewer', 'join');
 		connecting = true;
 		reconnecting = false;
 		const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -394,7 +398,8 @@
 			live = presenterSession.active;
 			connecting = false;
 		} else {
-			announceSharePresence(workspaceSlug, shareId, 'viewer', 'join');
+			// startViewerAttempt announces the viewer join first: membership
+			// must be registered before the offer is relayed.
 			startViewerAttempt();
 		}
 
@@ -467,9 +472,12 @@
 				if (reconnectedSlug !== workspaceSlug) return;
 				if (disposed || presentEnded) return;
 				if (isPresenting()) return; // the session store re-announces itself
-				// Presence is per-connection: re-announce, then renegotiate
-				// whatever died with the old socket.
+				// Presence is per-connection: re-announce on the new socket. A
+				// connected peer survived the signaling drop (media is P2P and
+				// never rode the socket): only renegotiate when the media path
+				// is actually down or still being established.
 				announceSharePresence(workspaceSlug, shareId, 'viewer', 'join');
+				if (live && viewerPc && viewerPc.connectionState === 'connected') return;
 				attempt = 0;
 				streamEnded = false;
 				endReason = null;

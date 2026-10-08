@@ -29,6 +29,15 @@ const recentEndedLimit = 20
 // not just the share's first 45 seconds of life.
 const noSourceGraceSeconds = 45
 
+// presenterClaimGraceSeconds is how long Create refuses to retire a previous
+// source-less share of the same presenter. It only needs to span one
+// workspace-socket reconnect cycle (the client's backoff ceiling is 15s):
+// within it a live presenter elsewhere re-announces and the claim fails
+// cleanly instead of stealing a working capture, while a presenter whose
+// previous share died uncleanly (crash, reload, failed Stop) can start
+// again after one cycle instead of waiting out the full GC grace above.
+const presenterClaimGraceSeconds = 15
+
 type ScreenShareService struct {
 	shareRepo repository.ScreenShareRepo
 	userRepo  repository.UserRepo
@@ -88,7 +97,7 @@ func (s *ScreenShareService) retirePreviousCapture(ctx context.Context, previous
 			return nil
 		}
 		_, online := s.hub.ShareState(current.ID)
-		if online || s.presenterUnreachableFor(*current) <= noSourceGraceSeconds*time.Second {
+		if online || s.presenterUnreachableFor(*current) <= presenterClaimGraceSeconds*time.Second {
 			return ErrScreenShareAlreadyActive
 		}
 		if err := s.shareRepo.MarkEnded(ctx, current.ID); err != nil {

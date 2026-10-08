@@ -1032,3 +1032,257 @@ test('two viewer browser tabs for the same user keep independent negotiations', 
 		await otherTab.close();
 	}
 });
+
+test('signaling dispatched while the socket connects is queued, not dropped', async ({ page }) => {
+	await stubCommon(page, true);
+	await installPeerRig(page);
+	// Gate the workspace socket in CONNECTING: the tile's join and offer are
+	// dispatched before any handshake completes. Releasing the gate lets the
+	// real (route-intercepted) socket through so the flush is observable.
+	await page.addInitScript(() => {
+		const RealSocket = window.WebSocket;
+		const gate = {
+			sendsWhileNotOpen: [] as string[],
+			sent: [] as string[]
+		};
+		(window as any).__wsGate = gate;
+		let released = false;
+		const waiting: Array<() => void> = [];
+		class GatedSocket {
+			static readonly CONNECTING = 0;
+			static readonly OPEN = 1;
+			static readonly CLOSING = 2;
+			static readonly CLOSED = 3;
+			url: string;
+			readyState = 0;
+			inner: WebSocket | null = null;
+			onopen: ((event: Event) => void) | null = null;
+			onclose: ((event: CloseEvent) => void) | null = null;
+			onerror: ((event: Event) => void) | null = null;
+			onmessage: ((event: MessageEvent) => void) | null = null;
+			constructor(url: string | URL) {
+				this.url = String(url);
+				if (released) this.connect();
+				else waiting.push(() => this.connect());
+			}
+			private connect() {
+				if (this.inner) return;
+				const inner = new RealSocket(this.url);
+				this.inner = inner;
+				inner.onopen = (event) => {
+					this.readyState = 1;
+					this.onopen?.(event);
+				};
+				inner.onclose = (event) => {
+					this.readyState = 3;
+					this.onclose?.(event);
+				};
+				inner.onerror = (event) => this.onerror?.(event);
+				inner.onmessage = (event) => this.onmessage?.(event);
+			}
+			send(data: string) {
+				if (this.readyState !== 1) {
+					gate.sendsWhileNotOpen.push(data);
+					return;
+				}
+				gate.sent.push(data);
+				this.inner!.send(data);
+			}
+			close() {
+				this.readyState = 3;
+				this.inner?.close();
+			}
+		}
+		(window as any).WebSocket = GatedSocket;
+		(window as any).__releaseSocket = () => {
+			released = true;
+			for (const resume of waiting.splice(0)) resume();
+		};
+	});
+
+	await page.goto('/test/shares');
+	// The tile negotiated against a socket that never opened: its join and
+	// offer were both queued (nothing reaches the wire yet).
+	await expect
+		.poll(async () => (await sentSignals(page, 'offer')).length)
+		.toBeGreaterThanOrEqual(1);
+	const wire = () => page.evaluate(() => (window as any).__wsGate.sent.map((frame: string) => JSON.parse(frame)));
+	expect(await wire()).toEqual([]);
+	expect(await page.evaluate(() => (window as any).__wsGate.sendsWhileNotOpen)).toEqual([]);
+
+	await page.evaluate(() => (window as any).__releaseSocket());
+	// The open flush delivers the queued presence join; queued offers were
+	// dropped as superseded — the reconnect dispatch triggers a fresh
+	// negotiation whose offer goes out on the live socket.
+	await expect.poll(async () => (await wire()).filter((m: any) => m.type === 'share.signal').length).toBeGreaterThanOrEqual(1);
+	const frames = await wire();
+	const presenceTypes = frames.filter((m: any) => m.type === 'share.presence').map((m: any) => m.payload.action);
+	expect(presenceTypes.length).toBeGreaterThanOrEqual(1);
+	expect(frames.filter((m: any) => m.type === 'share.presence')[0].payload.role).toBe('viewer');
+	const firstPresence = frames.findIndex((m: any) => m.type === 'share.presence');
+	const firstSignal = frames.findIndex((m: any) => m.type === 'share.signal');
+	expect(firstPresence).toBeGreaterThanOrEqual(0);
+	expect(firstSignal).toBeGreaterThan(firstPresence);
+	// Nothing may ever be written to a socket that is not open.
+	expect(await page.evaluate(() => (window as any).__wsGate.sendsWhileNotOpen)).toEqual([]);
+});
+
+test('a live viewer keeps its peer across its own socket reconnect', async ({ page }) => {
+	await stubCommon(page, true);
+	await installPeerRig(page);
+	await page.goto('/test/shares');
+	await expect.poll(async () => (await sentSignals(page, 'offer')).length).toBe(1);
+	await page.evaluate(() => (window as any).__shareRig.peers[0].setConnectionState('connected'));
+	const tile = page.locator(`[data-share-id="${shareId}"]`);
+	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
+
+	// The workspace socket dropped and came back: presence is re-announced on
+	// the new connection, but the P2P media never rode it — no renegotiation.
+	await page.evaluate(() =>
+		window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug: 'test' } }))
+	);
+	await page.waitForTimeout(300);
+	expect((await sentSignals(page, 'offer')).length).toBe(1);
+	expect(await page.evaluate(() => (window as any).__shareRig.peers[0].closed)).toBe(false);
+	expect(await page.evaluate(() => (window as any).__shareRig.peers.length)).toBe(1);
+	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
+});
+
+test('every viewer retry re-announces membership before its offer', async ({ page }) => {
+	await stubCommon(page, true);
+	await installPeerRig(page);
+	await page.goto('/test/shares');
+	await expect.poll(async () => (await sentSignals(page, 'offer')).length).toBe(1);
+	const viewerJoins = () =>
+		page.evaluate(
+			(id) =>
+				(window as any).__shareRig.messages.filter(
+					(message: any) =>
+						message.type === 'share.presence' &&
+						message.payload.share_id === id &&
+						message.payload.role === 'viewer' &&
+						message.payload.action === 'join'
+				).length,
+			shareId
+		);
+	// The first attempt failed (the hub never answered): the retry loop must
+	// re-send the join too — membership is what makes the offer relayable.
+	await page.evaluate(() => (window as any).__shareRig.peers[0].setConnectionState('failed'));
+	await expect.poll(async () => (await sentSignals(page, 'offer')).length).toBe(2);
+	await expect.poll(async () => await viewerJoins()).toBe(2);
+});
+
+test('the presenter heartbeats its membership while live', async ({ page }) => {
+	await page.clock.install();
+	const requests = await stubOwnShare(page);
+	await page.goto('/test/shares');
+	await page.getByRole('button', { name: 'Share my screen' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	const presenterJoins = () =>
+		page.evaluate(
+			(id) =>
+				(window as any).__shareRig.messages.filter(
+					(message: any) =>
+						message.type === 'share.presence' &&
+						message.payload.share_id === id &&
+						message.payload.role === 'presenter' &&
+						message.payload.action === 'join'
+				).length,
+			shareId
+		);
+	expect(await presenterJoins()).toBe(1);
+	await page.clock.runFor(21_000);
+	// The initial announce plus a beat every 10s: a lost join can no longer
+	// strand the share until the next socket reconnect.
+	await expect.poll(async () => await presenterJoins()).toBeGreaterThanOrEqual(3);
+
+	// Stopping the share stops the heartbeat with it.
+	await page.locator('button[title="Stop sharing"]').first().click();
+	await expect.poll(() => requests.ends).toEqual([{ presenter_token: presenterToken }]);
+	const afterStop = await presenterJoins();
+	await page.clock.runFor(25_000);
+	expect(await presenterJoins()).toBe(afterStop);
+});
+
+test('a presenter told it is offline re-announces immediately', async ({ page }) => {
+	await stubOwnShare(page);
+	await page.goto('/test/shares');
+	await page.getByRole('button', { name: 'Share my screen' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	const presenterJoins = () =>
+		page.evaluate(
+			(id) =>
+				(window as any).__shareRig.messages.filter(
+					(message: any) =>
+						message.type === 'share.presence' &&
+						message.payload.share_id === id &&
+						message.payload.role === 'presenter' &&
+						message.payload.action === 'join'
+				).length,
+			shareId
+		);
+	expect(await presenterJoins()).toBe(1);
+
+	// A membership summary that says the share has no presenter while this
+	// tab is live means our join was lost: recover without waiting for a
+	// heartbeat or a socket reconnect.
+	await announcePresenter(page, false);
+	await expect.poll(async () => await presenterJoins()).toBe(2);
+
+	// Online summaries (e.g. our own join echo) must not trigger re-announces.
+	await announcePresenter(page, true);
+	await page.waitForTimeout(200);
+	expect(await presenterJoins()).toBe(2);
+});
+
+test('a connected viewer peer survives a presence cull and is reaped once dead', async ({ page }) => {
+	await stubOwnShare(page);
+	await page.goto('/test/shares');
+	await page.getByRole('button', { name: 'Share my screen' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	const viewerPeer = '00000000-0000-0000-0000-000000000021';
+	const negotiation = '00000000-0000-0000-0000-000000000023';
+	await page.evaluate(
+		({ id, peer, negotiation }) => {
+			window.dispatchEvent(
+				new CustomEvent('ws:share.signal', {
+					detail: { share_id: id, from_peer: peer, negotiation_id: negotiation, data: { type: 'offer', sdp: 'viewer-offer' } }
+				})
+			);
+		},
+		{ id: shareId, peer: viewerPeer, negotiation }
+	);
+	await expect.poll(async () => (await sentSignals(page, 'answer')).length).toBe(1);
+
+	const presenceWithoutViewer = () =>
+		page.evaluate(
+			({ id, peer }) => {
+				window.dispatchEvent(
+					new CustomEvent('ws:share.presence', {
+						detail: {
+							share_id: id,
+							presenter_online: true,
+							presenter_peer: peer,
+							viewers: 0,
+							viewer_peers: []
+						}
+					})
+				);
+			},
+			{ id: shareId, peer: presenterPeer }
+		);
+
+	// Media flows for that peer even though its signaling socket is gone from
+	// the membership list: keep it.
+	await page.evaluate(() => (window as any).__shareRig.peers[0].setConnectionState('connected'));
+	await presenceWithoutViewer();
+	await page.waitForTimeout(200);
+	expect(await page.evaluate(() => (window as any).__shareRig.peers[0].closed)).toBe(false);
+
+	// Once the connection itself is dead, the cull reaps it.
+	await page.evaluate(() => (window as any).__shareRig.peers[0].setConnectionState('disconnected'));
+	await presenceWithoutViewer();
+	await expect
+		.poll(() => page.evaluate(() => (window as any).__shareRig.peers[0].closed))
+		.toBe(true);
+});

@@ -1639,6 +1639,7 @@
 	"shares.switch_surface": "更改共享内容",
 	"shares.mute": "静音",
 	"shares.unmute": "取消静音",
+	"shares.claim_retry": "上一次屏幕共享仍在关闭中，正在重试…",
 	"shares.capture_failed": "无法开始屏幕捕获 — 屏幕/窗口选择器已被关闭，或权限被拒绝。",
 	"share_page.title": "共享视图",
 	"share_page.unavailable": "此共享链接不可用或已过期。",

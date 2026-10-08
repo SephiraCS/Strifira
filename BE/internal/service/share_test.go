@@ -504,6 +504,23 @@ func TestScreenShareService_CreatePreservesOfflineReconnectGrace(t *testing.T) {
 	shareRepo.AssertNotCalled(t, "Create", mock.Anything, mock.Anything)
 }
 
+func TestScreenShareService_CreateRetiresShareBeyondReconnectWindow(t *testing.T) {
+	shareRepo, _, _, svc := newShareTestService(t)
+	ctx := t.Context()
+	// Offline for longer than one reconnect cycle but well inside the 45s
+	// GC grace: the previous tab is gone (crash, reload, failed Stop), so a
+	// fresh capture must claim the slot instead of failing the start.
+	existing := &domain.ScreenShare{ID: uuid.New(), WorkspaceID: uuid.New(), StartedBy: uuid.New(), PresenterToken: uuid.New(), Status: domain.ScreenShareStatusActive, CreatedAt: time.Now().Add(-time.Minute), LastPresenterSeenAt: time.Now().Add(-20 * time.Second)}
+	shareRepo.On("GetActiveByPresenter", ctx, existing.WorkspaceID, existing.StartedBy).Return(existing, nil)
+	shareRepo.On("GetByID", ctx, existing.ID).Return(existing, nil)
+	shareRepo.On("MarkEnded", ctx, existing.ID).Return(nil).Once()
+	shareRepo.On("Create", ctx, mock.AnythingOfType("*domain.ScreenShare")).Return(nil).Once()
+	created, err := svc.Create(ctx, existing.WorkspaceID, existing.StartedBy, dto.CreateScreenShareRequest{})
+	assert.NoError(t, err)
+	assert.NotEqual(t, existing.ID, created.ID)
+	shareRepo.AssertExpectations(t)
+}
+
 func TestScreenShareService_CreateWaitsForReconnectingPresenter(t *testing.T) {
 	shareRepo, _, hub, svc := newShareTestService(t)
 	ctx := t.Context()

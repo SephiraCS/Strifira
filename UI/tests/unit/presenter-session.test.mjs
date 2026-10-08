@@ -63,6 +63,7 @@ async function setup(t) {
 		creates: [],
 		ends: [],
 		errors: [],
+		infos: [],
 		capture: async () => capture(),
 		create: async (slug) => ({ share: { id: `share-${slug}`, status: 'active' }, presenter_token: `token-${slug}` }),
 		end: async () => {},
@@ -150,13 +151,38 @@ async function setup(t) {
 			this.closed = true;
 		}
 	}
-	const globals = { window: new EventTarget(), navigator: { mediaDevices: { getDisplayMedia: () => rig.capture() } } };
+	// The session keeps a presence heartbeat alive while live: track the
+	// timers it creates so the test process can exit, and fire its retry
+	// sleeps immediately (only their ordering matters, not their length).
+	const realSetInterval = globalThis.setInterval.bind(globalThis);
+	const realClearInterval = globalThis.clearInterval.bind(globalThis);
+	const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+	const intervals = new Set();
+	const timers = {
+		setInterval: (fn, ms, ...args) => {
+			const id = realSetInterval(fn, ms, ...args);
+			intervals.add(id);
+			return id;
+		},
+		clearInterval: (id) => {
+			intervals.delete(id);
+			realClearInterval(id);
+		},
+		setTimeout: (fn, _ms, ...args) => realSetTimeout(fn, 0, ...args)
+	};
+	const globals = {
+		window: new EventTarget(),
+		navigator: { mediaDevices: { getDisplayMedia: () => rig.capture() } },
+		...timers
+	};
 	const previous = new Map();
 	for (const [key, value] of Object.entries({ ...globals, RTCPeerConnection: Peer, __presenterRig: rig })) {
 		previous.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
 		Object.defineProperty(globalThis, key, { configurable: true, value });
 	}
 	t.after(() => {
+		for (const id of intervals) realClearInterval(id);
+		intervals.clear();
 		for (const [key, descriptor] of previous) {
 			if (descriptor) Object.defineProperty(globalThis, key, descriptor);
 			else delete globalThis[key];
@@ -168,7 +194,10 @@ async function setup(t) {
 		export const createShare = (...args) => rig.createShare(...args);
 		export const endShare = (...args) => rig.endShare(...args);
 		export const getShare = async () => ({ status: 'active' });
-		export const appToast = { apiError: (...args) => rig.errors.push(args) };
+		export const appToast = {
+			apiError: (...args) => rig.errors.push(args),
+			info: (...args) => rig.infos.push(args)
+		};
 		export const m = new Proxy({}, { get: (_, key) => () => key });
 		export const sharesState = { reload: async () => {} };
 		export const ICE_SERVERS = [];
@@ -355,4 +384,39 @@ test('a picker from a stopped share cannot clear a restarted share\u2019s pendin
 	assert.equal(session.stream, replacement);
 	assert.equal(session.switching, false);
 	assert.equal(session.active, true);
+});
+
+test('a stale source-less share is waited out instead of failing the fresh capture', async (t) => {
+	const { session, rig } = await setup(t);
+	let attempts = 0;
+	rig.create = async (slug) => {
+		attempts++;
+		if (attempts === 1) {
+			const err = new Error('conflict');
+			err.error = { code: 'SHARE_ALREADY_ACTIVE' };
+			throw err;
+		}
+		return { share: { id: `share-${slug}`, status: 'active' }, presenter_token: `token-${slug}` };
+	};
+	session.setWorkspace('a');
+	await session.start('a');
+	assert.equal(session.active, true);
+	assert.equal(session.share.id, 'share-a');
+	assert.equal(attempts, 2);
+	assert.equal(rig.infos.length, 1, 'the wait is surfaced once, not per retry');
+});
+
+test('a non-claim creation failure surfaces immediately without retries', async (t) => {
+	const { session, rig } = await setup(t);
+	rig.create = async () => {
+		const err = new Error('boom');
+		err.error = { code: 'INTERNAL' };
+		throw err;
+	};
+	session.setWorkspace('a');
+	await session.start('a');
+	assert.equal(session.active, false);
+	assert.equal(rig.creates.length, 1);
+	assert.equal(rig.errors.length, 1);
+	assert.equal(rig.infos.length, 0);
 });

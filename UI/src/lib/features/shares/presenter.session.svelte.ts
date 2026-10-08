@@ -39,6 +39,19 @@ const CAPTURE_OPTIONS = {
 	systemAudio: 'include'
 } as unknown as DisplayMediaStreamOptions;
 
+// How long createShare keeps retrying while the server still holds a
+// previous source-less share of this user (claim grace): a crashed or
+// reloaded tab cannot end its old share, so the start flow waits it out
+// instead of failing the fresh capture.
+const SHARE_CLAIM_RETRY_MS = 20_000;
+const SHARE_CLAIM_RETRY_STEP_MS = 2_000;
+// The hub relays offers only to shares with a registered presenter
+// membership. Membership rides the workspace socket and can be lost to a
+// race (announce sent while connecting, a transient authorize failure); the
+// heartbeat re-announces so every live share recovers without waiting for
+// a socket reconnect. Comfortably inside the server's 45s no-source GC.
+const PRESENTER_HEARTBEAT_MS = 10_000;
+
 class PresenterSession {
 	share = $state<ScreenShare | null>(null);
 	stream = $state<MediaStream | null>(null);
@@ -62,6 +75,7 @@ class PresenterSession {
 	private peerNegotiations = new Map<string, string>();
 	private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
 	private wired = false;
+	private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor() {
 		if (browser) this.wire();
@@ -112,7 +126,11 @@ class PresenterSession {
 				return;
 			}
 			this.pendingCapture = stream;
-			const joined = await createShare(workspaceSlug, {});
+			const joined = await this.claimShare(workspaceSlug, current);
+			if (!joined) {
+				stream.getTracks().forEach((track) => track.stop());
+				return;
+			}
 			if (!current()) {
 				stream.getTracks().forEach((track) => track.stop());
 				await endShare(workspaceSlug, joined.share.id, joined.presenter_token);
@@ -128,6 +146,7 @@ class PresenterSession {
 			const captured = stream;
 			stream.getVideoTracks()[0]?.addEventListener('ended', () => this.handleCaptureEnded(captured));
 			announceSharePresence(this.slug, joined.share.id, 'presenter', 'join', this.presenterToken);
+			this.startHeartbeat();
 			this.live = true;
 			void sharesState.reload();
 		} catch (err) {
@@ -217,6 +236,55 @@ class PresenterSession {
 
 	// ---- internals ----
 
+	/**
+	 * createShare with a bounded retry while the server still holds a
+	 * previous source-less share of this user. Returning null means the
+	 * start was superseded (workspace switch) and the capture must just be
+	 * released; a thrown error is a real failure for the caller to report.
+	 */
+	private async claimShare(
+		workspaceSlug: string,
+		current: () => boolean
+	): Promise<Awaited<ReturnType<typeof createShare>> | null> {
+		const deadline = Date.now() + SHARE_CLAIM_RETRY_MS;
+		let retried = false;
+		for (;;) {
+			let join: Awaited<ReturnType<typeof createShare>>;
+			try {
+				join = await createShare(workspaceSlug, {});
+			} catch (err) {
+				const code = (err as { error?: { code?: string } } | null)?.error?.code;
+				if (code !== 'SHARE_ALREADY_ACTIVE' || Date.now() + SHARE_CLAIM_RETRY_STEP_MS > deadline) throw err;
+				if (!retried) {
+					retried = true;
+					// Either a previous share of this tab died uncleanly and is
+					// still closing, or another tab is genuinely live — waiting
+					// covers the first and makes the second visible.
+					appToast.info(m['shares.claim_retry']());
+				}
+				await new Promise((resolve) => setTimeout(resolve, SHARE_CLAIM_RETRY_STEP_MS));
+				if (!current()) return null;
+				continue;
+			}
+			return join;
+		}
+	}
+
+	private startHeartbeat(): void {
+		if (this.heartbeatTimer) return;
+		this.heartbeatTimer = setInterval(() => {
+			if (!this.share || this.ended || this.stopping) return;
+			announceSharePresence(this.slug, this.share.id, 'presenter', 'join', this.presenterToken);
+		}, PRESENTER_HEARTBEAT_MS);
+	}
+
+	private stopHeartbeat(): void {
+		if (this.heartbeatTimer) {
+			clearInterval(this.heartbeatTimer);
+			this.heartbeatTimer = null;
+		}
+	}
+
 	private wire(): void {
 		if (this.wired) return;
 		this.wired = true;
@@ -233,15 +301,30 @@ class PresenterSession {
 		});
 
 		onSharePresence((event) => {
-			if (!this.share || event.share_id !== this.share.id) return;
+			if (!this.share || this.ended || event.share_id !== this.share.id) return;
 			this.viewerCount = event.viewers;
-			for (const [peerId, pc] of this.peers) {
-				if (!event.viewer_peers.includes(peerId)) {
-					this.peers.delete(peerId);
-					this.peerNegotiations.delete(peerId);
-					this.pendingCandidates.delete(peerId);
-					pc.close();
+			if (!event.presenter_online) {
+				// The hub has no presenter membership for this share. When our
+				// join was lost (socket race, transient authorize failure) every
+				// viewer offer is being silently dropped while this tile looks
+				// perfectly live: re-announce now rather than waiting for the
+				// heartbeat.
+				if (!this.stopping && this.live) {
+					announceSharePresence(this.slug, this.share.id, 'presenter', 'join', this.presenterToken);
 				}
+				return;
+			}
+			for (const [peerId, pc] of this.peers) {
+				if (event.viewer_peers.includes(peerId)) continue;
+				// A viewer's socket can drop and return under a new peer id
+				// while its peer connection keeps flowing media. Only reap
+				// connections that cannot carry media anymore; connected ones
+				// die on their own (ICE consent) if the viewer is truly gone.
+				if (pc.connectionState === 'connected') continue;
+				this.peers.delete(peerId);
+				this.peerNegotiations.delete(peerId);
+				this.pendingCandidates.delete(peerId);
+				pc.close();
 			}
 		});
 
@@ -410,6 +493,7 @@ class PresenterSession {
 		if (this.ended) return;
 		this.ended = true;
 		this.generation++;
+		this.stopHeartbeat();
 		if (this.share) announceSharePresence(this.slug, this.share.id, 'presenter', 'leave', this.presenterToken);
 		for (const pc of this.peers.values()) pc.close();
 		this.peers.clear();

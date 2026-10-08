@@ -1622,6 +1622,7 @@
 	"shares.switch_surface": "Change what you share",
 	"shares.mute": "Mute",
 	"shares.unmute": "Unmute",
+	"shares.claim_retry": "Your previous screen share is still closing — retrying…",
 	"shares.capture_failed": "Could not start screen capture — the screen/window picker was dismissed or permission was denied.",
 	"settings.profile.avatar": "Avatar",
 	"settings.profile.avatar_desc": "Shown next to your name across Ku. Upload an image, or paste a public URL below.",

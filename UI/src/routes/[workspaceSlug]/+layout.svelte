@@ -519,12 +519,22 @@
 	// lost, so the next open reloads everything.
 	let wsMissedEvents = false;
 	const WS_BACKOFF_MAX_MS = 15_000;
+	// Messages dispatched via ws:send while the socket is connecting or down.
+	// Screen-share presence is membership: losing a join means the hub drops
+	// every subsequent offer from (or answer to) that tab until a reconnect.
+	// Queued share.presence is flushed on open (server-side joins are
+	// idempotent); queued share.signal frames are dropped instead — the
+	// reconnect they waited through always triggers a fresh negotiation,
+	// and a late pre-reconnect offer would tear down a newer peer.
+	const WS_OUTBOX_LIMIT = 200;
+	let wsOutbox: Array<{ type: string; payload: unknown }> = [];
 
 	$effect(() => {
 		if (slug && slug !== wsSlug) {
 			wsSlug = slug;
 			wsMissedEvents = false;
 			wsBackoffMs = 1000;
+			wsOutbox = [];
 			clearWebSocketReconnect();
 			ws_conn?.close();
 			connectWebSocket(slug);
@@ -550,7 +560,13 @@
 		if (e.detail.workspaceSlug && e.detail.workspaceSlug !== wsSlug) return;
 		if (ws_conn?.readyState === WebSocket.OPEN) {
 			ws_conn.send(JSON.stringify({ type: e.detail.type, payload: e.detail.payload }));
+			return;
 		}
+		// The socket is connecting or reconnecting: hold the message for the
+		// open flush rather than dropping it on the floor.
+		if (wsDestroyed) return;
+		if (wsOutbox.length >= WS_OUTBOX_LIMIT) wsOutbox.shift();
+		wsOutbox.push({ type: e.detail.type, payload: e.detail.payload });
 	}
 	window.addEventListener('ws:send', handleWSSend as EventListener);
 
@@ -591,6 +607,15 @@
 		socket.onopen = () => {
 			if (socket !== ws_conn) return;
 			wsBackoffMs = 1000;
+			// Deliver what piled up while the socket was unavailable before
+			// anything reacts to the reconnect: the re-announces below then
+			// supersede the queued state with the freshest one.
+			const outbox = wsOutbox.filter((message) => message.type !== 'share.signal');
+			wsOutbox = [];
+			for (const message of outbox) {
+				if (socket.readyState !== WebSocket.OPEN) break;
+				socket.send(JSON.stringify(message));
+			}
 			const resumed = wsMissedEvents;
 			wsMissedEvents = false;
 			window.dispatchEvent(new CustomEvent('ws:reconnected', { detail: { workspaceSlug } }));
