@@ -851,6 +851,119 @@ test('workspace navigation invalidates a pending picker and allows capture befor
 	await expect(page.locator(`[data-share-id="${otherShareId}"]`)).toContainText('Sharing');
 });
 
+test('switching workspace while presenting asks before stopping the share', async ({ page }) => {
+	const requests = await stubOwnShare(page);
+	const otherWorkspace = {
+		...workspacePayload(true),
+		id: '00000000-0000-0000-0000-000000000093',
+		slug: 'other',
+		name: 'Other Workspace'
+	};
+	await page.route('**/api/workspaces', (route) => route.fulfill({ json: [workspacePayload(true), otherWorkspace] }));
+	await page.route('**/api/workspaces/other{,/**}', (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (path === '/api/workspaces/other') return route.fulfill({ json: otherWorkspace });
+		if (path === '/api/workspaces/other/shares') {
+			return route.fulfill({ json: { active: [], recent: [] } });
+		}
+		if (path === '/api/workspaces/other/issues') {
+			return route.fulfill({ json: { data: [], total_count: 0, page: 1, per_page: 50, has_more: false } });
+		}
+		return route.fulfill({ json: [] });
+	});
+	await page.goto('/test/shares');
+	await page.getByRole('button', { name: 'Share my screen' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+
+	// Picking another workspace while live asks instead of navigating.
+	await page.getByText('Test Workspace', { exact: true }).first().click();
+	await page.getByText('Other Workspace', { exact: true }).click();
+	const dialog = page.getByRole('alertdialog');
+	await expect(dialog).toContainText('Stop screen sharing?');
+	await expect(dialog).toContainText('Other Workspace');
+	await expect(page).toHaveURL(/\/test\/shares$/);
+	expect(requests.ends).toEqual([]);
+
+	// Cancelling keeps the share running.
+	await dialog.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	expect(requests.ends).toEqual([]);
+
+	// Confirming switches and ends the share for the viewers.
+	await page.getByText('Test Workspace', { exact: true }).first().click();
+	await page.getByText('Other Workspace', { exact: true }).click();
+	await dialog.getByRole('button', { name: 'Switch workspace' }).click();
+	await expect(page).toHaveURL(/\/other\/my-issues$/);
+	await expect.poll(() => requests.ends).toEqual([{ presenter_token: presenterToken }]);
+});
+
+test('the workspace switcher context menu opens a workspace in a new tab', async ({ page }) => {
+	const otherWorkspace = {
+		...workspacePayload(true),
+		id: '00000000-0000-0000-0000-000000000093',
+		slug: 'other',
+		name: 'Other Workspace'
+	};
+	await stubCommon(page, true);
+	await page.route('**/api/workspaces', (route) => route.fulfill({ json: [workspacePayload(true), otherWorkspace] }));
+	// The tab opened by the context menu is its own page: context-level
+	// stubs serve its API calls (the page-level routes above keep serving
+	// the opener, since page routes take precedence).
+	const context = page.context();
+	await context.route('https://raw.githubusercontent.com/**', (route) => route.fulfill({ json: [] }));
+	await context.route('**/api/**', async (route) => {
+		const path = new URL(route.request().url()).pathname;
+		if (path === '/api/auth/me') {
+			return route.fulfill({
+				json: {
+					id: '00000000-0000-0000-0000-000000000001',
+					email: 'test@example.com',
+					name: 'Test User',
+					display_name: 'Test User',
+					avatar_url: null
+				}
+			});
+		}
+		if (path === '/api/preferences') {
+			return route.fulfill({
+				json: {
+					font_size: 'default',
+					pointer_cursors: true,
+					theme_mode: 'dark',
+					light_theme: 'light',
+					dark_theme: 'dark',
+					workflow_sort_mode: 'default',
+					workflow_sort_order: ['backlog', 'unstarted', 'started', 'completed', 'cancelled'],
+					team_workflow_sort_overrides: {}
+				}
+			});
+		}
+		if (path === '/api/workspaces') return route.fulfill({ json: [workspacePayload(true), otherWorkspace] });
+		if (path === '/api/workspaces/other') return route.fulfill({ json: otherWorkspace });
+		if (path === '/api/workspaces/other/issues') {
+			return route.fulfill({ json: { data: [], total_count: 0, page: 1, per_page: 50, has_more: false } });
+		}
+		if (path === '/api/notifications') {
+			return route.fulfill({ json: { unread_count: 0, notifications: [] } });
+		}
+		return route.fulfill({ json: [] });
+	});
+
+	await page.goto('/test/inbox');
+	await page.getByText('Test Workspace', { exact: true }).first().click();
+	await page.getByText('Other Workspace', { exact: true }).click({ button: 'right' });
+	const menu = page.getByRole('menu');
+	await expect(menu).toBeVisible();
+	const popupPromise = page.waitForEvent('popup');
+	await menu.getByRole('menuitem', { name: 'Open in new tab' }).click();
+	const popup = await popupPromise;
+	await expect(popup).toHaveURL(/\/other\/my-issues$/);
+	await popup.close();
+	// The opener stays on its workspace.
+	await expect(page).toHaveURL(/\/test\/inbox$/);
+});
+
 test('a silent presenter reserves the offered audio sender for a later source with audio', async ({ page }) => {
 	await stubOwnShare(page);
 	await page.goto('/test/shares');

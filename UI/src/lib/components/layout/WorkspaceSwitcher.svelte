@@ -4,16 +4,20 @@
 	import { createWorkspace, listWorkspaces } from '$lib/api/workspaces';
 	import * as Popover from '$lib/components/ui/popover';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import { Button } from '$lib/components/ui/button';
+	import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
 	import Plus from '@lucide/svelte/icons/plus';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import Check from '@lucide/svelte/icons/check';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import ArrowUpRight from '@lucide/svelte/icons/arrow-up-right';
 	import { onMount } from 'svelte';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { toSlug } from '$lib/utils/slug';
+	import { presenterSession } from '$lib/features/shares/presenter.session.svelte';
 
 	let {
 		currentWorkspace,
@@ -31,6 +35,7 @@
 	let newWorkspaceSlug = $state('');
 	let slugEdited = $state(false);
 	let creating = $state(false);
+	let pendingSwitch = $state<Workspace | null>(null);
 
 	let currentLogoUrl = $derived(currentWorkspace.logo_url);
 	$effect(() => {
@@ -44,10 +49,19 @@
 
 	function switchWorkspace(ws: Workspace) {
 		open = false;
-		if (ws.slug !== slug) {
-			localStorage.setItem('ku_last_workspace', ws.slug);
-			goto(`/${ws.slug}/my-issues`);
+		if (ws.slug === slug) return;
+		// Leaving the workspace tears the live share down (the layout calls
+		// presenterSession.setWorkspace), so confirm before navigating.
+		if (presenterSession.active) {
+			pendingSwitch = ws;
+			return;
 		}
+		goToWorkspace(ws);
+	}
+
+	function goToWorkspace(ws: Workspace) {
+		localStorage.setItem('ku_last_workspace', ws.slug);
+		goto(`/${ws.slug}/my-issues`);
 	}
 
 	function handleNameInput() {
@@ -114,24 +128,34 @@
 			<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{m['sidebar.workspaces']()}</span>
 		</div>
 		{#each workspaces as ws}
-			<button
-				onclick={() => switchWorkspace(ws)}
-				class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
-			>
-				{#if ws.logo_url}
-					<img src={ws.logo_url} alt="" class="h-5 w-5 shrink-0 rounded object-contain" />
-				{:else}
-					<div
-						class="flex h-5 w-5 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]"
+			<ContextMenu.Root>
+				<ContextMenu.Trigger class="block">
+					<button
+						onclick={() => switchWorkspace(ws)}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)]"
 					>
-						{ws.name.charAt(0).toUpperCase()}
-					</div>
-				{/if}
-				<span class="flex-1 truncate text-left">{ws.name}</span>
-				{#if ws.slug === slug}
-					<Check size={14} class="text-[var(--app-accent)]" />
-				{/if}
-			</button>
+						{#if ws.logo_url}
+							<img src={ws.logo_url} alt="" class="h-5 w-5 shrink-0 rounded object-contain" />
+						{:else}
+							<div
+								class="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[var(--app-accent)] text-[9px] font-bold text-[var(--app-accent-foreground)]"
+							>
+								{ws.name.charAt(0).toUpperCase()}
+							</div>
+						{/if}
+						<span class="flex-1 truncate text-left">{ws.name}</span>
+						{#if ws.slug === slug}
+							<Check size={14} class="text-[var(--app-accent)]" />
+						{/if}
+					</button>
+				</ContextMenu.Trigger>
+				<ContextMenu.Content class="w-44">
+					<ContextMenu.Item onclick={() => window.open(`/${ws.slug}/my-issues`, '_blank')}>
+						<ArrowUpRight class="mr-2 h-3.5 w-3.5" />
+						{m['sidebar.open_in_new_tab']()}
+					</ContextMenu.Item>
+				</ContextMenu.Content>
+			</ContextMenu.Root>
 		{/each}
 		<div class="mt-1 border-t border-[var(--app-border)] pt-1">
 			<button
@@ -197,5 +221,21 @@
 				</Button>
 			</Dialog.Footer>
 		</form>
-	</Dialog.Content>
-</Dialog.Root>
+		</Dialog.Content>
+	</Dialog.Root>
+
+	{#if pendingSwitch}
+		{@const ws = pendingSwitch}
+		<ConfirmDialog
+			title={m['shares.switch_while_sharing_title']()}
+			message={m['shares.switch_while_sharing_message']({ workspace: ws.name })}
+			confirmLabel={m['shares.switch_while_sharing_confirm']()}
+			onconfirm={() => {
+				// Read the target before clearing it: {@const} aliases are
+				// reactive reads, so ws is null once pendingSwitch is.
+				if (pendingSwitch) goToWorkspace(pendingSwitch);
+				pendingSwitch = null;
+			}}
+			oncancel={() => (pendingSwitch = null)}
+		/>
+	{/if}
