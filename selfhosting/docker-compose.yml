@@ -97,10 +97,8 @@ services:
       DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:0.1.0}
       DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:0.1.0}
       DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:0.1.0}
-      # Screen sharing (optional). Set LIVEKIT_URL (and a >=32 char
-      # LIVEKIT_API_SECRET) to enable — typically together with
-      # `docker compose --profile livekit up`, which runs the LiveKit SFU
-      # on livekit:7880 (media on UDP 50000-50100).
+      # Historical endpoint gate remains inventory for removal.
+      # Production discovers the service and receives credentials from OCI Vault.
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}

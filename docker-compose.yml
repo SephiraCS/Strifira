@@ -67,8 +67,8 @@ services:
       DEV_MACHINE_CLAUDE_IMAGE: ${DEV_MACHINE_CLAUDE_IMAGE:-ku/dev-machine-agent-claude:dev}
       DEV_MACHINE_OPENCODE_IMAGE: ${DEV_MACHINE_OPENCODE_IMAGE:-ku/dev-machine-agent-opencode:dev}
       DEV_MACHINE_CODEX_IMAGE: ${DEV_MACHINE_CODEX_IMAGE:-ku/dev-machine-agent-codex:dev}
-      # Screen sharing: set LIVEKIT_URL (e.g. ws://livekit:7880) to enable,
-      # typically together with `docker compose --profile livekit up`.
+      # Historical endpoint gate remains inventory for removal.
+      # Production discovers the service and receives credentials from OCI Vault.
       LIVEKIT_URL: ${LIVEKIT_URL:-}
       LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}

@@ -5,15 +5,21 @@ development activity appears on issues and drives status automation.
 
 ## How it works
 
-Two configuration modes:
+The production operating contract requires automatic retrieval of a vendor token
+stored once in OCI Vault and automatic discovery of the first-party endpoint.
+Current connection APIs do not implement that pickup. The modes below document
+existing compatibility behavior and migration debt; repository linking still
+requires customer authorization, token scopes and signed webhooks.
 
-- **Per-workspace** (self-hosted default): Settings → Forgejo → paste the
+Current connection modes:
+
+- **Per-workspace** (self-hosted default): Settings → Forgejo still accepts an
   instance URL and a personal access token. The token is validated against
   `GET /api/v1/user` and stored AES-256-GCM encrypted
   (key derived from `JWT_SECRET + ":forgejo"`). Connecting seeds the default
   transition rules exactly once and adds a `PR` status (started category) to
   every team that lacks one.
-- **Global** (SaaS-style): set `FORGEJO_URL` and `FORGEJO_TOKEN` in the
+- **Global** (SaaS-style): the current runtime reads `FORGEJO_URL` and `FORGEJO_TOKEN` from the
   environment; every workspace shares the connection and the settings page
   shows it as server-managed.
 
@@ -27,11 +33,11 @@ the repository `html_url` in the payload pins the instance so `full_name`
 lookups cannot collide across instances. `X-Gitea-*`/`X-Gogs-*` header
 variants are accepted for compatibility.
 
-## Environment
+## Current environment inputs (migration inventory)
 
 | Variable | Purpose |
 | --- | --- |
-| `FORGEJO_URL` | Shared instance origin (global mode), e.g. `https://git.terrascale.tech` |
+| `FORGEJO_URL` | Shared instance origin (global mode), e.g. `https://forgejo.example.com` |
 | `FORGEJO_TOKEN` | Shared access token (global mode) |
 | `FORGEJO_WEBHOOK_URL` | Webhook target override (dev tunnels); defaults to `FRONTEND_URL` + `/api/forgejo/webhook` |
 

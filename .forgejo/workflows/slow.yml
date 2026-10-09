@@ -159,6 +159,6 @@ jobs:
           REPORT_TITLE: 'Slow test suite failed'
           REPRO: |
             # PostgreSQL and Redis first: make dev-start-services
-            nice -n 19 make test-slow
+            make test-slow
             # or one part: make test-slow-backend | test-slow-frontend | test-slow-live
         run: scripts/ci/report-failure.sh

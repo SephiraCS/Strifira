@@ -29,7 +29,40 @@ concurrency:
 # good deploy the Release job bumps the version, tags and publishes it;
 # pull requests never edit versions (scripts/ci/release.sh).
 jobs:
+  zero-config:
+    name: Reject new configuration switches
+    runs-on: terrascale-builder
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact change with its history
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out the shared TerraScale policy
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          repository: TerraScale/ts-builder
+          ref: 7e46ca535d9835acebee8d7017277a6dbbc64968
+          path: .zero-config-policy
+          token: ${{ secrets.TERRASCALE_BOT_TOKEN }}
+          persist-credentials: false
+      - name: Check the added lines
+        env:
+          ZERO_CONFIG_BASE: ${{ forgejo.event.pull_request.base.sha || forgejo.event.before }}
+          ZERO_CONFIG_HEAD: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+        run: |
+          set -eu
+          if [ -z "$ZERO_CONFIG_BASE" ]; then
+            ZERO_CONFIG_BASE=$(git rev-parse "$ZERO_CONFIG_HEAD^")
+          fi
+          python3 .zero-config-policy/scripts/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
+
   backend-test:
+    needs: [zero-config]
     name: Backend Tests
     runs-on: terrascale-builder
     timeout-minutes: 30
@@ -114,6 +147,7 @@ jobs:
         run: scripts/ci/podman-store.sh remove
 
   frontend-check:
+    needs: [zero-config]
     name: Frontend Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
@@ -138,6 +172,7 @@ jobs:
   # serves neither the v4 nor the legacy artifact protocol (see ts-reviewer
   # CI). Workers stay at two per shard.
   frontend-e2e:
+    needs: [zero-config]
     name: Frontend Browser Tests (${{ matrix.shard }}/3)
     runs-on: terrascale-builder
     timeout-minutes: 20
@@ -179,6 +214,7 @@ jobs:
           find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
   web-check:
+    needs: [zero-config]
     name: Marketing Site Checks
     runs-on: terrascale-builder
     timeout-minutes: 30
@@ -205,6 +241,7 @@ jobs:
         run: npm run test:responsive
 
   stage-image:
+    needs: [zero-config]
     name: Stage Image
     if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder

@@ -110,6 +110,13 @@ Configure only installed providers. Repository keys and URLs must exactly match 
 
 `server_url` requires HTTPS. Isolated local development can opt into `"localhost_http": true` for literal loopback or `localhost` HTTP URLs. Redirects are rejected so authenticated requests cannot cross origins.
 
+The local `execution_mode` acknowledgement, repository allowlist and loopback
+HTTP exception are development-worker trust boundaries, not production feature
+activation. Preserve explicit owner consent, HTTPS and origin validation. The
+production always-on contract does not authorize running code on a user's VM or
+sharing their provider login files. This local-worker setup does not implement
+automatic OCI Vault production-secret delivery.
+
 ## Execution boundary
 
 `execution_mode: "trusted-local"` explicitly authorizes coding tools and the issue's configured test argv to run as the development box user. Use a dedicated VM account for trusted workspace members and repositories. Git worktrees preserve the original checkout's working tree and index; they are not an operating system sandbox. Tools and repository tests may access the account's filesystem, network, and local provider login files. This mode is unsuitable for untrusted repositories or adversarial prompts.

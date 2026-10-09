@@ -30,8 +30,25 @@ Ku's published releases are runnable MVPs, not a mature enterprise platform. Thi
 | **Planning**     | Implemented: cycles with burndown/velocity charts, project management with Gantt view, and full cycle/project UI.                                                                                                                                         |
 | **Integrations** | Available: workspace webhooks and Forgejo with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, links to rerun in Forgejo, and cancellation. |
 | **Analytics**    | Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on current issue data and stored lifecycle timestamps.                                                                                                                                              |
-| **Dev Machines** | Unreleased development-branch functionality implemented as an opt-in self-hosted subsystem: PostgreSQL control plane, multi-container runtime, manager, authenticated gateway, four agent providers, collector, and UI. Disabled by default; see [`TECHNICAL.md`](TECHNICAL.md). |
+| **Dev Machines** | Unreleased development-branch functionality with a multi-container runtime, authenticated routing, agent providers, collector, and UI. The production contract requires always-on availability; existing deployment gates remain migration debt. See [`TECHNICAL.md`](TECHNICAL.md). |
 | **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
+
+## Production operating contract
+
+Features and all regions are always on, with fixed production settings and no
+operator feature activation or tuning. NetBird membership automatically admits
+nodes; each node discovers every region and infers its own region. OCI Vault
+creates and delivers first-party production secrets and retrieves vendor keys
+stored once. Fakes, demo stores and skip-auth belong only in test code and
+binaries. See [repository policy](AGENTS.md).
+
+This is the required contract, not a statement that this branch implements all
+of it. Existing environment readers, Compose profiles, demo paths and manual
+secret/provider setup are migration inventory for later COS work. TS-795 changes
+documentation and policy only. The examples below describe current development
+and self-hosting prerequisites. They are not a completed zero-configuration
+production deployment. Authentication, customer consent, repository access,
+credential isolation, SSRF checks and recovery safeguards remain required.
 
 ## Why Ku?
 
@@ -62,7 +79,7 @@ The product is intentionally smaller than broad project-management suites. It co
 | 🔔  | **Notifications**      | Inbox with snooze, read status, and archive                                      |
 | 🔗  | **Webhooks**           | Plug into external services and integrations                                     |
 | ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, Forgejo, and presence |
-| 🖥️  | **Dev Machines**       | Unreleased opt-in multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
+| 🖥️  | **Dev Machines**       | Unreleased multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
 | 🔧  | **Forgejo**            | Link repos, match issue IDs in development activity, react to CI checks, and apply status rules      |
 | 🤖  | **AI assistance**      | Generate issue descriptions, improve descriptions and comments, and review suggestions without losing attachments or intervening edits |
 | ▶️  | **Forgejo Actions**    | Browse linked repository workflows, inspect jobs and bounded logs, rerun in Forgejo, and cancel active runs |
@@ -76,13 +93,13 @@ The product is intentionally smaller than broad project-management suites. It co
 
 Completed issues can be archived from an issue's actions and restored from **Archived issues** in the workspace sidebar. **Settings → General** enables automatic archiving 30 days after completion by default; workspace owners can turn it off. Restored issues are exempt from automatic archiving until their status changes.
 
-Workspace owners configure an OpenAI-compatible endpoint, model, and API key in **Settings → AI**. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Ku presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
+The production contract requires automatic provider discovery and retrieval of vendor keys stored once in OCI Vault. The current UI still requires workspace owners to save an OpenAI-compatible endpoint, model, and API key in **Settings → AI**; that manual setup is migration debt, not automatic Vault pickup. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Ku presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
 
 **Actions** in the workspace sidebar shows workflows from linked Forgejo repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Ku. For completed runs, **Rerun in Forgejo** opens the native run page: sign in with your normal Forgejo account and use its rerun controls. Your Forgejo repository permissions apply. **View workflow steps in Forgejo** opens that page for individual step details. Job logs and downloads require Forgejo 16 or newer; older instances can still be opened through **Open in Forgejo**.
 
 ## 🤖 Dev Machines (Agentic Coding)
 
-Dev Machines are an unreleased opt-in multi-container subsystem for self-hosted Ku. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.
+Dev Machines are an unreleased multi-container subsystem for self-hosted Ku. The production contract requires always-on availability; current deployment gates and manual provisioning remain migration debt. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.
 
 > See [`TECHNICAL.md`](TECHNICAL.md) for the full specification, architecture diagrams, schema, and API reference.
 
@@ -103,7 +120,7 @@ The implementation:
 1. **Orchestrate cooperating containers** per machine. Collector and egress services are always represented. The optional developer service runs code-server on `8080` and ttyd on `7681` in one container (`/workspace`, `HOME`, tools, processes, and tmux); browser and on-demand agent services run separately on the isolated bridge network. The Ku UI renders `@xterm/xterm` natively and speaks `ttyd.v1`; it does not expose ttyd's web page.
 2. **Support multiple agent providers** — Claude Code, OpenCode, Codex, or admin-configured generic CLIs. The shared developer image includes pinned OpenCode, Claude Code, and Codex CLIs for direct interactive terminal use. Ku's dashboard launches bounded autonomous runs in separately pinned provider images and normalizes their results.
 3. **Assign random subdomains** through a separate registrable wildcard domain (`*.ku-machines.example.net`) with launch-ticket auth and host-restricted machine session cookies. The machine domain must be a completely separate registrable domain to prevent cookie leakage between the main application and machine workloads.
-4. **Authenticate** through a dedicated unprivileged Machine Gateway; the privileged Machine Manager is the only Dev Machines runtime component with Docker socket access. The separately optional system updater also mounts the socket when enabled.
+4. **Authenticate** through a dedicated unprivileged Machine Gateway; the privileged Machine Manager is the only Dev Machines runtime component with Docker socket access. The current system updater also mounts the socket and must retain the same host-administrator boundary.
 5. **Prepare issue worktrees** from issue, project, team, then workspace repository/environment defaults. One machine has affinity to one repository and can hold several independent issue worktrees from that repository; use a separate machine for another repository/environment or concurrent conflicting work.
 6. **Record best-effort activity** from filesystem, shell, root-checkout Git, browser, agent, gateway, and lifecycle telemetry and attach it to project work
 
@@ -114,7 +131,14 @@ The implementation:
 | **Agent-only**    | A user starts a bounded run      | Agent works autonomously, records a normalized result, and optionally pushes a branch or opens a pull request with the workspace Forgejo token |
 | **Human + Agent** | Developer opens an issue workspace | Uses code-server or the dedicated persistent terminal while launching and monitoring bounded agent runs from Ku |
 
-### Configuration
+### Current machine inputs
+
+The following describes existing APIs and workspace policy. Deployment switches,
+provider enable fields and adjustable runtime values are migration inventory for
+later COS work; TS-795 does not change them. Always-on availability preserves
+user-requested machine creation, repository selection, authorization and safe
+resource boundaries.
+
 
 Machines are created without requiring a repository, branch, issue, project, or manual TTL. Friendly random names are case-insensitively unique per creator within a workspace and have an availability API. Opening an issue resolves its repository and environment using issue, project, team, then workspace defaults and creates an isolated Git worktree. Workspace policies control concurrency, maximum hard runtime, a default 240-minute idle pause, per-machine disk size, providers, repositories, and custom CLI access. A per-machine **Keep running** switch bypasses idle pause; no automatic deletion is performed. Owners and admins can create a writable Environment Builder, pause or stop it, and save selected tooling/home customization as an immutable local OCI Development Environment image.
 
@@ -141,7 +165,7 @@ Here's what Ku runs on and what each piece does:
 | **Real-time**     | WebSocket (nhooyr.io)                | Workspace events, issue presence, and targeted notifications          |
 | **Storage**       | Local FS or S3-compatible            | AWS S3, Cloudflare R2, MinIO, SeaweedFS                               |
 | **Reverse Proxy** | Caddy                                | Production HTTPS and routing                                          |
-| **Dev Machines**  | Docker + Caddy + Go gateway/manager + code-server + ttyd/xterm + Chrome/KasmVNC | Opt-in multi-container development environments with issue worktrees and provider abstraction |
+| **Dev Machines**  | Docker + Caddy + Go gateway/manager + code-server + ttyd/xterm + Chrome/KasmVNC | Unreleased multi-container development environments with issue worktrees and provider abstraction |
 | **Infra**         | Docker + Docker Compose              | Local development and reference self-hosting stack                    |
 
 ## 🚀 Quick Start
@@ -223,9 +247,9 @@ This feature transfers one logical workspace. It is not a replacement for an ope
 
 - A Linux server with Docker + Docker Compose v2
 - A domain pointing to your server (for HTTPS via Let's Encrypt HTTP-01)
-- If enabling Dev Machines: a second registrable domain with a wildcard DNS record and either a custom Caddy DNS-01 build or an imported wildcard TLS certificate
+- Dev Machines require a second registrable domain with a wildcard DNS record and either a custom Caddy DNS-01 build or an imported wildcard TLS certificate
 
-### 1. Clone and configure
+### 1. Prepare the current reference stack
 
 ```sh
 git clone https://github.com/carbogninalberto/kuayle.git
@@ -233,14 +257,13 @@ cd ku/selfhosting
 cp .env.example .env
 ```
 
-Edit `.env` with your domain and production values:
-
-```env
-DOMAIN=ku.yourcompany.com
-FRONTEND_URL=https://ku.yourcompany.com
-POSTGRES_PASSWORD=<strong-random-password>
-JWT_SECRET=<random-string-at-least-32-chars>
-```
+The current stack still consumes environment inputs and does not provision its
+production secrets automatically. Domain ownership, valid HTTPS and protected
+credentials remain prerequisites. Under the operating contract, OCI Vault must
+create and deliver first-party secrets and retrieve vendor keys stored once;
+this branch's delivery gap must be resolved before calling the stack a
+zero-configuration production deployment. Never deploy example placeholders or
+commit generated credentials.
 
 `FRONTEND_URL` must be the exact public browser origin, including scheme and any non-default port. Dev Machine native terminal WebSockets use this value for strict `Origin` validation.
 
@@ -261,28 +284,33 @@ docker compose exec backend /app/server seed
 
 Caddy handles HTTPS termination and proxies `/api/*` to the backend and all other requests to the frontend, so one public origin is enough.
 
-### Enabling Dev Machines
+### Dev Machines readiness
 
-Dev Machines remain disabled in the default five-service deployment. Before enabling them:
+Dev Machines must be available without a production enable step. The current
+reference Compose stack still has profile and flag gates; removing those gates
+and implementing automatic provisioning belongs to later COS work. TS-795 does
+not change their values or claim that a five-service launch starts the complete
+control plane.
 
-1. Set `DEV_MACHINES_ENABLED=true`, then configure `DEV_MACHINE_DOMAIN` on a separate registrable domain from `DOMAIN`, with wildcard DNS pointing to the host.
-2. Replace the checked-in local `tls internal` wildcard configuration with either a mounted wildcard certificate or a DNS-01-enabled Caddy build for production. Profile startup rejects public production machine domains while Caddy internal TLS remains active. The wildcard route already proxies machine HTTP and WebSocket upgrades to the gateway.
-3. Keep `FRONTEND_URL` set to the exact public Ku origin; the gateway uses it for native terminal WebSocket `Origin` checks.
-4. Set `DEV_MACHINE_ENCRYPTION_KEY` to an independent random value of at least 32 characters and set `DEV_MACHINE_INGEST_URL` to the public HTTPS API URL.
-5. Set an independent `DEV_MACHINE_GATEWAY_DB_PASSWORD`; Compose provisions a restricted `ku_gateway` login and the gateway rejects the application database credential in production.
-6. On Linux, set `DEV_MACHINE_DOCKER_GID` to the numeric group owner reported by `stat -c '%g' /var/run/docker.sock`; Docker Desktop commonly uses the default `0`.
-7. Build the runtime images, migrate, provision gateway grants, and start the optional control plane:
+Deployment must satisfy these safety prerequisites:
 
-```sh
-docker compose --profile dev-machine-images build
-docker compose exec backend /app/server migrate up
-docker compose --profile dev-machines run --rm machine-gateway-db-provision
-docker compose --profile dev-machines up -d
-```
+- A separate registrable machine domain, wildcard DNS and valid production
+  wildcard TLS; Caddy's local `tls internal` configuration is unsuitable for a
+  public production domain, and stock Caddy cannot issue wildcard certificates
+  through HTTP-01.
+- An exact public `FRONTEND_URL` for terminal WebSocket origin checks and a
+  reachable HTTPS collector ingestion URL.
+- Independent machine-encryption and restricted gateway credentials, created
+  and delivered by OCI Vault under the contract; the current stack still
+  requires these inputs and does not implement that delivery.
+- Trusted runtime images, completed migrations and restricted gateway grants
+  before control-plane startup.
+- Docker data-root hard quotas and correct socket ownership, discovered rather
+  than exposed as production tuning; socket access remains host-privileged.
 
 The API rejects a production machine domain that shares the main application's registrable domain. `machines.localhost` is supported only for local development. The gateway rejects parent-domain and reserved session cookies from workloads. Browser-cookie launches for code-server and browser require exact machine origins for mutations and service WebSockets; native terminal WebSockets use a separate one-use ticket bound to exact `FRONTEND_URL`, host, user/service, tmux session, and working directory.
 
-For DNS-01, replace the stock `caddy:2-alpine` image with a trusted custom Caddy build containing your provider module, replace `tls internal` with a `tls` block using that DNS provider, and pass its scoped API credential through a Compose override. For operator certificates, bind-mount a host directory read-only at `/etc/caddy/certs` through a Compose override and use `tls /etc/caddy/certs/machines.pem /etc/caddy/certs/machines.key` in the wildcard block. Keep private keys outside the repository and container image.
+For DNS-01, replace the stock `caddy:2-alpine` image with a trusted custom Caddy build containing your provider module, replace `tls internal` with a `tls` block using that DNS provider, and have OCI Vault deliver its scoped vendor credential; the current stack still requires a credential delivery integration. For operator certificates, bind-mount a host directory read-only at `/etc/caddy/certs` through a Compose override and use `tls /etc/caddy/certs/machines.pem /etc/caddy/certs/machines.key` in the wildcard block. Keep private keys outside the repository and container image.
 
 Environment snapshot bytes are local OCI images stored in the host Docker image store, while their image references and lifecycle metadata are PostgreSQL rows. Snapshots exclude the repository workspace named volume and tmpfs secret mounts; plan backup, migration, pruning, and host disk monitoring accordingly.
 
@@ -295,122 +323,38 @@ cd ku
 bash selfhosting/update.sh
 ```
 
-The update script pulls the latest code, rebuilds images, applies pending migrations, and recreates containers. If Dev Machines services are running, it rebuilds their control-plane and runtime images first, stops the existing gateway and manager only while migrations and restricted gateway-role grants are applied, then starts the updated control plane. A failure after the stop clears the upgrade marker, preserves logs, restarts the same previous containers, and returns the original nonzero status. Disabled optional profiles remain disabled.
+The update script pulls the latest code, rebuilds images, applies pending migrations, and recreates containers. If Dev Machines services are running, it rebuilds their control-plane and runtime images first, stops the existing gateway and manager only while migrations and restricted gateway-role grants are applied, then starts the updated control plane. A failure after the stop clears the upgrade marker, preserves logs, restarts the same previous containers, and returns the original nonzero status. The current script preserves the existing profile selection; that behavior remains migration debt relative to the always-on contract.
 
-Instance sysadmins can also enable one-click updates from **Settings → Version**:
+Instance updates require an authorized sysadmin action. The production contract
+requires automatic provisioning of the updater's first-party credentials and
+availability without a deployment profile toggle. The current sidecar still
+requires an authorized sysadmin identity, protected credentials and an internal
+endpoint; its profile-based setup remains migration debt. It must remain
+internal-only and run the same reviewed update flow. Back up application data,
+assets and required environment images before updating.
 
-1. Copy your user ID from **Settings → Profile**.
-2. Add it to `SYSADMINS` in `selfhosting/.env`.
-3. Set a strong `SYSTEM_UPDATER_TOKEN` and keep `SYSTEM_UPDATER_URL=http://updater:8081`.
-4. Apply the env and start the internal updater sidecar with `docker compose --profile updater up -d backend updater` from `selfhosting/`.
+### Storage contract and current prerequisites
 
-The updater sidecar is internal-only and runs the same `selfhosting/update.sh` flow. If it is not configured, the Version page shows the manual update command instead.
+Production storage uses the fixed service setting and automatically delivered
+credentials. Vendor-issued storage keys are stored once in OCI Vault. The
+current reference stack still selects local or S3-compatible storage through
+environment inputs; those backend-selection and tuning inputs are inventory
+for later COS work. This documentation change does not migrate uploaded data
+or implement automatic discovery. Verify access permissions, public URL
+behavior and signed downloads before accepting a storage deployment.
 
-### Storage options
+### Forgejo integration
 
-By default, uploads use a local Docker volume (`STORAGE_TYPE=local`). The alternative S3 backend accepts a configurable endpoint and path-style requests:
+Ku's current repository integration is Forgejo; the former GitHub App Manifest
+flow and `GITHUB_APP_*` setup are obsolete. See the
+[Forgejo integration contract](BE/docs/forgejo-integration.md) for current APIs,
+permissions and signed webhook handling.
 
-```env
-STORAGE_TYPE=s3
-S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
-S3_BUCKET=ku-uploads
-S3_REGION=us-east-1
-S3_ACCESS_KEY=your-key
-S3_SECRET_KEY=your-secret
-```
-
-The backend is intended for AWS S3 and compatible APIs such as R2, MinIO, and SeaweedFS. Test bucket creation, permissions, public URL behavior, and signed downloads with your chosen provider.
-
-### GitHub Integration (optional)
-
-Ku connects to GitHub through a **GitHub App**. By default, each workspace uses GitHub's App Manifest flow and stores the returned credentials encrypted. Deployments with shared App credentials can let workspaces install a preconfigured App instead (see `.env.example` for the `GITHUB_APP_*` variables).
-
-#### What it does
-
-- **Links development activity** — mention `ENG-123` in a branch name, PR title/body, or commit message (case-insensitive)
-- **Auto-transitions** — branch created → In Progress, PR opened → In Review, PR merged → Done (configurable)
-- **Activity feed** — linked PRs, branches, and commits on the matching issue detail page
-
-#### Publicly reachable instance
-
-If GitHub can reach your Ku instance (for example `https://ku.yourcompany.com`), the manifest flow can populate the callback and webhook URLs:
-
-1. Go to **Settings → GitHub** in your workspace
-2. Click **Set up GitHub App** — redirects to GitHub with a pre-filled form
-3. Click **Create GitHub App** on GitHub
-4. Redirected back — credentials saved automatically, webhook URL configured
-5. Click **Install on GitHub** to grant access to your repos
-6. Select which repositories to link
-
-GitHub events appear after the App is installed on repositories, webhook delivery succeeds, and an issue identifier is present in supported activity.
-
-#### Private network / no public domain
-
-If your instance runs on a private network (for example behind a VPN), GitHub cannot send webhooks directly. Use a relay or expose only the webhook endpoint through a controlled tunnel.
-
-**Option A: Webhook proxy with smee.io**
-
-[smee.io](https://smee.io) is a free webhook relay that forwards GitHub events to your private instance.
-
-1. Go to [smee.io/new](https://smee.io/new) and copy your channel URL (e.g. `https://smee.io/abc123`)
-2. Run the proxy on your server:
-   ```sh
-   npx smee-client --url https://smee.io/abc123 --target http://localhost:8080/api/github/webhook
-   ```
-3. Set up the GitHub App from **Settings → GitHub** (same steps as above)
-4. After the app is created, go to its settings on GitHub:
-   **GitHub → Settings → Developer settings → GitHub Apps → your app → General**
-5. Set **Webhook URL** to your smee channel URL (`https://smee.io/abc123`)
-6. Check **Active** and save
-
-The smee client must stay running to receive events. You can run it as a systemd service:
-
-```ini
-# /etc/systemd/system/smee-ku.service
-[Unit]
-Description=Smee webhook proxy for Ku
-After=network.target
-
-[Service]
-ExecStart=/usr/bin/npx smee-client --url https://smee.io/abc123 --target http://localhost:8080/api/github/webhook
-Restart=always
-User=ku
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```sh
-sudo systemctl enable --now smee-ku
-```
-
-**Option B: Reverse tunnel**
-
-Use a reverse tunnel to expose just the webhook endpoint. With [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/):
-
-```sh
-cloudflared tunnel --url http://localhost:8080
-```
-
-Or with [ngrok](https://ngrok.com):
-
-```sh
-ngrok http 8080
-```
-
-Then set the generated public URL as the webhook URL in your GitHub App settings (append `/api/github/webhook`).
-
-#### Local development
-
-For local development, the GitHub App is created without a webhook URL (since localhost isn't reachable). To receive webhook events during development:
-
-1. Set up the GitHub App from Settings → GitHub (works on localhost)
-2. Start a smee proxy:
-   ```sh
-   npx smee-client --url https://smee.io/your-channel --target http://localhost:8080/api/github/webhook
-   ```
-3. Update the webhook URL in your GitHub App settings to your smee channel URL
-4. Events will now flow through to your local instance
+The production contract retrieves a vendor token stored once in OCI Vault;
+automatic pickup is not implemented by the current per-workspace/global
+connection paths. Repository linking still requires owner authorization and
+appropriate Forgejo permissions. Automatic feature availability does not grant
+access to repositories or authorize pushes, pull requests or status changes.
 
 ## 📂 Project Structure
 
