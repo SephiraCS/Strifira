@@ -46,7 +46,7 @@ jobs:
         with:
           github-server-url: https://git.terrascale.tech
           repository: TerraScale/ts-builder
-          ref: d6f4d5e0e6691268b60525433af96da16758c598
+          ref: deb6b6011710d8d80f8482f636406ca1390983f0
           path: .zero-config-policy
           token: ${{ secrets.TERRASCALE_BOT_TOKEN }}
           persist-credentials: false
