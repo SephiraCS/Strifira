@@ -29,29 +29,27 @@ concurrency:
 # good deploy the Release job bumps the version, tags and publishes it;
 # pull requests never edit versions (scripts/ci/release.sh).
 jobs:
-  zero-config:
-    name: Reject new configuration switches
+  # TS-795 switch guard: fails when the change adds an on/off setting.
+  # Same text in every repo; ts-builder's scripts/bump-ci-ref.sh moves the pinned ref.
+  guard:
     runs-on: terrascale-builder
     timeout-minutes: 10
     steps:
-      - name: Check out the exact change with its history
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Check out the shared TerraScale policy
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           repository: TerraScale/ts-builder
-          ref: 4abae826a08090c4505d7c8f3d7adcd78be616ef
+          ref: 8dacab451c3c16924622ff512d7aa17501b70ecc # guard ref
           path: .zero-config-policy
           token: ${{ secrets.TERRASCALE_BOT_TOKEN }}
           persist-credentials: false
-      - name: Check the added lines
-        env:
+      - env:
           ZERO_CONFIG_BASE: ${{ forgejo.event.pull_request.base.sha || forgejo.event.before }}
           ZERO_CONFIG_HEAD: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
         run: |
@@ -61,17 +59,47 @@ jobs:
           fi
           python3 .zero-config-policy/scripts/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
 
-  backend-test:
-    needs: [zero-config]
-    name: Backend Tests
+  check:
+    runs-on: terrascale-builder
+    timeout-minutes: 30
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      - name: Install UI dependencies
+        working-directory: UI
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Svelte check (UI)
+        working-directory: UI
+        run: npm run check
+
+      - name: Install marketing site dependencies
+        working-directory: WEB
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Svelte check (WEB)
+        working-directory: WEB
+        run: npm run check
+
+      - name: Build and SEO validation
+        working-directory: WEB
+        run: npm run validate
+
+      - name: Responsive layout tests
+        working-directory: WEB
+        run: npm run test:responsive
+
+  test:
     runs-on: terrascale-builder
     timeout-minutes: 30
     defaults:
       run:
         working-directory: BE
     steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
@@ -106,8 +134,7 @@ jobs:
           wait "$postgres"
           wait "$redis"
 
-      - name: Vet
-        run: go vet ./...
+      - run: go vet ./...
 
       - name: Wait for PostgreSQL and Redis
         run: |
@@ -146,34 +173,11 @@ jobs:
         working-directory: .
         run: scripts/ci/podman-store.sh remove
 
-  frontend-check:
-    needs: [zero-config]
-    name: Frontend Checks
-    runs-on: terrascale-builder
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: UI
-    steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          persist-credentials: false
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --no-fund
-
-      - name: Svelte check
-        run: npm run check
-
   # The fast browser suite (FAST_SPECS in UI/playwright.config.ts), split
   # across three runners. Each shard builds the app itself: this runner
   # serves neither the v4 nor the legacy artifact protocol (see ts-reviewer
   # CI). Workers stay at two per shard.
-  frontend-e2e:
-    needs: [zero-config]
-    name: Frontend Browser Tests (${{ matrix.shard }}/3)
+  e2e:
     runs-on: terrascale-builder
     timeout-minutes: 20
     strategy:
@@ -184,17 +188,14 @@ jobs:
       run:
         working-directory: UI
     steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
 
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --no-fund
+      - run: npm ci --prefer-offline --no-audit --no-fund
 
-      - name: Build
-        run: npm run build
+      - run: npm run build
 
       # Installs only what the job image lacks for this Playwright version
       # (a no-op once the baked browsers match).
@@ -213,42 +214,13 @@ jobs:
         run: |
           find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
-  web-check:
-    needs: [zero-config]
-    name: Marketing Site Checks
-    runs-on: terrascale-builder
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: WEB
-    steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          persist-credentials: false
-
-      - name: Install dependencies
-        run: npm ci --prefer-offline --no-audit --no-fund
-
-      - name: Svelte check
-        run: npm run check
-
-      - name: Build and SEO validation
-        run: npm run validate
-
-      - name: Responsive layout tests
-        run: npm run test:responsive
-
-  stage-image:
-    needs: [zero-config]
-    name: Stage Image
-    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
+  build:
+    needs: [guard]
+    if: forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder
     timeout-minutes: 30
     steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
@@ -271,58 +243,6 @@ jobs:
         if: always()
         run: scripts/ci/podman-store.sh remove
 
-  deploy:
-    name: Deploy to Alpha
-    needs: [backend-test, frontend-check, frontend-e2e, stage-image]
-    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
-    runs-on: terrascale-builder
-    timeout-minutes: 20
-    env:
-      # Public endpoint of the alpha instance (HomeLab services/ku.md).
-      ALPHA_HEALTH_URL: https://ku.mariogk.com/health
-    steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          persist-credentials: false
-
-      # The commit to name in rollback instructions: what the public
-      # endpoint serves now, or (for images older than the version field)
-      # the last fully green push to main.
-      - name: Record the running commit
-        id: previous
-        env:
-          FORGEJO_TOKEN: ${{ forgejo.token }}
-        run: |
-          set -u
-          previous=$(curl --silent --fail --max-time 10 "${ALPHA_HEALTH_URL}" | jq -r '.version // empty' 2>/dev/null || true)
-          if ! printf '%s' "$previous" | grep -Eq '^[0-9a-f]{40}$'; then
-            previous=$(curl --silent --fail --max-time 10 --header "Authorization: token ${FORGEJO_TOKEN}" \
-              "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/runs?workflow_id=ci.yml&event=push&status=success&limit=5" \
-              | jq -r --arg sha "${{ forgejo.sha }}" '[.workflow_runs[] | select(.commit_sha != $sha)][0].commit_sha // "unknown"' 2>/dev/null || echo unknown)
-          fi
-          echo "Alpha runs ${previous} before this deploy."
-          echo "sha=${previous}" >> "$GITHUB_OUTPUT"
-
-      - name: Roll the ku instance
-        env:
-          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
-        run: scripts/alpha-deploy.sh roll "${{ forgejo.sha }}"
-
-      # ku-deploy only checks alpha's loopback; this checks what users get.
-      - name: Verify the deployed commit
-        run: scripts/ci/verify-deploy.sh "${ALPHA_HEALTH_URL}" "${{ forgejo.sha }}" "${{ steps.previous.outputs.sha }}"
-
-      - name: Explain the rollback
-        if: failure()
-        env:
-          PREVIOUS: ${{ steps.previous.outputs.sha }}
-        run: |
-          echo "::error::Deploy of ${{ forgejo.sha }} failed. Alpha ran ${PREVIOUS:-unknown} before it."
-          echo "ku-deploy rolls back by itself when the new image never turns healthy."
-          echo "To roll back by hand, on alpha: sudo -u ku-deploy /usr/local/sbin/ku-deploy roll ${PREVIOUS:-<previous sha>}"
-
   # Cuts the next patch release of the deployed commit: bumps UI/package.json
   # and the OpenAPI version in a "[skip ci]" commit on main, tags it, creates
   # the release, pushes the images built from it, and rolls alpha to that
@@ -330,9 +250,8 @@ jobs:
   # and never blocks it. No loop: Forgejo starts no workflow for
   # pushes made with the job token (see scripts/ci/release.sh).
   release:
-    name: Release
-    needs: [deploy]
-    if: forgejo.event_name != 'pull_request' && forgejo.ref == 'refs/heads/main'
+    needs: [guard, deploy]
+    if: forgejo.ref == 'refs/heads/main'
     runs-on: terrascale-builder
     timeout-minutes: 60
     permissions:
@@ -342,8 +261,7 @@ jobs:
       REGISTRY: git.terrascale.tech
       IMAGE_PREFIX: git.terrascale.tech/terrascale
     steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           persist-credentials: false
@@ -384,13 +302,62 @@ jobs:
         if: always()
         run: scripts/ci/podman-store.sh remove
 
+  deploy:
+    needs: [guard, check, test, e2e, build]
+    if: forgejo.ref == 'refs/heads/main'
+    runs-on: terrascale-builder
+    timeout-minutes: 20
+    env:
+      # Public endpoint of the alpha instance (HomeLab services/ku.md).
+      ALPHA_HEALTH_URL: https://ku.mariogk.com/health
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          persist-credentials: false
+
+      # The commit to name in rollback instructions: what the public
+      # endpoint serves now, or (for images older than the version field)
+      # the last fully green push to main.
+      - name: Record the running commit
+        id: previous
+        env:
+          FORGEJO_TOKEN: ${{ forgejo.token }}
+        run: |
+          set -u
+          previous=$(curl --silent --fail --max-time 10 "${ALPHA_HEALTH_URL}" | jq -r '.version // empty' 2>/dev/null || true)
+          if ! printf '%s' "$previous" | grep -Eq '^[0-9a-f]{40}$'; then
+            previous=$(curl --silent --fail --max-time 10 --header "Authorization: token ${FORGEJO_TOKEN}" \
+              "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/runs?workflow_id=ci.yml&event=push&status=success&limit=5" \
+              | jq -r --arg sha "${{ forgejo.sha }}" '[.workflow_runs[] | select(.commit_sha != $sha)][0].commit_sha // "unknown"' 2>/dev/null || echo unknown)
+          fi
+          echo "Alpha runs ${previous} before this deploy."
+          echo "sha=${previous}" >> "$GITHUB_OUTPUT"
+
+      - name: Roll the ku instance
+        env:
+          ALPHA_DEPLOY_SSH_KEY: ${{ secrets.ALPHA_DEPLOY_SSH_KEY }}
+        run: scripts/alpha-deploy.sh roll "${{ forgejo.sha }}"
+
+      # ku-deploy only checks alpha's loopback; this checks what users get.
+      - name: Verify the deployed commit
+        run: scripts/ci/verify-deploy.sh "${ALPHA_HEALTH_URL}" "${{ forgejo.sha }}" "${{ steps.previous.outputs.sha }}"
+
+      - name: Explain the rollback
+        if: failure()
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.sha }}
+        run: |
+          echo "::error::Deploy of ${{ forgejo.sha }} failed. Alpha ran ${PREVIOUS:-unknown} before it."
+          echo "ku-deploy rolls back by itself when the new image never turns healthy."
+          echo "To roll back by hand, on alpha: sudo -u ku-deploy /usr/local/sbin/ku-deploy roll ${PREVIOUS:-<previous sha>}"
+
   # The Release job has never published its images on this Forgejo (see the
   # TS-423 notes: the job token pushing packages was unproven). Its failure
   # gates nothing the deploy needs, so it must be seen and owned the same
   # way slow-suite failures are: one open issue collects the redacted log
   # tails of every failed job.
   report-release-failure:
-    name: Report the release failure
     needs: [release]
     # failure() chained with && never fired here; always() plus the explicit
     # needs result is the dependable form.
