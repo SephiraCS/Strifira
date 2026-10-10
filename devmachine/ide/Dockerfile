@@ -48,14 +48,14 @@ RUN apt-get update \
     && npm install -g --allow-scripts=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \
     && for pair in "brace-expansion@${BRACE_EXPANSION_VERSION}" "ip-address@${IP_ADDRESS_VERSION}" "js-yaml@${JS_YAML_VERSION}" "tar@${TAR_VERSION}" "undici@${UNDICI_VERSION}"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
-    && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
+    && for name in brace-expansion ip-address tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
+    && find /usr/local/lib/node_modules -type d -path "*/node_modules/js-yaml" | while read -r dst; do rm -rf "$dst"; cp -a /tmp/npmpatch/node_modules/js-yaml "$dst"; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
-         "js-yaml@${JS_YAML_VERSION}" "shell-quote@${SHELL_QUOTE_VERSION}" "tar@${TAR_VERSION}" \
+         "shell-quote@${SHELL_QUOTE_VERSION}" "tar@${TAR_VERSION}" \
          "basic-ftp@${BASIC_FTP_VERSION}" \
-    && rm -rf /usr/lib/code-server/node_modules/js-yaml /usr/lib/code-server/node_modules/basic-ftp \
+    && rm -rf /usr/lib/code-server/node_modules/basic-ftp \
          /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
          /usr/lib/code-server/lib/vscode/node_modules/tar \
-    && cp -a /tmp/code-server-patches/node_modules/js-yaml /usr/lib/code-server/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/basic-ftp /usr/lib/code-server/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/shell-quote /usr/lib/code-server/lib/vscode/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/tar /usr/lib/code-server/lib/vscode/node_modules/ \
