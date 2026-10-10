@@ -23,7 +23,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  zero-config:
+    name: Reject new configuration switches
+    runs-on: terrascale-builder
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact change with its history
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check out the shared TerraScale policy
+        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          github-server-url: https://git.terrascale.tech
+          repository: TerraScale/ts-builder
+          ref: 4abae826a08090c4505d7c8f3d7adcd78be616ef
+          path: .zero-config-policy
+          token: ${{ secrets.TERRASCALE_BOT_TOKEN }}
+          persist-credentials: false
+      - name: Check the added lines
+        env:
+          ZERO_CONFIG_BASE: ${{ forgejo.event.pull_request.base.sha || forgejo.event.before }}
+          ZERO_CONFIG_HEAD: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
+        run: |
+          set -eu
+          if [ -z "$ZERO_CONFIG_BASE" ]; then
+            ZERO_CONFIG_BASE=$(git rev-parse "$ZERO_CONFIG_HEAD^")
+          fi
+          python3 .zero-config-policy/scripts/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
+
   backend:
+    needs: [zero-config]
     name: Slow Suite (backend)
     runs-on: terrascale-builder
     timeout-minutes: 30
@@ -32,6 +65,7 @@ jobs:
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
           persist-credentials: false
 
       - name: Create the podman store
@@ -69,6 +103,7 @@ jobs:
         run: scripts/ci/podman-store.sh remove
 
   frontend:
+    needs: [zero-config]
     name: Slow Suite (browser)
     runs-on: terrascale-builder
     timeout-minutes: 40
@@ -77,6 +112,7 @@ jobs:
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
           persist-credentials: false
 
       - name: Install dependencies
@@ -97,6 +133,7 @@ jobs:
           find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
   live:
+    needs: [zero-config]
     name: Slow Suite (live checks)
     runs-on: terrascale-builder
     timeout-minutes: 40
@@ -105,6 +142,7 @@ jobs:
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
           persist-credentials: false
 
       # The live checks start their own containers with plain `podman run`;
@@ -138,8 +176,8 @@ jobs:
 
   report:
     name: Report the failure
-    needs: [backend, frontend, live]
-    if: failure()
+    needs: [zero-config, backend, frontend, live]
+    if: failure() && needs.zero-config.result == 'success'
     runs-on: terrascale-builder
     timeout-minutes: 10
     permissions:
@@ -151,6 +189,7 @@ jobs:
         uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
+          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
           persist-credentials: false
 
       - name: File the failure as an issue
