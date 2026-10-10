@@ -1,4 +1,4 @@
-FROM docker.io/library/golang:1.27.1-alpine AS build
+FROM docker.io/library/golang:1.27.2-alpine AS build
 WORKDIR /src
 COPY collector/main.go .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /collector main.go

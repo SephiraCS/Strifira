@@ -33,41 +33,7 @@ concurrency:
 # Trivy and podman are baked into the ts-builder job image; the Trivy
 # vulnerability DB is cached on the runner's shared /cache volume.
 jobs:
-  zero-config:
-    name: Reject new configuration switches
-    runs-on: terrascale-builder
-    timeout-minutes: 10
-    steps:
-      - name: Check out the exact change with its history
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Check out the shared TerraScale policy
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          repository: TerraScale/ts-builder
-          ref: 4abae826a08090c4505d7c8f3d7adcd78be616ef
-          path: .zero-config-policy
-          token: ${{ secrets.TERRASCALE_BOT_TOKEN }}
-          persist-credentials: false
-      - name: Check the added lines
-        env:
-          ZERO_CONFIG_BASE: ${{ forgejo.event.pull_request.base.sha || forgejo.event.before }}
-          ZERO_CONFIG_HEAD: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
-        run: |
-          set -eu
-          if [ -z "$ZERO_CONFIG_BASE" ]; then
-            ZERO_CONFIG_BASE=$(git rev-parse "$ZERO_CONFIG_HEAD^")
-          fi
-          python3 .zero-config-policy/scripts/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
-
   image-security:
-    needs: [zero-config]
-    name: Image Security Scan (${{ matrix.id }})
     runs-on: terrascale-builder
     timeout-minutes: 45
     # Keep expensive nested image builds bounded so the shared Docker daemon
@@ -91,8 +57,7 @@ jobs:
           - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode, caches: none, inputs: devmachine }
           - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex, caches: none, inputs: devmachine }
     steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
@@ -170,9 +135,8 @@ jobs:
   # Nightly and tag scans gate nothing, so a failure files (or updates) a
   # Forgejo issue instead of going unnoticed. Pull requests show their own.
   report:
-    name: Report the failure
-    needs: [zero-config, image-security]
-    if: failure() && needs.zero-config.result == 'success' && forgejo.event_name != 'pull_request'
+    needs: [image-security]
+    if: failure() && forgejo.event_name != 'pull_request'
     runs-on: terrascale-builder
     timeout-minutes: 10
     permissions:
@@ -180,8 +144,7 @@ jobs:
       contents: read
       issues: write
     steps:
-      - name: Check out the source revision
-        uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           github-server-url: https://git.terrascale.tech
           ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}

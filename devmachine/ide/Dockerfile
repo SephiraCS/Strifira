@@ -4,9 +4,9 @@ FROM docker.io/library/ubuntu:24.04
 
 ARG TARGETARCH
 ARG DEBIAN_FRONTEND=noninteractive
-ARG CODE_SERVER_VERSION=4.129.0
-ARG CODE_SERVER_AMD64_SHA256=66160d99431595b0e9f4245abae8d0f472289fb77c97007ce79f2d64d06507f8
-ARG CODE_SERVER_ARM64_SHA256=e504da34067eacc04e03265eccf90e5d2c3fdc3f06c91c2028a5a80f1d05a5b8
+ARG CODE_SERVER_VERSION=4.141.0
+ARG CODE_SERVER_AMD64_SHA256=f384beb4f3ba207e0bca27d0dbd36dd825d5aa909d78c6d4baa8703eaf6b77ba
+ARG CODE_SERVER_ARM64_SHA256=0bca33a9b01180ad88f0b8969a8e34ae1c76417df471697e7cd65c20ef5dd60d
 ARG TTYD_VERSION=1.7.7
 ARG TTYD_AMD64_SHA256=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55
 ARG TTYD_ARM64_SHA256=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165
@@ -16,7 +16,7 @@ ARG OPENCODE_VERSION=1.18.4
 ARG CODEX_VERSION=0.145.0
 ARG BRACE_EXPANSION_VERSION=5.0.11
 ARG IP_ADDRESS_VERSION=10.3.1
-ARG SHELL_QUOTE_VERSION=1.9.0
+ARG SHELL_QUOTE_VERSION=1.11.0
 ARG BASIC_FTP_VERSION=6.2.1
 ARG JS_YAML_VERSION=4.3.2
 ARG TAR_VERSION=7.5.21
@@ -48,14 +48,14 @@ RUN apt-get update \
     && npm install -g --allow-scripts=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && npm install -g "@openai/codex@${CODEX_VERSION}" \
     && for pair in "brace-expansion@${BRACE_EXPANSION_VERSION}" "ip-address@${IP_ADDRESS_VERSION}" "js-yaml@${JS_YAML_VERSION}" "tar@${TAR_VERSION}" "undici@${UNDICI_VERSION}"; do npm install --prefix /tmp/npmpatch --ignore-scripts --package-lock=false "$pair" >/dev/null; done \
-    && for name in brace-expansion ip-address js-yaml tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
+    && for name in brace-expansion ip-address tar undici; do src="/tmp/npmpatch/node_modules/$name"; find /usr/local/lib/node_modules /usr/lib/code-server -type d -path "*/node_modules/$name" | while read -r dst; do rm -rf "$dst"; cp -a "$src" "$dst"; done; done \
+    && find /usr/local/lib/node_modules -type d -path "*/node_modules/js-yaml" | while read -r dst; do rm -rf "$dst"; cp -a /tmp/npmpatch/node_modules/js-yaml "$dst"; done \
     && npm install --prefix /tmp/code-server-patches --ignore-scripts --package-lock=false \
-         "js-yaml@${JS_YAML_VERSION}" "shell-quote@${SHELL_QUOTE_VERSION}" "tar@${TAR_VERSION}" \
+         "shell-quote@${SHELL_QUOTE_VERSION}" "tar@${TAR_VERSION}" \
          "basic-ftp@${BASIC_FTP_VERSION}" \
-    && rm -rf /usr/lib/code-server/node_modules/js-yaml /usr/lib/code-server/node_modules/basic-ftp \
+    && rm -rf /usr/lib/code-server/node_modules/basic-ftp \
          /usr/lib/code-server/lib/vscode/node_modules/shell-quote \
          /usr/lib/code-server/lib/vscode/node_modules/tar \
-    && cp -a /tmp/code-server-patches/node_modules/js-yaml /usr/lib/code-server/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/basic-ftp /usr/lib/code-server/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/shell-quote /usr/lib/code-server/lib/vscode/node_modules/ \
     && cp -a /tmp/code-server-patches/node_modules/tar /usr/lib/code-server/lib/vscode/node_modules/ \
