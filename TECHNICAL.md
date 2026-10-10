@@ -4,7 +4,7 @@ Production architecture and implementation contract for isolated, multi-containe
 
 ## Status
 
-The repository includes the Dev Machines control plane, PostgreSQL schema, lifecycle manager, authenticated gateway, provider adapters, runtime images, activity collector, self-hosted Compose profiles, and product UI. The subsystem is disabled by default and must be configured explicitly by a self-hosted operator.
+The repository includes the Dev Machines control plane, PostgreSQL schema, lifecycle manager, authenticated gateway, provider adapters, runtime images, activity collector, self-hosted Compose profiles, and product UI. The production operating contract requires always-on availability, automatic NetBird admission and region inference, fixed settings, and OCI Vault creation/delivery of first-party secrets with once-stored vendor-key pickup. The current implementation still contains deployment gates, environment inputs and manual provisioning paths. These are migration inventory for later COS work, not proof of automatic provisioning. TS-795 changes documentation/policy only; see [the operating contract](README.md#production-operating-contract).
 
 Dev Machines target trusted self-hosted workspaces. Docker hardening reduces risk, but ordinary containers are not a sufficient isolation boundary for mutually hostile tenants. Operators requiring hostile multi-tenant execution must replace the runtime interface with VM or microVM isolation.
 
@@ -15,7 +15,7 @@ Dev Machines target trusted self-hosted workspaces. Docker hardening reduces ris
 - Repository and environment defaults resolve from issue, then project, then team, then workspace. One machine has affinity to one repository and can host multiple issue worktrees from that repository; use a separate machine for another repository/environment or concurrent conflicting workload.
 - The Ku API does not receive the Docker socket.
 - Agent, developer, browser, collector, egress, and gateway containers do not receive the Docker socket.
-- The Machine Manager is the only Dev Machines runtime component with Docker socket access and is treated as host-privileged. The separately optional system updater also mounts the socket when enabled.
+- The Machine Manager is the only Dev Machines runtime component with Docker socket access and is treated as host-privileged. The current system updater also mounts the socket and remains host-privileged.
 - Machine services never publish host ports. Caddy and the Machine Gateway are the only public ingress path.
 - Every machine has an isolated internal Docker network and a dedicated workspace volume.
 - code-server and ttyd run in the same developer container with a shared filesystem, processes, `HOME`, tools, and tmux.
@@ -327,9 +327,9 @@ The manager still samples workspace usage, stores resource telemetry, and queues
 
 ## Secrets
 
-`DEV_MACHINE_ENCRYPTION_KEY` is independent from `JWT_SECRET` and is required when Dev Machines are enabled. AES-256-GCM ciphertext and key version are stored in `dev_machine_env_vars`.
+OCI Vault must create and deliver independent first-party production secrets automatically and retrieve vendor-issued keys stored once. Current environment/key readers do not implement that contract and remain migration inventory. `DEV_MACHINE_ENCRYPTION_KEY` must remain independent from `JWT_SECRET`; the existing runtime requires both inputs. AES-256-GCM ciphertext and key version are stored in `dev_machine_env_vars`.
 
-Secret flow:
+Current scoped workload-secret flow (preserve this isolation during Vault integration):
 
 1. The API validates the target service and provider, encrypts the value, and stores only ciphertext.
 2. The manager decrypts only active secrets matching the service or agent run.
@@ -385,6 +385,8 @@ Structured events use a monotonic `BIGSERIAL` cursor. Active autonomous agent st
 The UI exposes machine status, services, resource samples, cursor-paginated events and logs, checkouts, terminal sessions, agent runs, normalized results, commits, branches, PRs, and lifecycle/delete controls. Native terminal attachment is implemented in the Ku UI with `@xterm/xterm`; ttyd's own web page is not exposed.
 
 ## Database Schema
+
+The current schema below retains provider enable fields, adjustable quotas and deployment inputs as inventory for later COS work, not recommended production tuning. TS-795 does not alter schema or limits. Credential scope, authorization, user-requested operations and resource enforcement must remain safe.
 
 Migration `000033_dev_machines` creates:
 
@@ -514,7 +516,7 @@ The manager exposes `/health`, `/ready`, and Prometheus-text `/metrics`. Structu
 
 ## Self-Hosted Deployment
 
-Dev Machines are an opt-in Compose profile.
+The required production contract serves Dev Machines without feature activation. Existing Compose profile/flag gates remain migration debt; this section documents current prerequisites and input inventory without claiming their automatic replacement exists.
 
 Prerequisites:
 
@@ -530,21 +532,12 @@ Prerequisites:
 
 The checked-in Caddy wildcard block uses `tls internal` (Caddy's local CA), which is suitable for local or internal-network installations. For a public production machine domain, the profile prerequisite inspects the mounted Caddyfile and fails before grants or control-plane startup while an active `tls internal`, `issuer internal`, or `local_certs` directive remains. Replace it with a DNS-01 issuer supported by a custom Caddy build or mount an operator-provided wildcard certificate. `machines.localhost` is the local-development exception.
 
-Build and start:
-
-```sh
-docker compose --profile dev-machine-images build
-docker compose run --rm backend /app/server migrate up
-docker compose --profile dev-machines run --rm machine-gateway-db-provision
-docker compose --profile dev-machines up -d
-```
-
-Required configuration when enabled:
+Current integration inputs (inventory, not a production activation recipe):
 
 | Variable | Purpose |
 |---|---|
 | `FRONTEND_URL` | Exact public frontend origin; the gateway requires native terminal WebSocket `Origin` to match this value exactly |
-| `DEV_MACHINES_ENABLED=true` | Enables API configuration validation and routes |
+| `DEV_MACHINES_ENABLED` | Existing API/control-plane gate; removal is deferred to later COS work |
 | `DEV_MACHINE_DOMAIN` | Separate registrable machine base domain, e.g. `ku-machines.example.net` (`machines.localhost` only for local development) |
 | `DEV_MACHINE_ENCRYPTION_KEY` | Independent secret-encryption passphrase, at least 32 characters |
 | `DEV_MACHINE_INGEST_URL` | Public HTTPS collector ingestion base URL |
@@ -574,7 +567,7 @@ The self-hosting `dev-machine-images` profile builds the developer, browser, col
 
 For focused agent runtime qualification, build `devmachine/agent/Dockerfile` with `devmachine` as its context and `PROVIDER=claude-code`. Its `GO_IMAGE` and `NODE_IMAGE` build arguments accept private registry equivalents of the pinned base images. From `BE`, set `KU_DOCKER_AGENT_IMAGE` to that local image and run `go test ./internal/machine -run TestDockerRuntimeAgentQualification -count=1 -v`. The test creates and removes its own quota volume, bridge and bounded containers; it checks the Go compiler, independent test exit codes, Git changes and agent/command cancellation. Setting `KU_DOCKER_AGENT_LIVE=1` also exercises the real coding CLI, streamed JSONL and normalized terminal result. Provide `KU_DOCKER_AGENT_API_KEY` only in the test process environment; optional `KU_DOCKER_AGENT_BASE_URL` and `KU_DOCKER_AGENT_MODEL` select a development provider. This focused test uses an externally routed disposable bridge and bypasses the proxy only when a development base URL is supplied; the full lifecycle test separately covers machine network isolation and egress policy. It never publishes a branch or creates a pull request.
 
-`selfhosting/update.sh` detects an active Dev Machines profile without enabling it on other deployments. When active, it rebuilds runtime images before stopping the old gateway and manager, applies migrations with the new backend image, and starts the updated application and control plane only after the schema is current. If migration, role provisioning, or a later update step fails after the stop, its EXIT trap removes the upgrade marker, preserves the original failure status and container logs, and uses `docker compose start` to revive the same previous control-plane containers rather than recreating them from new images.
+`selfhosting/update.sh` currently detects an active Dev Machines profile and preserves profile selection; this is migration debt relative to the always-on contract. When active, it rebuilds runtime images before stopping the old gateway and manager, applies migrations with the new backend image, and starts the updated application and control plane only after the schema is current. If migration, role provisioning, or a later update step fails after the stop, its EXIT trap removes the upgrade marker, preserves the original failure status and container logs, and uses `docker compose start` to revive the same previous control-plane containers rather than recreating them from new images.
 
 ## Security Limitations
 

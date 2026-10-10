@@ -15,3 +15,19 @@ AI IS NOT ALLOWED TO EDIT THIS FILE ONLY HUMANS CAN!
 - In CI (`CI=true`) use full CPU priority: do nothing. Never add `nice` or
   `renice` to CI workflows, Makefiles, scripts, or Containerfiles; the low
   priority is applied by whoever runs the command locally.
+
+## Zero configuration (user decision 2026-10-09, do not revert)
+
+- Every feature is always on. No feature flags, on/off variables, opt-in settings, boolean enabled configuration keys, deploy toggles or kill switches in code, config or CI. Delete switches and their guarded paths.
+- Every region always serves. NetBird network membership admits a node automatically; it discovers every region, infers its own region from where it runs and starts serving without a per-region enable step.
+- OCI Vault automatically creates, delivers and configures every first-party production secret. Vendor-issued keys (such as Stripe and Cloudflare) are stored once in Vault and picked up automatically; nobody copies secrets by hand.
+- Values have one correct setting in code. Expose no tuning knobs. Fakes, demo stores and skip-auth belong only in test code and test binaries.
+- CI rejects new switch-style configuration; ts-reviewer requests changes. Only unavoidable third-party names may have a narrow allowance with a one-line reason.
+
+Discover authentication, storage and regional service endpoints automatically; OCI Vault delivers production application and integration secrets.
+
+### Migration scope and safety
+
+This is the required operating contract, not a claim that every current implementation already meets it. TS-795 changes documentation and policy; existing production switches, tuning inputs and secret-delivery gaps remain inventory for later COS removal work. TS-796 removes the orchestrator; TS-773 handles TerraBase. Do not remove product code or configuration keys as part of TS-795.
+
+Always-on capability does not bypass authentication, customer consent, repository permissions, credential revocation, validation, resource isolation, backups or reviewed recovery. Preserve branch/event identity, quality gates and failure/cleanup conditions in CI.
