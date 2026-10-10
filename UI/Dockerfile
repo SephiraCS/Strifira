@@ -10,11 +10,10 @@ ENV PUBLIC_DEMO_USERS=$PUBLIC_DEMO_USERS
 RUN npm run build
 
 # Same Caddy build as the root Dockerfile.
-FROM docker.io/library/golang:1.27.1-alpine AS caddy-builder
+FROM docker.io/library/golang:1.27.2-alpine AS caddy-builder
 RUN go install github.com/caddyserver/xcaddy/cmd/xcaddy@v0.4.7
-RUN xcaddy build v2.11.4 \
-    --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0 \
-    --replace google.golang.org/grpc=google.golang.org/grpc@v1.83.2
+RUN xcaddy build v2.11.7 \
+    --replace golang.org/x/net=golang.org/x/net@v0.60.0
 
 FROM docker.io/library/alpine:3.24
 RUN apk upgrade --no-cache

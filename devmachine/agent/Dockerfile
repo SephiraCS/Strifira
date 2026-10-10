@@ -1,4 +1,4 @@
-ARG GO_IMAGE=docker.io/library/golang:1.27.1-alpine
+ARG GO_IMAGE=docker.io/library/golang:1.27.2-alpine
 ARG NODE_IMAGE=docker.io/library/node:22.23.1-alpine3.23
 FROM ${GO_IMAGE} AS go-stage
 
