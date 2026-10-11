@@ -11,17 +11,30 @@ Current connection APIs do not implement that pickup. The modes below document
 existing compatibility behavior and migration debt; repository linking still
 requires customer authorization, token scopes and signed webhooks.
 
-Current connection modes:
+Current connection modes — resolved per workspace in this order:
 
-- **Per-workspace** (self-hosted default): Settings → Forgejo still accepts an
+- **Disabled** (pause): `POST /forgejo/disable` unlinks every repository
+  (webhooks included) and records a marker that pauses the integration
+  entirely for that workspace — it beats both the per-workspace connection
+  and the global environment configuration. The connection row itself is
+  kept: disabling is a pause, not a removal, and `POST /forgejo/enable`
+  restores the previous configuration. Both endpoints use the
+  `workspace:manage` permission and are idempotent.
+- **Per-workspace** (self-hosted default): Settings → Forgejo accepts an
   instance URL and a personal access token. The token is validated against
   `GET /api/v1/user` and stored AES-256-GCM encrypted
   (key derived from `JWT_SECRET + ":forgejo"`). Connecting seeds the default
   transition rules exactly once and adds a `PR` status (started category) to
-  every team that lacks one.
-- **Global** (SaaS-style): the current runtime reads `FORGEJO_URL` and `FORGEJO_TOKEN` from the
-  environment; every workspace shares the connection and the settings page
-  shows it as server-managed.
+  every team that lacks one. A stored row **overrides** the global
+  environment configuration, so per-workspace setup stays available also
+  while a global instance is configured. The optional **organization**
+  restriction (letters, digits, dots, underscores, dashes, max 100
+  characters) limits repo discovery and linking to repositories whose owner
+  matches (case-insensitive); `GET /forgejo/status` reports the active mode
+  as `managed_by: "workspace"` together with the configured organization.
+- **Global** (SaaS-style fallback): the current runtime reads `FORGEJO_URL` and `FORGEJO_TOKEN` from the
+  environment; workspaces without their own row share the connection and the
+  settings page shows it as server-managed (`managed_by: "server"`).
 
 Linking a repository creates a webhook **on the Forgejo side** via the API
 (`POST /repos/{owner}/{repo}/hooks`, type `forgejo`, events
@@ -46,7 +59,10 @@ to browse repositories. Creating signed webhooks and cancelling Actions
 require `write:repository`. Reruns use the native Forgejo run page and your
 normal Forgejo login and repository permissions. Instance URLs must be HTTP(S) origins,
 without a path, query, fragment, or embedded credentials. Ku refuses to change
-the instance while repositories remain linked; unlink them first. Rotating the
+the instance while repositories remain linked; unlink them first. Introducing
+an organization restriction follows the same rule: repositories outside the
+organization must be unlinked first, while clearing the restriction is always
+allowed. Rotating the
 token on the same instance is supported. The status separates a configured
 connection from one whose token currently authenticates successfully.
 
@@ -206,7 +222,8 @@ hook edit API ignores Actions event subscriptions.
 ## Surface
 
 - REST: `PUT/DELETE /api/workspaces/:slug/forgejo/connection`,
-  `GET /forgejo/status|repos`, `POST/DELETE /forgejo/repos[/:id]`,
+  `POST /forgejo/disable|enable`, `GET /forgejo/status|repos`,
+  `POST/DELETE /forgejo/repos[/:id]`,
   `GET/PATCH /forgejo/auto-transitions`, `GET/PUT /forgejo/user-mappings`,
   `GET/POST /forgejo/repos/:repoId/actions/...` (see Actions above),
   `GET /issues/:identifier/forgejo`, `GET /forgejo/issue-links`; public
@@ -220,3 +237,5 @@ hook edit API ignores Actions event subscriptions.
 - Dev Machines: checkouts clone/push over HTTPS with the workspace (or
   global) Forgejo token (`FORGEJO_TOKEN` in machine containers), pull requests
   are opened via the API, and URLs are validated against the linked instance.
+  The same precedence applies — a paused workspace yields no credentials —
+  so machines in a disabled workspace cannot reach the integration.

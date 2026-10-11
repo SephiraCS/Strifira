@@ -37,6 +37,10 @@ func (s *actionsTestStore) GetConnectionByWorkspace(context.Context, uuid.UUID) 
 	return s.conn, nil
 }
 
+func (s *actionsTestStore) GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
+	return nil, nil
+}
+
 func (s *actionsTestStore) ListReposByWorkspace(context.Context, uuid.UUID) ([]domain.ForgejoRepoModel, error) {
 	return s.repos, nil
 }
@@ -318,7 +322,7 @@ func TestForgejoStatusReflectsRevokedToken(t *testing.T) {
 func TestForgejoConnectPreventsInstanceReplacementWithLinkedRepositories(t *testing.T) {
 	store := &actionsTestStore{repos: []domain.ForgejoRepoModel{{InstanceURL: "https://original.example"}}}
 	svc := &ForgejoService{fRepo: store}
-	_, err := svc.Connect(t.Context(), uuid.New(), "https://replacement.example", "new-token")
+	_, err := svc.Connect(t.Context(), uuid.New(), "https://replacement.example", "new-token", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unlink existing repositories")
 	assert.Nil(t, store.saved)
@@ -333,7 +337,7 @@ func TestForgejoConnectAllowsTokenRotationOnSameInstance(t *testing.T) {
 	key := crypto.DeriveKey("test")
 	store := &actionsTestStore{repos: []domain.ForgejoRepoModel{{InstanceURL: server.URL}}}
 	svc := &ForgejoService{fRepo: store, encryptionKey: key}
-	account, err := svc.Connect(t.Context(), uuid.New(), server.URL+"/", "new-token")
+	account, err := svc.Connect(t.Context(), uuid.New(), server.URL+"/", "new-token", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "alice", account.Login)
 	require.NotNil(t, store.saved)

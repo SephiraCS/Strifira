@@ -30,7 +30,9 @@ concurrency:
 # pull requests never edit versions (scripts/ci/release.sh).
 jobs:
   # TS-795 switch guard: fails when the change adds an on/off setting.
-  # Same text in every repo; ts-builder's scripts/bump-ci-ref.sh moves the pinned ref.
+  # Vendored into scripts/ci/zero-config-check.py from TerraScale/ts-builder
+  # (guard ref 8dacab4) when that repository left the server in the Tools
+  # org move; re-point this job at ts-builder when it is reachable again.
   guard:
     runs-on: terrascale-builder
     timeout-minutes: 10
@@ -41,23 +43,15 @@ jobs:
           ref: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-        with:
-          github-server-url: https://git.terrascale.tech
-          repository: TerraScale/ts-builder
-          ref: 8dacab451c3c16924622ff512d7aa17501b70ecc # guard ref
-          path: .zero-config-policy
-          token: ${{ secrets.TERRASCALE_BOT_TOKEN }}
-          persist-credentials: false
       - env:
           ZERO_CONFIG_BASE: ${{ forgejo.event.pull_request.base.sha || forgejo.event.before }}
           ZERO_CONFIG_HEAD: ${{ forgejo.event.pull_request.head.sha || forgejo.sha }}
         run: |
           set -eu
-          if [ -z "$ZERO_CONFIG_BASE" ]; then
+          if [ -z "$ZERO_CONFIG_BASE" ] || [ "$ZERO_CONFIG_BASE" = "0000000000000000000000000000000000000000" ]; then
             ZERO_CONFIG_BASE=$(git rev-parse "$ZERO_CONFIG_HEAD^")
           fi
-          python3 .zero-config-policy/scripts/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
+          python3 scripts/ci/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
 
   check:
     runs-on: terrascale-builder
@@ -259,7 +253,7 @@ jobs:
       packages: write
     env:
       REGISTRY: git.terrascale.tech
-      IMAGE_PREFIX: git.terrascale.tech/terrascale
+      IMAGE_PREFIX: git.terrascale.tech/tools
     steps:
       - uses: https://data.forgejo.org/actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -328,7 +322,7 @@ jobs:
           previous=$(curl --silent --fail --max-time 10 "${ALPHA_HEALTH_URL}" | jq -r '.version // empty' 2>/dev/null || true)
           if ! printf '%s' "$previous" | grep -Eq '^[0-9a-f]{40}$'; then
             previous=$(curl --silent --fail --max-time 10 --header "Authorization: token ${FORGEJO_TOKEN}" \
-              "https://git.terrascale.tech/api/v1/repos/TerraScale/ku/actions/runs?workflow_id=ci.yml&event=push&status=success&limit=5" \
+              "https://git.terrascale.tech/api/v1/repos/${GITHUB_REPOSITORY}/actions/runs?workflow_id=ci.yml&event=push&status=success&limit=5" \
               | jq -r --arg sha "${{ forgejo.sha }}" '[.workflow_runs[] | select(.commit_sha != $sha)][0].commit_sha // "unknown"' 2>/dev/null || echo unknown)
           fi
           echo "Alpha runs ${previous} before this deploy."

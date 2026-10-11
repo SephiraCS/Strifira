@@ -1160,6 +1160,17 @@ func (r *DevMachineRepository) GetForgejoConnection(ctx context.Context, workspa
 	return &conn, err
 }
 
+// GetWorkspaceDisable returns the workspace's Forgejo disable marker (nil
+// when the integration is not paused for that workspace).
+func (r *DevMachineRepository) GetWorkspaceDisable(ctx context.Context, workspaceID uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
+	var disable domain.ForgejoWorkspaceDisable
+	err := r.db.GetContext(ctx, &disable, `SELECT * FROM forgejo_workspace_disables WHERE workspace_id=$1`, workspaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &disable, err
+}
+
 func (r *DevMachineRepository) ListResourceSamples(ctx context.Context, workspaceID, machineID uuid.UUID, limit int) ([]domain.DevMachineResourceSample, error) {
 	var samples []domain.DevMachineResourceSample
 	err := r.db.SelectContext(ctx, &samples, `SELECT s.* FROM dev_machine_resource_samples s

@@ -40,7 +40,7 @@ if [ "$push" = --push ]; then
 	if [ "$code" = 401 ] || [ "$code" = 403 ]; then
 		echo "::error::This token cannot push packages to $REGISTRY (HTTP $code on the blob-upload probe)." >&2
 		echo "::error::Forgejo's automatic job token is registry-pull-only. Create an access token with" >&2
-		echo "::error::write:package scope for a member of the TerraScale org (or the terrascale-bot once" >&2
+		echo "::error::write:package scope for a member of the Tools org (or the tools-bot once" >&2
 		echo "::error::it is granted package write) and save it as the REGISTRY_PUSH_TOKEN repository" >&2
 		echo "::error::secret; the Release job then uses it automatically." >&2
 		exit 1

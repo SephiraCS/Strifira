@@ -51,7 +51,7 @@ func registerForgejoTools(s *mcp.Server, deps Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "forgejo_link_repos",
 		Title:       "Link Forgejo repositories",
-		Description: "Link repositories to the workspace by full name (e.g. TerraScale/ku); ku creates a signed webhook on each. Requires an API key with write scope and the workspace:manage permission.",
+		Description: "Link repositories to the workspace by full name (e.g. Tools/ku); ku creates a signed webhook on each. Requires an API key with write scope and the workspace:manage permission.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct {
 		Workspace string   `json:"workspace"`
 		Repos     []string `json:"repos" jsonschema:"repository full names (owner/name)"`

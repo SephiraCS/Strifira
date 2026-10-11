@@ -7,17 +7,26 @@ import (
 )
 
 // ForgejoConnection holds the per-workspace Forgejo instance URL and access
-// token (encrypted). When the global env configuration is set, no row exists
-// and the env values are used instead.
+// token (encrypted). A row overrides the global env configuration. The
+// optional organization restricts repo discovery and linking to that owner.
 type ForgejoConnection struct {
 	ID               uuid.UUID `json:"id" db:"id"`
 	WorkspaceID      uuid.UUID `json:"workspace_id" db:"workspace_id"`
 	InstanceURL      string    `json:"instance_url" db:"instance_url"`
+	Organization     *string   `json:"organization,omitempty" db:"organization"`
 	Token            string    `json:"-" db:"token"`
 	AccountLogin     string    `json:"account_login" db:"account_login"`
 	AccountAvatarURL *string   `json:"account_avatar_url" db:"account_avatar_url"`
 	CreatedAt        time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt        time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// ForgejoWorkspaceDisable marks a workspace with the integration paused
+// entirely; the marker wins over both the per-workspace connection row and
+// the global env configuration. The connection row itself is retained.
+type ForgejoWorkspaceDisable struct {
+	WorkspaceID uuid.UUID `json:"workspace_id" db:"workspace_id"`
+	DisabledAt  time.Time `json:"disabled_at" db:"disabled_at"`
 }
 
 // ForgejoRepoModel is a repository linked to a workspace. The webhook fields

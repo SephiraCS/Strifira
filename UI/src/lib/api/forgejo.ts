@@ -28,10 +28,17 @@ export function getCachedForgejoStatus(slug: string): Promise<ForgejoStatus> {
 	return cached && cached.expiresAt > Date.now() ? cached.request : getForgejoStatus(slug);
 }
 
-export async function connectForgejo(slug: string, instanceUrl: string, token: string): Promise<{ login: string }> {
+export async function connectForgejo(
+	slug: string,
+	instanceUrl: string,
+	token: string,
+	organization?: string
+): Promise<{ login: string }> {
+	const trimmedOrganization = organization?.trim();
 	const result = await api.put<{ login: string }>(`/api/workspaces/${slug}/forgejo/connection`, {
 		instance_url: instanceUrl,
-		token
+		token,
+		...(trimmedOrganization ? { organization: trimmedOrganization } : {})
 	});
 	forgejoStatusCache.delete(slug);
 	return result;
@@ -39,6 +46,16 @@ export async function connectForgejo(slug: string, instanceUrl: string, token: s
 
 export async function disconnectForgejo(slug: string): Promise<void> {
 	await api.delete<void>(`/api/workspaces/${slug}/forgejo/connection`);
+	forgejoStatusCache.delete(slug);
+}
+
+export async function disableForgejo(slug: string): Promise<void> {
+	await api.post<void>(`/api/workspaces/${slug}/forgejo/disable`);
+	forgejoStatusCache.delete(slug);
+}
+
+export async function enableForgejo(slug: string): Promise<void> {
+	await api.post<void>(`/api/workspaces/${slug}/forgejo/enable`);
 	forgejoStatusCache.delete(slug);
 }
 

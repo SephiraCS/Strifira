@@ -5,8 +5,9 @@ import "time"
 // --- Requests ---
 
 type ConnectForgejoRequest struct {
-	InstanceURL string `json:"instance_url" validate:"required,url"`
-	Token       string `json:"token" validate:"required,min=20"`
+	InstanceURL  string  `json:"instance_url" validate:"required,url"`
+	Token        string  `json:"token" validate:"required,min=20"`
+	Organization *string `json:"organization" validate:"omitempty,max=100"`
 }
 
 type LinkForgejoReposRequest struct {
@@ -40,8 +41,11 @@ type AutoTransitionRule struct {
 type ForgejoStatusResponse struct {
 	Configured   bool                    `json:"configured"`
 	Connected    bool                    `json:"connected"`
+	Disabled     bool                    `json:"disabled"`
 	GlobalConfig bool                    `json:"global_config"`
+	ManagedBy    string                  `json:"managed_by"`
 	InstanceURL  string                  `json:"instance_url,omitempty"`
+	Organization *string                 `json:"organization,omitempty"`
 	Account      *ForgejoAccountResponse `json:"account,omitempty"`
 	Repos        []ForgejoRepoResponse   `json:"repos"`
 }

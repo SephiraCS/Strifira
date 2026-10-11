@@ -47,6 +47,7 @@ type managerStoreFake struct {
 	installationFullNameCalls []string
 	linkedRepository          *domain.ForgejoRepoModel
 	forgejoConnection         *domain.ForgejoConnection
+	forgejoWorkspaceDisable   *domain.ForgejoWorkspaceDisable
 	agentRun                  *domain.DevMachineAgentRun
 	provider                  *domain.DevMachineAgentProvider
 	completedRun              *domain.DevMachineAgentRun
@@ -262,6 +263,9 @@ func (f *managerStoreFake) UpdateVolumeUsage(context.Context, uuid.UUID, int64) 
 func (f *managerStoreFake) CreateGitRef(context.Context, *domain.DevMachineGitRef) error { return nil }
 func (f *managerStoreFake) GetForgejoConnection(context.Context, uuid.UUID) (*domain.ForgejoConnection, error) {
 	return f.forgejoConnection, nil
+}
+func (f *managerStoreFake) GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
+	return f.forgejoWorkspaceDisable, nil
 }
 func (f *managerStoreFake) GetLinkedRepositoryByFullName(_ context.Context, _ uuid.UUID, fullName string) (*domain.ForgejoRepoModel, error) {
 	f.installationFullNameCalls = append(f.installationFullNameCalls, fullName)
@@ -814,6 +818,45 @@ func TestForgejoCredentialRejectsRepositoryLinkedToAnotherInstance(t *testing.T)
 	require.ErrorContains(t, err, "different Forgejo instance")
 	require.Empty(t, token)
 	require.Empty(t, store.runtimeCredentials)
+}
+
+func TestForgejoCredentialPrecedence(t *testing.T) {
+	machineID, workspaceID := uuid.New(), uuid.New()
+	rowToken := "fjt_" + strings.Repeat("row-token", 4)
+	forgejoKey := cryptoutil.DeriveKey("manager-forgejo-precedence-test")
+	encrypted, err := cryptoutil.Encrypt(rowToken, forgejoKey)
+	require.NoError(t, err)
+	linkedRepository := &domain.ForgejoRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
+		FullName: "ku/api", InstanceURL: "https://git.example.com"}
+	connection := &domain.ForgejoConnection{WorkspaceID: workspaceID,
+		InstanceURL: "https://git.example.com", Token: encrypted}
+
+	t.Run("row overrides global", func(t *testing.T) {
+		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
+			linkedRepository: linkedRepository, forgejoConnection: connection}
+		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{},
+			&GlobalForgejoCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), forgejoKey, "test")
+
+		instanceURL, token, err := manager.forgejoCredential(t.Context(), store.machine, "ku/api")
+
+		require.NoError(t, err)
+		require.Equal(t, "https://git.example.com", instanceURL)
+		require.Equal(t, rowToken, token)
+	})
+
+	t.Run("disable marker yields no credentials even with row and global", func(t *testing.T) {
+		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
+			linkedRepository: linkedRepository, forgejoConnection: connection,
+			forgejoWorkspaceDisable: &domain.ForgejoWorkspaceDisable{WorkspaceID: workspaceID}}
+		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{},
+			&GlobalForgejoCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), forgejoKey, "test")
+
+		_, token, err := manager.forgejoCredential(t.Context(), store.machine, "ku/api")
+
+		require.ErrorIs(t, err, sql.ErrNoRows)
+		require.Empty(t, token)
+		require.Empty(t, store.runtimeCredentials, "no credential audit trail for a paused workspace")
+	})
 }
 
 func TestReconcilePurgesExpiredRuntimeCredentials(t *testing.T) {

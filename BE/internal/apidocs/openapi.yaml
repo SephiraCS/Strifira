@@ -2222,7 +2222,11 @@ paths:
       operationId: forgejoConnect
       tags: [Forgejo]
       summary: Connect a Forgejo token
-      description: "Requires: workspace:manage. Per-workspace token connection (global mode preconfigures the instance)."
+      description: |
+        Requires: workspace:manage. Per-workspace token connection; a stored
+        row overrides the global instance configuration. The optional
+        organization restricts repo discovery and linking to that owner
+        (case-insensitive).
       requestBody:
         required: true
         content:
@@ -2233,6 +2237,7 @@ paths:
               properties:
                 instance_url: { type: string, format: uri }
                 token: { type: string, minLength: 20 }
+                organization: { type: string, maxLength: 100, nullable: true }
       responses:
         "200": { $ref: "#/components/responses/Ok" }
     delete:
@@ -2240,6 +2245,33 @@ paths:
       tags: [Forgejo]
       summary: Disconnect Forgejo
       description: "Requires: workspace:manage."
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/forgejo/disable:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: forgejoDisable
+      tags: [Forgejo]
+      summary: Pause the Forgejo integration
+      description: |
+        Requires: workspace:manage. Unlinks every repository (upstream
+        webhooks included) and pauses the integration for this workspace —
+        it beats both the per-workspace connection and the global instance
+        configuration. The stored connection is kept; enable restores it.
+        Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/forgejo/enable:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: forgejoEnable
+      tags: [Forgejo]
+      summary: Resume the Forgejo integration
+      description: "Requires: workspace:manage. Clears the pause marker; idempotent."
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
@@ -4989,8 +5021,11 @@ components:
       properties:
         configured: { type: boolean }
         connected: { type: boolean }
+        disabled: { type: boolean }
         global_config: { type: boolean }
+        managed_by: { type: string, description: '"workspace", "server", or empty when unconfigured.' }
         instance_url: { type: string }
+        organization: { type: string, nullable: true }
         account:
           type: object
           nullable: true

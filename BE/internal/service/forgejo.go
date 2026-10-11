@@ -28,7 +28,9 @@ import (
 
 var issueIdentifierRegex = regexp.MustCompile(`(?i)([A-Z][A-Z0-9]*-\d+)`)
 var forgejoLoginRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,99}$`)
+var forgejoOrganizationRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}$`)
 var ErrForgejoNotConnected = errors.New("Forgejo is not connected")
+var ErrForgejoDisabled = errors.New("Forgejo is disabled for this workspace")
 
 // issueKeywordRegex matches closing keywords followed by an issue identifier,
 // e.g. "Fixes KUA-12" or "resolves kua-3 and closes TS-4".
@@ -63,10 +65,11 @@ type ForgejoService struct {
 }
 
 type forgejoConnection struct {
-	InstanceURL string
-	Token       string
-	Account     *fj.User
-	Global      bool
+	InstanceURL  string
+	Token        string
+	Account      *fj.User
+	Global       bool
+	Organization *string
 }
 
 func NewForgejoService(
@@ -94,46 +97,91 @@ func NewForgejoService(
 }
 
 // IsGlobalMode returns true when a shared instance connection is configured
-// via environment variables.
+// via environment variables. A per-workspace connection row still overrides
+// it; this only reports whether the fallback exists.
 func (s *ForgejoService) IsGlobalMode() bool {
 	return s.global != nil
 }
 
-// resolveConnection returns the credentials for a workspace. Global env
-// configuration wins over per-workspace rows.
+// resolveConnection returns the credentials for a workspace. A per-workspace
+// disable marker pauses the integration entirely; then the per-workspace row
+// wins over the global env configuration.
 func (s *ForgejoService) resolveConnection(ctx context.Context, workspaceID uuid.UUID) (*forgejoConnection, error) {
-	if s.global != nil {
-		return &forgejoConnection{InstanceURL: s.global.URL, Token: s.global.Token, Global: true}, nil
+	disabled, err := s.fRepo.GetWorkspaceDisable(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if disabled != nil {
+		return nil, ErrForgejoDisabled
 	}
 	conn, err := s.fRepo.GetConnectionByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	if conn == nil {
-		return nil, ErrForgejoNotConnected
+	if conn != nil {
+		token, err := crypto.Decrypt(conn.Token, s.encryptionKey)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting Forgejo token: %w", err)
+		}
+		return &forgejoConnection{InstanceURL: conn.InstanceURL, Token: token, Organization: conn.Organization}, nil
 	}
-	token, err := crypto.Decrypt(conn.Token, s.encryptionKey)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting Forgejo token: %w", err)
+	if s.global != nil {
+		return &forgejoConnection{InstanceURL: s.global.URL, Token: s.global.Token, Global: true}, nil
 	}
-	return &forgejoConnection{InstanceURL: conn.InstanceURL, Token: token}, nil
+	return nil, ErrForgejoNotConnected
 }
 
 func (c *forgejoConnection) client() *fj.Client {
 	return fj.NewClient(c.InstanceURL, c.Token)
 }
 
+// repoWithinOrganization reports whether a repository full_name belongs to
+// the configured organization (owner prefix, case-insensitive).
+func repoWithinOrganization(fullName string, organization *string) bool {
+	if organization == nil {
+		return true
+	}
+	owner, _, ok := splitRepoOwnerName(fullName)
+	return ok && strings.EqualFold(owner, *organization)
+}
+
+// normalizeForgejoOrganization trims and validates the optional organization
+// restriction. An empty value clears the restriction (NULL column).
+func normalizeForgejoOrganization(organization *string) (*string, error) {
+	if organization == nil {
+		return nil, nil
+	}
+	trimmed := strings.TrimSpace(*organization)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if !forgejoOrganizationRegex.MatchString(trimmed) {
+		return nil, fmt.Errorf("organization may only contain letters, digits, dots, underscores and dashes (max 100 characters)")
+	}
+	return &trimmed, nil
+}
+
 // Connect validates the token against the instance and stores the connection.
-func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, instanceURL, token string) (*dto.ForgejoAccountResponse, error) {
-	if s.global != nil {
-		return nil, fmt.Errorf("Forgejo is centrally managed — per-workspace setup is not available")
+// A per-workspace row overrides the global env configuration, so connecting
+// is always available — also while a global instance is configured.
+func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, instanceURL, token string, organization *string) (*dto.ForgejoAccountResponse, error) {
+	disabled, err := s.fRepo.GetWorkspaceDisable(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if disabled != nil {
+		return nil, ErrForgejoDisabled
 	}
 	if strings.TrimSpace(instanceURL) == "" || strings.TrimSpace(token) == "" {
 		return nil, fmt.Errorf("instance URL and token are required")
 	}
-	instanceURL, err := fj.NormalizeInstanceURL(instanceURL)
+	instanceURL, err = fj.NormalizeInstanceURL(instanceURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid instance URL")
+	}
+	organization, err = normalizeForgejoOrganization(organization)
+	if err != nil {
+		return nil, err
 	}
 	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
 	if err != nil {
@@ -143,6 +191,9 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 		linkedURL, err := fj.NormalizeInstanceURL(repo.InstanceURL)
 		if err != nil || linkedURL != instanceURL {
 			return nil, fmt.Errorf("unlink existing repositories before changing the Forgejo instance")
+		}
+		if !repoWithinOrganization(repo.FullName, organization) {
+			return nil, fmt.Errorf("unlink repositories outside the organization first")
 		}
 	}
 
@@ -158,7 +209,8 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 	avatarURL := user.AvatarURL
 	conn := &domain.ForgejoConnection{
 		ID: uuid.New(), WorkspaceID: workspaceID, InstanceURL: instanceURL,
-		Token: encrypted, AccountLogin: user.Login, AccountAvatarURL: &avatarURL,
+		Organization: organization,
+		Token:        encrypted, AccountLogin: user.Login, AccountAvatarURL: &avatarURL,
 	}
 	if err := s.fRepo.UpsertConnection(ctx, conn); err != nil {
 		return nil, err
@@ -170,6 +222,7 @@ func (s *ForgejoService) Connect(ctx context.Context, workspaceID uuid.UUID, ins
 
 // Disconnect unlinks every repo before removing the connection. Local cleanup
 // failures retain the credentials for retry; Forgejo webhooks are best-effort.
+// The workspace disable marker is deliberately untouched.
 func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) error {
 	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
 	if err != nil {
@@ -181,6 +234,25 @@ func (s *ForgejoService) Disconnect(ctx context.Context, workspaceID uuid.UUID) 
 		}
 	}
 	return s.fRepo.DeleteConnection(ctx, workspaceID)
+}
+
+// SetDisabled pauses (true) or resumes (false) the integration for a
+// workspace. Disabling unlinks every repo — like Disconnect — but keeps the
+// connection row: it is a pause, not a removal. Enabling is idempotent.
+func (s *ForgejoService) SetDisabled(ctx context.Context, workspaceID uuid.UUID, disabled bool) error {
+	if !disabled {
+		return s.fRepo.ClearWorkspaceDisable(ctx, workspaceID)
+	}
+	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
+	if err != nil {
+		return fmt.Errorf("listing linked Forgejo repositories: %w", err)
+	}
+	for _, repo := range repos {
+		if err := s.UnlinkRepo(ctx, workspaceID, repo.ID); err != nil {
+			return fmt.Errorf("unlinking Forgejo repository %s: %w", repo.FullName, err)
+		}
+	}
+	return s.fRepo.SetWorkspaceDisable(ctx, workspaceID)
 }
 
 // seedDefaultsIfMissing seeds transition rules once (never overwrites user customizations).
@@ -287,18 +359,29 @@ func (s *ForgejoService) ListLinkedRepos(ctx context.Context, workspaceID uuid.U
 	return result, nil
 }
 
-// GetStatus returns the integration status for a workspace.
+// GetStatus returns the integration status for a workspace. A disabled
+// workspace reports the pause and nothing else, without contacting Forgejo.
 func (s *ForgejoService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (*dto.ForgejoStatusResponse, error) {
 	resp := &dto.ForgejoStatusResponse{Repos: []dto.ForgejoRepoResponse{}}
 
 	conn, err := s.resolveConnection(ctx, workspaceID)
+	if errors.Is(err, ErrForgejoDisabled) {
+		resp.Disabled = true
+		return resp, nil
+	}
 	if err != nil && !errors.Is(err, ErrForgejoNotConnected) {
 		return nil, err
 	}
-	if err == nil && conn != nil {
+	if conn != nil {
 		resp.Configured = true
 		resp.GlobalConfig = conn.Global
 		resp.InstanceURL = conn.InstanceURL
+		resp.Organization = conn.Organization
+		if conn.Global {
+			resp.ManagedBy = "server"
+		} else {
+			resp.ManagedBy = "workspace"
+		}
 
 		if account, err := conn.client().GetCurrentUser(ctx); err == nil {
 			resp.Connected = true
@@ -324,9 +407,13 @@ func (s *ForgejoService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (
 }
 
 // ListAvailableRepos lists repositories visible to the connection token.
+// A configured organization restriction hides repositories outside it.
 func (s *ForgejoService) ListAvailableRepos(ctx context.Context, workspaceID uuid.UUID) ([]dto.ForgejoAvailableRepoResponse, error) {
 	conn, err := s.resolveConnection(ctx, workspaceID)
 	if err != nil {
+		if errors.Is(err, ErrForgejoDisabled) {
+			return nil, err
+		}
 		return nil, fmt.Errorf("Forgejo is not connected")
 	}
 	remote, err := conn.client().ListRepos(ctx)
@@ -345,6 +432,9 @@ func (s *ForgejoService) ListAvailableRepos(ctx context.Context, workspaceID uui
 
 	result := make([]dto.ForgejoAvailableRepoResponse, 0, len(remote))
 	for _, r := range remote {
+		if !repoWithinOrganization(r.FullName, conn.Organization) {
+			continue
+		}
 		result = append(result, dto.ForgejoAvailableRepoResponse{
 			ForgejoRepoID: r.ID, FullName: r.FullName, DefaultBranch: r.DefaultBranch,
 			Private: r.Private, Linked: linkedMap[r.ID],
@@ -378,6 +468,9 @@ func (s *ForgejoService) LinkRepos(ctx context.Context, workspaceID uuid.UUID, r
 		remoteRepo, ok := remoteMap[id]
 		if !ok {
 			return fmt.Errorf("repository is not available to the Forgejo connection")
+		}
+		if !repoWithinOrganization(remoteRepo.FullName, conn.Organization) {
+			return fmt.Errorf("repository %s is outside the configured organization", remoteRepo.FullName)
 		}
 		existing, err := s.fRepo.GetRepoByForgejoID(ctx, workspaceID, id)
 		if err != nil {

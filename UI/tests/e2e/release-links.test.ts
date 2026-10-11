@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test('retries and restricts release manifest links to the fork repository', async ({ page }) => {
 	const tagName = 'v99.0.0';
-	const releaseUrl = `https://git.terrascale.tech/TerraScale/ku/releases/tag/${tagName}`;
+	const releaseUrl = `https://git.terrascale.tech/Tools/ku/releases/tag/${tagName}`;
 	let requireUpgrade = false;
 	let releaseRequests = 0;
 	const transientFailures = ['http', 'json', 'http'];
@@ -26,7 +26,7 @@ test('retries and restricts release manifest links to the fork repository', asyn
 				{
 					tag_name: tagName,
 					html_url: 'https://attacker.example/releases/latest',
-					body: '[Trusted pull request](https://git.terrascale.tech/TerraScale/ku/pulls/46)\n\n[Untrusted repository](https://git.terrascale.tech/attacker/ku/pulls/46)',
+					body: '[Trusted pull request](https://git.terrascale.tech/Tools/ku/pulls/46)\n\n[Legacy trusted pull request](https://git.terrascale.tech/TerraScale/ku/pulls/46)\n\n[Untrusted repository](https://git.terrascale.tech/attacker/ku/pulls/46)',
 					published_at: '2026-07-23T00:00:00Z',
 					prerelease: false,
 					force_upgrade: requireUpgrade,
@@ -108,7 +108,11 @@ test('retries and restricts release manifest links to the fork repository', asyn
 	await page.getByRole('button', { name: 'Check releases' }).click();
 	await expect(page.getByRole('link', { name: 'Open', exact: true })).toHaveAttribute('href', releaseUrl);
 	await expect.poll(() => releaseRequests).toBe(4);
-	await expect(page.getByRole('link', { name: 'Trusted pull request' })).toHaveAttribute(
+	await expect(page.getByRole('link', { name: 'Trusted pull request', exact: true })).toHaveAttribute(
+		'href',
+		'https://git.terrascale.tech/Tools/ku/pulls/46'
+	);
+	await expect(page.getByRole('link', { name: 'Legacy trusted pull request' })).toHaveAttribute(
 		'href',
 		'https://git.terrascale.tech/TerraScale/ku/pulls/46'
 	);

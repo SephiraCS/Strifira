@@ -27,6 +27,10 @@ export interface ForgejoStatus {
 	instance_url?: string;
 	account?: ForgejoAccount;
 	repos: ForgejoRepo[];
+	disabled: boolean;
+	/** Present only for workspace-managed connections restricted to one organization. */
+	organization?: string;
+	managed_by?: '' | 'workspace' | 'server';
 }
 
 export interface ForgejoPullRequest {

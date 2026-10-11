@@ -34,15 +34,16 @@ func NewForgejoRepository(db *sqlx.DB) *ForgejoRepository {
 // --- Connections ---
 
 func (r *ForgejoRepository) UpsertConnection(ctx context.Context, conn *domain.ForgejoConnection) error {
-	query := `INSERT INTO forgejo_connections (id, workspace_id, instance_url, token, account_login, account_avatar_url)
-		VALUES ($1, $2, $3, $4, $5, $6)
+	query := `INSERT INTO forgejo_connections (id, workspace_id, instance_url, organization, token, account_login, account_avatar_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (workspace_id) DO UPDATE SET
-			instance_url=EXCLUDED.instance_url, token=EXCLUDED.token,
+			instance_url=EXCLUDED.instance_url, organization=EXCLUDED.organization,
+			token=EXCLUDED.token,
 			account_login=EXCLUDED.account_login, account_avatar_url=EXCLUDED.account_avatar_url,
 			updated_at=NOW()
 		RETURNING created_at, updated_at`
 	return r.db.QueryRowContext(ctx, query,
-		conn.ID, conn.WorkspaceID, conn.InstanceURL, conn.Token, conn.AccountLogin, conn.AccountAvatarURL,
+		conn.ID, conn.WorkspaceID, conn.InstanceURL, conn.Organization, conn.Token, conn.AccountLogin, conn.AccountAvatarURL,
 	).Scan(&conn.CreatedAt, &conn.UpdatedAt)
 }
 
@@ -57,6 +58,31 @@ func (r *ForgejoRepository) GetConnectionByWorkspace(ctx context.Context, worksp
 
 func (r *ForgejoRepository) DeleteConnection(ctx context.Context, workspaceID uuid.UUID) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM forgejo_connections WHERE workspace_id = $1`, workspaceID)
+	return err
+}
+
+// --- Workspace disables ---
+
+// GetWorkspaceDisable returns the workspace's disable marker (nil when the
+// integration is not paused).
+func (r *ForgejoRepository) GetWorkspaceDisable(ctx context.Context, workspaceID uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
+	var disable domain.ForgejoWorkspaceDisable
+	err := r.db.GetContext(ctx, &disable, `SELECT * FROM forgejo_workspace_disables WHERE workspace_id = $1`, workspaceID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return &disable, err
+}
+
+func (r *ForgejoRepository) SetWorkspaceDisable(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO forgejo_workspace_disables (workspace_id) VALUES ($1)
+		ON CONFLICT (workspace_id) DO UPDATE SET disabled_at = NOW()`, workspaceID)
+	return err
+}
+
+func (r *ForgejoRepository) ClearWorkspaceDisable(ctx context.Context, workspaceID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM forgejo_workspace_disables WHERE workspace_id = $1`, workspaceID)
 	return err
 }
 

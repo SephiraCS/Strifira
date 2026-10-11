@@ -35,15 +35,16 @@ func (h *ForgejoHandler) Status(c echo.Context) error {
 }
 
 // Connect stores and validates instance URL + token for the workspace.
+// The optional organization restricts repo discovery and linking.
 func (h *ForgejoHandler) Connect(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	var req dto.ConnectForgejoRequest
 	if err := c.Bind(&req); err != nil {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
-	account, err := h.fjSvc.Connect(c.Request().Context(), ws.ID, req.InstanceURL, req.Token)
+	account, err := h.fjSvc.Connect(c.Request().Context(), ws.ID, req.InstanceURL, req.Token, req.Organization)
 	if err != nil {
-		return response.ServiceError(c, err)
+		return forgejoConnectionError(c, err)
 	}
 	return response.Success(c, http.StatusOK, account)
 }
@@ -52,9 +53,38 @@ func (h *ForgejoHandler) Connect(c echo.Context) error {
 func (h *ForgejoHandler) Disconnect(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	if err := h.fjSvc.Disconnect(c.Request().Context(), ws.ID); err != nil {
-		return response.ServiceError(c, err)
+		return forgejoConnectionError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "disconnected"})
+}
+
+// Disable pauses the integration for the workspace: every repo is unlinked
+// and the connection stops resolving, even when a global instance is
+// configured. The stored credentials are kept for a later Enable.
+func (h *ForgejoHandler) Disable(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.fjSvc.SetDisabled(c.Request().Context(), ws.ID, true); err != nil {
+		return forgejoConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "disabled"})
+}
+
+// Enable resumes a paused integration and is idempotent.
+func (h *ForgejoHandler) Enable(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.fjSvc.SetDisabled(c.Request().Context(), ws.ID, false); err != nil {
+		return forgejoConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "enabled"})
+}
+
+// forgejoConnectionError maps connection-lifecycle sentinel errors to fixed
+// client messages; everything else keeps the ServiceError classification.
+func forgejoConnectionError(c echo.Context, err error) error {
+	if errors.Is(err, service.ErrForgejoDisabled) {
+		return response.Error(c, http.StatusConflict, "FORGEJO_DISABLED", "Forgejo is disabled for this workspace")
+	}
+	return response.ServiceError(c, err)
 }
 
 // ListRepos lists repositories available to the connection token.
@@ -62,7 +92,7 @@ func (h *ForgejoHandler) ListRepos(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	repos, err := h.fjSvc.ListAvailableRepos(c.Request().Context(), ws.ID)
 	if err != nil {
-		return response.ServiceError(c, err)
+		return forgejoConnectionError(c, err)
 	}
 	if repos == nil {
 		repos = []dto.ForgejoAvailableRepoResponse{}
@@ -78,7 +108,7 @@ func (h *ForgejoHandler) LinkRepos(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
 	}
 	if err := h.fjSvc.LinkRepos(c.Request().Context(), ws.ID, req); err != nil {
-		return response.ServiceError(c, err)
+		return forgejoConnectionError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]string{"status": "linked"})
 }

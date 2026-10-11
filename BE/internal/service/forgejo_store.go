@@ -16,6 +16,9 @@ type forgejoStore interface {
 	UpsertConnection(context.Context, *domain.ForgejoConnection) error
 	GetConnectionByWorkspace(context.Context, uuid.UUID) (*domain.ForgejoConnection, error)
 	DeleteConnection(context.Context, uuid.UUID) error
+	GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.ForgejoWorkspaceDisable, error)
+	SetWorkspaceDisable(context.Context, uuid.UUID) error
+	ClearWorkspaceDisable(context.Context, uuid.UUID) error
 	CreateRepo(context.Context, *domain.ForgejoRepoModel) error
 	ListReposByWorkspace(context.Context, uuid.UUID) ([]domain.ForgejoRepoModel, error)
 	GetRepoByID(context.Context, uuid.UUID) (*domain.ForgejoRepoModel, error)

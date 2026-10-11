@@ -15,6 +15,17 @@ function issueStatusButton(page: Page, name: string) {
 	return page.getByRole('button', { name, exact: true }).and(page.locator('button:not([data-popover-trigger])'));
 }
 
+type Status = {
+	configured: boolean;
+	connected: boolean;
+	global_config: boolean;
+	instance_url: string;
+	account: { login: string };
+	repos: unknown[];
+	disabled: boolean;
+	managed_by: string;
+};
+
 async function mockForgejo(
 	page: Page,
 	options: {
@@ -23,6 +34,7 @@ async function mockForgejo(
 		rulesErrorOnce?: boolean;
 		initialRules?: Partial<Rule>[];
 		updateRule?: (route: Route, rule: Rule) => Promise<void>;
+		status?: Partial<Status>;
 	} = {}
 ) {
 	const rules: Rule[] = ['branch_created', 'pr_opened', 'pr_checks_green', 'pr_merged'].map((event) => ({
@@ -105,7 +117,23 @@ async function mockForgejo(
 		status: 0,
 		rules: 0,
 		issueReads: 0,
-		issueWrites: 0
+		issueWrites: 0,
+		connections: [] as Record<string, unknown>[],
+		disable: 0,
+		enable: 0
+	};
+	// Served by reference: tests (and the mocked disable/enable endpoints) can
+	// flip fields between requests to move the workspace between states.
+	const forgejoStatus: Status = {
+		configured: true,
+		connected: true,
+		global_config: true,
+		instance_url: 'https://git.example.com',
+		account: { login: 'mario' },
+		repos: [],
+		disabled: false,
+		managed_by: 'server',
+		...options.status
 	};
 	let seeded = false;
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
@@ -172,16 +200,22 @@ async function mockForgejo(
 					}
 				});
 			seeded = true;
-			return route.fulfill({
-				json: {
-					configured: true,
-					connected: true,
-					global_config: true,
-					instance_url: 'https://git.example.com',
-					account: { login: 'mario' },
-					repos: []
-				}
-			});
+			return route.fulfill({ json: forgejoStatus });
+		}
+		if (path === '/api/workspaces/test/forgejo/connection') {
+			const request = route.request();
+			if (request.method() === 'PUT') calls.connections.push(request.postDataJSON());
+			return route.fulfill({ json: { login: 'mario' } });
+		}
+		if (path === '/api/workspaces/test/forgejo/disable') {
+			calls.disable++;
+			Object.assign(forgejoStatus, { disabled: true, connected: false, configured: false, repos: [] });
+			return route.fulfill({ json: { status: 'disabled' } });
+		}
+		if (path === '/api/workspaces/test/forgejo/enable') {
+			calls.enable++;
+			Object.assign(forgejoStatus, { disabled: false, connected: true, configured: true, repos: [] });
+			return route.fulfill({ json: { status: 'enabled' } });
 		}
 		if (path === '/api/workspaces/test/forgejo/auto-transitions') {
 			if (route.request().method() === 'PATCH') {
@@ -230,7 +264,7 @@ async function mockForgejo(
 			});
 		return route.fulfill({ json: [] });
 	});
-	return { rules, currentIssue, calls };
+	return { rules, currentIssue, calls, status: forgejoStatus };
 }
 
 async function openForgejoIssue(page: Page, url = '/test/issue/ENG-1') {
@@ -337,7 +371,7 @@ test('shows invalid saved targets and lets the owner disable the rule', async ({
 
 for (const role of ['admin', 'member', 'guest']) {
 	test(`shows automation settings to ${role} without exposing unavailable write controls`, async ({ page }) => {
-		const { calls } = await mockForgejo(page, {
+		const { calls, status } = await mockForgejo(page, {
 			role,
 			initialRules: [{ event: 'pr_opened', target_status: 'review', is_active: true }]
 		});
@@ -349,9 +383,83 @@ for (const role of ['admin', 'member', 'guest']) {
 			page.getByText('You can view this integration, but only the workspace owner can change it.', { exact: true })
 		).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Manage', exact: true })).toHaveCount(0);
+		await expect(page.getByRole('button', { name: 'Disable integration', exact: true })).toHaveCount(0);
+		await page.getByRole('button', { name: 'Use a workspace-specific connection', exact: true }).click();
+		await expect(page.locator('#forgejo-instance')).toBeDisabled();
+		await expect(page.locator('#forgejo-token')).toBeDisabled();
+		await expect(page.locator('#forgejo-organization')).toBeDisabled();
+		await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeDisabled();
+		Object.assign(status, { disabled: true, connected: false, configured: false });
+		await page.reload();
+		await expect(page.getByText('Forgejo integration is disabled', { exact: true })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Enable', exact: true })).toBeDisabled();
 		expect(calls.updates).toEqual([]);
+		expect(calls.connections).toEqual([]);
+		expect(calls.disable).toBe(0);
+		expect(calls.enable).toBe(0);
 	});
 }
+
+test('shows the disabled state instead of the connection views and re-enables through the API', async ({ page }) => {
+	const { calls } = await mockForgejo(page, {
+		status: { disabled: true, connected: false, configured: false }
+	});
+	await page.goto('/test/settings/forgejo');
+	await expect(page.getByText('Forgejo integration is disabled', { exact: true })).toBeVisible();
+	await expect(page.getByText('Enable it to connect and link repositories again')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Linked repositories', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'User mappings', exact: true })).toHaveCount(0);
+	await expect(page.getByRole('heading', { name: 'Automations', exact: true })).toHaveCount(0);
+	// The mocked enable endpoint flips the status object the refetch observes.
+	await page.getByRole('button', { name: 'Enable', exact: true }).click();
+	await expect(page.locator('[data-forgejo-rule]').first()).toBeVisible();
+	expect(calls.enable).toBe(1);
+	expect(calls.disable).toBe(0);
+});
+
+test('disables the integration from the connected view after confirmation', async ({ page }) => {
+	const { calls } = await mockForgejo(page);
+	await openForgejoSettings(page);
+	await page.getByRole('button', { name: 'Disable integration', exact: true }).click();
+	const dialog = page.getByRole('alertdialog', { name: 'Disable the Forgejo integration?' });
+	await expect(dialog).toBeVisible();
+	await expect(dialog).toContainText('unlinks every linked repository');
+	await dialog.getByRole('button', { name: 'Disable integration', exact: true }).click();
+	await expect(page.getByText('Forgejo integration is disabled', { exact: true })).toBeVisible();
+	expect(calls.disable).toBe(1);
+	expect(calls.connections).toEqual([]);
+});
+
+test('connects with an optional organization restriction', async ({ page }) => {
+	const { calls } = await mockForgejo(page, {
+		status: { configured: false, connected: false, global_config: false, managed_by: '', instance_url: undefined }
+	});
+	await page.goto('/test/settings/forgejo');
+	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+	await page.locator('#forgejo-token').fill('x'.repeat(40));
+	await page.locator('#forgejo-organization').fill('acme-corp');
+	await page.getByRole('button', { name: 'Connect', exact: true }).click();
+	await expect.poll(() => calls.connections).toHaveLength(1);
+	expect(calls.connections[0]).toMatchObject({
+		instance_url: 'https://git.terrascale.tech',
+		token: 'x'.repeat(40),
+		organization: 'acme-corp'
+	});
+});
+
+test('offers a workspace-specific connection override below the server-managed card', async ({ page }) => {
+	await mockForgejo(page);
+	await openForgejoSettings(page);
+	await expect(page.getByText('Server-managed', { exact: true })).toBeVisible();
+	const trigger = page.getByRole('button', { name: 'Use a workspace-specific connection', exact: true });
+	await expect(page.locator('#forgejo-instance')).toBeHidden();
+	await trigger.click();
+	await expect(page.locator('#forgejo-instance')).toBeVisible();
+	await expect(page.locator('#forgejo-token')).toBeVisible();
+	await expect(page.locator('#forgejo-organization')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+});
 
 test('retries status and automation load errors without displaying a false disconnected form', async ({ page }) => {
 	await mockForgejo(page, { statusErrorOnce: true, rulesErrorOnce: true });

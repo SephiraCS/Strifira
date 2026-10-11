@@ -5,6 +5,8 @@
 		getForgejoStatus,
 		connectForgejo,
 		disconnectForgejo,
+		disableForgejo,
+		enableForgejo,
 		listForgejoRepos,
 		linkForgejoRepos,
 		unlinkForgejoRepo,
@@ -29,6 +31,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Input } from '$lib/components/ui/input';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import * as Collapsible from '$lib/components/ui/collapsible';
 	import { appToast } from '$lib/features/toast/toast';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -36,9 +39,11 @@
 	import Search from '@lucide/svelte/icons/search';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import { m } from '$lib/paraglide/messages.js';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import ErrorState from '$lib/components/shared/ErrorState.svelte';
+	import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
 
 	const DEFAULT_INSTANCE_URL = 'https://git.terrascale.tech';
 
@@ -68,7 +73,12 @@
 
 	let instanceUrl = $state(DEFAULT_INSTANCE_URL);
 	let token = $state('');
+	let organization = $state('');
 	let connecting = $state(false);
+	let disabling = $state(false);
+	let enabling = $state(false);
+	let showDisableConfirm = $state(false);
+	let serverOverrideOpen = $state(false);
 	let workflowStates = $state<{ value: string; label: string; teams: string[]; missingTeams: string[] }[]>([]);
 	let members = $state<WorkspaceMember[]>([]);
 	let userMappings = $state<ForgejoUserMapping[]>([]);
@@ -160,6 +170,11 @@
 		reposError = '';
 		showRepoSelector = false;
 		token = '';
+		organization = '';
+		disabling = false;
+		enabling = false;
+		showDisableConfirm = false;
+		serverOverrideOpen = false;
 		try {
 			const connection = await getForgejoStatus(workspaceSlug);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
@@ -246,11 +261,12 @@
 		const requestGeneration = generation;
 		connecting = true;
 		try {
-			await connectForgejo(workspaceSlug, instanceUrl.trim(), token.trim());
+			await connectForgejo(workspaceSlug, instanceUrl.trim(), token.trim(), organization);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
 			resetRepositoryDiscovery();
 			showRepoSelector = false;
 			token = '';
+			organization = '';
 			const connection = await getForgejoStatus(workspaceSlug);
 			if (!isCurrent(workspaceSlug, requestGeneration)) return;
 			status = connection;
@@ -260,6 +276,53 @@
 			if (isCurrent(workspaceSlug, requestGeneration)) appToast.apiError(error, m['settings.forgejo.failed_connect']());
 		} finally {
 			if (isCurrent(workspaceSlug, requestGeneration)) connecting = false;
+		}
+	}
+
+	async function handleDisable() {
+		if (!canManage || disabling) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
+		disabling = true;
+		try {
+			await disableForgejo(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			resetRepositoryDiscovery();
+			showRepoSelector = false;
+			const connection = await getForgejoStatus(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			status = connection;
+			transitions = [];
+			userMappings = [];
+			showDisableConfirm = false;
+			appToast.success(m['settings.forgejo.disable_toast']());
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration)) {
+				showDisableConfirm = false;
+				appToast.apiError(error, m['settings.forgejo.failed_disable']());
+			}
+		} finally {
+			if (isCurrent(workspaceSlug, requestGeneration)) disabling = false;
+		}
+	}
+
+	async function handleEnable() {
+		if (!canManage || enabling) return;
+		const workspaceSlug = slug;
+		const requestGeneration = generation;
+		enabling = true;
+		try {
+			await enableForgejo(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			const connection = await getForgejoStatus(workspaceSlug);
+			if (!isCurrent(workspaceSlug, requestGeneration)) return;
+			status = connection;
+			if (connection.connected) await loadConfiguration(workspaceSlug, requestGeneration);
+			appToast.success(m['settings.forgejo.enable_toast']());
+		} catch (error) {
+			if (isCurrent(workspaceSlug, requestGeneration)) appToast.apiError(error, m['settings.forgejo.failed_enable']());
+		} finally {
+			if (isCurrent(workspaceSlug, requestGeneration)) enabling = false;
 		}
 	}
 
@@ -496,17 +559,8 @@
 		</p>
 	</div>
 
-	{#if loading}
-		<div class="flex items-center justify-center py-12">
-			<LoaderCircle size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
-		</div>
-	{:else if loadError}
-		<ErrorState message={loadError} onretry={() => load(slug)} />
-	{:else if !status?.connected && status?.global_config}
-		<ErrorState message={m['settings.forgejo.global_unavailable']()} onretry={() => load(slug)} />
-	{:else if !status?.connected}
-		{#if !canManage}<p class="text-sm text-[var(--color-text-tertiary)]">{m['settings.forgejo.owner_only']()}</p>{/if}
-		<!-- State 1: not connected — token form -->
+	{#snippet connectForm()}
+		<!-- Connect form — token + optional organization -->
 		<div class="rounded-lg border border-[var(--app-border)] p-6">
 			<div class="flex items-center gap-3">
 				<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)]">
@@ -548,6 +602,20 @@
 					/>
 					<p class="mt-1 text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.token_desc']()}</p>
 				</div>
+				<div>
+					<label for="forgejo-organization" class="mb-1 block text-xs font-medium text-[var(--color-text-secondary)]">
+						{m['settings.forgejo.organization']()} {m['sharedComponents.save_view.optional']()}
+					</label>
+					<Input
+						id="forgejo-organization"
+						type="text"
+						autocomplete="off"
+						bind:value={organization}
+						placeholder={m['settings.forgejo.organization_placeholder']()}
+						disabled={!canManage || connecting}
+						class="h-9 text-sm"
+					/>
+				</div>
 				<div class="flex justify-end">
 					<Button
 						size="sm"
@@ -562,6 +630,42 @@
 				</div>
 			</div>
 		</div>
+	{/snippet}
+
+	{#if loading}
+		<div class="flex items-center justify-center py-12">
+			<LoaderCircle size={20} class="animate-spin text-[var(--color-text-tertiary)]" />
+		</div>
+	{:else if loadError}
+		<ErrorState message={loadError} onretry={() => load(slug)} />
+	{:else if status?.disabled}
+		{#if !canManage}<p class="text-sm text-[var(--color-text-tertiary)]">{m['settings.forgejo.owner_only']()}</p>{/if}
+		<!-- State 0: integration disabled for this workspace -->
+		<div class="rounded-lg border border-[var(--app-border)] p-6">
+			<div class="flex items-center gap-3">
+				<div class="flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--color-bg-tertiary)]">
+					<GitBranch size={20} class="text-[var(--color-text-secondary)]" />
+				</div>
+				<div class="flex-1">
+					<h3 class="text-sm font-medium text-[var(--color-text-primary)]">{m['settings.forgejo.disabled_title']()}</h3>
+					<p class="text-xs text-[var(--color-text-tertiary)]">{m['settings.forgejo.disabled_description']()}</p>
+				</div>
+			</div>
+			<div class="mt-4 flex justify-end">
+				<Button size="sm" onclick={handleEnable} disabled={!canManage || enabling}>
+					{#if enabling}
+						<LoaderCircle size={14} class="animate-spin" />
+					{/if}
+					{m['settings.forgejo.enable']()}
+				</Button>
+			</div>
+		</div>
+	{:else if !status?.connected && status?.global_config}
+		<ErrorState message={m['settings.forgejo.global_unavailable']()} onretry={() => load(slug)} />
+	{:else if !status?.connected}
+		{#if !canManage}<p class="text-sm text-[var(--color-text-tertiary)]">{m['settings.forgejo.owner_only']()}</p>{/if}
+		<!-- State 1: not connected — token form -->
+		{@render connectForm()}
 
 		<div class="rounded-md bg-[var(--color-bg-secondary)] px-4 py-3">
 			<p class="text-xs text-[var(--color-text-tertiary)]">
@@ -589,13 +693,51 @@
 							<p class="text-xs text-[var(--color-text-tertiary)]">{status.instance_url}</p>
 						</div>
 					</div>
-					{#if !status.global_config && canManage}
-						<Button variant="destructive" size="sm" onclick={handleDisconnect}>
-							{m['settings.forgejo.disconnect']()}
-						</Button>
-					{/if}
+					<div class="flex gap-2">
+						{#if canManage}
+							<Button
+								variant="destructive"
+								size="sm"
+								onclick={() => (showDisableConfirm = true)}
+								disabled={disabling}
+							>
+								{m['settings.forgejo.disable']()}
+							</Button>
+							{#if !status.global_config}
+								<Button variant="destructive" size="sm" onclick={handleDisconnect}>
+									{m['settings.forgejo.disconnect']()}
+								</Button>
+							{/if}
+						{/if}
+					</div>
 				</div>
+				{#if status.organization}
+					<div class="mt-3 flex items-center justify-between border-t border-[var(--app-border)] pt-3">
+						<span class="text-xs text-[var(--color-text-secondary)]">{m['settings.forgejo.org_label']()}</span>
+						<span class="text-xs font-medium text-[var(--color-text-primary)]">{status.organization}</span>
+					</div>
+				{/if}
 			</div>
+
+			{#if status.global_config}
+				<!-- Server-managed connection: owners may override it per workspace -->
+				<Collapsible.Root bind:open={serverOverrideOpen} class="rounded-lg border border-[var(--app-border)]">
+					<Collapsible.Trigger
+						class="flex w-full items-center gap-2 rounded-lg px-4 py-3 text-left text-sm font-medium text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-bg-hover)]"
+					>
+						<ChevronRight size={14} class="shrink-0 text-[var(--color-text-tertiary)] transition-transform {serverOverrideOpen ? 'rotate-90' : ''}" />
+						{m['settings.forgejo.server_override_title']()}
+					</Collapsible.Trigger>
+					<Collapsible.Content>
+						<div class="border-t border-[var(--app-border)] p-4">
+							<p class="mb-4 text-xs text-[var(--color-text-tertiary)]">
+								{m['settings.forgejo.server_override_description']()}
+							</p>
+							{@render connectForm()}
+						</div>
+					</Collapsible.Content>
+				</Collapsible.Root>
+			{/if}
 
 			<!-- Linked repos -->
 			<div>
@@ -892,3 +1034,13 @@
 		</div>
 	{/if}
 </div>
+
+{#if showDisableConfirm}
+	<ConfirmDialog
+		title={m['settings.forgejo.disable_confirm_title']()}
+		message={m['settings.forgejo.disable_confirm_body']()}
+		confirmLabel={m['settings.forgejo.disable_confirm_action']()}
+		onconfirm={handleDisable}
+		oncancel={() => (showDisableConfirm = false)}
+	/>
+{/if}

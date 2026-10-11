@@ -6,9 +6,12 @@ export const currentVersionLabel = `v${currentVersion}`;
 // Releases track the operator fork on git.terrascale.tech. The manifest is
 // the fork's own UI/static/releases.json served same-origin from the
 // deployed build: the Forgejo instance is private and sends no CORS
-// headers, so browsers cannot fetch it cross-origin.
+// headers, so browsers cannot fetch it cross-origin. The repository moved
+// from TerraScale/ku to Tools/ku; manifests baked before the move carry
+// the legacy owner, so both are trusted for entry URLs.
 export const releaseRepositoryHost = 'git.terrascale.tech';
-export const releaseRepositoryFullName = 'TerraScale/ku';
+export const releaseRepositoryFullName = 'Tools/ku';
+const trustedReleaseRepositoryNames = [releaseRepositoryFullName, 'TerraScale/ku'];
 export const releasesPageUrl = `https://${releaseRepositoryHost}/${releaseRepositoryFullName}/releases`;
 export const currentReleaseUrl = `${releasesPageUrl}/tag/${currentVersionLabel}`;
 export const releasesManifestUrl = '/releases.json';
@@ -71,12 +74,17 @@ function parseReleaseRepositoryUrl(value: unknown, expectedTag?: string): URL | 
 		return null;
 	}
 
-	const repository = releaseRepositoryFullName.split('/');
 	const path = url.pathname.split('/').slice(1).map((part) => decodeURIComponent(part));
+	const matchesTrustedRepository = trustedReleaseRepositoryNames.some((fullName) => {
+		const repository = fullName.split('/');
+		return (
+			path.length >= 2 &&
+			path[0].toLowerCase() === repository[0].toLowerCase() &&
+			path[1].toLowerCase() === repository[1].toLowerCase()
+		);
+	});
 	if (
-		path.length < 2 ||
-		path[0].toLowerCase() !== repository[0].toLowerCase() ||
-		path[1].toLowerCase() !== repository[1].toLowerCase() ||
+		!matchesTrustedRepository ||
 		path.slice(2).some((part) => part === '.' || part === '..' || part === '')
 	) {
 		return null;

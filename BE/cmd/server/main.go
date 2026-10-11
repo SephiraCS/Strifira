@@ -495,6 +495,8 @@ func main() {
 	ws.GET("/forgejo/status", forgejoH.Status)
 	ws.PUT("/forgejo/connection", forgejoH.Connect, mw.RequirePermission("workspace:manage"))
 	ws.DELETE("/forgejo/connection", forgejoH.Disconnect, mw.RequirePermission("workspace:manage"))
+	ws.POST("/forgejo/disable", forgejoH.Disable, mw.RequirePermission("workspace:manage"))
+	ws.POST("/forgejo/enable", forgejoH.Enable, mw.RequirePermission("workspace:manage"))
 	ws.GET("/forgejo/repos", forgejoH.ListRepos, mw.RequirePermission("workspace:manage"))
 	ws.POST("/forgejo/repos", forgejoH.LinkRepos, mw.RequirePermission("workspace:manage"))
 	ws.DELETE("/forgejo/repos/:id", forgejoH.UnlinkRepo, mw.RequirePermission("workspace:manage"))

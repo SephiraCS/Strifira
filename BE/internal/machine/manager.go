@@ -57,6 +57,7 @@ type ManagerStore interface {
 	UpdateVolumeUsage(context.Context, uuid.UUID, int64) error
 	CreateGitRef(context.Context, *domain.DevMachineGitRef) error
 	GetForgejoConnection(context.Context, uuid.UUID) (*domain.ForgejoConnection, error)
+	GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.ForgejoWorkspaceDisable, error)
 	GetLinkedRepositoryByFullName(context.Context, uuid.UUID, string) (*domain.ForgejoRepoModel, error)
 	GetCheckoutInternal(context.Context, uuid.UUID) (*domain.DevMachineCheckout, error)
 	UpdateCheckoutState(context.Context, uuid.UUID, string, *string) error
@@ -1348,6 +1349,9 @@ func errorCode(err error) string {
 
 // Resolve repository authority without decrypting a publishing credential.
 // Default checkout selection and authenticated helpers share this instance check.
+// Precedence: a workspace disable marker pauses the integration (no
+// credentials), then the per-workspace connection row, then the global env
+// configuration.
 func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain.DevMachine, repositoryFullName string) (string, *domain.ForgejoConnection, error) {
 	if repositoryFullName == "" {
 		repositoryFullName = checkoutRepositoryFullName(machine, nil)
@@ -1367,6 +1371,24 @@ func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain
 	if err != nil {
 		return "", nil, errors.New("linked repository has an invalid Forgejo instance")
 	}
+	disabled, err := m.store.GetWorkspaceDisable(ctx, machine.WorkspaceID)
+	if err != nil {
+		return "", nil, err
+	}
+	if disabled != nil {
+		return "", nil, sql.ErrNoRows
+	}
+	conn, err := m.store.GetForgejoConnection(ctx, machine.WorkspaceID)
+	if err != nil {
+		return "", nil, err
+	}
+	if conn != nil {
+		instanceURL, err := forgejoclient.NormalizeInstanceURL(conn.InstanceURL)
+		if err != nil || instanceURL != linkedInstance {
+			return "", nil, errors.New("selected repository belongs to a different Forgejo instance")
+		}
+		return instanceURL, conn, nil
+	}
 	if m.globalForgejo != nil {
 		instanceURL, err := forgejoclient.NormalizeInstanceURL(m.globalForgejo.URL)
 		if err != nil || instanceURL != linkedInstance {
@@ -1374,18 +1396,7 @@ func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain
 		}
 		return instanceURL, nil, nil
 	}
-	conn, err := m.store.GetForgejoConnection(ctx, machine.WorkspaceID)
-	if err != nil {
-		return "", nil, err
-	}
-	if conn == nil {
-		return "", nil, sql.ErrNoRows
-	}
-	instanceURL, err := forgejoclient.NormalizeInstanceURL(conn.InstanceURL)
-	if err != nil || instanceURL != linkedInstance {
-		return "", nil, errors.New("selected repository belongs to a different Forgejo instance")
-	}
-	return instanceURL, conn, nil
+	return "", nil, sql.ErrNoRows
 }
 
 // Only authenticated backend Git helpers receive the credential. Repository
@@ -1395,7 +1406,7 @@ func (m *Manager) forgejoCredential(ctx context.Context, machine *domain.DevMach
 	if err != nil {
 		return "", "", err
 	}
-	if m.globalForgejo != nil {
+	if conn == nil {
 		m.recordCredential(ctx, machine.ID, m.globalForgejo.Token)
 		return instanceURL, m.globalForgejo.Token, nil
 	}

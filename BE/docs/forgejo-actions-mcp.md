@@ -16,7 +16,7 @@ middleware.
 ## Tools and arguments
 
 Every tool takes `workspace`, the Ku workspace slug, and `repo`, preferably the
-linked repository's full name such as `TerraScale/ku`. `repo` also accepts the Ku
+linked repository's full name such as `Tools/ku`. `repo` also accepts the Ku
 repository-link UUID. It does not accept an arbitrary upstream repository ID.
 Repository names are matched without case sensitivity; an ambiguous name
 requires the UUID.
@@ -56,7 +56,7 @@ List failed runs:
   "name": "forgejo_list_action_runs",
   "arguments": {
     "workspace": "terrascale",
-    "repo": "TerraScale/ku",
+    "repo": "Tools/ku",
     "status": "failure",
     "per_page": 20
   }
@@ -70,7 +70,7 @@ Read a specific job attempt, using IDs returned by the run and job tools:
   "name": "forgejo_get_action_job_logs",
   "arguments": {
     "workspace": "terrascale",
-    "repo": "TerraScale/ku",
+    "repo": "Tools/ku",
     "run_id": 42,
     "job_id": 91,
     "attempt": 2

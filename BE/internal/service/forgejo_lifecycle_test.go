@@ -21,6 +21,7 @@ import (
 type forgejoLifecycleStore struct {
 	forgejoStore
 	conn          *domain.ForgejoConnection
+	disable       *domain.ForgejoWorkspaceDisable
 	repos         []domain.ForgejoRepoModel
 	listErr       error
 	lookupErr     error
@@ -59,6 +60,27 @@ func (s *forgejoLifecycleStore) GetConnectionByWorkspace(_ context.Context, work
 		return s.conn, nil
 	}
 	return nil, nil
+}
+
+func (s *forgejoLifecycleStore) GetWorkspaceDisable(_ context.Context, workspaceID uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
+	if s.disable != nil && s.disable.WorkspaceID == workspaceID {
+		return s.disable, nil
+	}
+	return nil, nil
+}
+
+func (s *forgejoLifecycleStore) SetWorkspaceDisable(_ context.Context, workspaceID uuid.UUID) error {
+	s.calls = append(s.calls, "set disable")
+	s.disable = &domain.ForgejoWorkspaceDisable{WorkspaceID: workspaceID}
+	return nil
+}
+
+func (s *forgejoLifecycleStore) ClearWorkspaceDisable(_ context.Context, workspaceID uuid.UUID) error {
+	s.calls = append(s.calls, "clear disable")
+	if s.disable != nil && s.disable.WorkspaceID == workspaceID {
+		s.disable = nil
+	}
+	return nil
 }
 
 func (s *forgejoLifecycleStore) DeleteRepo(_ context.Context, repoID uuid.UUID) error {
