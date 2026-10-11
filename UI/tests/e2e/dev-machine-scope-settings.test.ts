@@ -30,8 +30,8 @@ test('keeps project and team development settings scoped during rapid navigation
 		{ id: projectBId, name: 'Project Beta', description: null, status: 'planned', team_id: teamBId, lead_id: null, start_date: null, target_date: null, sort_order: 2, created_at: now, updated_at: now }
 	];
 	const repositories = [
-		{ id: repoAId, forgejo_repo_id: 1001, full_name: 'ku/repo-alpha', instance_url: 'https://git.example.com', default_branch: 'main', is_active: true },
-		{ id: repoBId, forgejo_repo_id: 1002, full_name: 'ku/repo-beta', instance_url: 'https://git.example.com', default_branch: 'develop', is_active: true }
+		{ id: repoAId, github_repo_id: 1001, full_name: 'ku/repo-alpha', instance_url: 'https://git.example.com', default_branch: 'main', is_active: true },
+		{ id: repoBId, github_repo_id: 1002, full_name: 'ku/repo-beta', instance_url: 'https://git.example.com', default_branch: 'develop', is_active: true }
 	];
 	const environments = [
 		{ id: environmentAId, workspace_id: workspaceId, name: 'Alpha environment', status: 'ready', image_ref: 'alpha:latest', created_at: now, updated_at: now },
@@ -58,7 +58,7 @@ test('keeps project and team development settings scoped during rapid navigation
 		if (path === `/api/workspaces/test/projects/${projectBId}`) return route.fulfill({ json: projects[1] });
 		if (path === '/api/workspaces/test/issues') return route.fulfill({ json: { data: [], total_count: 0, page: 1, has_more: false } });
 		if (path === `/api/workspaces/test/teams/${teamAId}/cycles` || path === `/api/workspaces/test/teams/${teamBId}/cycles`) return route.fulfill({ json: [] });
-		if (path === '/api/workspaces/test/forgejo/status') return route.fulfill({ json: { configured: true, connected: true, global_config: false, instance_url: 'https://git.example.com', repos: repositories } });
+		if (path === '/api/workspaces/test/github/status') return route.fulfill({ json: { configured: true, connected: true, global_config: false, instance_url: 'https://git.example.com', repos: repositories } });
 		if (path === '/api/workspaces/test/dev-machine-environments') return route.fulfill({ json: environments });
 		if (path === '/api/workspaces/test/dev-machine-scope-setting' && request.method() === 'GET') {
 			const scopeType = url.searchParams.get('scope_type');
@@ -74,7 +74,7 @@ test('keeps project and team development settings scoped during rapid navigation
 				workspace_id: workspaceId,
 				team_id: scopeType === 'team' ? scopeId : undefined,
 				project_id: scopeType === 'project' ? scopeId : undefined,
-				forgejo_repo_id: useBeta ? repoBId : repoAId,
+				github_repo_id: useBeta ? repoBId : repoAId,
 				environment_id: useBeta ? environmentBId : environmentAId
 			} });
 			delay?.markCompleted();
@@ -121,7 +121,7 @@ test('keeps project and team development settings scoped during rapid navigation
 	await expect(page.getByText('ku/repo-alpha', { exact: true })).toHaveCount(0);
 	await teamSave.click();
 	await expect.poll(() => savedSettings.length).toBe(1);
-	expect(savedSettings[0]).toMatchObject({ scope_type: 'team', scope_id: teamBId, forgejo_repo_id: repoBId, environment_id: environmentBId });
+	expect(savedSettings[0]).toMatchObject({ scope_type: 'team', scope_id: teamBId, github_repo_id: repoBId, environment_id: environmentBId });
 
 	const projectADelay = createRequestDelay();
 	const projectBDelay = createRequestDelay();
@@ -153,7 +153,7 @@ test('keeps project and team development settings scoped during rapid navigation
 	await expect(projectDialog.getByText('ku/repo-alpha', { exact: true })).toHaveCount(0);
 	await projectDialog.getByRole('button', { name: 'Save', exact: true }).click();
 	await expect.poll(() => savedSettings.length).toBe(2);
-	expect(savedSettings[1]).toMatchObject({ scope_type: 'project', scope_id: projectBId, forgejo_repo_id: repoBId, environment_id: environmentBId });
+	expect(savedSettings[1]).toMatchObject({ scope_type: 'project', scope_id: projectBId, github_repo_id: repoBId, environment_id: environmentBId });
 	expect(deleteRequests).toBe(0);
 
 	workspaceRole = 'member';

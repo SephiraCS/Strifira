@@ -7,7 +7,7 @@ import (
 )
 
 type DevMachineRepoInput struct {
-	Provider string `json:"provider" validate:"required,oneof=forgejo"`
+	Provider string `json:"provider" validate:"required,oneof=github"`
 	Owner    string `json:"owner" validate:"required,max=255"`
 	Name     string `json:"name" validate:"required,max=255"`
 	URL      string `json:"url" validate:"required,url"`
@@ -57,7 +57,7 @@ type DevMachineNameAvailabilityResponse struct {
 type DevMachineScopeSettingRequest struct {
 	ScopeType     string  `json:"scope_type" validate:"required,oneof=workspace team project issue"`
 	ScopeID       *string `json:"scope_id,omitempty" validate:"omitempty,uuid"`
-	ForgejoRepoID *string `json:"forgejo_repo_id,omitempty" validate:"omitempty,uuid"`
+	GitHubRepoID  *string `json:"github_repo_id,omitempty" validate:"omitempty,uuid"`
 	BaseBranch    *string `json:"base_branch,omitempty" validate:"omitempty,max=255"`
 	EnvironmentID *string `json:"environment_id,omitempty" validate:"omitempty,uuid"`
 }

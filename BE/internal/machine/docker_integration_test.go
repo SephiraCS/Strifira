@@ -159,7 +159,7 @@ func TestDockerRuntimeLifecycle(t *testing.T) {
 		requireContainerRunning(t, ctx, runtime, service.ServiceKey, *service.ContainerID)
 	}
 
-	command, err := json.Marshal([]string{"/bin/sh", "-c", `set -eu; test -z "${FORGEJO_TOKEN:-}"; test -z "${GITHUB_TOKEN:-}"; if git config --global --get credential.helper; then exit 1; fi; printf git-isolated`})
+	command, err := json.Marshal([]string{"/bin/sh", "-c", `set -eu; test -z "${GITHUB_TOKEN:-}"; if git config --global --get credential.helper; then exit 1; fi; printf git-isolated`})
 	require.NoError(t, err)
 	run := &domain.DevMachineAgentRun{
 		ID: uuid.New(), Mode: "task", CommandArgv: command,

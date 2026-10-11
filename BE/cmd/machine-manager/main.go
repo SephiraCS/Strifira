@@ -60,15 +60,17 @@ func main() {
 		agent.NewCustomCLIProvider(configValue.DevMachine.CustomImage),
 	)
 	hostname, _ := os.Hostname()
-	var globalForgejo *machine.GlobalForgejoCredentials
-	if configValue.Forgejo.IsConfigured() {
-		globalForgejo = &machine.GlobalForgejoCredentials{
-			URL:   configValue.Forgejo.NormalizedURL(),
-			Token: configValue.Forgejo.Token,
+	var globalGitHub *machine.GlobalGitHubCredentials
+	if configValue.GitHub.IsConfigured() {
+		globalGitHub = &machine.GlobalGitHubCredentials{
+			URL:   configValue.GitHub.NormalizedURL(),
+			Token: configValue.GitHub.Token,
 		}
 	}
+	// The ":forgejo" key label predates the GitHub migration and must not
+	// change, or pre-migration encrypted tokens become undecryptable.
 	manager := machine.NewManager(repository.NewDevMachineRepository(database), runtime, registry,
-		machine.ForgejoAdapter{}, globalForgejo,
+		machine.GitHubAdapter{}, globalGitHub,
 		cryptoutil.DeriveKey(configValue.DevMachine.EncryptionKey), cryptoutil.DeriveKey(configValue.JWTSecret+":forgejo"),
 		hostname+":"+fmt.Sprint(os.Getpid()))
 

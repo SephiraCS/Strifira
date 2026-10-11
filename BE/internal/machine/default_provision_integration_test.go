@@ -49,7 +49,7 @@ func TestDefaultRepositoryProvisionActualDocker(t *testing.T) {
 					return runtime.runImmutableGitHelper(ctx, machine, services, isolatedGitCommand(script, "actual-default-provision", args...), "", repositoryHelperInvocation{Checkout: true, ProvisionID: machine.ID})
 				}
 				output, err := run(atomicVolumeRenameFunctions+`set -eu
-test -z "${FORGEJO_TOKEN:-}"
+test -z "${GITHUB_TOKEN:-}"
 test ! -e /sys/class/net/eth0
 test "$(stat -c %u:%a /volume)" = 0:755
 if touch /volume/cannot-write; then exit 1; fi

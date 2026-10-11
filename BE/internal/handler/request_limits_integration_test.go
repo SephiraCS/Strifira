@@ -19,14 +19,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestForgejoWebhook_RejectsOversizedBody(t *testing.T) {
+func TestGitHubWebhook_RejectsOversizedBody(t *testing.T) {
 	env := newIntegrationEnv(t)
-	oversized := bytes.Repeat([]byte("a"), MaxForgejoWebhookBodyBytes+1)
-	rec := env.do(http.MethodPost, "/api/forgejo/webhook", "", oversized)
+	oversized := bytes.Repeat([]byte("a"), MaxGitHubWebhookBodyBytes+1)
+	rec := env.do(http.MethodPost, "/api/github/webhook", "", oversized)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 
 	// A body within the limit still reaches signature verification.
-	rec = env.do(http.MethodPost, "/api/forgejo/webhook", "", `{"action":"opened"}`)
+	rec = env.do(http.MethodPost, "/api/github/webhook", "", `{"action":"opened"}`)
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 

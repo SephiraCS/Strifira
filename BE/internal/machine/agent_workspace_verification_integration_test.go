@@ -58,7 +58,7 @@ func TestWorkspaceVerificationActualDocker(t *testing.T) {
 	}
 	t.Run("isolated-tooling-and-private-files", func(t *testing.T) {
 		runID := uuid.New()
-		script := "set -eu; test \"$(./test.sh)\" = test-script-ok; test \"$(cat .hidden)\" = hidden; test -z \"$FORGEJO_TOKEN\"; test -z \"$GITHUB_TOKEN\"; test -z \"$ANTHROPIC_API_KEY\"; test -z \"$BASH_ENV\"; test \"$(ku-fixture-tool)\" = fixture-tool-ok; test \"$(stat -f -c %T /tmp)\" = xfs; test ! -e /repositories; test ! -e protected-link; printf 'test-mutated\\n' > source.txt; dd if=/dev/zero of=/tmp/compiler-cache bs=1M count=2 status=none; printf filesystem-tests-ok"
+		script := "set -eu; test \"$(./test.sh)\" = test-script-ok; test \"$(cat .hidden)\" = hidden; test -z \"$GITHUB_TOKEN\"; test -z \"$ANTHROPIC_API_KEY\"; test -z \"$BASH_ENV\"; test \"$(ku-fixture-tool)\" = fixture-tool-ok; test \"$(stat -f -c %T /tmp)\" = xfs; test ! -e /repositories; test ! -e protected-link; printf 'test-mutated\\n' > source.txt; dd if=/dev/zero of=/tmp/compiler-cache bs=1M count=2 status=none; printf filesystem-tests-ok"
 		execution, err := runtime.RunWorkspaceCommand(ctx, machine, services, runID, []string{"/bin/sh", "-c", script})
 		require.NoError(t, err)
 		require.Zero(t, execution.ExitCode)

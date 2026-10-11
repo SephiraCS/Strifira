@@ -17,8 +17,8 @@
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Menu from '@lucide/svelte/icons/menu';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
-	import GitBranch from '@lucide/svelte/icons/git-branch';
 	import Server from '@lucide/svelte/icons/server';
+	import Github from '$lib/components/icons/Github.svelte';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { ROLE_HIERARCHY } from '$lib/security/roles';
 
@@ -103,7 +103,7 @@
 				{ label: m['settings.nav.members'](), href: `/${slug}/settings/members`, icon: Users },
 				{ label: m['settings.nav.labels'](), href: `/${slug}/settings/labels`, icon: Tag },
 				{ label: m['settings.nav.webhooks'](), href: `/${slug}/settings/webhooks`, icon: Webhook },
-				{ label: m['settings.nav.forgejo'](), href: `/${slug}/settings/forgejo`, icon: GitBranch },
+				{ label: m['settings.nav.github'](), href: `/${slug}/settings/github`, icon: Github },
 				{ label: m['settings.nav.templates'](), href: `/${slug}/settings/templates`, icon: FileText },
 				{ label: m['settings.nav.ai'](), href: `/${slug}/settings/ai`, icon: Sparkles },
 				...(canManageDevBoxes ? [{ label: m['dev_boxes.title'](), href: `/${slug}/dev-boxes`, icon: Server }] : []),

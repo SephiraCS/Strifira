@@ -23,7 +23,7 @@ const (
 	WebhookDropFanoutDeadline = "fanout_deadline"
 )
 
-// Forgejo webhook delivery outcomes recorded by ForgejoWebhooks.
+// GitHub webhook delivery outcomes recorded by GitHubWebhooks.
 const (
 	WebhookResultProcessed        = "processed"
 	WebhookResultInvalidSignature = "invalid_signature"
@@ -45,10 +45,10 @@ var (
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "route"})
 
-	// ForgejoWebhooks counts Forgejo webhook deliveries by event and result.
-	ForgejoWebhooks = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ku_forgejo_webhook_deliveries_total",
-		Help: "Forgejo webhook deliveries by event type and processing result.",
+	// GitHubWebhooks counts GitHub webhook deliveries by event and result.
+	GitHubWebhooks = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "ku_github_webhook_deliveries_total",
+		Help: "GitHub webhook deliveries by event type and processing result.",
 	}, []string{"event", "result"})
 
 	// WebhookEventsDropped counts outgoing webhook work that was dropped:
@@ -67,37 +67,38 @@ func init() {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		httpRequests,
 		httpDuration,
-		ForgejoWebhooks,
+		GitHubWebhooks,
 		WebhookEventsDropped,
 	)
 }
 
-// RecordForgejoWebhook increments the webhook outcome counter. The event
+// RecordGitHubWebhook increments the webhook outcome counter. The event
 // header is client-controlled (it is recorded even for unsigned deliveries),
-// so only a fixed set of Forgejo event names becomes a label; everything else
+// so only a fixed set of GitHub event names becomes a label; everything else
 // is bucketed as "other" and a missing header as "unknown".
-func RecordForgejoWebhook(event, result string) {
-	ForgejoWebhooks.WithLabelValues(webhookEventLabel(event), result).Inc()
+func RecordGitHubWebhook(event, result string) {
+	GitHubWebhooks.WithLabelValues(webhookEventLabel(event), result).Inc()
 }
 
-// forgejoEvents are the Forgejo webhook event names kept as metric labels:
+// githubEvents are the GitHub webhook event names kept as metric labels:
 // the ones HandleWebhookEvent processes plus the other common repository
-// events Forgejo sends.
-var forgejoEvents = map[string]struct{}{
+// events GitHub sends.
+var githubEvents = map[string]struct{}{
 	"push": {}, "create": {}, "delete": {}, "fork": {}, "release": {},
-	"repository": {}, "wiki": {}, "package": {}, "status": {},
-	"issues": {}, "issue_assign": {}, "issue_label": {}, "issue_milestone": {}, "issue_comment": {},
-	"pull_request": {}, "pull_request_assign": {}, "pull_request_label": {}, "pull_request_milestone": {},
-	"pull_request_comment": {}, "pull_request_review_approved": {}, "pull_request_review_rejected": {},
-	"pull_request_review_comment": {}, "pull_request_sync": {}, "pull_request_review_request": {},
-	"action_run_success": {}, "action_run_failure": {}, "action_run_recover": {},
+	"repository": {}, "status": {}, "ping": {}, "branch_protection_rule": {},
+	"check_run": {}, "check_suite": {}, "workflow_run": {}, "workflow_job": {},
+	"issues": {}, "issue_comment": {}, "issue_assignment": {}, "issue_label": {}, "issue_milestone": {},
+	"pull_request": {}, "pull_request_comment": {}, "pull_request_review": {},
+	"pull_request_review_comment": {}, "pull_request_review_thread": {},
+	"pull_request_assignment": {}, "pull_request_label": {}, "pull_request_milestone": {},
+	"pull_request_target": {}, "label": {}, "milestone": {}, "member": {}, "team": {},
 }
 
 func webhookEventLabel(event string) string {
 	if event == "" {
 		return "unknown"
 	}
-	if _, ok := forgejoEvents[event]; ok {
+	if _, ok := githubEvents[event]; ok {
 		return event
 	}
 	return "other"

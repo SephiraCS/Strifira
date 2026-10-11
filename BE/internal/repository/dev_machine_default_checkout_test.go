@@ -29,7 +29,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 	require.NoError(t, err)
 	repoIDs := []uuid.UUID{uuid.New(), uuid.New()}
 	for index, fullName := range []string{"ku/default", "ku/other"} {
-		_, err = db.Exec(`INSERT INTO forgejo_repos (id,workspace_id,forgejo_repo_id,full_name,instance_url,default_branch)
+		_, err = db.Exec(`INSERT INTO github_repos (id,workspace_id,github_repo_id,full_name,instance_url,default_branch)
 			VALUES ($1,$2,$3,$4,'https://git.example.com','main')`, repoIDs[index], f.workspaceID, time.Now().UnixNano(), fullName)
 		require.NoError(t, err)
 	}
@@ -47,7 +47,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 		issueID := createIssue()
 		checkoutID := uuid.New()
 		checkout := &domain.DevMachineCheckout{ID: checkoutID, WorkspaceID: f.workspaceID, MachineID: machineID,
-			IssueID: issueID, ForgejoRepoID: repoID, RepositoryFullName: fullName, RepositoryURL: "https://git.example.com/" + fullName,
+			IssueID: issueID, GitHubRepoID: repoID, RepositoryFullName: fullName, RepositoryURL: "https://git.example.com/" + fullName,
 			BaseBranch: "release", WorkingBranch: "ku/issue-" + checkoutID.String(), WorkspacePath: "/workspace/tasks/" + checkoutID.String(), Status: "queued"}
 		operation := &domain.DevMachineOperation{ID: uuid.New(), WorkspaceID: f.workspaceID, MachineID: machineID,
 			Action: domain.DevMachineOpCheckoutIssue, Status: domain.DevMachineOpStatusPending, Generation: 1,
@@ -67,7 +67,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 	for _, mode := range []string{"configured-default", "generic", "disconnected-default", "concurrent-affinity"} {
 		t.Run(mode, func(t *testing.T) {
 			machineID := f.insertMachine(t, domain.DevMachineStatusRunning, domain.DevMachineStatusRunning, false)
-			_, err := db.Exec(`UPDATE dev_machines SET repo_provider='forgejo' WHERE id=$1`, machineID)
+			_, err := db.Exec(`UPDATE dev_machines SET repo_provider='github' WHERE id=$1`, machineID)
 			require.NoError(t, err)
 			if mode == "configured-default" || mode == "disconnected-default" {
 				primaryIssueID := createIssue()
@@ -102,7 +102,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 				after, err := f.repository.GetMachine(t.Context(), f.workspaceID, machineID)
 				require.NoError(t, err)
 				assertDefault(t, before, after)
-				require.Equal(t, checkouts[0].ForgejoRepoID, *after.RepositoryAffinityID)
+				require.Equal(t, checkouts[0].GitHubRepoID, *after.RepositoryAffinityID)
 				var operations int
 				require.NoError(t, db.Get(&operations, `SELECT COUNT(*) FROM dev_machine_operations WHERE machine_id=$1`, machineID))
 				require.Equal(t, 1, operations, "the losing affinity claim must roll back its checkout and operation")

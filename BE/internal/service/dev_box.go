@@ -18,7 +18,7 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
-	forgejoclient "github.com/ku/ku-backend/pkg/forgejo"
+	githubclient "github.com/ku/ku-backend/pkg/github"
 )
 
 var (
@@ -240,7 +240,7 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 	if issue == nil {
 		return nil, fmt.Errorf("%w: issue is not in this workspace", ErrInvalidDevBoxInput)
 	}
-	var linked *domain.ForgejoRepoModel
+	var linked *domain.GitHubRepoModel
 	var configuredBranch *string
 	if req.RepositoryFullName != "" {
 		linked, err = s.development.store.GetLinkedRepositoryByFullName(ctx, workspaceID, req.RepositoryFullName)
@@ -252,10 +252,10 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
-		if setting.ForgejoRepoID == nil {
+		if setting.GitHubRepoID == nil {
 			return nil, fmt.Errorf("%w: issue has no development repository", ErrInvalidDevBoxInput)
 		}
-		linked, err = s.development.store.GetLinkedRepository(ctx, workspaceID, *setting.ForgejoRepoID)
+		linked, err = s.development.store.GetLinkedRepository(ctx, workspaceID, *setting.GitHubRepoID)
 		configuredBranch = setting.BaseBranch
 	}
 	if err != nil {
@@ -265,7 +265,7 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 		(req.RepositoryFullName != "" && !strings.EqualFold(linked.FullName, req.RepositoryFullName)) {
 		return nil, fmt.Errorf("%w: development repository is not linked", ErrInvalidDevBoxInput)
 	}
-	origin, err := forgejoclient.NormalizeInstanceURL(linked.InstanceURL)
+	origin, err := githubclient.NormalizeInstanceURL(linked.InstanceURL)
 	if err != nil || !validDevBoxRepositoryName(linked.FullName) {
 		return nil, fmt.Errorf("%w: invalid development repository", ErrInvalidDevBoxInput)
 	}
@@ -308,7 +308,7 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 	command, _ := json.Marshal(nonNilSlice(req.TestCommand))
 	criteria, _ := json.Marshal(nonNilSlice(req.AcceptanceCriteria))
 	job := &domain.DevBoxJob{ID: jobID, WorkspaceID: workspaceID, BoxID: boxID, RequestedByUserID: userID, IssueID: issueID,
-		IssueIdentifier: issue.Identifier, ForgejoRepoID: linked.ID, Provider: req.Provider, Prompt: prompt.String(), RepositoryURL: origin + "/" + linked.FullName,
+		IssueIdentifier: issue.Identifier, GitHubRepoID: linked.ID, Provider: req.Provider, Prompt: prompt.String(), RepositoryURL: origin + "/" + linked.FullName,
 		RepositoryFullName: linked.FullName, BaseBranch: baseBranch, WorkingBranch: branch, TestCommand: command, AcceptanceCriteria: criteria,
 		MaxRuntimeSeconds: maxRuntime, Status: domain.DevBoxJobQueued}
 	if err := s.store.CreateJob(ctx, job); err != nil {

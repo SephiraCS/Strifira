@@ -18,7 +18,7 @@ import (
 	"github.com/ku/ku-backend/internal/agent"
 	"github.com/ku/ku-backend/internal/domain"
 	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	forgejoclient "github.com/ku/ku-backend/pkg/forgejo"
+	githubclient "github.com/ku/ku-backend/pkg/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,9 +45,9 @@ type managerStoreFake struct {
 	deleteRequestedEnvs       []domain.DevMachineEnvironment
 	deletedEnvironmentIDs     []uuid.UUID
 	installationFullNameCalls []string
-	linkedRepository          *domain.ForgejoRepoModel
-	forgejoConnection         *domain.ForgejoConnection
-	forgejoWorkspaceDisable   *domain.ForgejoWorkspaceDisable
+	linkedRepository          *domain.GitHubRepoModel
+	githubConnection          *domain.GitHubConnection
+	githubWorkspaceDisable    *domain.GitHubWorkspaceDisable
 	agentRun                  *domain.DevMachineAgentRun
 	provider                  *domain.DevMachineAgentProvider
 	completedRun              *domain.DevMachineAgentRun
@@ -261,13 +261,13 @@ func (f *managerStoreFake) CreateResourceSample(context.Context, *domain.DevMach
 }
 func (f *managerStoreFake) UpdateVolumeUsage(context.Context, uuid.UUID, int64) error    { return nil }
 func (f *managerStoreFake) CreateGitRef(context.Context, *domain.DevMachineGitRef) error { return nil }
-func (f *managerStoreFake) GetForgejoConnection(context.Context, uuid.UUID) (*domain.ForgejoConnection, error) {
-	return f.forgejoConnection, nil
+func (f *managerStoreFake) GetGitHubConnection(context.Context, uuid.UUID) (*domain.GitHubConnection, error) {
+	return f.githubConnection, nil
 }
-func (f *managerStoreFake) GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
-	return f.forgejoWorkspaceDisable, nil
+func (f *managerStoreFake) GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.GitHubWorkspaceDisable, error) {
+	return f.githubWorkspaceDisable, nil
 }
-func (f *managerStoreFake) GetLinkedRepositoryByFullName(_ context.Context, _ uuid.UUID, fullName string) (*domain.ForgejoRepoModel, error) {
+func (f *managerStoreFake) GetLinkedRepositoryByFullName(_ context.Context, _ uuid.UUID, fullName string) (*domain.GitHubRepoModel, error) {
 	f.installationFullNameCalls = append(f.installationFullNameCalls, fullName)
 	return f.linkedRepository, nil
 }
@@ -345,13 +345,13 @@ func (f *managerStoreFake) PurgeAccessLogs(_ context.Context, before time.Time, 
 	return 0, nil
 }
 
-type forgejoAPIFake struct{ pullRequestErr error }
+type githubAPIFake struct{ pullRequestErr error }
 
-func (f forgejoAPIFake) CreatePullRequest(string, string, string, string, string, string, string, string) (*forgejoclient.PullRequest, error) {
+func (f githubAPIFake) CreatePullRequest(string, string, string, string, string, string, string, string) (*githubclient.PullRequest, error) {
 	if f.pullRequestErr != nil {
 		return nil, f.pullRequestErr
 	}
-	return &forgejoclient.PullRequest{HTMLURL: "https://git.example.com/ku/api/pull/1", Number: 1}, nil
+	return &githubclient.PullRequest{HTMLURL: "https://git.example.com/ku/api/pull/1", Number: 1}, nil
 }
 
 type runtimeFake struct {
@@ -534,7 +534,7 @@ func TestAgentToolchainFailureOverridesOuterSuccess(t *testing.T) {
 		Stdout: `{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"completed","title":"Build project","output":"go: command not found\n","metadata":{"exit":127}}}}` + "\n" +
 			`{"type":"text","part":{"type":"text","text":"Unable to verify the build"}}`,
 	}}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 
 	err := manager.runAgent(context.Background(), store.machine, &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, AgentRunID: &runID,
@@ -570,7 +570,7 @@ func TestManagerDoesNotLaunchAgentCancelledBeforeStart(t *testing.T) {
 		return sql.ErrNoRows
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.runAgent(context.Background(), store.machine, &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, AgentRunID: &runID,
@@ -590,7 +590,7 @@ func TestReconcileQueuesIdlePause(t *testing.T) {
 		DesiredStatus: domain.DevMachineStatusRunning, Generation: 4,
 	}
 	store := &managerStoreFake{machine: &machine, idle: []domain.DevMachine{machine}}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 
 	require.NoError(t, manager.reconcile(context.Background()))
 	require.Equal(t, []domain.DevMachineStatus{domain.DevMachineStatusPaused}, store.desired)
@@ -604,7 +604,7 @@ func TestManagerLifecycleSpawnPauseAndTeardown(t *testing.T) {
 		services: []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpSpawn})
 	require.NoError(t, err)
 	require.Equal(t, domain.DevMachineStatusRunning, store.machine.Status)
@@ -632,7 +632,7 @@ func TestManagerPauseRevokesMachineAccess(t *testing.T) {
 		}},
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpPause, Generation: 3,
@@ -651,7 +651,7 @@ func TestManagerSkipsStaleOperationGeneration(t *testing.T) {
 		services: []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpSpawn, Generation: 1,
 	})
@@ -666,7 +666,7 @@ func TestManagerStartResumesSpawnAfterRetryableFailure(t *testing.T) {
 		services: []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpStart,
@@ -684,7 +684,7 @@ func TestManagerCheckoutTokenUsesCheckoutRepository(t *testing.T) {
 		services: []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
 		checkout: &domain.DevMachineCheckout{ID: checkoutID, WorkspaceID: workspaceID, MachineID: machineID, RepositoryFullName: "selected/repo", BaseBranch: "main", WorkingBranch: "ku/test", WorkspacePath: "/workspace/tasks/eng-1", Status: "queued"},
 	}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpCheckoutIssue, CheckoutID: &checkoutID, Generation: 2})
 
@@ -698,7 +698,7 @@ func TestManagerKeepsCheckoutPreparingWhileOperationRetries(t *testing.T) {
 		machine:  &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, Status: domain.DevMachineStatusRunning, DesiredStatus: domain.DevMachineStatusRunning, Generation: 2},
 		checkout: &domain.DevMachineCheckout{ID: checkoutID, WorkspaceID: workspaceID, MachineID: machineID, RepositoryFullName: "selected/repo", Status: "queued"},
 	}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	manager.operationSlots <- struct{}{}
 	manager.operations.Add(1)
@@ -725,7 +725,7 @@ func TestManagerTerminatesStaleTerminalSessionAndCompletesClose(t *testing.T) {
 		},
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpTerminateTerminal,
@@ -753,7 +753,7 @@ func TestManagerTerminalCloseFailureRemainsExplicitAfterRetriesExhausted(t *test
 		failOperationWillRetry: &willRetry,
 	}
 	runtime := &runtimeFake{terminateTerminalErr: errors.New("docker unavailable")}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 	manager.operationSlots <- struct{}{}
 	manager.operations.Add(1)
 
@@ -769,23 +769,23 @@ func TestManagerTerminalCloseFailureRemainsExplicitAfterRetriesExhausted(t *test
 	require.Empty(t, store.completedTerminalIDs)
 }
 
-func TestForgejoCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T) {
+func TestGitHubCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T) {
 	machineID, workspaceID := uuid.New(), uuid.New()
 	token := "fjt_" + strings.Repeat("runtime-token", 4)
 	key := cryptoutil.DeriveKey("manager-runtime-credential-test")
-	forgejoKey := cryptoutil.DeriveKey("manager-runtime-credential-forgejo")
-	encrypted, err := cryptoutil.Encrypt(token, forgejoKey)
+	githubKey := cryptoutil.DeriveKey("manager-runtime-credential-github")
+	encrypted, err := cryptoutil.Encrypt(token, githubKey)
 	require.NoError(t, err)
 	store := &managerStoreFake{
 		machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
-		linkedRepository: &domain.ForgejoRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
+		linkedRepository: &domain.GitHubRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
 			FullName: "ku/api", InstanceURL: "https://git.example.com"},
-		forgejoConnection: &domain.ForgejoConnection{WorkspaceID: workspaceID,
+		githubConnection: &domain.GitHubConnection{WorkspaceID: workspaceID,
 			InstanceURL: "https://git.example.com", Token: encrypted},
 	}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, key, forgejoKey, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, key, githubKey, "test")
 
-	instanceURL, returnedToken, err := manager.forgejoCredential(context.Background(), store.machine, "ku/api")
+	instanceURL, returnedToken, err := manager.githubCredential(context.Background(), store.machine, "ku/api")
 
 	require.NoError(t, err)
 	require.Equal(t, "https://git.example.com", instanceURL)
@@ -795,7 +795,7 @@ func TestForgejoCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T
 	credential := store.runtimeCredentials[0]
 	require.Equal(t, machineID, credential.MachineID)
 	require.Equal(t, domain.DevMachineRuntimeCredentialScopeMachine, credential.Scope)
-	require.Equal(t, domain.DevMachineRuntimeCredentialTypeForgejoToken, credential.CredentialType)
+	require.Equal(t, domain.DevMachineRuntimeCredentialTypeGitHubToken, credential.CredentialType)
 	require.True(t, credential.ExpiresAt.After(time.Now()))
 	require.NotEmpty(t, credential.EncryptedValue)
 	require.NotEqual(t, token, credential.EncryptedValue)
@@ -811,33 +811,33 @@ func TestForgejoCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T
 	require.NotContains(t, string(encoded), token)
 }
 
-func TestForgejoCredentialRejectsRepositoryLinkedToAnotherInstance(t *testing.T) {
-	store := &managerStoreFake{machine: &domain.DevMachine{ID: uuid.New(), WorkspaceID: uuid.New(), RepoOwner: "octo", RepoName: "repo"}, linkedRepository: &domain.ForgejoRepoModel{InstanceURL: "https://old.example.com"}}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "must-not-be-returned"}, make([]byte, 32), nil, "test")
-	_, token, err := manager.forgejoCredential(t.Context(), store.machine, "octo/repo")
-	require.ErrorContains(t, err, "different Forgejo instance")
+func TestGitHubCredentialRejectsRepositoryLinkedToAnotherInstance(t *testing.T) {
+	store := &managerStoreFake{machine: &domain.DevMachine{ID: uuid.New(), WorkspaceID: uuid.New(), RepoOwner: "octo", RepoName: "repo"}, linkedRepository: &domain.GitHubRepoModel{InstanceURL: "https://old.example.com"}}
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "must-not-be-returned"}, make([]byte, 32), nil, "test")
+	_, token, err := manager.githubCredential(t.Context(), store.machine, "octo/repo")
+	require.ErrorContains(t, err, "different GitHub instance")
 	require.Empty(t, token)
 	require.Empty(t, store.runtimeCredentials)
 }
 
-func TestForgejoCredentialPrecedence(t *testing.T) {
+func TestGitHubCredentialPrecedence(t *testing.T) {
 	machineID, workspaceID := uuid.New(), uuid.New()
 	rowToken := "fjt_" + strings.Repeat("row-token", 4)
-	forgejoKey := cryptoutil.DeriveKey("manager-forgejo-precedence-test")
-	encrypted, err := cryptoutil.Encrypt(rowToken, forgejoKey)
+	githubKey := cryptoutil.DeriveKey("manager-github-precedence-test")
+	encrypted, err := cryptoutil.Encrypt(rowToken, githubKey)
 	require.NoError(t, err)
-	linkedRepository := &domain.ForgejoRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
+	linkedRepository := &domain.GitHubRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
 		FullName: "ku/api", InstanceURL: "https://git.example.com"}
-	connection := &domain.ForgejoConnection{WorkspaceID: workspaceID,
+	connection := &domain.GitHubConnection{WorkspaceID: workspaceID,
 		InstanceURL: "https://git.example.com", Token: encrypted}
 
 	t.Run("row overrides global", func(t *testing.T) {
 		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
-			linkedRepository: linkedRepository, forgejoConnection: connection}
-		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{},
-			&GlobalForgejoCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), forgejoKey, "test")
+			linkedRepository: linkedRepository, githubConnection: connection}
+		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{},
+			&GlobalGitHubCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), githubKey, "test")
 
-		instanceURL, token, err := manager.forgejoCredential(t.Context(), store.machine, "ku/api")
+		instanceURL, token, err := manager.githubCredential(t.Context(), store.machine, "ku/api")
 
 		require.NoError(t, err)
 		require.Equal(t, "https://git.example.com", instanceURL)
@@ -846,12 +846,12 @@ func TestForgejoCredentialPrecedence(t *testing.T) {
 
 	t.Run("disable marker yields no credentials even with row and global", func(t *testing.T) {
 		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
-			linkedRepository: linkedRepository, forgejoConnection: connection,
-			forgejoWorkspaceDisable: &domain.ForgejoWorkspaceDisable{WorkspaceID: workspaceID}}
-		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{},
-			&GlobalForgejoCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), forgejoKey, "test")
+			linkedRepository: linkedRepository, githubConnection: connection,
+			githubWorkspaceDisable: &domain.GitHubWorkspaceDisable{WorkspaceID: workspaceID}}
+		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{},
+			&GlobalGitHubCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), githubKey, "test")
 
-		_, token, err := manager.forgejoCredential(t.Context(), store.machine, "ku/api")
+		_, token, err := manager.githubCredential(t.Context(), store.machine, "ku/api")
 
 		require.ErrorIs(t, err, sql.ErrNoRows)
 		require.Empty(t, token)
@@ -861,7 +861,7 @@ func TestForgejoCredentialPrecedence(t *testing.T) {
 
 func TestReconcilePurgesExpiredRuntimeCredentials(t *testing.T) {
 	store := &managerStoreFake{orphanedEnvironmentCount: 2, orphanedCheckoutCount: 3}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 
 	require.NoError(t, manager.reconcile(context.Background()))
 	require.NotNil(t, store.purgedCredentialNow)
@@ -878,7 +878,7 @@ func TestReconcileRetriesEnvironmentImageCleanupFailure(t *testing.T) {
 		ID: environmentID, WorkspaceID: workspaceID, Status: "delete_requested", ImageRef: "ku/environment:test",
 	}}}
 	runtime := &runtimeFake{deleteEnvironmentImageErr: errors.New("image is busy")}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 
 	require.NoError(t, manager.reconcile(context.Background()))
 	require.Equal(t, 1, runtime.environmentDeleteAttempts)
@@ -896,7 +896,7 @@ func TestManagerMarksStaleCheckoutFailed(t *testing.T) {
 		machine:  &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, Status: domain.DevMachineStatusRunning, Generation: 2},
 		checkout: &domain.DevMachineCheckout{ID: checkoutID, Status: "queued"},
 	}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpCheckoutIssue, CheckoutID: &checkoutID, Generation: 1})
 
@@ -919,7 +919,7 @@ func TestManagerRejectsRepositoryAgentRunWithoutCheckout(t *testing.T) {
 		},
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.runAgent(context.Background(), machine, &domain.DevMachineOperation{AgentRunID: &runID, Generation: 1})
 
@@ -941,7 +941,7 @@ func TestManagerSnapshotEnvironmentTransitionsThroughBuilding(t *testing.T) {
 		services:    []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
 		environment: environment,
 	}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpSnapshotEnvironment, EnvironmentID: &environmentID, Generation: 3})
 
@@ -968,7 +968,7 @@ func TestManagerFailsGenerationMismatchedSnapshotsWithoutRetry(t *testing.T) {
 				environment: environment,
 			}
 			runtime := &runtimeFake{}
-			manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+			manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 			operation := domain.DevMachineOperation{
 				ID: uuid.New(), MachineID: machineID, WorkspaceID: workspaceID,
 				Action: domain.DevMachineOpSnapshotEnvironment, EnvironmentID: &environmentID,
@@ -1004,7 +1004,7 @@ func TestManagerFailsSnapshotWhenMachineStateChanged(t *testing.T) {
 		environment: environment,
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 	operation := domain.DevMachineOperation{
 		ID: uuid.New(), MachineID: machineID, WorkspaceID: workspaceID,
 		Action: domain.DevMachineOpSnapshotEnvironment, EnvironmentID: &environmentID,
@@ -1035,7 +1035,7 @@ func TestManagerSnapshotRetryDoesNotUndoEnvironmentDeletion(t *testing.T) {
 		services:    []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
 		environment: environment,
 	}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpSnapshotEnvironment,
@@ -1051,7 +1051,7 @@ func TestReconcileDeletesRequestedEnvironmentImagesBeforeRecords(t *testing.T) {
 	environment := domain.DevMachineEnvironment{ID: uuid.New(), WorkspaceID: uuid.New(), ImageRef: "ku/dev-environment-test:snapshot", Status: "delete_requested"}
 	store := &managerStoreFake{deleteRequestedEnvs: []domain.DevMachineEnvironment{environment}}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 
 	require.NoError(t, manager.reconcile(context.Background()))
 	require.Equal(t, []uuid.UUID{environment.ID}, runtime.deletedEnvironmentIDs)
@@ -1077,7 +1077,7 @@ func TestReconcilePermanentDeletePurgesOnlySafeRowsAndQueuesUnsafeRows(t *testin
 		DockerNetworkName: &networkName, WorkspaceVolumeName: &volumeName,
 	}
 	store := &managerStoreFake{permanentDeleteMachines: []domain.DevMachine{running, destroyed, failedWithResources}}
-	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), forgejoAPIFake{}, nil, nil, nil, "test")
+	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
 
 	require.NoError(t, manager.reconcile(context.Background()))
 	require.Equal(t, []uuid.UUID{destroyed.ID}, store.purgedMachineIDs)
@@ -1096,7 +1096,7 @@ func TestManagerDoesNotPublishRunningAfterGenerationChanges(t *testing.T) {
 		store.machine.Generation = 2
 		store.machine.DesiredStatus = domain.DevMachineStatusDestroyed
 	}}
-	manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 
 	err := manager.processOperation(context.Background(), &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, Action: domain.DevMachineOpSpawn, Generation: 1,
@@ -1151,7 +1151,7 @@ func TestManagerTimeoutReconciliationCancelsContextAndWaitsForOwnedCleanup(t *te
 				store.completeAgentRunErr = errors.New("database unavailable")
 			}
 			runtime := &runtimeFake{}
-			manager := NewManager(store, runtime, agent.NewRegistry(), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+			manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 			active, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			manager.registerActiveRun(machine.ID, run.ID, cancel)
@@ -1196,7 +1196,7 @@ func TestManagerAgentRetryKeepsOriginalDeadline(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, started.Add(30*time.Second), deadline, "retry must not grant another full runtime")
 	}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 	require.NoError(t, manager.runAgent(t.Context(), machine, &domain.DevMachineOperation{AgentRunID: &run.ID, MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Generation: 1}))
 	require.Equal(t, started, *run.StartedAt)
 }

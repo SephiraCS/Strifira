@@ -4,7 +4,7 @@ import "strings"
 
 func managedGitEnvironmentKey(key string) bool {
 	switch key {
-	case "FORGEJO_TOKEN", "GITHUB_TOKEN", "KU_GIT_CREDENTIAL_HELPER", "KU_FORGEJO_HOST", "KU_GIT_REPOSITORY", "KU_REPO_URL", "KU_BASE_BRANCH", "KU_WORKING_BRANCH":
+	case "GITHUB_TOKEN", "KU_GIT_CREDENTIAL_HELPER", "KU_GITHUB_HOST", "KU_GIT_REPOSITORY", "KU_REPO_URL", "KU_BASE_BRANCH", "KU_WORKING_BRANCH":
 		return true
 	default:
 		return false

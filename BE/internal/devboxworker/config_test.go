@@ -12,7 +12,7 @@ import (
 func testConfig(t *testing.T) Config {
 	t.Helper()
 	directory := t.TempDir()
-	return Config{ServerURL: "https://ku.example", TokenFile: filepath.Join(directory, "token"), WorkRoot: filepath.Join(directory, "worktrees"), ExecutionMode: "trusted-local", Repositories: map[string]Repository{"owner/repo": {Path: directory, URL: "https://forgejo.example/owner/repo.git"}}, Providers: map[string]string{"claude-code": "/bin/true"}}
+	return Config{ServerURL: "https://ku.example", TokenFile: filepath.Join(directory, "token"), WorkRoot: filepath.Join(directory, "worktrees"), ExecutionMode: "trusted-local", Repositories: map[string]Repository{"owner/repo": {Path: directory, URL: "https://github.example/owner/repo.git"}}, Providers: map[string]string{"claude-code": "/bin/true"}}
 }
 
 func TestConfigRequiresExplicitLocalTrustAndHTTPS(t *testing.T) {
@@ -29,7 +29,7 @@ func TestConfigRequiresExplicitLocalTrustAndHTTPS(t *testing.T) {
 	config.ServerURL = "https://user:secret@ku.example"
 	require.Error(t, config.Validate())
 	config.ServerURL = "https://ku.example"
-	config.Repositories["owner/repo"] = Repository{Path: t.TempDir(), URL: "https://user:secret@forgejo.example/owner/repo.git"}
+	config.Repositories["owner/repo"] = Repository{Path: t.TempDir(), URL: "https://user:secret@github.example/owner/repo.git"}
 	require.Error(t, config.Validate())
 }
 
@@ -53,14 +53,14 @@ func TestReadTokenRejectsUnsafePermissionsSymlinksAndPersonalKeys(t *testing.T) 
 	require.ErrorContains(t, err, "format")
 }
 
-func TestChildEnvironmentDoesNotPassWorkerOrForgejoCredentials(t *testing.T) {
+func TestChildEnvironmentDoesNotPassWorkerOrGitHubCredentials(t *testing.T) {
 	t.Setenv("KU_WORKER_TOKEN", "worker-secret")
-	t.Setenv("FORGEJO_TOKEN", "forgejo-secret")
+	t.Setenv("GITHUB_TOKEN", "github-secret")
 	t.Setenv("GITHUB_TOKEN", "github-secret")
 	t.Setenv("ANTHROPIC_API_KEY", "provider-secret")
 	provider := strings.Join(childEnvironment("claude-code"), "\n")
 	require.NotContains(t, provider, "worker-secret")
-	require.NotContains(t, provider, "forgejo-secret")
+	require.NotContains(t, provider, "github-secret")
 	require.NotContains(t, provider, "github-secret")
 	require.Contains(t, provider, "ANTHROPIC_API_KEY=provider-secret")
 	require.NotContains(t, strings.Join(childEnvironment(""), "\n"), "provider-secret")

@@ -19,7 +19,7 @@ import (
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
 	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	forgejoclient "github.com/ku/ku-backend/pkg/forgejo"
+	githubclient "github.com/ku/ku-backend/pkg/github"
 )
 
 var (
@@ -152,7 +152,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		environmentID = defaults.EnvironmentID
 	}
 
-	var repositoryModel *domain.ForgejoRepoModel
+	var repositoryModel *domain.GitHubRepoModel
 	var baseBranch, workingBranch string
 	if req.Repo != nil {
 		fullName := req.Repo.Owner + "/" + req.Repo.Name
@@ -163,8 +163,8 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		if repositoryModel == nil {
 			return nil, nil, fmt.Errorf("%w: invalid linked repository", ErrInvalidMachineInput)
 		}
-	} else if defaults.ForgejoRepoID != nil {
-		repositoryModel, err = s.store.GetLinkedRepository(ctx, workspaceID, *defaults.ForgejoRepoID)
+	} else if defaults.GitHubRepoID != nil {
+		repositoryModel, err = s.store.GetLinkedRepository(ctx, workspaceID, *defaults.GitHubRepoID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -177,15 +177,15 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		if !validRepositorySegment(repoOwner) || !validRepositorySegment(repoName) {
 			return nil, nil, fmt.Errorf("%w: linked repository has an invalid full name", ErrInvalidMachineInput)
 		}
-		instanceURL, err := forgejoclient.NormalizeInstanceURL(repositoryModel.InstanceURL)
+		instanceURL, err := githubclient.NormalizeInstanceURL(repositoryModel.InstanceURL)
 		if err != nil || !strings.HasPrefix(instanceURL, "https://") {
-			return nil, nil, fmt.Errorf("%w: linked repository requires a valid HTTPS Forgejo instance", ErrInvalidMachineInput)
+			return nil, nil, fmt.Errorf("%w: linked repository requires a valid HTTPS GitHub instance", ErrInvalidMachineInput)
 		}
 		if req.Repo != nil {
 			requestedURL, _ := url.Parse(req.Repo.URL)
-			requestedInstance, err := forgejoclient.NormalizeInstanceURL(requestedURL.Scheme + "://" + requestedURL.Host)
+			requestedInstance, err := githubclient.NormalizeInstanceURL(requestedURL.Scheme + "://" + requestedURL.Host)
 			if err != nil || requestedInstance != instanceURL {
-				return nil, nil, fmt.Errorf("%w: repository URL must match the linked Forgejo instance", ErrInvalidMachineInput)
+				return nil, nil, fmt.Errorf("%w: repository URL must match the linked GitHub instance", ErrInvalidMachineInput)
 			}
 		}
 		if !repositoryAllowed(policy.AllowedRepositories, repositoryModel.FullName) {
@@ -227,9 +227,9 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 	}
 	if repositoryModel != nil {
 		machine.RepositoryAffinityID = &repositoryModel.ID
-		machine.RepoProvider = "forgejo"
+		machine.RepoProvider = "github"
 		machine.RepoOwner, machine.RepoName = splitRepositoryFullName(repositoryModel.FullName)
-		instanceURL, _ := forgejoclient.NormalizeInstanceURL(repositoryModel.InstanceURL)
+		instanceURL, _ := githubclient.NormalizeInstanceURL(repositoryModel.InstanceURL)
 		machine.RepoURL = instanceURL + "/" + repositoryModel.FullName
 	}
 
@@ -483,7 +483,7 @@ func newService(workspaceID, machineID uuid.UUID, serviceType, key, name, image,
 func (s *DevMachineService) buildEnvVars(machineID uuid.UUID, inputs []dto.DevMachineEnvVarInput) ([]domain.DevMachineEnvVar, error) {
 	envVars := make([]domain.DevMachineEnvVar, 0, len(inputs))
 	for _, input := range inputs {
-		if input.Name == "GITHUB_TOKEN" || input.Name == "FORGEJO_TOKEN" || strings.HasPrefix(input.Name, "KU_") {
+		if input.Name == "GITHUB_TOKEN" || strings.HasPrefix(input.Name, "KU_") {
 			return nil, fmt.Errorf("%w: environment variable %s is reserved", ErrInvalidMachineInput, input.Name)
 		}
 		if !validEnvName(input.Name) {
@@ -717,8 +717,8 @@ func (s *DevMachineService) UpdateScopeSetting(ctx context.Context, workspaceID 
 		return nil, fmt.Errorf("%w: invalid development setting scope", ErrInvalidMachineInput)
 	}
 	setting := &domain.DevMachineScopeSetting{WorkspaceID: workspaceID, TeamID: teamID, ProjectID: projectID, IssueID: issueID}
-	if request.ForgejoRepoID != nil {
-		repositoryID, _ := uuid.Parse(*request.ForgejoRepoID)
+	if request.GitHubRepoID != nil {
+		repositoryID, _ := uuid.Parse(*request.GitHubRepoID)
 		repository, err := s.store.GetLinkedRepository(ctx, workspaceID, repositoryID)
 		if err != nil {
 			return nil, err
@@ -726,7 +726,7 @@ func (s *DevMachineService) UpdateScopeSetting(ctx context.Context, workspaceID 
 		if repository == nil {
 			return nil, fmt.Errorf("%w: invalid linked repository", ErrInvalidMachineInput)
 		}
-		setting.ForgejoRepoID = &repositoryID
+		setting.GitHubRepoID = &repositoryID
 		baseBranch := repository.DefaultBranch
 		if request.BaseBranch != nil {
 			baseBranch = strings.TrimSpace(*request.BaseBranch)
@@ -736,7 +736,7 @@ func (s *DevMachineService) UpdateScopeSetting(ctx context.Context, workspaceID 
 		}
 		setting.BaseBranch = &baseBranch
 	} else if request.BaseBranch != nil {
-		return nil, fmt.Errorf("%w: forgejo_repo_id is required when base_branch is provided", ErrInvalidMachineInput)
+		return nil, fmt.Errorf("%w: github_repo_id is required when base_branch is provided", ErrInvalidMachineInput)
 	}
 	if request.EnvironmentID != nil {
 		environmentID, _ := uuid.Parse(*request.EnvironmentID)
@@ -810,7 +810,7 @@ func (s *DevMachineService) resolveDevelopmentSetting(ctx context.Context, works
 	}
 	scopes = append(scopes, [3]*uuid.UUID{nil, nil, nil})
 	for _, scope := range scopes {
-		if resolved.ForgejoRepoID != nil && resolved.EnvironmentID != nil {
+		if resolved.GitHubRepoID != nil && resolved.EnvironmentID != nil {
 			break
 		}
 		setting, err := s.store.GetScopeSetting(ctx, workspaceID, scope[0], scope[1], scope[2])
@@ -820,8 +820,8 @@ func (s *DevMachineService) resolveDevelopmentSetting(ctx context.Context, works
 		if setting == nil {
 			continue
 		}
-		if resolved.ForgejoRepoID == nil && setting.ForgejoRepoID != nil {
-			resolved.ForgejoRepoID, resolved.BaseBranch = setting.ForgejoRepoID, setting.BaseBranch
+		if resolved.GitHubRepoID == nil && setting.GitHubRepoID != nil {
+			resolved.GitHubRepoID, resolved.BaseBranch = setting.GitHubRepoID, setting.BaseBranch
 		}
 		if resolved.EnvironmentID == nil && setting.EnvironmentID != nil {
 			resolved.EnvironmentID = setting.EnvironmentID
@@ -857,13 +857,13 @@ func (s *DevMachineService) CheckoutIssue(ctx context.Context, workspaceID, mach
 	if err != nil {
 		return nil, err
 	}
-	if setting.ForgejoRepoID == nil {
+	if setting.GitHubRepoID == nil {
 		return nil, fmt.Errorf("%w: issue has no development repository", ErrCheckoutNotEligible)
 	}
 	if setting.EnvironmentID != nil && (machine.EnvironmentID == nil || *machine.EnvironmentID != *setting.EnvironmentID) {
 		return nil, fmt.Errorf("%w: issue requires a different development environment", ErrCheckoutNotEligible)
 	}
-	linkedRepository, err := s.store.GetLinkedRepository(ctx, workspaceID, *setting.ForgejoRepoID)
+	linkedRepository, err := s.store.GetLinkedRepository(ctx, workspaceID, *setting.GitHubRepoID)
 	if err != nil {
 		return nil, err
 	}
@@ -914,7 +914,7 @@ func (s *DevMachineService) CheckoutIssue(ctx context.Context, workspaceID, mach
 	}
 	checkout := &domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: workspaceID, MachineID: machineID, IssueID: issueID,
-		ForgejoRepoID: linkedRepository.ID, RepositoryFullName: linkedRepository.FullName,
+		GitHubRepoID: linkedRepository.ID, RepositoryFullName: linkedRepository.FullName,
 		RepositoryURL: strings.TrimRight(linkedRepository.InstanceURL, "/") + "/" + linkedRepository.FullName,
 		BaseBranch:    baseBranch,
 		WorkingBranch: "ku/" + identifier, WorkspacePath: "/workspace/tasks/" + identifier, Status: "queued",
@@ -1276,7 +1276,7 @@ func (s *DevMachineService) CreateAgentRun(ctx context.Context, workspaceID, mac
 		if !validEnvName(name) {
 			return nil, fmt.Errorf("%w: invalid secret name %q", ErrInvalidMachineInput, name)
 		}
-		if name == "GITHUB_TOKEN" || name == "FORGEJO_TOKEN" || strings.HasPrefix(name, "KU_") {
+		if name == "GITHUB_TOKEN" || strings.HasPrefix(name, "KU_") {
 			return nil, fmt.Errorf("%w: secret %s is managed by Ku and cannot be selected", ErrInvalidMachineInput, name)
 		}
 		allowedSecretSet[name] = true
@@ -2044,8 +2044,8 @@ func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineChe
 }
 
 func validateRepository(input dto.DevMachineRepoInput) error {
-	if input.Provider != "forgejo" {
-		return errors.New("repository provider must be forgejo")
+	if input.Provider != "github" {
+		return errors.New("repository provider must be github")
 	}
 	repositoryURL, err := url.Parse(input.URL)
 	if err != nil || repositoryURL.Scheme != "https" || repositoryURL.Hostname() == "" || repositoryURL.User != nil || repositoryURL.RawQuery != "" || repositoryURL.ForceQuery || repositoryURL.Fragment != "" {

@@ -28,7 +28,7 @@ Ku's published releases are runnable MVPs, not a mature enterprise platform. Thi
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, and WebSocket events. |
 | **Planning**     | Implemented: cycles with burndown/velocity charts, project management with Gantt view, and full cycle/project UI.                                                                                                                                         |
-| **Integrations** | Available: workspace webhooks and Forgejo with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, links to rerun in Forgejo, and cancellation. |
+| **Integrations** | Available: workspace webhooks and GitHub with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, links to rerun in GitHub, and cancellation. |
 | **Analytics**    | Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on current issue data and stored lifecycle timestamps.                                                                                                                                              |
 | **Dev Machines** | Unreleased development-branch functionality with a multi-container runtime, authenticated routing, agent providers, collector, and UI. The production contract requires always-on availability; existing deployment gates remain migration debt. See [`TECHNICAL.md`](TECHNICAL.md). |
 | **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
@@ -62,7 +62,7 @@ The distribution model is deliberately simple:
 - no per-user software fee;
 - infrastructure, backups, monitoring, and updates remain the operator's responsibility.
 
-The product is intentionally smaller than broad project-management suites. It covers issues, cycles, projects, saved views, analytics, Forgejo automation, public sharing, real-time events, and portable per-workspace transfer. It does not currently include enterprise identity, a wiki, or modules.
+The product is intentionally smaller than broad project-management suites. It covers issues, cycles, projects, saved views, analytics, GitHub automation, public sharing, real-time events, and portable per-workspace transfer. It does not currently include enterprise identity, a wiki, or modules.
 
 ## ✨ Features
 
@@ -78,11 +78,11 @@ The product is intentionally smaller than broad project-management suites. It co
 | 👁️  | **Views**              | Saved views with personal/workspace/team scoping, drag-and-drop reorder          |
 | 🔔  | **Notifications**      | Inbox with snooze, read status, and archive                                      |
 | 🔗  | **Webhooks**           | Plug into external services and integrations                                     |
-| ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, Forgejo, and presence |
+| ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, GitHub, and presence |
 | 🖥️  | **Dev Machines**       | Unreleased multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
-| 🔧  | **Forgejo**            | Link repos, match issue IDs in development activity, react to CI checks, and apply status rules      |
+| 🔧  | **GitHub**             | Link repos, match issue IDs in development activity, react to CI checks, and apply status rules      |
 | 🤖  | **AI assistance**      | Generate issue descriptions, improve descriptions and comments, and review suggestions without losing attachments or intervening edits |
-| ▶️  | **Forgejo Actions**    | Browse linked repository workflows, inspect jobs and bounded logs, rerun in Forgejo, and cancel active runs |
+| ▶️  | **GitHub Actions**     | Browse linked repository workflows, inspect jobs and bounded logs, rerun in GitHub, and cancel active runs |
 | 📊  | **Analytics**          | Workspace/team overview, burn-up, and configurable insights                     |
 | 🔗  | **Public Sharing**     | Token-based read-only links for issues and views                                 |
 | 📦  | **Asset Management**   | File uploads, signed URLs for prompt images, S3-compatible storage               |
@@ -95,7 +95,7 @@ Completed issues can be archived from an issue's actions and restored from **Arc
 
 The production contract requires automatic provider discovery and retrieval of vendor keys stored once in OCI Vault. The current UI still requires workspace owners to save an OpenAI-compatible endpoint, model, and API key in **Settings → AI**; that manual setup is migration debt, not automatic Vault pickup. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Ku presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
 
-**Actions** in the workspace sidebar shows workflows from linked Forgejo repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Ku. For completed runs, **Rerun in Forgejo** opens the native run page: sign in with your normal Forgejo account and use its rerun controls. Your Forgejo repository permissions apply. **View workflow steps in Forgejo** opens that page for individual step details. Job logs and downloads require Forgejo 16 or newer; older instances can still be opened through **Open in Forgejo**.
+**Actions** in the workspace sidebar shows workflows from linked GitHub repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Ku. For completed runs, **Rerun in GitHub** opens the native run page: sign in with your normal GitHub account and use its rerun controls. Your GitHub repository permissions apply. **View workflow steps in GitHub** opens that page for individual step details. Job logs of completed runs expire after GitHub's retention period.
 
 ## 🤖 Dev Machines (Agentic Coding)
 
@@ -128,7 +128,7 @@ The implementation:
 
 | Mode              | Who                             | What happens                                                              |
 | ----------------- | ------------------------------- | ------------------------------------------------------------------------- |
-| **Agent-only**    | A user starts a bounded run      | Agent works autonomously, records a normalized result, and optionally pushes a branch or opens a pull request with the workspace Forgejo token |
+| **Agent-only**    | A user starts a bounded run      | Agent works autonomously, records a normalized result, and optionally pushes a branch or opens a pull request with the workspace GitHub token |
 | **Human + Agent** | Developer opens an issue workspace | Uses code-server or the dedicated persistent terminal while launching and monitoring bounded agent runs from Ku |
 
 ### Current machine inputs
@@ -235,9 +235,9 @@ Ku is designed to be self-hosted. The reference stack in [`selfhosting/`](selfho
 
 Workspace owners and admins can download a versioned `.ku.zip` archive from **Settings → General → Workspace transfer**. An authenticated user with no workspace can choose **Import workspace** during workspace setup; an owner or admin can also start an import from the transfer settings. Import always creates a separate workspace and never overwrites an existing one.
 
-The format 2 archive contains a logical `manifest.json`, `data.json`, and the workspace's uploaded asset bytes. It preserves teams, statuses, labels, projects, cycles, issues and their relationships/history, templates, views, favorites, shared links, workspace notifications, integration metadata, AI prompts, and safe Dev Machine workspace policy/scope settings. Historical issue identifiers retain their exact text and ownership so Forgejo references continue to resolve after team renames and workspace transfer. Database and asset IDs are regenerated and references—including protected asset URLs—are remapped during import. Format 1 archives are no longer supported; export the workspace again with the current version before importing.
+The format 2 archive contains a logical `manifest.json`, `data.json`, and the workspace's uploaded asset bytes. It preserves teams, statuses, labels, projects, cycles, issues and their relationships/history, templates, views, favorites, shared links, workspace notifications, integration metadata, AI prompts, and safe Dev Machine workspace policy/scope settings. Historical issue identifiers retain their exact text and ownership so GitHub references continue to resolve after team renames and workspace transfer. Database and asset IDs are regenerated and references—including protected asset URLs—are remapped during import. Format 1 archives are no longer supported; export the workspace again with the current version before importing.
 
-Workspace transfer deliberately excludes password hashes, refresh tokens, personal preferences, webhook secrets, Forgejo credentials and access tokens, AI API keys, Dev Machine credentials, active machines, Docker volumes/networks, environment images, logs, sessions, and runtime artifacts. Imported webhooks, shared links, Forgejo repositories/automation, and Dev Machine policy are disabled or rotated where appropriate; Forgejo, AI, webhooks, and Development Environments must be reconfigured on the target instance.
+Workspace transfer deliberately excludes password hashes, refresh tokens, personal preferences, webhook secrets, GitHub credentials and access tokens, AI API keys, Dev Machine credentials, active machines, Docker volumes/networks, environment images, logs, sessions, and runtime artifacts. Imported webhooks, shared links, GitHub repositories/automation, and Dev Machine policy are disabled or rotated where appropriate; GitHub, AI, webhooks, and Development Environments must be reconfigured on the target instance.
 
 Users are matched to existing target-instance accounts by normalized email. The importing user becomes the new owner; all other referenced users must register on the target instance before import. The preview reports any missing emails without creating partial data.
 
@@ -343,17 +343,17 @@ for later COS work. This documentation change does not migrate uploaded data
 or implement automatic discovery. Verify access permissions, public URL
 behavior and signed downloads before accepting a storage deployment.
 
-### Forgejo integration
+### GitHub integration
 
-Ku's current repository integration is Forgejo; the former GitHub App Manifest
-flow and `GITHUB_APP_*` setup are obsolete. See the
-[Forgejo integration contract](BE/docs/forgejo-integration.md) for current APIs,
+Ku's current repository integration is GitHub (github.com and GitHub
+Enterprise Server) over personal access tokens. See the
+[GitHub integration contract](BE/docs/github-integration.md) for current APIs,
 permissions and signed webhook handling.
 
 The production contract retrieves a vendor token stored once in OCI Vault;
 automatic pickup is not implemented by the current per-workspace/global
 connection paths. Repository linking still requires owner authorization and
-appropriate Forgejo permissions. Automatic feature availability does not grant
+appropriate GitHub permissions. Automatic feature availability does not grant
 access to repositories or authorize pushes, pull requests or status changes.
 
 ## 📂 Project Structure

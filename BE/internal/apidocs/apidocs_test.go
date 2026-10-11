@@ -187,18 +187,18 @@ func TestVersionMatchesUI(t *testing.T) {
 }
 
 // Match the documented native job payload to the response type so the docs
-// cannot promise step or timing data unavailable from Forgejo's run-jobs API.
-func TestForgejoActionJobSchemaMatchesResponse(t *testing.T) {
+// cannot promise step or timing data unavailable from GitHub's run-jobs API.
+func TestGitHubActionJobSchemaMatchesResponse(t *testing.T) {
 	doc, err := Spec()
 	if err != nil {
 		t.Fatal(err)
 	}
 	components := doc["components"].(map[string]any)
 	schemas := components["schemas"].(map[string]any)
-	schema := schemas["ForgejoActionJob"].(map[string]any)
+	schema := schemas["GitHubActionJob"].(map[string]any)
 	properties := schema["properties"].(map[string]any)
 	required := schema["required"].([]any)
-	encoded, err := json.Marshal(dto.ForgejoActionJobResponse{})
+	encoded, err := json.Marshal(dto.GitHubActionJobResponse{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestForgejoActionJobSchemaMatchesResponse(t *testing.T) {
 			t.Errorf("job schema requires unsupported field %q", field)
 		}
 	}
-	if _, exists := schemas["ForgejoActionStep"]; exists {
+	if _, exists := schemas["GitHubActionStep"]; exists {
 		t.Error("job step schema remains despite the native API lacking step data")
 	}
 }

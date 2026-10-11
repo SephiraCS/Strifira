@@ -29,7 +29,7 @@ func TestSanitizeExportRowRemovesSecretsAndDisablesIntegrations(t *testing.T) {
 		removed string
 	}{
 		{"webhooks", dto.WorkspaceTransferRow{"secret": "secret", "is_active": true}, "secret"},
-		{"forgejo_connections", dto.WorkspaceTransferRow{"token": "token"}, "token"},
+		{"github_connections", dto.WorkspaceTransferRow{"token": "token"}, "token"},
 		{"ai_settings", dto.WorkspaceTransferRow{"api_key_encrypted": "ciphertext"}, "api_key_encrypted"},
 		{"assets", dto.WorkspaceTransferRow{"storage_key": "private-key"}, "storage_key"},
 		{"shared_links", dto.WorkspaceTransferRow{"token": "bearer", "is_active": true}, "token"},
@@ -59,7 +59,7 @@ func TestRemapTransferValueRewritesIDsNestedJSONAndAssetURLs(t *testing.T) {
 	require.Contains(t, result["body"], "/api/workspaces/new/assets/"+newAsset)
 }
 
-func TestPrepareIdentityMapIncludesForgejoRepositoryReferences(t *testing.T) {
+func TestPrepareIdentityMapIncludesGitHubRepositoryReferences(t *testing.T) {
 	workspaceID := uuid.New()
 	ownerID := uuid.New()
 	repoID := uuid.New()
@@ -78,11 +78,11 @@ func TestPrepareIdentityMapIncludesForgejoRepositoryReferences(t *testing.T) {
 	for _, spec := range repository.WorkspaceTransferTableSpecs() {
 		data.Tables[spec.Name] = []dto.WorkspaceTransferRow{}
 	}
-	data.Tables["forgejo_repos"] = []dto.WorkspaceTransferRow{{"id": repoID.String(), "workspace_id": workspaceID.String()}}
-	data.Tables["forgejo_pull_requests"] = []dto.WorkspaceTransferRow{{"id": prID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
-	data.Tables["forgejo_branches"] = []dto.WorkspaceTransferRow{{"id": branchID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
-	data.Tables["forgejo_commits"] = []dto.WorkspaceTransferRow{{"id": commitID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
-	data.Tables["dev_machine_scope_settings"] = []dto.WorkspaceTransferRow{{"id": scopeSettingID.String(), "workspace_id": workspaceID.String(), "forgejo_repo_id": repoID.String()}}
+	data.Tables["github_repos"] = []dto.WorkspaceTransferRow{{"id": repoID.String(), "workspace_id": workspaceID.String()}}
+	data.Tables["github_pull_requests"] = []dto.WorkspaceTransferRow{{"id": prID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
+	data.Tables["github_branches"] = []dto.WorkspaceTransferRow{{"id": branchID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
+	data.Tables["github_commits"] = []dto.WorkspaceTransferRow{{"id": commitID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
+	data.Tables["dev_machine_scope_settings"] = []dto.WorkspaceTransferRow{{"id": scopeSettingID.String(), "workspace_id": workspaceID.String(), "github_repo_id": repoID.String()}}
 
 	parsed := &parsedWorkspaceArchive{
 		manifest: dto.WorkspaceExportManifest{SourceWorkspaceID: workspaceID.String()},
@@ -168,9 +168,9 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	cycleID := uuid.New()
 	issue2ID := uuid.New()
 	groupID := uuid.New()
-	forgejoConnectionID := uuid.New()
-	forgejoRepoID := uuid.New()
-	forgejoPRID := uuid.New()
+	githubConnectionID := uuid.New()
+	githubRepoID := uuid.New()
+	githubPRID := uuid.New()
 	validTeamSharedLinkID := uuid.New()
 	orphanedTeamSharedLinkID := uuid.New()
 	orphanedTeamID := uuid.New()
@@ -252,25 +252,25 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO webhooks(id,workspace_id,url,secret,events,is_active) VALUES(gen_random_uuid(),$1,'https://example.test/hook','top-secret',ARRAY['issue.created','issue.updated'],true)`, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_connections(id,workspace_id,instance_url,token,account_login) VALUES($1,$2,'https://git.example.test','secret-token','portable-org')`, forgejoConnectionID, workspaceID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_connections(id,workspace_id,instance_url,token,account_login) VALUES($1,$2,'https://git.example.test','secret-token','portable-org')`, githubConnectionID, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_repos(id,workspace_id,forgejo_repo_id,full_name,instance_url,default_branch,is_active) VALUES($1,$2,123456789,'portable/repo','https://git.example.test','main',true)`, forgejoRepoID, workspaceID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_repos(id,workspace_id,github_repo_id,full_name,instance_url,default_branch,is_active) VALUES($1,$2,123456789,'portable/repo','https://git.example.test','main',true)`, githubRepoID, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_pull_requests(id,workspace_id,forgejo_repo_id,number,title,state,author_login,html_url) VALUES($1,$2,$3,7,'Portable PR','open','developer','https://git.example.test/portable/repo/pulls/7')`, forgejoPRID, workspaceID, forgejoRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_pull_requests(id,workspace_id,github_repo_id,number,title,state,author_login,html_url) VALUES($1,$2,$3,7,'Portable PR','open','developer','https://git.example.test/portable/repo/pulls/7')`, githubPRID, workspaceID, githubRepoID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_pull_request_issues(pr_id,issue_id) VALUES($1,$2)`, forgejoPRID, issueID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_pull_request_issues(pr_id,issue_id) VALUES($1,$2)`, githubPRID, issueID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_branches(id,workspace_id,issue_id,forgejo_repo_id,name,html_url) VALUES(gen_random_uuid(),$1,$2,$3,'eng-1','https://git.example.test/portable/repo/src/branch/eng-1')`, workspaceID, issueID, forgejoRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_branches(id,workspace_id,issue_id,github_repo_id,name,html_url) VALUES(gen_random_uuid(),$1,$2,$3,'eng-1','https://git.example.test/portable/repo/src/branch/eng-1')`, workspaceID, issueID, githubRepoID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_commits(id,workspace_id,issue_id,forgejo_repo_id,sha,message,author_login,html_url,committed_at) VALUES(gen_random_uuid(),$1,$2,$3,'0123456789012345678901234567890123456789','Portable commit','developer','https://git.example.test/portable/repo/commit/0123',NOW())`, workspaceID, issueID, forgejoRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_commits(id,workspace_id,issue_id,github_repo_id,sha,message,author_login,html_url,committed_at) VALUES(gen_random_uuid(),$1,$2,$3,'0123456789012345678901234567890123456789','Portable commit','developer','https://git.example.test/portable/repo/commit/0123',NOW())`, workspaceID, issueID, githubRepoID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO forgejo_auto_transitions(id,workspace_id,event,target_status,target_status_id,is_active) VALUES(gen_random_uuid(),$1,'pr_merged','done',$2,true)`, workspaceID, statusID)
+	_, err = db.ExecContext(ctx, `INSERT INTO github_auto_transitions(id,workspace_id,event,target_status,target_status_id,is_active) VALUES(gen_random_uuid(),$1,'pr_merged','done',$2,true)`, workspaceID, statusID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO ai_settings(workspace_id,provider,base_url,model,api_key_encrypted,description_expand_prompt,issue_copy_prompt) VALUES($1,'openai_compatible','https://ai.example.test','portable-model','encrypted-secret','Expand prompt','Copy prompt')`, workspaceID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_workspace_policies(workspace_id,enabled,allowed_providers,allowed_repositories) VALUES($1,true,'["codex"]','["portable/repo"]')`, workspaceID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_scope_settings(id,workspace_id,team_id,forgejo_repo_id,base_branch) VALUES(gen_random_uuid(),$1,$2,$3,'main')`, workspaceID, teamID, forgejoRepoID)
+	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_scope_settings(id,workspace_id,team_id,github_repo_id,base_branch) VALUES(gen_random_uuid(),$1,$2,$3,'main')`, workspaceID, teamID, githubRepoID)
 	require.NoError(t, err)
 
 	storageDir := t.TempDir()
@@ -291,7 +291,7 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	exported, err := parseWorkspaceArchive(archive.Path)
 	require.NoError(t, err)
 	require.NotContains(t, exported.data.Tables["webhooks"][0], "secret")
-	require.NotContains(t, exported.data.Tables["forgejo_connections"][0], "token")
+	require.NotContains(t, exported.data.Tables["github_connections"][0], "token")
 	require.NotContains(t, exported.data.Tables["ai_settings"][0], "api_key_encrypted")
 	require.NotContains(t, exported.data.Users[0], "password_hash")
 	require.Contains(t, exported.manifest.Omitted, "refresh_tokens")
@@ -339,7 +339,7 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.Equal(t, 2, counts["comments"])
 	require.Equal(t, 1, counts["assets"])
 	require.Equal(t, 1, counts["webhooks"])
-	require.Equal(t, 1, counts["forgejo_commits"])
+	require.Equal(t, 1, counts["github_commits"])
 	require.Equal(t, 2, counts["shared_links"])
 	var importedWebhookActive, importedDevMachinesEnabled bool
 	var importedWebhookSecret string
@@ -356,17 +356,17 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	var importedRepoActive bool
 	require.NoError(t, db.QueryRow(`
 		SELECT r.id, r.is_active
-		FROM forgejo_repos r
+		FROM github_repos r
 		WHERE r.workspace_id=$1 AND r.full_name='portable/repo'
 	`, targetWorkspaceID).Scan(&importedRepoID, &importedRepoActive))
-	require.NotEqual(t, forgejoRepoID, importedRepoID)
+	require.NotEqual(t, githubRepoID, importedRepoID)
 	require.False(t, importedRepoActive)
 
 	var importedConnectionID, importedConnectionWorkspaceID uuid.UUID
 	var importedConnectionToken *string
 	require.NoError(t, db.QueryRow(`
 		SELECT id, workspace_id, token
-		FROM forgejo_connections
+		FROM github_connections
 		WHERE workspace_id=$1 AND account_login='portable-org'
 	`, targetWorkspaceID).Scan(&importedConnectionID, &importedConnectionWorkspaceID, &importedConnectionToken))
 	require.Equal(t, targetWorkspaceID, importedConnectionWorkspaceID)
@@ -375,22 +375,22 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 
 	var importedPRID, importedPRRepoID uuid.UUID
 	require.NoError(t, db.QueryRow(`
-		SELECT id, forgejo_repo_id
-		FROM forgejo_pull_requests
+		SELECT id, github_repo_id
+		FROM github_pull_requests
 		WHERE workspace_id=$1 AND number=7
 	`, targetWorkspaceID).Scan(&importedPRID, &importedPRRepoID))
-	require.NotEqual(t, forgejoPRID, importedPRID)
+	require.NotEqual(t, githubPRID, importedPRID)
 	require.Equal(t, importedRepoID, importedPRRepoID)
 
 	var importedBranchRepoID, importedCommitRepoID uuid.UUID
 	require.NoError(t, db.QueryRow(`
-		SELECT forgejo_repo_id
-		FROM forgejo_branches
+		SELECT github_repo_id
+		FROM github_branches
 		WHERE workspace_id=$1 AND name='eng-1'
 	`, targetWorkspaceID).Scan(&importedBranchRepoID))
 	require.NoError(t, db.QueryRow(`
-		SELECT forgejo_repo_id
-		FROM forgejo_commits
+		SELECT github_repo_id
+		FROM github_commits
 		WHERE workspace_id=$1 AND sha='0123456789012345678901234567890123456789'
 	`, targetWorkspaceID).Scan(&importedCommitRepoID))
 	require.Equal(t, importedRepoID, importedBranchRepoID)
@@ -412,11 +412,11 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.NotEmpty(t, importedSharedLinkToken)
 	require.NotEqual(t, validTeamSharedLinkToken, importedSharedLinkToken)
 	var importedScopeRepoID uuid.UUID
-	require.NoError(t, db.Get(&importedScopeRepoID, `SELECT forgejo_repo_id FROM dev_machine_scope_settings WHERE workspace_id=$1 AND team_id=$2`, targetWorkspaceID, importedTeamID))
+	require.NoError(t, db.Get(&importedScopeRepoID, `SELECT github_repo_id FROM dev_machine_scope_settings WHERE workspace_id=$1 AND team_id=$2`, targetWorkspaceID, importedTeamID))
 	require.Equal(t, importedRepoID, importedScopeRepoID)
 
 	var importedTransitionStatusID, importedTeamStatusID uuid.UUID
-	require.NoError(t, db.Get(&importedTransitionStatusID, `SELECT target_status_id FROM forgejo_auto_transitions WHERE workspace_id=$1 AND event='pr_merged'`, targetWorkspaceID))
+	require.NoError(t, db.Get(&importedTransitionStatusID, `SELECT target_status_id FROM github_auto_transitions WHERE workspace_id=$1 AND event='pr_merged'`, targetWorkspaceID))
 	require.NoError(t, db.Get(&importedTeamStatusID, `SELECT id FROM team_statuses WHERE team_id=$1 AND slug='backlog'`, importedTeamID))
 	require.Equal(t, importedTeamStatusID, importedTransitionStatusID)
 

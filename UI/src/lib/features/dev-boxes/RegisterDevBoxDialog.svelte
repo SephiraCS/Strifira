@@ -53,8 +53,8 @@
 				repositories: {
 					'OWNER/REPOSITORY': {
 						path: '/home/YOUR_USER/repositories/REPOSITORY',
-						url: 'https://forgejo.example/OWNER/REPOSITORY',
-						origin_url: 'https://forgejo.example/OWNER/REPOSITORY.git'
+						url: 'https://github.example/OWNER/REPOSITORY',
+						origin_url: 'https://github.example/OWNER/REPOSITORY.git'
 					}
 				},
 				providers: { codex: '/absolute/path/to/codex' }

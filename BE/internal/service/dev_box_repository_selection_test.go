@@ -15,7 +15,7 @@ import (
 
 type devBoxRepositorySelectionStore struct {
 	*devBoxDevelopmentFake
-	selectedRepo    *domain.ForgejoRepoModel
+	selectedRepo    *domain.GitHubRepoModel
 	lookupErr       error
 	lookupWorkspace uuid.UUID
 	lookupName      string
@@ -24,7 +24,7 @@ type devBoxRepositorySelectionStore struct {
 	scopeWrites     int
 }
 
-func (f *devBoxRepositorySelectionStore) GetLinkedRepositoryByFullName(_ context.Context, workspaceID uuid.UUID, fullName string) (*domain.ForgejoRepoModel, error) {
+func (f *devBoxRepositorySelectionStore) GetLinkedRepositoryByFullName(_ context.Context, workspaceID uuid.UUID, fullName string) (*domain.GitHubRepoModel, error) {
 	f.lookupWorkspace, f.lookupName = workspaceID, fullName
 	return f.selectedRepo, f.lookupErr
 }
@@ -64,10 +64,10 @@ func newDevBoxRepositorySelectionFixture() *devBoxRepositorySelectionFixture {
 	development := &devBoxRepositorySelectionStore{
 		devBoxDevelopmentFake: &devBoxDevelopmentFake{
 			issue:        &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: uuid.New(), Identifier: "KU-42", Title: "Implement the issue"},
-			repo:         &domain.ForgejoRepoModel{ID: defaultRepoID, WorkspaceID: workspaceID, FullName: "team/saved", InstanceURL: "https://git.example.test", DefaultBranch: "main", IsActive: true},
-			issueSetting: &domain.DevMachineScopeSetting{ForgejoRepoID: new(defaultRepoID), BaseBranch: new("develop")},
+			repo:         &domain.GitHubRepoModel{ID: defaultRepoID, WorkspaceID: workspaceID, FullName: "team/saved", InstanceURL: "https://git.example.test", DefaultBranch: "main", IsActive: true},
+			issueSetting: &domain.DevMachineScopeSetting{GitHubRepoID: new(defaultRepoID), BaseBranch: new("develop")},
 		},
-		selectedRepo: &domain.ForgejoRepoModel{ID: uuid.New(), WorkspaceID: workspaceID, FullName: "Team/Selected", InstanceURL: "https://git.example.test/", DefaultBranch: "trunk", IsActive: true},
+		selectedRepo: &domain.GitHubRepoModel{ID: uuid.New(), WorkspaceID: workspaceID, FullName: "Team/Selected", InstanceURL: "https://git.example.test/", DefaultBranch: "trunk", IsActive: true},
 	}
 	service := NewDevBoxService(jobs, &devBoxMembersFake{role: domain.RoleMember}, &DevMachineService{store: development, enabled: false}, func(uuid.UUID) bool { return true })
 	return &devBoxRepositorySelectionFixture{service: service, jobs: jobs, development: development, workspaceID: workspaceID, userID: userID, boxID: boxID,
@@ -88,7 +88,7 @@ func TestDevBoxJobRepositorySelectionIsWorkspaceScopedAndDoesNotChangeDefaults(t
 			require.NoError(t, err)
 			require.Equal(t, f.workspaceID, f.development.lookupWorkspace)
 			require.Equal(t, "team/selected", f.development.lookupName)
-			require.Equal(t, f.development.selectedRepo.ID, job.ForgejoRepoID)
+			require.Equal(t, f.development.selectedRepo.ID, job.GitHubRepoID)
 			require.Equal(t, "Team/Selected", job.RepositoryFullName)
 			require.Equal(t, "https://git.example.test/Team/Selected", job.RepositoryURL)
 			if branch == "" {
@@ -100,7 +100,7 @@ func TestDevBoxJobRepositorySelectionIsWorkspaceScopedAndDoesNotChangeDefaults(t
 			require.Contains(t, job.Prompt, "Base branch: "+job.BaseBranch)
 			require.Zero(t, f.development.scopeReads)
 			require.Zero(t, f.development.scopeWrites)
-			require.Equal(t, f.development.repo.ID, *f.development.issueSetting.ForgejoRepoID)
+			require.Equal(t, f.development.repo.ID, *f.development.issueSetting.GitHubRepoID)
 			require.Equal(t, "develop", *f.development.issueSetting.BaseBranch)
 		})
 	}
@@ -111,7 +111,7 @@ func TestDevBoxJobRepositorySelectionRetainsSavedDefaults(t *testing.T) {
 	f.request.RepositoryFullName, f.request.BaseBranch = "", ""
 	job, err := f.create(t)
 	require.NoError(t, err)
-	require.Equal(t, f.development.repo.ID, job.ForgejoRepoID)
+	require.Equal(t, f.development.repo.ID, job.GitHubRepoID)
 	require.Equal(t, "develop", job.BaseBranch)
 	require.Empty(t, f.development.lookupName)
 	require.Positive(t, f.development.scopeReads)

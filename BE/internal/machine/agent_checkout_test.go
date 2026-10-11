@@ -81,7 +81,7 @@ func TestProtectedCheckoutDescriptor(t *testing.T) {
 	otherHost.RepositoryURL = "https://another.example/TerraScale/ku"
 	otherRepository, _, err := protectedCheckoutRepository(&otherHost)
 	require.NoError(t, err)
-	require.NotEqual(t, repository, otherRepository, "protected stores must be scoped to the authorized Forgejo origin")
+	require.NotEqual(t, repository, otherRepository, "protected stores must be scoped to the authorized GitHub origin")
 	runtime := &DockerRuntime{}
 	require.Error(t, runtime.PrepareCheckout(t.Context(), nil, nil, &valid, "unused"))
 	require.Error(t, runtime.PrepareCheckout(t.Context(), fixtureHelperMachine(), nil, &valid, ""))

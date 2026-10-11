@@ -76,7 +76,7 @@ func (f *devBoxStoreFake) CompleteJob(_ context.Context, _, _ uuid.UUID, _, _ st
 type devBoxDevelopmentFake struct {
 	repository.DevMachineStore
 	issue            *domain.Issue
-	repo             *domain.ForgejoRepoModel
+	repo             *domain.GitHubRepoModel
 	issueSetting     *domain.DevMachineScopeSetting
 	workspaceSetting *domain.DevMachineScopeSetting
 }
@@ -96,7 +96,7 @@ func (f *devBoxDevelopmentFake) GetScopeSetting(_ context.Context, _ uuid.UUID, 
 	}
 	return nil, nil
 }
-func (f *devBoxDevelopmentFake) GetLinkedRepository(_ context.Context, workspaceID, repoID uuid.UUID) (*domain.ForgejoRepoModel, error) {
+func (f *devBoxDevelopmentFake) GetLinkedRepository(_ context.Context, workspaceID, repoID uuid.UUID) (*domain.GitHubRepoModel, error) {
 	if f.repo == nil || f.repo.WorkspaceID != workspaceID || f.repo.ID != repoID {
 		return nil, nil
 	}
@@ -143,9 +143,9 @@ func TestDevBoxJobUsesIssueDefaultsWithoutDockerAndEnforcesCreator(t *testing.T)
 	store := &devBoxStoreFake{box: &domain.DevBox{ID: boxID, WorkspaceID: workspaceID, CreatedByUserID: userID, Enabled: true, Providers: json.RawMessage(`[{"id":"codex","version":"1"}]`)}}
 	development := &devBoxDevelopmentFake{
 		issue:            &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: uuid.New(), Identifier: "KU-27", Title: "Implement sum", Description: new("Cover negative numbers")},
-		repo:             &domain.ForgejoRepoModel{ID: repoID, WorkspaceID: workspaceID, FullName: "team/ku", InstanceURL: "https://git.example.test/", DefaultBranch: "main", IsActive: true},
-		issueSetting:     &domain.DevMachineScopeSetting{ForgejoRepoID: new(repoID), BaseBranch: new("develop")},
-		workspaceSetting: &domain.DevMachineScopeSetting{ForgejoRepoID: new(uuid.New()), BaseBranch: new("wrong-default")},
+		repo:             &domain.GitHubRepoModel{ID: repoID, WorkspaceID: workspaceID, FullName: "team/ku", InstanceURL: "https://git.example.test/", DefaultBranch: "main", IsActive: true},
+		issueSetting:     &domain.DevMachineScopeSetting{GitHubRepoID: new(repoID), BaseBranch: new("develop")},
+		workspaceSetting: &domain.DevMachineScopeSetting{GitHubRepoID: new(uuid.New()), BaseBranch: new("wrong-default")},
 	}
 	svc := NewDevBoxService(store, &devBoxMembersFake{role: domain.RoleMember}, &DevMachineService{store: development, enabled: false}, func(uuid.UUID) bool { return true })
 	req := dto.CreateDevBoxJobRequest{IssueID: issueID.String(), Provider: "codex", Prompt: "Use CommonJS", TestCommand: []string{"node", "sum.test.cjs"}, AcceptanceCriteria: []string{"Returns the sum"}}

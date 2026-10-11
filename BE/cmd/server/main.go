@@ -214,27 +214,29 @@ func main() {
 	apiKeyH := handler.NewAPIKeyHandler(apiKeySvc)
 	analyticsRepoMCP := repository.NewAnalyticsRepository(db)
 
-	// Forgejo integration
-	var globalForgejo *service.GlobalForgejoConfig
-	if cfg.Forgejo.IsConfigured() {
-		globalForgejo = &service.GlobalForgejoConfig{
-			URL:   cfg.Forgejo.NormalizedURL(),
-			Token: cfg.Forgejo.Token,
+	// GitHub integration
+	var globalGitHub *service.GlobalGitHubConfig
+	if cfg.GitHub.IsConfigured() {
+		globalGitHub = &service.GlobalGitHubConfig{
+			URL:   cfg.GitHub.NormalizedURL(),
+			Token: cfg.GitHub.Token,
 		}
-		log.WithField("url", globalForgejo.URL).Info("Global Forgejo instance configured")
+		log.WithField("url", globalGitHub.URL).Info("Global GitHub instance configured")
 	}
-	forgejoRepo := repository.NewForgejoRepository(db)
-	forgejoSvc := service.NewForgejoService(
-		forgejoRepo, issueRepo, teamRepo, teamStatusRepo,
-		crypto.DeriveKey(cfg.JWTSecret+":forgejo"), hub, cfg.FrontendURL, cfg.ForgejoWebhookURL,
-		globalForgejo,
+	githubRepo := repository.NewGitHubRepository(db)
+	// The ":forgejo" key label predates the GitHub migration and must not
+	// change, or pre-migration encrypted tokens become undecryptable.
+	githubSvc := service.NewGitHubService(
+		githubRepo, issueRepo, teamRepo, teamStatusRepo,
+		crypto.DeriveKey(cfg.JWTSecret+":forgejo"), hub, cfg.FrontendURL, cfg.GitHubWebhookURL,
+		globalGitHub,
 	)
-	forgejoH := handler.NewForgejoHandler(forgejoSvc)
-	forgejoActionsH := handler.NewForgejoActionsHandler(forgejoSvc)
-	// Forgejo Actions completion webhooks trigger CI status refreshes.
+	githubH := handler.NewGitHubHandler(githubSvc)
+	githubActionsH := handler.NewGitHubActionsHandler(githubSvc)
+	// GitHub Actions completion webhooks trigger CI status refreshes.
 	// Reconcile open PRs every five minutes in case a delivery is missed.
-	background.Go("forgejo webhook reconcile", func() { forgejoSvc.ReconcileWebhookEvents(bgCtx) })
-	background.Go("forgejo status reconciler", func() { forgejoSvc.StartStatusReconciler(bgCtx, 5*time.Minute) })
+	background.Go("github webhook reconcile", func() { githubSvc.ReconcileWebhookEvents(bgCtx) })
+	background.Go("github status reconciler", func() { githubSvc.StartStatusReconciler(bgCtx, 5*time.Minute) })
 
 	// Archive completed issues once at startup and then hourly.
 	background.Go("issue auto-archive", func() {
@@ -254,28 +256,28 @@ func main() {
 	})
 
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
-		Version:           mcpServerVersion(),
-		Users:             userRepo,
-		Workspaces:        workspaceRepo,
-		Teams:             teamRepo,
-		TeamStatuses:      teamStatusRepo,
-		Projects:          projectRepo,
-		Labels:            labelRepo,
-		Cycles:            cycleRepo,
-		Templates:         templateRepo,
-		Analytics:         analyticsRepoMCP,
-		IssueSvc:          issueSvc,
-		CommentSvc:        commentSvc,
-		RelationSvc:       relationSvc,
-		WorkspaceSvc:      workspaceSvc,
-		TeamSvc:           teamSvc,
-		StatusSvc:         teamStatusSvc,
-		ProjectSvc:        projectSvc,
-		LabelSvc:          labelSvc,
-		NotifSvc:          notifSvc,
-		ForgejoSvc:        forgejoSvc,
-		ForgejoActionsSvc: forgejoSvc,
-		DevBoxSvc:         devBoxSvc,
+		Version:          mcpServerVersion(),
+		Users:            userRepo,
+		Workspaces:       workspaceRepo,
+		Teams:            teamRepo,
+		TeamStatuses:     teamStatusRepo,
+		Projects:         projectRepo,
+		Labels:           labelRepo,
+		Cycles:           cycleRepo,
+		Templates:        templateRepo,
+		Analytics:        analyticsRepoMCP,
+		IssueSvc:         issueSvc,
+		CommentSvc:       commentSvc,
+		RelationSvc:      relationSvc,
+		WorkspaceSvc:     workspaceSvc,
+		TeamSvc:          teamSvc,
+		StatusSvc:        teamStatusSvc,
+		ProjectSvc:       projectSvc,
+		LabelSvc:         labelSvc,
+		NotifSvc:         notifSvc,
+		GitHubSvc:        githubSvc,
+		GitHubActionsSvc: githubSvc,
+		DevBoxSvc:        devBoxSvc,
 	})
 
 	// Background: clean up expired refresh tokens every hour
@@ -485,33 +487,33 @@ func main() {
 	ws.POST("/ai-settings/test", aiSettingsH.TestConnection, mw.RequireOwner())
 	ws.POST("/ai/rework", aiSettingsH.Rework, mw.RequirePermission("issue:update"))
 
-	// Forgejo integration
+	// GitHub integration
 	// Public webhook endpoint (no auth, signature-verified internally)
-	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
+	e.POST("/api/github/webhook", githubH.HandleWebhook)
 	e.POST("/api/dev-machine-ingest/events", devMachineH.IngestEvent, mw.MachineTokenRateLimit(20, 40))
 	e.POST("/api/dev-machine-ingest/logs", devMachineH.IngestLog, mw.MachineTokenRateLimit(50, 100))
 
-	// Forgejo integration (workspace-scoped)
-	ws.GET("/forgejo/status", forgejoH.Status)
-	ws.PUT("/forgejo/connection", forgejoH.Connect, mw.RequirePermission("workspace:manage"))
-	ws.DELETE("/forgejo/connection", forgejoH.Disconnect, mw.RequirePermission("workspace:manage"))
-	ws.POST("/forgejo/disable", forgejoH.Disable, mw.RequirePermission("workspace:manage"))
-	ws.POST("/forgejo/enable", forgejoH.Enable, mw.RequirePermission("workspace:manage"))
-	ws.GET("/forgejo/repos", forgejoH.ListRepos, mw.RequirePermission("workspace:manage"))
-	ws.POST("/forgejo/repos", forgejoH.LinkRepos, mw.RequirePermission("workspace:manage"))
-	ws.DELETE("/forgejo/repos/:id", forgejoH.UnlinkRepo, mw.RequirePermission("workspace:manage"))
-	ws.GET("/forgejo/repos/:repoId/actions/runs", forgejoActionsH.ListRuns, mw.RequirePermission("issue:read"))
-	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId", forgejoActionsH.GetRun, mw.RequirePermission("issue:read"))
-	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId/jobs", forgejoActionsH.ListJobs, mw.RequirePermission("issue:read"))
-	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId/jobs/:jobId", forgejoActionsH.GetJob, mw.RequirePermission("issue:read"))
-	ws.GET("/forgejo/repos/:repoId/actions/runs/:runId/jobs/:jobId/logs", forgejoActionsH.GetJobLogs, mw.RequirePermission("issue:read"))
-	ws.POST("/forgejo/repos/:repoId/actions/runs/:runId/cancel", forgejoActionsH.Cancel, mw.RequirePermission("workspace:manage"))
-	ws.GET("/forgejo/user-mappings", forgejoH.ListUserMappings)
-	ws.PUT("/forgejo/user-mappings", forgejoH.UpdateUserMappings, mw.RequirePermission("workspace:manage"))
-	ws.GET("/forgejo/auto-transitions", forgejoH.ListAutoTransitions)
-	ws.PATCH("/forgejo/auto-transitions", forgejoH.UpdateAutoTransitions, mw.RequirePermission("workspace:manage"))
-	ws.GET("/issues/:identifier/forgejo", forgejoH.IssueForgejoActivity)
-	ws.GET("/forgejo/issue-links", forgejoH.AgentIssueLinks)
+	// GitHub integration (workspace-scoped)
+	ws.GET("/github/status", githubH.Status)
+	ws.PUT("/github/connection", githubH.Connect, mw.RequirePermission("workspace:manage"))
+	ws.DELETE("/github/connection", githubH.Disconnect, mw.RequirePermission("workspace:manage"))
+	ws.POST("/github/disable", githubH.Disable, mw.RequirePermission("workspace:manage"))
+	ws.POST("/github/enable", githubH.Enable, mw.RequirePermission("workspace:manage"))
+	ws.GET("/github/repos", githubH.ListRepos, mw.RequirePermission("workspace:manage"))
+	ws.POST("/github/repos", githubH.LinkRepos, mw.RequirePermission("workspace:manage"))
+	ws.DELETE("/github/repos/:id", githubH.UnlinkRepo, mw.RequirePermission("workspace:manage"))
+	ws.GET("/github/repos/:repoId/actions/runs", githubActionsH.ListRuns, mw.RequirePermission("issue:read"))
+	ws.GET("/github/repos/:repoId/actions/runs/:runId", githubActionsH.GetRun, mw.RequirePermission("issue:read"))
+	ws.GET("/github/repos/:repoId/actions/runs/:runId/jobs", githubActionsH.ListJobs, mw.RequirePermission("issue:read"))
+	ws.GET("/github/repos/:repoId/actions/runs/:runId/jobs/:jobId", githubActionsH.GetJob, mw.RequirePermission("issue:read"))
+	ws.GET("/github/repos/:repoId/actions/runs/:runId/jobs/:jobId/logs", githubActionsH.GetJobLogs, mw.RequirePermission("issue:read"))
+	ws.POST("/github/repos/:repoId/actions/runs/:runId/cancel", githubActionsH.Cancel, mw.RequirePermission("workspace:manage"))
+	ws.GET("/github/user-mappings", githubH.ListUserMappings)
+	ws.PUT("/github/user-mappings", githubH.UpdateUserMappings, mw.RequirePermission("workspace:manage"))
+	ws.GET("/github/auto-transitions", githubH.ListAutoTransitions)
+	ws.PATCH("/github/auto-transitions", githubH.UpdateAutoTransitions, mw.RequirePermission("workspace:manage"))
+	ws.GET("/issues/:identifier/github", githubH.IssueGitHubActivity)
+	ws.GET("/github/issue-links", githubH.AgentIssueLinks)
 
 	// Dev Machines — guarded by demo-mode restriction when active
 	dm := ws.Group("", mw.DevMachineDemoGuard(cfg.DemoDevMachineAllowed))

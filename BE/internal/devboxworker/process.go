@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// childEnvironment intentionally excludes worker/server/Forgejo tokens and unrelated secrets.
+// childEnvironment intentionally excludes worker/server/GitHub tokens and unrelated secrets.
 // Provider login files remain local to this explicitly trusted execution user.
 func childEnvironment(provider string) []string {
 	allowed := map[string]bool{"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "LANG": true, "TERM": true,

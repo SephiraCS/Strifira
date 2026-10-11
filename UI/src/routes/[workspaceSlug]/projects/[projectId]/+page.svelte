@@ -23,9 +23,9 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
-	import { getForgejoStatus } from '$lib/api/forgejo';
+	import { getGitHubStatus } from '$lib/api/github';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
-	import type { ForgejoRepo } from '$lib/types/forgejo';
+	import type { GitHubRepo } from '$lib/types/github';
 	import type { DevMachineEnvironment } from '$lib/types/dev-machine';
 	import { appToast } from '$lib/features/toast/toast';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
@@ -60,7 +60,7 @@
 	let viewMode = $state<'list' | 'gantt'>('list');
 	let lastSelectedId = $state<string | null>(null);
 	let developmentOpen = $state(false);
-	let developmentRepositories = $state<ForgejoRepo[]>([]);
+	let developmentRepositories = $state<GitHubRepo[]>([]);
 	let developmentEnvironments = $state<DevMachineEnvironment[]>([]);
 	let developmentRepositoryId = $state('inherit');
 	let developmentEnvironmentId = $state('inherit');
@@ -97,13 +97,13 @@
 			const workspace = await getWorkspace(s);
 			if (!isCurrentDevelopmentScope(s, pid, version)) return;
 			canManageDevelopment = workspace.current_user_role === 'owner' || workspace.current_user_role === 'admin';
-			const [forgejo, developmentSetting, availableEnvironments] = await Promise.all([
-				getForgejoStatus(s), getDevMachineScopeSetting(s, 'project', pid), listDevMachineEnvironments(s)
+			const [github, developmentSetting, availableEnvironments] = await Promise.all([
+				getGitHubStatus(s), getDevMachineScopeSetting(s, 'project', pid), listDevMachineEnvironments(s)
 			]);
 			if (!isCurrentDevelopmentScope(s, pid, version)) return;
-			developmentRepositories = forgejo.repos ?? [];
+			developmentRepositories = github.repos ?? [];
 			developmentEnvironments = (availableEnvironments ?? []).filter((item) => item.status === 'ready');
-			developmentRepositoryId = developmentSetting.forgejo_repo_id ?? 'inherit';
+			developmentRepositoryId = developmentSetting.github_repo_id ?? 'inherit';
 			developmentEnvironmentId = developmentSetting.environment_id ?? 'inherit';
 			developmentReady = true;
 		} catch (error) {
@@ -212,7 +212,7 @@
 			} else {
 				await updateDevMachineScopeSetting(s, {
 					scope_type: 'project', scope_id: pid,
-					forgejo_repo_id: repository?.id, base_branch: repository?.default_branch,
+					github_repo_id: repository?.id, base_branch: repository?.default_branch,
 					environment_id: environmentId === 'inherit' ? undefined : environmentId
 				});
 			}

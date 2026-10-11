@@ -34,7 +34,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		desired_status: 'running',
 		generation: 1,
 		repo_url: 'https://git.example.com/ku/ku',
-		repo_provider: 'forgejo',
+		repo_provider: 'github',
 		repo_owner: 'ku',
 		repo_name: 'ku',
 		base_branch: 'main',
@@ -66,7 +66,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		workspace_id: machine.workspace_id,
 		machine_id: machineId,
 		issue_id: '00000000-0000-0000-0000-000000000054',
-		forgejo_repo_id: '00000000-0000-0000-0000-000000000055',
+		github_repo_id: '00000000-0000-0000-0000-000000000055',
 		repository_full_name: 'ku/ku',
 		base_branch: 'main',
 		working_branch: 'ku/runtime-smoke',
@@ -739,7 +739,7 @@ test('selects a policy-compatible size for environment builders', async ({ page 
 					allow_custom_providers: false
 				}
 			});
-		if (path === '/api/workspaces/test/forgejo/status')
+		if (path === '/api/workspaces/test/github/status')
 			return route.fulfill({
 				json: {
 					configured: true,
@@ -1078,7 +1078,7 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 			workspace_id: workspaceId,
 			machine_id: machineId,
 			issue_id: '00000000-0000-0000-0000-000000000082',
-			forgejo_repo_id: '00000000-0000-0000-0000-000000000083',
+			github_repo_id: '00000000-0000-0000-0000-000000000083',
 			repository_full_name: 'ku/ku',
 			base_branch: 'main',
 			working_branch: 'user/TST-1-terminal',
@@ -1492,7 +1492,7 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 		workspace_id: workspaceId,
 		machine_id: machineId,
 		issue_id: issueId,
-		forgejo_repo_id: '00000000-0000-0000-0000-000000000112',
+		github_repo_id: '00000000-0000-0000-0000-000000000112',
 		repository_full_name: 'ku/ku',
 		base_branch: 'main',
 		working_branch: 'ku/TST-43-picker',
@@ -1700,7 +1700,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	const repos = [
 		{
 			id: 'repo-1',
-			forgejo_repo_id: 1001,
+			github_repo_id: 1001,
 			full_name: 'ku/ku',
 			instance_url: 'https://git.example.com',
 			default_branch: 'main',
@@ -1708,7 +1708,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 		},
 		{
 			id: 'repo-2',
-			forgejo_repo_id: 1002,
+			github_repo_id: 1002,
 			full_name: 'ku/backend',
 			instance_url: 'https://git.example.com',
 			default_branch: 'develop',
@@ -1812,7 +1812,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 			return route.fulfill({
 				json: { data: [], total_count: 0, page: 1, has_more: false }
 			});
-		if (path === '/api/workspaces/test/forgejo/status')
+		if (path === '/api/workspaces/test/github/status')
 			return route.fulfill({
 				json: {
 					configured: true,
@@ -1860,7 +1860,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	expect(putPayload).toMatchObject({
 		scope_type: 'issue',
 		scope_id: issueId,
-		forgejo_repo_id: 'repo-2',
+		github_repo_id: 'repo-2',
 		base_branch: 'develop'
 	});
 });
@@ -1885,7 +1885,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		desired_status: 'running',
 		generation: 1,
 		repo_url: 'https://git.example.com/machine-owner/machine-repo',
-		repo_provider: 'forgejo',
+		repo_provider: 'github',
 		repo_owner: 'machine-owner',
 		repo_name: 'machine-repo',
 		base_branch: 'main',
@@ -1907,7 +1907,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		workspace_id: machine.workspace_id,
 		machine_id: machineId,
 		issue_id: '00000000-0000-0000-0000-000000000064',
-		forgejo_repo_id: '00000000-0000-0000-0000-000000000065',
+		github_repo_id: '00000000-0000-0000-0000-000000000065',
 		repository_full_name: 'ku/ku',
 		base_branch: 'main',
 		working_branch: 'ku/trace',
@@ -2280,7 +2280,7 @@ test('bounds machine and agent trace telemetry during long-running sessions', as
 		desired_status: 'running',
 		generation: 1,
 		repo_url: '',
-		repo_provider: 'forgejo',
+		repo_provider: 'github',
 		repo_owner: '',
 		repo_name: '',
 		base_branch: '',

@@ -115,7 +115,7 @@ func sqlStateFromMessage(message string) (string, bool) {
 // errors and timeouts (net.Error) and cancelled or expired contexts. None of
 // these are the caller's fault and their messages can carry addresses, so
 // they become a logged 500. Upstream clients that should surface an
-// actionable message (e.g. the Forgejo client's ErrUnavailable) translate
+// actionable message (e.g. the GitHub client's ErrUnavailable) translate
 // their transport errors before they reach this point.
 func isInfrastructureError(err error) bool {
 	if errors.Is(err, sql.ErrConnDone) || errors.Is(err, sql.ErrTxDone) || errors.Is(err, driver.ErrBadConn) {

@@ -87,7 +87,7 @@ func newReconciliationRun(t *testing.T, stdout, stderr string) (*Manager, *recon
 	}, logFailures: make(map[string]int), eventFailures: make(map[string]int), eventCommitErrors: make(map[string]int),
 		logAttempts: make(map[string]int), eventAttempts: make(map[string]int), eventAttemptOccurrences: make(map[string][]uuid.UUID)}
 	runtime := &runtimeFake{agentExecution: &AgentExecution{ContainerID: "test-agent", Stdout: stdout, Stderr: stderr}}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), forgejoAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 	operation := &domain.DevMachineOperation{MachineID: machineID, WorkspaceID: workspaceID, AgentRunID: new(runID), Action: domain.DevMachineOpRunAgent, Generation: 1}
 	return manager, store, runtime, operation
 }

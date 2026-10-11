@@ -74,13 +74,13 @@ func TestCandidateVerificationMountPolicy(t *testing.T) {
 
 func TestCandidateVerificationToolingEnvironmentExcludesSecretsAndShellStartup(t *testing.T) {
 	machine := fixtureHelperMachine()
-	environment, err := candidateToolingEnvironment(machine, []string{"PATH=/custom/go/bin:/usr/bin:/bin", "GOROOT=/custom/go", "RUSTUP_HOME=/custom/rustup", "HOME=/live-ide", "FORGEJO_TOKEN=private-token", "ANTHROPIC_API_KEY=provider-token", "BASH_ENV=/live-ide/startup", "LD_PRELOAD=/live-ide/preload.so", "HTTP_PROXY=http://untrusted:3128"})
+	environment, err := candidateToolingEnvironment(machine, []string{"PATH=/custom/go/bin:/usr/bin:/bin", "GOROOT=/custom/go", "RUSTUP_HOME=/custom/rustup", "HOME=/live-ide", "GITHUB_TOKEN=private-token", "ANTHROPIC_API_KEY=provider-token", "BASH_ENV=/live-ide/startup", "LD_PRELOAD=/live-ide/preload.so", "HTTP_PROXY=http://untrusted:3128"})
 	require.NoError(t, err)
 	require.Contains(t, environment, "PATH=/custom/go/bin:/usr/bin:/bin")
 	require.Contains(t, environment, "GOROOT=/custom/go")
 	require.Contains(t, environment, "RUSTUP_HOME=/custom/rustup")
 	require.Contains(t, environment, "HOME=/tmp")
-	require.Contains(t, environment, "FORGEJO_TOKEN=")
+	require.Contains(t, environment, "GITHUB_TOKEN=")
 	require.Contains(t, environment, "ANTHROPIC_API_KEY=")
 	require.Contains(t, environment, "BASH_ENV=")
 	require.Contains(t, environment, "LD_PRELOAD=")
@@ -88,7 +88,7 @@ func TestCandidateVerificationToolingEnvironmentExcludesSecretsAndShellStartup(t
 	for _, forbidden := range []string{"private-token", "provider-token", "live-ide", "untrusted"} {
 		require.NotContains(t, strings.Join(environment, " "), forbidden)
 	}
-	_, err = candidateToolingEnvironment(machine, []string{"PATH=/usr/bin\nFORGEJO_TOKEN=private-token"})
+	_, err = candidateToolingEnvironment(machine, []string{"PATH=/usr/bin\nGITHUB_TOKEN=private-token"})
 	require.Error(t, err)
 }
 
@@ -102,7 +102,7 @@ func TestCandidateVerificationUsesRetainedContentAndPreservesLaterSourceEdits(t 
 	worktree := prepareVerificationFixture(t, f, candidate)
 	require.Equal(t, candidate.Commit, f.git(t, worktree, "rev-parse", "HEAD"))
 	require.Equal(t, f.branch, f.git(t, worktree, "branch", "--show-current"))
-	command := exec.CommandContext(t.Context(), "/bin/sh", "-c", `set -eu; [ "$(cat source.txt)" = verified ]; [ -z "${FORGEJO_TOKEN-}" ]; printf 'build output\n' > generated.txt`)
+	command := exec.CommandContext(t.Context(), "/bin/sh", "-c", `set -eu; [ "$(cat source.txt)" = verified ]; [ -z "${GITHUB_TOKEN-}" ]; printf 'build output\n' > generated.txt`)
 	command.Dir = worktree
 	command.Env = []string{"PATH=" + f.toolPath, "HOME=" + f.root}
 	output, err := command.CombinedOutput()

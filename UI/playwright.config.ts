@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test';
 
 // Two suites, chosen with E2E_SUITE (unset runs both):
 //   fast - the critical paths a deploy must never break: signing in,
-//          issues, boards, and the Forgejo automation. It gates every
+//          issues, boards, and the GitHub automation. It gates every
 //          deploy to alpha (ci.yml, `make test-fast`).
 //   slow - every other spec. It runs in slow.yml after the push and never
 //          blocks a deploy (`make test-slow`).
@@ -19,7 +19,7 @@ const FAST_SPECS = [
 	'upload-auth-refresh.test.ts',
 	'team-board.test.ts',
 	'my-issues-board.test.ts',
-	'forgejo-automation.test.ts',
+	'github-automation.test.ts',
 	'workspace-load-recovery.test.ts'
 ];
 const suite = process.env.E2E_SUITE ?? '';

@@ -1,0 +1,262 @@
+package handler
+
+import (
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+
+	"github.com/google/uuid"
+	"github.com/ku/ku-backend/internal/domain"
+	"github.com/ku/ku-backend/internal/dto"
+	"github.com/ku/ku-backend/internal/metrics"
+	"github.com/ku/ku-backend/internal/service"
+	"github.com/ku/ku-backend/pkg/response"
+	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
+)
+
+type GitHubHandler struct {
+	fjSvc *service.GitHubService
+}
+
+func NewGitHubHandler(fjSvc *service.GitHubService) *GitHubHandler {
+	return &GitHubHandler{fjSvc: fjSvc}
+}
+
+// Status returns the GitHub integration status for the workspace.
+func (h *GitHubHandler) Status(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	status, err := h.fjSvc.GetStatus(c.Request().Context(), ws.ID)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	return response.Success(c, http.StatusOK, status)
+}
+
+// Connect stores and validates instance URL + token for the workspace.
+// The optional organization restricts repo discovery and linking.
+func (h *GitHubHandler) Connect(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	var req dto.ConnectGitHubRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	account, err := h.fjSvc.Connect(c.Request().Context(), ws.ID, req.InstanceURL, req.Token, req.Organization)
+	if err != nil {
+		return githubConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, account)
+}
+
+// Disconnect removes the connection and unlinks all repos.
+func (h *GitHubHandler) Disconnect(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.fjSvc.Disconnect(c.Request().Context(), ws.ID); err != nil {
+		return githubConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "disconnected"})
+}
+
+// Disable pauses the integration for the workspace: every repo is unlinked
+// and the connection stops resolving, even when a global instance is
+// configured. The stored credentials are kept for a later Enable.
+func (h *GitHubHandler) Disable(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.fjSvc.SetDisabled(c.Request().Context(), ws.ID, true); err != nil {
+		return githubConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "disabled"})
+}
+
+// Enable resumes a paused integration and is idempotent.
+func (h *GitHubHandler) Enable(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err := h.fjSvc.SetDisabled(c.Request().Context(), ws.ID, false); err != nil {
+		return githubConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "enabled"})
+}
+
+// githubConnectionError maps connection-lifecycle sentinel errors to fixed
+// client messages; everything else keeps the ServiceError classification.
+func githubConnectionError(c echo.Context, err error) error {
+	if errors.Is(err, service.ErrGitHubDisabled) {
+		return response.Error(c, http.StatusConflict, "GITHUB_DISABLED", "GitHub is disabled for this workspace")
+	}
+	return response.ServiceError(c, err)
+}
+
+// ListRepos lists repositories available to the connection token.
+func (h *GitHubHandler) ListRepos(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	repos, err := h.fjSvc.ListAvailableRepos(c.Request().Context(), ws.ID)
+	if err != nil {
+		return githubConnectionError(c, err)
+	}
+	if repos == nil {
+		repos = []dto.GitHubAvailableRepoResponse{}
+	}
+	return response.Success(c, http.StatusOK, repos)
+}
+
+// LinkRepos links selected repos (creating webhooks on them).
+func (h *GitHubHandler) LinkRepos(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	var req dto.LinkGitHubReposRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := h.fjSvc.LinkRepos(c.Request().Context(), ws.ID, req); err != nil {
+		return githubConnectionError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "linked"})
+}
+
+// UnlinkRepo removes a linked repo and its webhook.
+func (h *GitHubHandler) UnlinkRepo(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid repo ID")
+	}
+	if err := h.fjSvc.UnlinkRepo(c.Request().Context(), ws.ID, id); err != nil {
+		return response.ServiceError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "unlinked"})
+}
+
+// ListUserMappings returns the workspace's GitHub login mappings.
+func (h *GitHubHandler) ListUserMappings(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	mappings, err := h.fjSvc.ListUserMappings(c.Request().Context(), ws.ID)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	return response.Success(c, http.StatusOK, mappings)
+}
+
+func (h *GitHubHandler) UpdateUserMappings(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	var req dto.UpdateGitHubUserMappingsRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := h.fjSvc.UpdateUserMappings(c.Request().Context(), ws.ID, req); err != nil {
+		return response.ServiceError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// ListAutoTransitions returns the auto-transition rules.
+func (h *GitHubHandler) ListAutoTransitions(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	transitions, err := h.fjSvc.ListAutoTransitions(c.Request().Context(), ws.ID)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	return response.Success(c, http.StatusOK, transitions)
+}
+
+// UpdateAutoTransitions updates the auto-transition rules.
+func (h *GitHubHandler) UpdateAutoTransitions(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	var req dto.UpdateAutoTransitionsRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := h.fjSvc.UpdateAutoTransitions(c.Request().Context(), ws.ID, req); err != nil {
+		return response.ServiceError(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// IssueGitHubActivity returns PRs, branches, commits linked to an issue.
+func (h *GitHubHandler) IssueGitHubActivity(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	identifier := c.Param("identifier")
+	activity, err := h.fjSvc.GetIssueActivity(c.Request().Context(), ws.ID, identifier)
+	if err != nil {
+		return response.ServiceErrorStatus(c, http.StatusNotFound, "NOT_FOUND", err)
+	}
+	return response.Success(c, http.StatusOK, activity)
+}
+
+// AgentIssueLinks returns issue-PR/branch/commit links for agent consumption.
+func (h *GitHubHandler) AgentIssueLinks(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	identifier := c.QueryParam("identifier")
+	if identifier == "" {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "identifier query param required")
+	}
+	activity, err := h.fjSvc.GetIssueActivity(c.Request().Context(), ws.ID, identifier)
+	if err != nil {
+		return response.ServiceErrorStatus(c, http.StatusNotFound, "NOT_FOUND", err)
+	}
+	return response.Success(c, http.StatusOK, activity)
+}
+
+// MaxGitHubWebhookBodyBytes caps the unauthenticated GitHub webhook body;
+// it is read fully before the signature can be checked.
+const MaxGitHubWebhookBodyBytes = 5 << 20
+
+// HandleWebhook receives incoming GitHub webhook events (public endpoint).
+// GitHub identifies the event with X-GitHub-Event/X-GitHub-Delivery and signs
+// the raw body with X-Hub-Signature-256 ("sha256=" + hex HMAC-SHA256); the
+// legacy X-Hub-Signature ("sha1=" + hex HMAC-SHA1) is accepted as a fallback.
+func (h *GitHubHandler) HandleWebhook(c echo.Context) error {
+	signature256 := c.Request().Header.Get("X-Hub-Signature-256")
+	signature1 := c.Request().Header.Get("X-Hub-Signature")
+	eventType := c.Request().Header.Get("X-GitHub-Event")
+	deliveryID := c.Request().Header.Get("X-GitHub-Delivery")
+	fields := log.Fields{"event": eventType, "delivery_id": deliveryID, "ip": c.RealIP()}
+
+	body, err := io.ReadAll(http.MaxBytesReader(c.Response().Writer, c.Request().Body, MaxGitHubWebhookBodyBytes))
+	if err != nil {
+		metrics.RecordGitHubWebhook(eventType, metrics.WebhookResultBadRequest)
+		log.WithError(err).WithFields(fields).Warn("github webhook body could not be read")
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return c.NoContent(http.StatusRequestEntityTooLarge)
+		}
+		return c.NoContent(http.StatusBadRequest)
+	}
+
+	repo, ok := h.fjSvc.VerifyWebhookSignature(c.Request().Context(), body, signature256, signature1)
+	if !ok {
+		metrics.RecordGitHubWebhook(eventType, metrics.WebhookResultInvalidSignature)
+		if name := webhookRepoFullName(body); name != "" {
+			fields["repo"] = name
+		}
+		fields["signature_present"] = signature256 != "" || signature1 != ""
+		log.WithFields(fields).Warn("github webhook signature verification failed")
+		return c.NoContent(http.StatusUnauthorized)
+	}
+	fields["repo"] = repo.FullName
+
+	if err := h.fjSvc.HandleWebhookEvent(c.Request().Context(), eventType, body, repo); err != nil {
+		metrics.RecordGitHubWebhook(eventType, metrics.WebhookResultError)
+		log.WithError(err).WithFields(fields).Error("github webhook processing failed")
+		return c.NoContent(http.StatusInternalServerError)
+	}
+
+	metrics.RecordGitHubWebhook(eventType, metrics.WebhookResultProcessed)
+	return c.NoContent(http.StatusOK)
+}
+
+// webhookRepoFullName best-effort extracts repository.full_name from an
+// unverified payload for diagnostics only; it is never trusted for routing.
+func webhookRepoFullName(body []byte) string {
+	var payload struct {
+		Repository struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	name := payload.Repository.FullName
+	if len(name) > 200 {
+		name = name[:200]
+	}
+	return name
+}

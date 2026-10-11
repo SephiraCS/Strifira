@@ -94,8 +94,8 @@ Create `$HOME/.config/ku-worker/worker.json` with absolute paths:
   "repositories": {
     "owner/repo": {
       "path": "/home/developer/Projects/repo",
-      "url": "https://forgejo.example.com/owner/repo",
-      "origin_url": "https://forgejo.example.com/owner/repo.git"
+      "url": "https://github.example.com/owner/repo",
+      "origin_url": "https://github.example.com/owner/repo.git"
     }
   },
   "providers": {
@@ -106,7 +106,7 @@ Create `$HOME/.config/ku-worker/worker.json` with absolute paths:
 }
 ```
 
-Configure only installed providers. Repository keys and URLs must exactly match the linked Forgejo repository returned in a Ku job. If the existing checkout uses an SSH origin, add `"origin_url": "git@forgejo.example.com:owner/repo.git"` to its repository entry; `url` remains the server's HTTPS URL. The origin is compared to this locally configured value before work begins. A claim cannot substitute another origin or repository path.
+Configure only installed providers. Repository keys and URLs must exactly match the linked GitHub repository returned in a Ku job. If the existing checkout uses an SSH origin, add `"origin_url": "git@github.example.com:owner/repo.git"` to its repository entry; `url` remains the server's HTTPS URL. The origin is compared to this locally configured value before work begins. A claim cannot substitute another origin or repository path.
 
 `server_url` requires HTTPS. Isolated local development can opt into `"localhost_http": true` for literal loopback or `localhost` HTTP URLs. Redirects are rejected so authenticated requests cannot cross origins.
 
@@ -121,7 +121,7 @@ automatic OCI Vault production-secret delivery.
 
 `execution_mode: "trusted-local"` explicitly authorizes coding tools and the issue's configured test argv to run as the development box user. Use a dedicated VM account for trusted workspace members and repositories. Git worktrees preserve the original checkout's working tree and index; they are not an operating system sandbox. Tools and repository tests may access the account's filesystem, network, and local provider login files. This mode is unsuitable for untrusted repositories or adversarial prompts.
 
-The worker uses Claude's `dontAsk` mode and Codex's `workspace-write` sandbox. OpenCode uses its locally configured permissions. Provider API environment variables are included only for the matching provider; test processes do not receive them. Ku, Forgejo, GitHub, and unrelated credential environment variables are omitted. The worker token is never passed to child processes or sent inside log/result bodies. Git's default push configuration and the `origin` push URL are disabled for accidental publishing. This is a guard against accidental publishing, not an isolation boundary against code executing as the same account.
+The worker uses Claude's `dontAsk` mode and Codex's `workspace-write` sandbox. OpenCode uses its locally configured permissions. Provider API environment variables are included only for the matching provider; test processes do not receive them. Ku, GitHub, GitHub, and unrelated credential environment variables are omitted. The worker token is never passed to child processes or sent inside log/result bodies. Git's default push configuration and the `origin` push URL are disabled for accidental publishing. This is a guard against accidental publishing, not an isolation boundary against code executing as the same account.
 
 Run persistently:
 

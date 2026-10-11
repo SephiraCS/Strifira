@@ -43,7 +43,7 @@ import (
 const (
 	obsJWTSecret   = "observability-test-secret-at-least-32-characters"
 	obsFrontendURL = "https://app.example.test"
-	obsForgejoURL  = "https://forgejo.example.test"
+	obsGitHubURL   = "https://github.example.test"
 )
 
 // obsEnv is the API wired the same way cmd/server wires it (request ID,
@@ -127,9 +127,9 @@ func setupObservabilityWith(t *testing.T, opts obsOptions) *obsEnv {
 	relationSvc := service.NewIssueRelationService(repository.NewIssueRelationRepository(db), issueRepo)
 	cycleSvc := service.NewCycleService(cycleRepo, teamRepo, hub, notifSvc)
 	labelSvc := service.NewLabelService(repository.NewLabelRepository(db))
-	forgejoRepo := repository.NewForgejoRepository(db)
-	hookKey := crypto.DeriveKey(obsJWTSecret + ":forgejo")
-	forgejoSvc := service.NewForgejoService(forgejoRepo, issueRepo, teamRepo, teamStatusRepo, hookKey, hub, obsFrontendURL, "", nil)
+	githubRepo := repository.NewGitHubRepository(db)
+	hookKey := crypto.DeriveKey(obsJWTSecret + ":forgejo") // label predates the GitHub migration; must not change
+	githubSvc := service.NewGitHubService(githubRepo, issueRepo, teamRepo, teamStatusRepo, hookKey, hub, obsFrontendURL, "", nil)
 
 	user, _, _, err := authSvc.Register(ctx, dto.RegisterRequest{Email: "obs@example.test", Password: "Correct-horse-battery-9", Name: "Obs"})
 	require.NoError(t, err)
@@ -147,15 +147,15 @@ func setupObservabilityWith(t *testing.T, opts obsOptions) *obsEnv {
 	secret := "observability-webhook-secret"
 	encrypted, err := crypto.Encrypt(secret, hookKey)
 	require.NoError(t, err)
-	require.NoError(t, forgejoRepo.CreateRepo(ctx, &domain.ForgejoRepoModel{
-		ID: uuid.New(), WorkspaceID: ws.ID, ForgejoRepoID: 7, FullName: "org/obs",
-		InstanceURL: obsForgejoURL, DefaultBranch: "main", WebhookSecret: encrypted, IsActive: true,
+	require.NoError(t, githubRepo.CreateRepo(ctx, &domain.GitHubRepoModel{
+		ID: uuid.New(), WorkspaceID: ws.ID, GitHubRepoID: 7, FullName: "org/obs",
+		InstanceURL: obsGitHubURL, DefaultBranch: "main", WebhookSecret: encrypted, IsActive: true,
 	}))
 
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	cycleH := handler.NewCycleHandler(cycleSvc)
 	wsH := handler.NewWSHandler(hub, handler.WebSocketOriginPatterns(append([]string{obsFrontendURL}, opts.frontendURLs...), opts.development))
-	forgejoH := handler.NewForgejoHandler(forgejoSvc)
+	githubH := handler.NewGitHubHandler(githubSvc)
 
 	e := echo.New()
 	e.HideBanner = true
@@ -165,7 +165,7 @@ func setupObservabilityWith(t *testing.T, opts obsOptions) *obsEnv {
 	e.Use(mw.Logging())
 	e.GET("/metrics", metrics.Handler())
 	e.GET("/api/test/panic", func(echo.Context) error { panic("handler exploded") })
-	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
+	e.POST("/api/github/webhook", githubH.HandleWebhook)
 	api := e.Group("/api", mw.Auth(obsJWTSecret))
 	wsGroup := api.Group("/workspaces/:slug", mw.WorkspaceMembership(workspaceRepo))
 	wsGroup.GET("/issues", issueH.List)
@@ -405,7 +405,7 @@ func TestWebSocketRejectsForeignOrigins(t *testing.T) {
 	require.Contains(t, handler.WebSocketOriginPatterns([]string{obsFrontendURL}, true), "localhost:*")
 }
 
-func TestMetricsExposeRequestsAndForgejoWebhookOutcomes(t *testing.T) {
+func TestMetricsExposeRequestsAndGitHubWebhookOutcomes(t *testing.T) {
 	env := setupObservability(t)
 	before := env.metricsText(t)
 
@@ -414,20 +414,20 @@ func TestMetricsExposeRequestsAndForgejoWebhookOutcomes(t *testing.T) {
 	require.Equal(t, http.StatusOK, status)
 
 	deliver := func(event string, payload map[string]any, sign bool) int {
-		payload["repository"] = map[string]any{"full_name": env.repoFull, "html_url": obsForgejoURL + "/" + env.repoFull}
+		payload["repository"] = map[string]any{"full_name": env.repoFull, "html_url": obsGitHubURL + "/" + env.repoFull}
 		body, err := json.Marshal(payload)
 		require.NoError(t, err)
-		req, err := http.NewRequest(http.MethodPost, env.server.URL+"/api/forgejo/webhook", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, env.server.URL+"/api/github/webhook", bytes.NewReader(body))
 		require.NoError(t, err)
-		req.Header.Set("X-Forgejo-Event", event)
-		req.Header.Set("X-Forgejo-Delivery", uuid.NewString())
-		signature := strings.Repeat("0", 64)
+		req.Header.Set("X-GitHub-Event", event)
+		req.Header.Set("X-GitHub-Delivery", uuid.NewString())
+		signature := "sha256=" + strings.Repeat("0", 64)
 		if sign {
 			mac := hmac.New(sha256.New, env.hookKey)
 			mac.Write(body)
-			signature = hex.EncodeToString(mac.Sum(nil))
+			signature = "sha256=" + hex.EncodeToString(mac.Sum(nil))
 		}
-		req.Header.Set("X-Forgejo-Signature", signature)
+		req.Header.Set("X-Hub-Signature-256", signature)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		resp.Body.Close()
@@ -448,7 +448,7 @@ func TestMetricsExposeRequestsAndForgejoWebhookOutcomes(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	rawRequest("BREWCOFFEE", "/api/forgejo/webhook")
+	rawRequest("BREWCOFFEE", "/api/github/webhook")
 	require.Equal(t, http.StatusNotFound, rawRequest(http.MethodGet, "/no/such/route-"+uuid.NewString()))
 
 	// A panicking handler is recovered and still counted, once, as a 500.
@@ -466,10 +466,10 @@ func TestMetricsExposeRequestsAndForgejoWebhookOutcomes(t *testing.T) {
 	require.Contains(t, after, `route="unmatched",status="404"`)
 
 	for _, sample := range []string{
-		`ku_forgejo_webhook_deliveries_total{event="push",result="invalid_signature"}`,
-		`ku_forgejo_webhook_deliveries_total{event="issues",result="processed"}`,
-		`ku_forgejo_webhook_deliveries_total{event="push",result="error"}`,
-		`ku_forgejo_webhook_deliveries_total{event="other",result="invalid_signature"}`,
+		`ku_github_webhook_deliveries_total{event="push",result="invalid_signature"}`,
+		`ku_github_webhook_deliveries_total{event="issues",result="processed"}`,
+		`ku_github_webhook_deliveries_total{event="push",result="error"}`,
+		`ku_github_webhook_deliveries_total{event="other",result="invalid_signature"}`,
 		`ku_http_requests_total{method="GET",route="/api/test/panic",status="500"}`,
 	} {
 		require.Equal(t, counterValue(before, sample)+1, counterValue(after, sample), sample)

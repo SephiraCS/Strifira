@@ -221,8 +221,8 @@ func TestDefaultProvisionUsesCanonicalBackendCredentialOutsideServiceSecrets(t *
 	machine.RepoOwner, machine.RepoName = "ku", "api"
 	machine.RepoURL = "https://git.example.com/ku/api"
 	machine.BaseBranch, machine.WorkingBranch = "main", "ku/task"
-	store := &managerStoreFake{machine: machine, linkedRepository: &domain.ForgejoRepoModel{InstanceURL: "https://git.example.com"}}
-	manager := NewManager(store, &runtimeFake{}, nil, nil, &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "backend-only-token"}, make([]byte, 32), nil, "test")
+	store := &managerStoreFake{machine: machine, linkedRepository: &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}}
+	manager := NewManager(store, &runtimeFake{}, nil, nil, &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "backend-only-token"}, make([]byte, 32), nil, "test")
 	provision, err := manager.defaultRepositoryProvision(t.Context(), machine)
 	require.NoError(t, err)
 	require.Equal(t, "https://git.example.com/ku/api", provision.Checkout.RepositoryURL)
@@ -231,25 +231,25 @@ func TestDefaultProvisionUsesCanonicalBackendCredentialOutsideServiceSecrets(t *
 	require.Error(t, validateRepositoryProvision(machine, nil))
 	secrets, err := manager.serviceSecrets(t.Context(), machine, []domain.DevMachineService{{ServiceType: "ide", ServiceKey: "ide"}})
 	require.NoError(t, err)
-	require.NotContains(t, secrets["ide"], "FORGEJO_TOKEN")
+	require.NotContains(t, secrets["ide"], "GITHUB_TOKEN")
 }
 
-func TestDefaultRepositoryRefusesForgejoOriginReplacement(t *testing.T) {
+func TestDefaultRepositoryRefusesGitHubOriginReplacement(t *testing.T) {
 	machine := fixtureHelperMachine()
 	machine.RepoOwner, machine.RepoName = "ku", "api"
 	machine.RepoURL = "https://original.example/ku/api"
 	machine.BaseBranch, machine.WorkingBranch = "main", "owner/default"
-	store := &managerStoreFake{machine: machine, linkedRepository: &domain.ForgejoRepoModel{InstanceURL: "https://replacement.example"}}
-	manager := NewManager(store, &runtimeFake{}, nil, nil, &GlobalForgejoCredentials{URL: "https://replacement.example", Token: "backend-only-token"}, make([]byte, 32), nil, "test")
+	store := &managerStoreFake{machine: machine, linkedRepository: &domain.GitHubRepoModel{InstanceURL: "https://replacement.example"}}
+	manager := NewManager(store, &runtimeFake{}, nil, nil, &GlobalGitHubCredentials{URL: "https://replacement.example", Token: "backend-only-token"}, make([]byte, 32), nil, "test")
 	provision, err := manager.defaultRepositoryProvision(t.Context(), machine)
-	require.ErrorContains(t, err, "original Forgejo URL")
+	require.ErrorContains(t, err, "original GitHub URL")
 	require.Nil(t, provision)
 	checkout := &domain.DevMachineCheckout{ID: machine.ID, MachineID: machine.ID, WorkspaceID: machine.WorkspaceID,
 		RepositoryFullName: "ku/api", RepositoryURL: "https://replacement.example/ku/api", BaseBranch: "main",
 		WorkingBranch: "owner/default", WorkspacePath: "/workspace/repository"}
 	require.Error(t, validateRepositoryProvision(machine, &RepositoryProvision{Checkout: checkout, Token: "backend-only-token"}))
 	store.linkedRepository.InstanceURL = "https://original.example"
-	manager.globalForgejo.URL = "https://original.example"
+	manager.globalGitHub.URL = "https://original.example"
 	provision, err = manager.defaultRepositoryProvision(t.Context(), machine)
 	require.NoError(t, err)
 	require.Equal(t, machine.RepoURL, provision.Checkout.RepositoryURL)

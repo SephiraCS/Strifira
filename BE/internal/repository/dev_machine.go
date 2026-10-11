@@ -56,8 +56,8 @@ type DevMachineStore interface {
 	UpsertScopeSetting(context.Context, *domain.DevMachineScopeSetting) error
 	DeleteScopeSetting(context.Context, uuid.UUID, *uuid.UUID, *uuid.UUID, *uuid.UUID) error
 	ScopeResourceExists(context.Context, uuid.UUID, string, *uuid.UUID) (bool, error)
-	GetLinkedRepository(context.Context, uuid.UUID, uuid.UUID) (*domain.ForgejoRepoModel, error)
-	GetLinkedRepositoryByFullName(context.Context, uuid.UUID, string) (*domain.ForgejoRepoModel, error)
+	GetLinkedRepository(context.Context, uuid.UUID, uuid.UUID) (*domain.GitHubRepoModel, error)
+	GetLinkedRepositoryByFullName(context.Context, uuid.UUID, string) (*domain.GitHubRepoModel, error)
 	GetIssueDevelopmentContext(context.Context, uuid.UUID, uuid.UUID) (*domain.Issue, error)
 	GetProjectDevelopmentContext(context.Context, uuid.UUID, uuid.UUID) (*domain.Project, error)
 	ListEnvironments(context.Context, uuid.UUID) ([]domain.DevMachineEnvironment, error)
@@ -688,7 +688,7 @@ func (r *DevMachineRepository) UpsertRuntimeCredential(ctx context.Context, cred
 		credential.Scope = domain.DevMachineRuntimeCredentialScopeMachine
 	}
 	if credential.CredentialType == "" {
-		credential.CredentialType = domain.DevMachineRuntimeCredentialTypeForgejoToken
+		credential.CredentialType = domain.DevMachineRuntimeCredentialTypeGitHubToken
 	}
 	if credential.EncryptionKeyVersion == 0 {
 		credential.EncryptionKeyVersion = 1
@@ -1148,23 +1148,23 @@ func (r *DevMachineRepository) CreateGitRef(ctx context.Context, ref *domain.Dev
 	).Scan(&ref.ID, &ref.CreatedAt)
 }
 
-// GetForgejoConnection returns the workspace's Forgejo connection row (nil
+// GetGitHubConnection returns the workspace's GitHub connection row (nil
 // when none exists). The token stays encrypted; callers decrypt it with the
-// forgejo key.
-func (r *DevMachineRepository) GetForgejoConnection(ctx context.Context, workspaceID uuid.UUID) (*domain.ForgejoConnection, error) {
-	var conn domain.ForgejoConnection
-	err := r.db.GetContext(ctx, &conn, `SELECT * FROM forgejo_connections WHERE workspace_id=$1`, workspaceID)
+// github key.
+func (r *DevMachineRepository) GetGitHubConnection(ctx context.Context, workspaceID uuid.UUID) (*domain.GitHubConnection, error) {
+	var conn domain.GitHubConnection
+	err := r.db.GetContext(ctx, &conn, `SELECT * FROM github_connections WHERE workspace_id=$1`, workspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return &conn, err
 }
 
-// GetWorkspaceDisable returns the workspace's Forgejo disable marker (nil
+// GetWorkspaceDisable returns the workspace's GitHub disable marker (nil
 // when the integration is not paused for that workspace).
-func (r *DevMachineRepository) GetWorkspaceDisable(ctx context.Context, workspaceID uuid.UUID) (*domain.ForgejoWorkspaceDisable, error) {
-	var disable domain.ForgejoWorkspaceDisable
-	err := r.db.GetContext(ctx, &disable, `SELECT * FROM forgejo_workspace_disables WHERE workspace_id=$1`, workspaceID)
+func (r *DevMachineRepository) GetWorkspaceDisable(ctx context.Context, workspaceID uuid.UUID) (*domain.GitHubWorkspaceDisable, error) {
+	var disable domain.GitHubWorkspaceDisable
+	err := r.db.GetContext(ctx, &disable, `SELECT * FROM github_workspace_disables WHERE workspace_id=$1`, workspaceID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -1449,15 +1449,15 @@ func (r *DevMachineRepository) UpsertScopeSetting(ctx context.Context, setting *
 		return errors.New("invalid development setting scope")
 	}
 	query := `INSERT INTO dev_machine_scope_settings
-		(id,workspace_id,team_id,project_id,issue_id,forgejo_repo_id,base_branch,environment_id)
+		(id,workspace_id,team_id,project_id,issue_id,github_repo_id,base_branch,environment_id)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT ` + conflictTarget + ` DO UPDATE SET
-			forgejo_repo_id=EXCLUDED.forgejo_repo_id,base_branch=EXCLUDED.base_branch,
+			github_repo_id=EXCLUDED.github_repo_id,base_branch=EXCLUDED.base_branch,
 			environment_id=EXCLUDED.environment_id,updated_at=NOW()
 		WHERE dev_machine_scope_settings.workspace_id=EXCLUDED.workspace_id
 		RETURNING id,created_at,updated_at`
 	if err := tx.QueryRowContext(ctx, query, setting.ID, setting.WorkspaceID,
-		setting.TeamID, setting.ProjectID, setting.IssueID, setting.ForgejoRepoID, setting.BaseBranch, setting.EnvironmentID,
+		setting.TeamID, setting.ProjectID, setting.IssueID, setting.GitHubRepoID, setting.BaseBranch, setting.EnvironmentID,
 	).Scan(&setting.ID, &setting.CreatedAt, &setting.UpdatedAt); err != nil {
 		return err
 	}
@@ -1490,18 +1490,18 @@ func (r *DevMachineRepository) ScopeResourceExists(ctx context.Context, workspac
 	return exists, err
 }
 
-func (r *DevMachineRepository) GetLinkedRepository(ctx context.Context, workspaceID, repositoryID uuid.UUID) (*domain.ForgejoRepoModel, error) {
-	var repo domain.ForgejoRepoModel
-	err := r.db.GetContext(ctx, &repo, `SELECT * FROM forgejo_repos WHERE workspace_id=$1 AND id=$2 AND is_active`, workspaceID, repositoryID)
+func (r *DevMachineRepository) GetLinkedRepository(ctx context.Context, workspaceID, repositoryID uuid.UUID) (*domain.GitHubRepoModel, error) {
+	var repo domain.GitHubRepoModel
+	err := r.db.GetContext(ctx, &repo, `SELECT * FROM github_repos WHERE workspace_id=$1 AND id=$2 AND is_active`, workspaceID, repositoryID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	return &repo, err
 }
 
-func (r *DevMachineRepository) GetLinkedRepositoryByFullName(ctx context.Context, workspaceID uuid.UUID, fullName string) (*domain.ForgejoRepoModel, error) {
-	var repo domain.ForgejoRepoModel
-	err := r.db.GetContext(ctx, &repo, `SELECT * FROM forgejo_repos WHERE workspace_id=$1 AND LOWER(full_name)=LOWER($2) AND is_active`, workspaceID, fullName)
+func (r *DevMachineRepository) GetLinkedRepositoryByFullName(ctx context.Context, workspaceID uuid.UUID, fullName string) (*domain.GitHubRepoModel, error) {
+	var repo domain.GitHubRepoModel
+	err := r.db.GetContext(ctx, &repo, `SELECT * FROM github_repos WHERE workspace_id=$1 AND LOWER(full_name)=LOWER($2) AND is_active`, workspaceID, fullName)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -1864,7 +1864,7 @@ func (r *DevMachineRepository) CreateCheckout(ctx context.Context, checkout *dom
 	result, err := tx.ExecContext(ctx, `UPDATE dev_machines SET repository_affinity_id=$1,last_activity_at=NOW()
 		WHERE workspace_id=$2 AND id=$3 AND (repository_affinity_id IS NULL OR repository_affinity_id=$1)
 		AND ((repo_owner='' AND repo_name='') OR (repo_owner || '/' || repo_name)=$4)
-		AND status='running' AND desired_status='running'`, checkout.ForgejoRepoID,
+		AND status='running' AND desired_status='running'`, checkout.GitHubRepoID,
 		checkout.WorkspaceID, checkout.MachineID, checkout.RepositoryFullName)
 	if err != nil {
 		return err
@@ -1873,11 +1873,11 @@ func (r *DevMachineRepository) CreateCheckout(ctx context.Context, checkout *dom
 		return ErrCheckoutMachineConflict
 	}
 	if err := tx.QueryRowContext(ctx, `INSERT INTO dev_machine_checkouts
-		(id,workspace_id,machine_id,issue_id,forgejo_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
+		(id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
 		ON CONFLICT (machine_id,issue_id) DO UPDATE SET status=EXCLUDED.status,last_error=NULL,last_activity_at=NOW()
 		RETURNING id,created_at,updated_at`, checkout.ID, checkout.WorkspaceID, checkout.MachineID, checkout.IssueID,
-		checkout.ForgejoRepoID, checkout.RepositoryFullName, checkout.BaseBranch, checkout.WorkingBranch,
+		checkout.GitHubRepoID, checkout.RepositoryFullName, checkout.BaseBranch, checkout.WorkingBranch,
 		checkout.WorkspacePath, checkout.Status,
 	).Scan(&checkout.ID, &checkout.CreatedAt, &checkout.UpdatedAt); err != nil {
 		return err

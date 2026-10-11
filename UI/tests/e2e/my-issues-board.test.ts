@@ -239,7 +239,7 @@ test('app.refresh bursts coalesce into one background reload and never blank the
 	const requestsBefore = issueRequests.length;
 
 	// Burst of refresh events — what webhook processing and the five-minute
-	// Forgejo reconciler deliver (each used to trigger its own immediate
+	// GitHub reconciler deliver (each used to trigger its own immediate
 	// reload with the loading flag up, blanking the whole board).
 	for (let i = 0; i < 3; i++) {
 		await page.evaluate(() => {

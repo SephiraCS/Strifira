@@ -341,7 +341,7 @@ func (r *DockerRuntime) executeRepositoryContainer(ctx context.Context, machine 
 			execution = nil
 			returnedErr = errors.Join(returnedErr, fmt.Errorf("repository helper cleanup failed: %w", cleanupErr))
 		}
-		secrets := map[string]string{"FORGEJO_TOKEN": credential}
+		secrets := map[string]string{"GITHUB_TOKEN": credential}
 		if execution != nil {
 			execution.Stdout = redact(execution.Stdout, secrets)
 			execution.Stderr = redact(execution.Stderr, secrets)

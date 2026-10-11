@@ -5,7 +5,7 @@ export const currentVersionLabel = `v${currentVersion}`;
 
 // Releases track the operator fork on git.terrascale.tech. The manifest is
 // the fork's own UI/static/releases.json served same-origin from the
-// deployed build: the Forgejo instance is private and sends no CORS
+// deployed build: the Git instance is private and sends no CORS
 // headers, so browsers cannot fetch it cross-origin. The repository moved
 // from TerraScale/ku to Tools/ku; manifests baked before the move carry
 // the legacy owner, so both are trusted for entry URLs.
@@ -53,8 +53,8 @@ export function compareVersions(left: string, right: string) {
 	return 0;
 }
 
-// Same trust shape as $lib/security/forgejo-url, anchored to the fork's
-// Forgejo host instead of github.com.
+// Same trust shape as $lib/security/github-url, anchored to the fork's
+// own host instead of github.com.
 function parseReleaseRepositoryUrl(value: unknown, expectedTag?: string): URL | null {
 	if (typeof value !== 'string' || value.trim() !== value || value === '') return null;
 

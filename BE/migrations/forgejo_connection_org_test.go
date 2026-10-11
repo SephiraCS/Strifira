@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestForgejoConnectionOrganizationMigrationRoundTrip(t *testing.T) {
+func TestGitHubConnectionOrganizationMigrationRoundTrip(t *testing.T) {
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("TEST_DATABASE_URL is not configured")
@@ -22,7 +22,7 @@ func TestForgejoConnectionOrganizationMigrationRoundTrip(t *testing.T) {
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_forgejo_org_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "ku_github_org_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -39,12 +39,12 @@ func TestForgejoConnectionOrganizationMigrationRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	userID, workspaceID := uuid.New(), uuid.New()
-	_, err = db.ExecContext(t.Context(), `INSERT INTO users(id,email,name,password_hash) VALUES($1,'forgejo-org-migration@example.test','Migration','test')`, userID)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO users(id,email,name,password_hash) VALUES($1,'github-org-migration@example.test','Migration','test')`, userID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), `INSERT INTO workspaces(id,name,slug,owner_id) VALUES($1,'Migration','forgejo-org-migration',$2)`, workspaceID, userID)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO workspaces(id,name,slug,owner_id) VALUES($1,'Migration','github-org-migration',$2)`, workspaceID, userID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(t.Context(), `INSERT INTO forgejo_connections(id,workspace_id,instance_url,token,account_login)
-		VALUES($1,$2,'https://forgejo.example.test','encrypted-token','owner')`, uuid.New(), workspaceID)
+		VALUES($1,$2,'https://github.example.test','encrypted-token','owner')`, uuid.New(), workspaceID)
 	require.NoError(t, err)
 
 	// 000060 adds the nullable organization column; existing rows stay NULL.

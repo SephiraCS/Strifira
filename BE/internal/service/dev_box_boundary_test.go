@@ -100,7 +100,7 @@ func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
 		{`INSERT INTO teams(id,workspace_id,name,key) VALUES($1,$2,'Result team','BOX')`, []any{teamID, workspaceID}},
 		{`INSERT INTO team_statuses(id,team_id,name,slug,category) VALUES($1,$2,'Todo','todo','unstarted')`, []any{statusID, teamID}},
 		{`INSERT INTO issues(id,workspace_id,team_id,number,identifier_text,title,creator_id,status_id) VALUES($1,$2,$3,1,'BOX-1','Boundary test',$4,$5)`, []any{issueID, workspaceID, teamID, userID, statusID}},
-		{`INSERT INTO forgejo_repos(id,workspace_id,forgejo_repo_id,full_name,instance_url) VALUES($1,$2,1,$3,'https://forgejo.test')`, []any{repoID, workspaceID, "tests/" + suffix}},
+		{`INSERT INTO github_repos(id,workspace_id,github_repo_id,full_name,instance_url) VALUES($1,$2,1,$3,'https://github.test')`, []any{repoID, workspaceID, "tests/" + suffix}},
 	} {
 		_, err := db.ExecContext(t.Context(), statement.query, statement.args...)
 		require.NoError(t, err)
@@ -111,8 +111,8 @@ func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
 	svc := NewDevBoxService(store, nil, nil, nil)
 	createJob := func() *domain.DevBoxJob {
 		jobID := uuid.New()
-		job := &domain.DevBoxJob{ID: jobID, WorkspaceID: workspaceID, BoxID: box.ID, RequestedByUserID: userID, IssueID: issueID, IssueIdentifier: "BOX-1", ForgejoRepoID: repoID,
-			Provider: "codex", Prompt: "Boundary test", RepositoryURL: "https://forgejo.test/tests/repo.git", RepositoryFullName: "tests/repo", BaseBranch: "main", WorkingBranch: "ku/BOX-1-" + jobID.String(), MaxRuntimeSeconds: 300}
+		job := &domain.DevBoxJob{ID: jobID, WorkspaceID: workspaceID, BoxID: box.ID, RequestedByUserID: userID, IssueID: issueID, IssueIdentifier: "BOX-1", GitHubRepoID: repoID,
+			Provider: "codex", Prompt: "Boundary test", RepositoryURL: "https://github.test/tests/repo.git", RepositoryFullName: "tests/repo", BaseBranch: "main", WorkingBranch: "ku/BOX-1-" + jobID.String(), MaxRuntimeSeconds: 300}
 		require.NoError(t, store.CreateJob(t.Context(), job))
 		return job
 	}

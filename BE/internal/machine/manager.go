@@ -18,7 +18,7 @@ import (
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/repository"
 	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	forgejoclient "github.com/ku/ku-backend/pkg/forgejo"
+	githubclient "github.com/ku/ku-backend/pkg/github"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -56,9 +56,9 @@ type ManagerStore interface {
 	CreateResourceSample(context.Context, *domain.DevMachineResourceSample) error
 	UpdateVolumeUsage(context.Context, uuid.UUID, int64) error
 	CreateGitRef(context.Context, *domain.DevMachineGitRef) error
-	GetForgejoConnection(context.Context, uuid.UUID) (*domain.ForgejoConnection, error)
-	GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.ForgejoWorkspaceDisable, error)
-	GetLinkedRepositoryByFullName(context.Context, uuid.UUID, string) (*domain.ForgejoRepoModel, error)
+	GetGitHubConnection(context.Context, uuid.UUID) (*domain.GitHubConnection, error)
+	GetWorkspaceDisable(context.Context, uuid.UUID) (*domain.GitHubWorkspaceDisable, error)
+	GetLinkedRepositoryByFullName(context.Context, uuid.UUID, string) (*domain.GitHubRepoModel, error)
 	GetCheckoutInternal(context.Context, uuid.UUID) (*domain.DevMachineCheckout, error)
 	UpdateCheckoutState(context.Context, uuid.UUID, string, *string) error
 	GetTerminalSessionInternal(context.Context, uuid.UUID) (*domain.DevMachineTerminalSession, error)
@@ -80,16 +80,16 @@ const gatewayAccessLogRetention = 90 * 24 * time.Hour
 
 const gatewayAccessLogPurgeBatch = 1000
 
-// forgejoAPI performs the remote git operations Dev Machines need. It is
-// implemented by a stateless adapter over pkg/forgejo so the instance URL and
+// githubAPI performs the remote git operations Dev Machines need. It is
+// implemented by a stateless adapter over pkg/github so the instance URL and
 // token can come from the workspace connection or global env per call.
-type forgejoAPI interface {
-	CreatePullRequest(instanceURL, token, owner, repository, title, head, base, body string) (*forgejoclient.PullRequest, error)
+type githubAPI interface {
+	CreatePullRequest(instanceURL, token, owner, repository, title, head, base, body string) (*githubclient.PullRequest, error)
 }
 
-// GlobalForgejoCredentials is the env-provided shared instance connection
+// GlobalGitHubCredentials is the env-provided shared instance connection
 // (nil when machines must use per-workspace connections).
-type GlobalForgejoCredentials struct {
+type GlobalGitHubCredentials struct {
 	URL   string
 	Token string
 }
@@ -98,10 +98,10 @@ type Manager struct {
 	store         ManagerStore
 	runtime       Runtime
 	agents        *agent.Registry
-	forgejo       forgejoAPI
-	globalForgejo *GlobalForgejoCredentials
+	github        githubAPI
+	globalGitHub  *GlobalGitHubCredentials
 	encryptionKey []byte
-	forgejoKey    []byte
+	githubKey     []byte
 	owner         string
 	pollInterval  time.Duration
 
@@ -125,10 +125,10 @@ func (e *terminalOperationError) Error() string {
 	return e.code + ": " + e.message
 }
 
-func NewManager(store ManagerStore, runtime Runtime, agents *agent.Registry, forgejo forgejoAPI, globalForgejo *GlobalForgejoCredentials, encryptionKey, forgejoKey []byte, owner string) *Manager {
+func NewManager(store ManagerStore, runtime Runtime, agents *agent.Registry, github githubAPI, globalGitHub *GlobalGitHubCredentials, encryptionKey, githubKey []byte, owner string) *Manager {
 	return &Manager{
-		store: store, runtime: runtime, agents: agents, forgejo: forgejo, globalForgejo: globalForgejo,
-		encryptionKey: encryptionKey, forgejoKey: forgejoKey, owner: owner, pollInterval: time.Second,
+		store: store, runtime: runtime, agents: agents, github: github, globalGitHub: globalGitHub,
+		encryptionKey: encryptionKey, githubKey: githubKey, owner: owner, pollInterval: time.Second,
 		operationSlots: make(chan struct{}, 8),
 		activeRuns:     make(map[uuid.UUID]map[uuid.UUID]context.CancelFunc),
 	}
@@ -441,9 +441,9 @@ func (m *Manager) processOperation(ctx context.Context, operation *domain.DevMac
 		if err := m.store.UpdateCheckoutState(ctx, checkout.ID, "preparing", nil); err != nil {
 			return err
 		}
-		instanceURL, token, err := m.forgejoCredential(ctx, machine, checkout.RepositoryFullName)
+		instanceURL, token, err := m.githubCredential(ctx, machine, checkout.RepositoryFullName)
 		if err != nil {
-			return fmt.Errorf("forgejo_token_failed: %w", err)
+			return fmt.Errorf("github_token_failed: %w", err)
 		}
 		// A saved checkout URL may be stale; credentials only go to the linked instance.
 		checkout.RepositoryURL = strings.TrimRight(instanceURL, "/") + "/" + checkout.RepositoryFullName
@@ -730,7 +730,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 		allowedSecretSet[name] = true
 	}
 	for _, envVar := range envVars {
-		if envVar.Name == "FORGEJO_TOKEN" || envVar.Name == "GITHUB_TOKEN" || strings.HasPrefix(envVar.Name, "KU_") {
+		if envVar.Name == "GITHUB_TOKEN" || strings.HasPrefix(envVar.Name, "KU_") {
 			continue
 		}
 		if !allowedSecretSet[envVar.Name] {
@@ -811,7 +811,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 			result.PullRequestURL = safeURL
 		} else {
 			result.PullRequestURL = ""
-			result.RiskNotes = append(result.RiskNotes, "Agent-reported pull request URL was ignored because it did not match the selected Forgejo repository.")
+			result.RiskNotes = append(result.RiskNotes, "Agent-reported pull request URL was ignored because it did not match the selected GitHub repository.")
 		}
 	}
 	currentRun, currentErr := m.store.GetAgentRunInternal(ctx, run.ID)
@@ -853,8 +853,8 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 		run.Status = domain.DevMachineAgentRunStatusCancelled
 	}
 	if run.Status == domain.DevMachineAgentRunStatusSucceeded && run.OpenPullRequest && result.Branch != "" {
-		instanceURL, freshToken, prErr := m.forgejoCredential(ctx, machine, checkoutRepositoryFullName(machine, checkout))
-		var pullRequest *forgejoclient.PullRequest
+		instanceURL, freshToken, prErr := m.githubCredential(ctx, machine, checkoutRepositoryFullName(machine, checkout))
+		var pullRequest *githubclient.PullRequest
 		if prErr == nil {
 			repoOwner, repoName, baseBranch, workingBranch := machine.RepoOwner, machine.RepoName, machine.BaseBranch, machine.WorkingBranch
 			if checkout != nil {
@@ -864,7 +864,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 				}
 				baseBranch, workingBranch = checkout.BaseBranch, checkout.WorkingBranch
 			}
-			pullRequest, prErr = m.forgejo.CreatePullRequest(instanceURL, freshToken, repoOwner, repoName,
+			pullRequest, prErr = m.github.CreatePullRequest(instanceURL, freshToken, repoOwner, repoName,
 				fmt.Sprintf("Ku agent run for %s", workingBranch), result.Branch, baseBranch, result.Summary)
 		}
 		if prErr != nil {
@@ -873,9 +873,9 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 			result.Status = "failed"
 			run.Status = domain.DevMachineAgentRunStatusFailed
 			executionErr = errors.New(message)
-		} else if safeURL, ok := safeForgejoPullRequestURL(pullRequest.HTMLURL, repositoryFullName, instanceURL); !ok {
+		} else if safeURL, ok := safeGitHubPullRequestURL(pullRequest.HTMLURL, repositoryFullName, instanceURL); !ok {
 			result.PullRequestURL = ""
-			result.RiskNotes = append(result.RiskNotes, "Created pull request URL was ignored because Forgejo returned an unexpected repository URL.")
+			result.RiskNotes = append(result.RiskNotes, "Created pull request URL was ignored because GitHub returned an unexpected repository URL.")
 		} else {
 			result.PullRequestURL = safeURL
 			_ = m.persistGitRef(ctx, machine, checkout, run, "pull_request", result.Branch, "", &pullRequest.Number, safeURL)
@@ -1352,7 +1352,7 @@ func errorCode(err error) string {
 // Precedence: a workspace disable marker pauses the integration (no
 // credentials), then the per-workspace connection row, then the global env
 // configuration.
-func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain.DevMachine, repositoryFullName string) (string, *domain.ForgejoConnection, error) {
+func (m *Manager) githubRepositoryInstance(ctx context.Context, machine *domain.DevMachine, repositoryFullName string) (string, *domain.GitHubConnection, error) {
 	if repositoryFullName == "" {
 		repositoryFullName = checkoutRepositoryFullName(machine, nil)
 	}
@@ -1367,9 +1367,9 @@ func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain
 	if linked == nil {
 		return "", nil, sql.ErrNoRows
 	}
-	linkedInstance, err := forgejoclient.NormalizeInstanceURL(linked.InstanceURL)
+	linkedInstance, err := githubclient.NormalizeInstanceURL(linked.InstanceURL)
 	if err != nil {
-		return "", nil, errors.New("linked repository has an invalid Forgejo instance")
+		return "", nil, errors.New("linked repository has an invalid GitHub instance")
 	}
 	disabled, err := m.store.GetWorkspaceDisable(ctx, machine.WorkspaceID)
 	if err != nil {
@@ -1378,21 +1378,21 @@ func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain
 	if disabled != nil {
 		return "", nil, sql.ErrNoRows
 	}
-	conn, err := m.store.GetForgejoConnection(ctx, machine.WorkspaceID)
+	conn, err := m.store.GetGitHubConnection(ctx, machine.WorkspaceID)
 	if err != nil {
 		return "", nil, err
 	}
 	if conn != nil {
-		instanceURL, err := forgejoclient.NormalizeInstanceURL(conn.InstanceURL)
+		instanceURL, err := githubclient.NormalizeInstanceURL(conn.InstanceURL)
 		if err != nil || instanceURL != linkedInstance {
-			return "", nil, errors.New("selected repository belongs to a different Forgejo instance")
+			return "", nil, errors.New("selected repository belongs to a different GitHub instance")
 		}
 		return instanceURL, conn, nil
 	}
-	if m.globalForgejo != nil {
-		instanceURL, err := forgejoclient.NormalizeInstanceURL(m.globalForgejo.URL)
+	if m.globalGitHub != nil {
+		instanceURL, err := githubclient.NormalizeInstanceURL(m.globalGitHub.URL)
 		if err != nil || instanceURL != linkedInstance {
-			return "", nil, errors.New("selected repository belongs to a different Forgejo instance")
+			return "", nil, errors.New("selected repository belongs to a different GitHub instance")
 		}
 		return instanceURL, nil, nil
 	}
@@ -1401,24 +1401,24 @@ func (m *Manager) forgejoRepositoryInstance(ctx context.Context, machine *domain
 
 // Only authenticated backend Git helpers receive the credential. Repository
 // authority must be linked to this workspace before any token is decrypted.
-func (m *Manager) forgejoCredential(ctx context.Context, machine *domain.DevMachine, repositoryFullName string) (string, string, error) {
-	instanceURL, conn, err := m.forgejoRepositoryInstance(ctx, machine, repositoryFullName)
+func (m *Manager) githubCredential(ctx context.Context, machine *domain.DevMachine, repositoryFullName string) (string, string, error) {
+	instanceURL, conn, err := m.githubRepositoryInstance(ctx, machine, repositoryFullName)
 	if err != nil {
 		return "", "", err
 	}
 	if conn == nil {
-		m.recordCredential(ctx, machine.ID, m.globalForgejo.Token)
-		return instanceURL, m.globalForgejo.Token, nil
+		m.recordCredential(ctx, machine.ID, m.globalGitHub.Token)
+		return instanceURL, m.globalGitHub.Token, nil
 	}
-	if len(m.forgejoKey) == 0 {
+	if len(m.githubKey) == 0 {
 		return "", "", sql.ErrNoRows
 	}
-	token, err := cryptoutil.Decrypt(conn.Token, m.forgejoKey)
+	token, err := cryptoutil.Decrypt(conn.Token, m.githubKey)
 	if err != nil {
-		return "", "", fmt.Errorf("forgejo_token_decryption_failed: %w", err)
+		return "", "", fmt.Errorf("github_token_decryption_failed: %w", err)
 	}
 	if token == "" {
-		return "", "", errors.New("empty Forgejo token")
+		return "", "", errors.New("empty GitHub token")
 	}
 	m.recordCredential(ctx, machine.ID, token)
 	return instanceURL, token, nil
@@ -1428,15 +1428,15 @@ func (m *Manager) forgejoCredential(ctx context.Context, machine *domain.DevMach
 // sync with the token it uses; failures never block the operation.
 func (m *Manager) recordCredential(ctx context.Context, machineID uuid.UUID, token string) {
 	if err := m.registerRuntimeCredential(ctx, machineID, token); err != nil {
-		log.WithError(err).WithField("machine_id", machineID).Warn("failed to record Forgejo runtime credential")
+		log.WithError(err).WithField("machine_id", machineID).Warn("failed to record GitHub runtime credential")
 	}
 }
 
-// ForgejoAdapter is the stateless forgejoAPI implementation.
-type ForgejoAdapter struct{}
+// GitHubAdapter is the stateless githubAPI implementation.
+type GitHubAdapter struct{}
 
-func (ForgejoAdapter) CreatePullRequest(instanceURL, token, owner, repository, title, head, base, body string) (*forgejoclient.PullRequest, error) {
-	return forgejoclient.NewClient(instanceURL, token).CreatePullRequest(owner, repository, title, head, base, body)
+func (GitHubAdapter) CreatePullRequest(instanceURL, token, owner, repository, title, head, base, body string) (*githubclient.PullRequest, error) {
+	return githubclient.NewClient(instanceURL, token).CreatePullRequest(owner, repository, title, head, base, body)
 }
 
 func (m *Manager) registerRuntimeCredential(ctx context.Context, machineID uuid.UUID, token string) error {
@@ -1448,11 +1448,11 @@ func (m *Manager) registerRuntimeCredential(ctx context.Context, machineID uuid.
 	return m.store.UpsertRuntimeCredential(ctx, &domain.DevMachineRuntimeCredential{
 		ID: uuid.New(), MachineID: machineID,
 		Scope:                domain.DevMachineRuntimeCredentialScopeMachine,
-		CredentialType:       domain.DevMachineRuntimeCredentialTypeForgejoToken,
+		CredentialType:       domain.DevMachineRuntimeCredentialTypeGitHubToken,
 		FingerprintSHA256:    hex.EncodeToString(fingerprint[:]),
 		EncryptedValue:       encrypted,
 		EncryptionKeyVersion: 1,
-		// Forgejo tokens do not expose an expiry; re-registered on each use.
+		// GitHub tokens do not expose an expiry; re-registered on each use.
 		ExpiresAt: time.Now().Add(30 * 24 * time.Hour).UTC(),
 	})
 }

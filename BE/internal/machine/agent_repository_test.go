@@ -101,7 +101,7 @@ func newProtectedRepositoryFixture(t *testing.T) *protectedRepositoryFixture {
 			return
 		}
 		user, password, ok := r.BasicAuth()
-		if !ok || user != "oauth2" || password != protectedFixtureToken {
+		if !ok || user != "x-access-token" || password != protectedFixtureToken {
 			w.Header().Set("WWW-Authenticate", `Basic realm="fixture"`)
 			w.WriteHeader(http.StatusUnauthorized)
 			return

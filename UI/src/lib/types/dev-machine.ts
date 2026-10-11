@@ -50,7 +50,7 @@ export interface DevMachine {
 	desired_status: DevMachineStatus;
 	generation: number;
 	repo_url?: string;
-	repo_provider?: 'forgejo';
+	repo_provider?: 'github';
 	repo_owner?: string;
 	repo_name?: string;
 	base_branch?: string;
@@ -188,7 +188,7 @@ export interface CreateDevMachineInput {
 	name?: string;
 	issue_id?: string;
 	project_id?: string;
-	repo?: { provider: 'forgejo'; owner: string; name: string; url: string };
+	repo?: { provider: 'github'; owner: string; name: string; url: string };
 	base_branch?: string;
 	working_branch?: string;
 	size: 'small' | 'medium' | 'large';
@@ -241,7 +241,7 @@ export interface DevMachineCheckout {
 	workspace_id: string;
 	machine_id: string;
 	issue_id: string;
-	forgejo_repo_id: string;
+	github_repo_id: string;
 	repository_full_name: string;
 	base_branch: string;
 	working_branch: string;
@@ -273,7 +273,7 @@ export interface DevMachineScopeSetting {
 	team_id?: string;
 	project_id?: string;
 	issue_id?: string;
-	forgejo_repo_id?: string;
+	github_repo_id?: string;
 	base_branch?: string;
 	environment_id?: string;
 	created_at?: string;

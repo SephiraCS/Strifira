@@ -23,8 +23,8 @@ func registerManageTools(s *mcp.Server, deps Deps) {
 	registerWorkspaceTools(s, deps)
 	registerEntityTools(s, deps)
 	registerIssueExtraTools(s, deps)
-	registerForgejoTools(s, deps)
-	registerForgejoActionsTools(s, deps)
+	registerGitHubTools(s, deps)
+	registerGitHubActionsTools(s, deps)
 	registerDevBoxTools(s, deps)
 	registerMiscTools(s, deps)
 }

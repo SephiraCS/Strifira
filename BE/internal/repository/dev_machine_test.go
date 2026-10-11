@@ -233,7 +233,7 @@ func TestUpsertRuntimeCredentialQueryUsesMachineFingerprintConflict(t *testing.T
 
 	err := repo.UpsertRuntimeCredential(context.Background(), &domain.DevMachineRuntimeCredential{
 		ID: uuid.New(), MachineID: machineID, Scope: domain.DevMachineRuntimeCredentialScopeMachine,
-		CredentialType: domain.DevMachineRuntimeCredentialTypeForgejoToken, FingerprintSHA256: fingerprint,
+		CredentialType: domain.DevMachineRuntimeCredentialTypeGitHubToken, FingerprintSHA256: fingerprint,
 		EncryptedValue: "encrypted-runtime-token", EncryptionKeyVersion: 1, ExpiresAt: now.Add(time.Hour),
 	})
 
@@ -246,7 +246,7 @@ func TestUpsertRuntimeCredentialQueryUsesMachineFingerprintConflict(t *testing.T
 	require.Len(t, args, 8)
 	require.Equal(t, machineID.String(), args[1].Value)
 	require.Equal(t, domain.DevMachineRuntimeCredentialScopeMachine, args[2].Value)
-	require.Equal(t, domain.DevMachineRuntimeCredentialTypeForgejoToken, args[3].Value)
+	require.Equal(t, domain.DevMachineRuntimeCredentialTypeGitHubToken, args[3].Value)
 	require.Equal(t, fingerprint, args[4].Value)
 	require.Equal(t, "encrypted-runtime-token", args[5].Value)
 }
@@ -261,7 +261,7 @@ func TestListRuntimeCredentialsQueryReturnsOnlyUnexpired(t *testing.T) {
 	}
 	conn.queryValues = []driver.Value{
 		uuid.New().String(), machineID.String(), domain.DevMachineRuntimeCredentialScopeMachine,
-		domain.DevMachineRuntimeCredentialTypeForgejoToken, strings.Repeat("b", 64), "encrypted", int64(1), now.Add(time.Hour), now, now,
+		domain.DevMachineRuntimeCredentialTypeGitHubToken, strings.Repeat("b", 64), "encrypted", int64(1), now.Add(time.Hour), now, now,
 	}
 
 	credentials, err := repo.ListRuntimeCredentials(context.Background(), machineID)
@@ -1437,8 +1437,8 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 	_, err = db.Exec(`INSERT INTO team_statuses (id,team_id,name,slug,category,is_default)
 		VALUES ($1,$2,'Todo','todo','unstarted',TRUE)`, statusID, teamID)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO forgejo_repos
-		(id,workspace_id,forgejo_repo_id,full_name,instance_url,default_branch)
+	_, err = db.Exec(`INSERT INTO github_repos
+		(id,workspace_id,github_repo_id,full_name,instance_url,default_branch)
 		VALUES ($1,$2,$3,'ku/checkout-test','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
 	require.NoError(t, err)
 
@@ -1453,7 +1453,7 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 			issueID, fixture.workspaceID, teamID, issueNumber, identifier, fixture.userID, statusID)
 		require.NoError(t, insertErr)
 		_, insertErr = db.Exec(`INSERT INTO dev_machine_checkouts
-			(id,workspace_id,machine_id,issue_id,forgejo_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
+			(id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
 			VALUES ($1,$2,$3,$4,$5,'ku/checkout-test','main',$6,$7,$8)`,
 			checkoutID, fixture.workspaceID, machineID, issueID, repositoryID,
 			"ku/"+strings.ToLower(identifier), "/workspace/tasks/"+strings.ToLower(identifier), status)
@@ -1519,7 +1519,7 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 
 	retryCheckout := &domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: fixture.workspaceID, MachineID: machineID, IssueID: missingIssueID,
-		ForgejoRepoID: repositoryID, RepositoryFullName: "ku/checkout-test", BaseBranch: "main",
+		GitHubRepoID: repositoryID, RepositoryFullName: "ku/checkout-test", BaseBranch: "main",
 		WorkingBranch: "ku/chk-1", WorkspacePath: "/workspace/tasks/chk-1", Status: "queued",
 	}
 	retryOperation := &domain.DevMachineOperation{

@@ -203,10 +203,10 @@ func (r *DevBoxRepository) CreateJob(ctx context.Context, job *domain.DevBoxJob)
 		job.AcceptanceCriteria = json.RawMessage(`[]`)
 	}
 	job.Status = domain.DevBoxJobQueued
-	err = tx.QueryRowContext(ctx, `INSERT INTO dev_box_jobs (id,workspace_id,box_id,requested_by_user_id,issue_id,issue_identifier,forgejo_repo_id,
+	err = tx.QueryRowContext(ctx, `INSERT INTO dev_box_jobs (id,workspace_id,box_id,requested_by_user_id,issue_id,issue_identifier,github_repo_id,
 		provider,prompt,repository_url,repository_full_name,base_branch,working_branch,test_command,acceptance_criteria,max_runtime_seconds,status)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING created_at,updated_at`,
-		job.ID, job.WorkspaceID, job.BoxID, job.RequestedByUserID, job.IssueID, job.IssueIdentifier, job.ForgejoRepoID,
+		job.ID, job.WorkspaceID, job.BoxID, job.RequestedByUserID, job.IssueID, job.IssueIdentifier, job.GitHubRepoID,
 		job.Provider, job.Prompt, job.RepositoryURL, job.RepositoryFullName, job.BaseBranch, job.WorkingBranch, job.TestCommand, job.AcceptanceCriteria, job.MaxRuntimeSeconds, job.Status).Scan(&job.CreatedAt, &job.UpdatedAt)
 	if err != nil {
 		return devBoxError(err)

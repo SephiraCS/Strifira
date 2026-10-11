@@ -98,7 +98,7 @@ func TestDevMachineMigrationRoundTripAndTenantConstraints(t *testing.T) {
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM workspaces WHERE id IN ($1,$2)`, fixture.workspaceA, fixture.workspaceB).Scan(&workspaceCount))
 	require.Equal(t, 2, workspaceCount)
 	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM pg_constraint WHERE conname IN (
-		'teams_workspace_id_id_key','projects_workspace_id_id_key','issues_workspace_id_id_key','forgejo_repos_workspace_id_id_key'
+		'teams_workspace_id_id_key','projects_workspace_id_id_key','issues_workspace_id_id_key','github_repos_workspace_id_id_key'
 	)`).Scan(&retainedConstraintCount))
 	require.Zero(t, retainedConstraintCount)
 

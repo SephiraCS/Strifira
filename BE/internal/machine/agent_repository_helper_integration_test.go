@@ -171,7 +171,7 @@ test -f /repositories/helper-write`, "")
 		output, err := runtime.runCheckoutHelper(ctx, machine, services, command)
 		require.NoError(t, err, output)
 		output, err = runtime.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(`set -eu
-test -z "${FORGEJO_TOKEN:-}"
+test -z "${GITHUB_TOKEN:-}"
 test "$(wc -l < /proc/net/route)" -eq 1
 test ! -e /sys/class/net/eth0
 if touch /repositories/checkout-cannot-write; then echo "unexpected successful forbidden operation" >&2; exit 1; fi
@@ -188,7 +188,7 @@ sha256sum /workspace/repository/.git/index`, "checkout-policy"))
 		output, err = runtime.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(`set -eu
 test "$(cat /workspace/repository/source.txt)" = 'later checkout edit'
 test ! -e /workspace/repository/.git.ku-linked-backup
-if grep -q 'FORGEJO_TOKEN\|helper-disposable-secret' /workspace/repository/.git/config; then echo "unexpected successful forbidden operation" >&2; exit 1; fi
+if grep -q 'GITHUB_TOKEN\|helper-disposable-secret' /workspace/repository/.git/config; then echo "unexpected successful forbidden operation" >&2; exit 1; fi
 sha256sum /workspace/repository/.git/index`, "checkout-preservation"))
 		require.NoError(t, err, output)
 		require.Equal(t, indexHash, output, "reinstall must preserve exact index bytes and later worktree edits")
@@ -314,7 +314,7 @@ exec sleep 420`})
 		for _, mode := range []string{"unchanged", "tracked-mutation", "attribute-masking", "nonzero"} {
 			argv := []string{"/bin/sh", "-c", `set -eu
 test "$(cat source.txt)" = verified
-test -z "${FORGEJO_TOKEN:-}"
+test -z "${GITHUB_TOKEN:-}"
 test -z "${GITHUB_TOKEN:-}"
 test -z "${ANTHROPIC_API_KEY:-}"
 test -z "${BASH_ENV:-}"
@@ -639,9 +639,9 @@ func testCredentialFreeAgentBootstrapsActualDocker(t *testing.T, ctx context.Con
 	for _, custom := range []bool{false, true} {
 		t.Run(fmt.Sprintf("credential-free-agent-custom-%t", custom), func(t *testing.T) {
 			argv, err := json.Marshal([]string{"/bin/sh", "-c", `set -eu
-test -z "${FORGEJO_TOKEN:-}"
 test -z "${GITHUB_TOKEN:-}"
-test ! -e /run/ku-secrets/FORGEJO_TOKEN
+test -z "${GITHUB_TOKEN:-}"
+test ! -e /run/ku-secrets/GITHUB_TOKEN
 test ! -e /run/ku-secrets/GITHUB_TOKEN
 test ! -e "$HOME/.ku-git-credential"
 if git config --global --get credential.helper; then exit 1; fi
@@ -662,7 +662,7 @@ printf credential-free-provider-ok
 				_, err = runtime.client.ContainerRemove(context.Background(), inspection.Container.ID, client.ContainerRemoveOptions{Force: true})
 				require.NoError(t, err)
 			})
-			execution, err := runtime.RunAgent(ctx, machine, run, provider, checkout, map[string]string{"FORGEJO_TOKEN": "blocked-publishing-fixture", "GITHUB_TOKEN": "blocked-github-fixture", "ANTHROPIC_API_KEY": "scoped-provider-fixture"})
+			execution, err := runtime.RunAgent(ctx, machine, run, provider, checkout, map[string]string{"GITHUB_TOKEN": "blocked-github-fixture", "ANTHROPIC_API_KEY": "scoped-provider-fixture"})
 			require.NoError(t, err)
 			require.Zero(t, execution.ExitCode, execution.Stderr)
 			require.Contains(t, execution.Stdout, "credential-free-provider-ok")

@@ -96,11 +96,11 @@ async function mockTeamPage(page: Page, opts: { patchStatus?: number; patchBody?
 				]
 			});
 		}
-		if (path === '/api/workspaces/test/forgejo/status') {
+		if (path === '/api/workspaces/test/github/status') {
 			return route.fulfill({ json: { connected: false, repos: [] } });
 		}
 		if (path === '/api/workspaces/test/dev-machine-scope-setting') {
-			return route.fulfill({ json: { forgejo_repo_id: null, environment_id: null } });
+			return route.fulfill({ json: { github_repo_id: null, environment_id: null } });
 		}
 		if (path === '/api/workspaces/test/dev-machine-environments') {
 			return route.fulfill({ json: [] });

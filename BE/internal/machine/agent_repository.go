@@ -46,17 +46,17 @@ repository_git() {
   git --git-dir="$repository_dir" "$@"
 }
 read_repository_credential() {
-  IFS= read -r FORGEJO_TOKEN
-  [ -n "$FORGEJO_TOKEN" ]
-  export FORGEJO_TOKEN KU_FORGEJO_HOST="$expected_host" KU_GIT_REPOSITORY="$expected_repository"
+  IFS= read -r GITHUB_TOKEN
+  [ -n "$GITHUB_TOKEN" ]
+  export GITHUB_TOKEN KU_GITHUB_HOST="$expected_host" KU_GIT_REPOSITORY="$expected_repository"
 }
 credential_helper='!f() {
 protocol=; host=; path=
 while IFS= read -r line && [ -n "$line" ]; do
   case "$line" in protocol=*) protocol=${line#protocol=} ;; host=*) host=${line#host=} ;; path=*) path=${line#path=} ;; esac
 done
-if [ "$protocol" = https ] && [ "$host" = "$KU_FORGEJO_HOST" ] && [ "${path%.git}" = "$KU_GIT_REPOSITORY" ]; then
-  printf "%s\n" username=oauth2 "password=$FORGEJO_TOKEN"
+if [ "$protocol" = https ] && [ "$host" = "$KU_GITHUB_HOST" ] && [ "${path%.git}" = "$KU_GIT_REPOSITORY" ]; then
+  printf "%s\n" username=x-access-token "password=$GITHUB_TOKEN"
 fi
 }; f'
 authenticated_git() {
@@ -106,7 +106,7 @@ else
   authenticated_git fetch --quiet --no-tags -- "$repository_url" "+refs/heads/$base_branch:refs/remotes/ku/base"
   repository_git update-ref -d refs/remotes/ku/working
 fi
-unset FORGEJO_TOKEN KU_FORGEJO_HOST KU_GIT_REPOSITORY
+unset GITHUB_TOKEN KU_GITHUB_HOST KU_GIT_REPOSITORY
 base=$(repository_git rev-parse --verify 'refs/remotes/ku/base^{commit}')
 if repository_git show-ref --verify --quiet refs/remotes/ku/working; then
   parent=$(repository_git rev-parse --verify 'refs/remotes/ku/working^{commit}')
@@ -214,7 +214,7 @@ candidate=$(repository_git rev-parse --verify "refs/ku/runs/$run_key/candidate^{
 repository_git fsck --connectivity-only --no-dangling "$candidate" > /dev/null
 read_repository_credential
 authenticated_git push --quiet -- "$repository_url" "$candidate:refs/heads/$working_branch"
-unset FORGEJO_TOKEN KU_FORGEJO_HOST KU_GIT_REPOSITORY
+unset GITHUB_TOKEN KU_GITHUB_HOST KU_GIT_REPOSITORY
 repository_git update-ref refs/remotes/ku/working "$candidate"
 `
 

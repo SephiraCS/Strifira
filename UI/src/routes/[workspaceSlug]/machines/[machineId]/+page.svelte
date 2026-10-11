@@ -38,7 +38,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
-	import { safeForgejoPullRequestUrl } from '$lib/security/forgejo-url';
+	import { safeGitHubPullRequestUrl } from '$lib/security/github-url';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
@@ -99,7 +99,7 @@
 		} else if (machine?.repo_owner && machine.repo_name) {
 			repositoryFullName = `${machine.repo_owner}/${machine.repo_name}`;
 		}
-		return safeForgejoPullRequestUrl(run.pull_request_url, repositoryFullName, machine?.repo_url ?? '');
+		return safeGitHubPullRequestUrl(run.pull_request_url, repositoryFullName, machine?.repo_url ?? '');
 	}
 
 	$effect(() => {

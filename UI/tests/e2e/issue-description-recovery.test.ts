@@ -102,7 +102,7 @@ async function mockIssue(page: Page) {
 				]
 			});
 		if (path === '/api/notifications') return route.fulfill({ json: { notifications: [], unread_count: 0 } });
-		if (path === '/api/workspaces/test/forgejo/status')
+		if (path === '/api/workspaces/test/github/status')
 			return route.fulfill({ json: { configured: false, connected: false } });
 		if (path === '/api/workspaces/test/ai-settings')
 			return route.fulfill({

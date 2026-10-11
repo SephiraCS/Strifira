@@ -80,7 +80,7 @@
 	import type { Cycle } from '$lib/types/cycle';
 	import IssueRelations from './IssueRelations.svelte';
 	import SubIssuesList from './SubIssuesList.svelte';
-	import IssueForgejoActivity from './IssueForgejoActivity.svelte';
+	import IssueGitHubActivity from './IssueGitHubActivity.svelte';
 	import { goto } from '$app/navigation';
 	import { inAppNavigation } from '$lib/features/layout/in-app-navigation.state.svelte';
 	import { sanitizeHtml } from '$lib/security/sanitize';
@@ -1972,8 +1972,8 @@
 		<div
 			class="w-full space-y-2 border-t border-[var(--app-border)] p-3 md:w-[300px] md:shrink-0 md:overflow-y-auto md:border-t-0"
 		>
-			<!-- Forgejo code activity -->
-			<IssueForgejoActivity {slug} identifier={issue.identifier} issueId={issue.id} />
+			<!-- GitHub code activity -->
+			<IssueGitHubActivity {slug} identifier={issue.identifier} issueId={issue.id} />
 
 			<!-- Details card -->
 			<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">

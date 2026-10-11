@@ -62,7 +62,7 @@ type DevBoxJob struct {
 	RequestedByUserID  uuid.UUID        `json:"requested_by_user_id" db:"requested_by_user_id"`
 	IssueID            uuid.UUID        `json:"issue_id" db:"issue_id"`
 	IssueIdentifier    string           `json:"issue_identifier" db:"issue_identifier"`
-	ForgejoRepoID      uuid.UUID        `json:"forgejo_repo_id" db:"forgejo_repo_id"`
+	GitHubRepoID       uuid.UUID        `json:"github_repo_id" db:"github_repo_id"`
 	Provider           string           `json:"provider" db:"provider"`
 	Prompt             string           `json:"prompt" db:"prompt"`
 	RepositoryURL      string           `json:"repository_url" db:"repository_url"`

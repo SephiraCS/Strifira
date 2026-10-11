@@ -20,7 +20,7 @@ func defaultRepositoryCheckout(machine *domain.DevMachine, instanceURL string) (
 		BaseBranch:         machine.BaseBranch, WorkingBranch: machine.WorkingBranch, WorkspacePath: "/workspace/repository"}
 	checkout.RepositoryURL = strings.TrimRight(instanceURL, "/") + "/" + checkout.RepositoryFullName
 	if machine.RepoURL == "" || strings.TrimSuffix(machine.RepoURL, ".git") != checkout.RepositoryURL {
-		return nil, errors.New("default repository no longer matches its original Forgejo URL; use a new machine for a different repository")
+		return nil, errors.New("default repository no longer matches its original GitHub URL; use a new machine for a different repository")
 	}
 	if _, _, err := protectedCheckoutRepository(checkout); err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ func (m *Manager) defaultRepositoryProvision(ctx context.Context, machine *domai
 	if machine.RepoOwner == "" && machine.RepoName == "" {
 		return nil, nil
 	}
-	instanceURL, token, err := m.forgejoCredential(ctx, machine, checkoutRepositoryFullName(machine, nil))
+	instanceURL, token, err := m.githubCredential(ctx, machine, checkoutRepositoryFullName(machine, nil))
 	if err != nil {
 		return nil, err
 	}

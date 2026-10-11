@@ -32,8 +32,8 @@ func TestAgentRequiredTestsControlRunSuccessAndPublication(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			manager, store, runtime, run := verificationFixture(t)
 			run.PushBranch = true
-			manager.globalForgejo = &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}
-			store.linkedRepository = &domain.ForgejoRepoModel{InstanceURL: "https://git.example.com"}
+			manager.globalGitHub = &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}
+			store.linkedRepository = &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}
 			command := json.RawMessage(`["go","test","./..."]`)
 			run.TestCommand = &command
 			runtime.workspaceExecution, runtime.workspaceCommandErr = test.execution, test.err
@@ -47,7 +47,7 @@ func TestAgentRequiredTestsControlRunSuccessAndPublication(t *testing.T) {
 				require.Equal(t, "failed", store.completedRun.TestStatus)
 				require.Zero(t, runtime.publishedBranches)
 			}
-			require.NotContains(t, runtime.agentSecrets, "FORGEJO_TOKEN")
+			require.NotContains(t, runtime.agentSecrets, "GITHUB_TOKEN")
 		})
 	}
 }
@@ -73,22 +73,22 @@ func TestAgentVerificationBlocksForbiddenChangesAndUnexpectedBranchBeforePublish
 			require.Contains(t, *store.completedRun.ErrorMessage, test.wantError)
 			require.Zero(t, runtime.publishedBranches)
 			require.Empty(t, runtime.workspaceCommands, "authorization checks must precede executing candidate tests")
-			require.NotContains(t, runtime.agentSecrets, "FORGEJO_TOKEN")
+			require.NotContains(t, runtime.agentSecrets, "GITHUB_TOKEN")
 		})
 	}
 }
 
 func TestAgentPublishesOnlyVerifiedSelectedBranch(t *testing.T) {
 	manager, store, runtime, run := verificationFixture(t)
-	manager.globalForgejo = &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}
-	store.linkedRepository = &domain.ForgejoRepoModel{InstanceURL: "https://git.example.com"}
+	manager.globalGitHub = &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}
+	store.linkedRepository = &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}
 	run.PushBranch = true
 	run.ForbiddenPaths = json.RawMessage(`[".env","secrets/"]`)
 	runtime.candidate.GitState = GitState{Branch: "ku/task", ChangedFiles: []string{"src/main.go"}}
 	require.NoError(t, manager.runAgent(t.Context(), store.machine, &domain.DevMachineOperation{AgentRunID: &run.ID, Generation: 1}))
 	require.Equal(t, domain.DevMachineAgentRunStatusSucceeded, store.completedRun.Status)
 	require.Equal(t, 1, runtime.publishedBranches)
-	require.NotContains(t, runtime.agentSecrets, "FORGEJO_TOKEN", "publishing credentials must never be passed to a model process")
+	require.NotContains(t, runtime.agentSecrets, "GITHUB_TOKEN", "publishing credentials must never be passed to a model process")
 	require.Equal(t, "not_run", store.completedRun.TestStatus)
 }
 
@@ -117,7 +117,7 @@ func TestAgentTestsAndPublishesRetainedCandidateDespiteLaterSourceChanges(t *tes
 	require.JSONEq(t, `["`+retained.Commit+`"]`, string(store.completedRun.Commits))
 	require.JSONEq(t, `["src/main.go"]`, string(store.completedRun.ChangedFiles))
 	require.Equal(t, "/workspace/repository", runtime.agentCheckout.WorkspacePath)
-	require.NotContains(t, runtime.agentSecrets, "FORGEJO_TOKEN")
+	require.NotContains(t, runtime.agentSecrets, "GITHUB_TOKEN")
 }
 
 func TestAgentAttestationRefusalPreservesActualLogsAndBlocksPublication(t *testing.T) {
@@ -194,9 +194,9 @@ func TestAgentTraceIsPersistedWhileProviderIsRunningWithoutDuplicateFinalLogs(t 
 
 func TestRequestedPullRequestFailureIsNotReportedAsRunSuccess(t *testing.T) {
 	manager, store, runtime, run := verificationFixture(t)
-	manager.globalForgejo = &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}
-	manager.forgejo = forgejoAPIFake{pullRequestErr: errors.New("Forgejo unavailable")}
-	store.linkedRepository = &domain.ForgejoRepoModel{InstanceURL: "https://git.example.com"}
+	manager.globalGitHub = &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}
+	manager.github = githubAPIFake{pullRequestErr: errors.New("GitHub unavailable")}
+	store.linkedRepository = &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}
 	run.PushBranch, run.OpenPullRequest = true, true
 	require.NoError(t, manager.runAgent(t.Context(), store.machine, &domain.DevMachineOperation{AgentRunID: &run.ID, Generation: 1}))
 	require.Equal(t, 1, runtime.publishedBranches)
@@ -280,8 +280,8 @@ func verificationFixture(t *testing.T) (*Manager, *managerStoreFake, *runtimeFak
 	run := &domain.DevMachineAgentRun{ID: runID, MachineID: machineID, WorkspaceID: workspaceID, ProviderID: "opencode", Mode: "autonomous", Status: domain.DevMachineAgentRunStatusQueued, MaxRuntimeSeconds: 30}
 	store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, DesiredStatus: domain.DevMachineStatusRunning, Generation: 1, WorkingBranch: "ku/task", BaseBranch: "main", RepoOwner: "octo", RepoName: "repo", RepoURL: "https://git.example.com/octo/repo"}, agentRun: run, provider: &domain.DevMachineAgentProvider{ProviderID: "opencode", ImageRef: "ku/opencode:test"}}
 	runtime := &runtimeFake{agentExecution: &AgentExecution{ContainerID: "test-agent", Stdout: `{"type":"text","part":{"type":"text","text":"Completed requested changes"}}`}, candidate: RepositoryCandidate{GitState: GitState{Branch: "ku/task"}, Commit: strings.Repeat("a", 40), BaseCommit: strings.Repeat("b", 40), SourceCommit: strings.Repeat("c", 40), SourceIndexHash: strings.Repeat("d", 64)}}
-	store.linkedRepository = &domain.ForgejoRepoModel{InstanceURL: "https://git.example.com"}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), forgejoAPIFake{}, &GlobalForgejoCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}, make([]byte, 32), make([]byte, 32), "test")
+	store.linkedRepository = &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}, make([]byte, 32), make([]byte, 32), "test")
 	return manager, store, runtime, run
 }
 

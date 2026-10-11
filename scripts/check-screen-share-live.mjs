@@ -37,7 +37,7 @@ if (
   );
 }
 
-// Keep toolchain/runtime settings, never inherit Ku/Forgejo/cloud settings.
+// Keep toolchain/runtime settings, never inherit Ku/GitHub/cloud settings.
 const toolEnv = Object.fromEntries(
   [
     "PATH",

@@ -97,7 +97,7 @@ func newDevBoxFixture(t *testing.T, db *sqlx.DB) devBoxFixture {
 		{`INSERT INTO teams(id,workspace_id,name,key) VALUES($1,$2,'Worker team','BOX')`, []any{teamID, f.workspaceID}},
 		{`INSERT INTO team_statuses(id,team_id,name,slug,category) VALUES($1,$2,'Todo','todo','unstarted')`, []any{statusID, teamID}},
 		{`INSERT INTO issues(id,workspace_id,team_id,number,identifier_text,title,creator_id,status_id) VALUES($1,$2,$3,1,'BOX-1','Implement a change',$4,$5)`, []any{f.issueID, f.workspaceID, teamID, f.userID, statusID}},
-		{`INSERT INTO forgejo_repos(id,workspace_id,forgejo_repo_id,full_name,instance_url) VALUES($1,$2,1,$3,'https://forgejo.test')`, []any{f.repoID, f.workspaceID, "tests/" + suffix}},
+		{`INSERT INTO github_repos(id,workspace_id,github_repo_id,full_name,instance_url) VALUES($1,$2,1,$3,'https://github.test')`, []any{f.repoID, f.workspaceID, "tests/" + suffix}},
 	} {
 		_, err := db.ExecContext(t.Context(), stmt.query, stmt.args...)
 		require.NoError(t, err)
@@ -108,8 +108,8 @@ func newDevBoxFixture(t *testing.T, db *sqlx.DB) devBoxFixture {
 }
 func (f devBoxFixture) job() *domain.DevBoxJob {
 	id := uuid.New()
-	return &domain.DevBoxJob{ID: id, WorkspaceID: f.workspaceID, BoxID: f.box.ID, RequestedByUserID: f.userID, IssueID: f.issueID, IssueIdentifier: "BOX-1", ForgejoRepoID: f.repoID,
-		Provider: "codex", Prompt: "Implement a real change and test it", RepositoryURL: "https://forgejo.test/test/repo.git", RepositoryFullName: "test/repo", BaseBranch: "main", WorkingBranch: "ku/BOX-1-" + id.String(), MaxRuntimeSeconds: 300}
+	return &domain.DevBoxJob{ID: id, WorkspaceID: f.workspaceID, BoxID: f.box.ID, RequestedByUserID: f.userID, IssueID: f.issueID, IssueIdentifier: "BOX-1", GitHubRepoID: f.repoID,
+		Provider: "codex", Prompt: "Implement a real change and test it", RepositoryURL: "https://github.test/test/repo.git", RepositoryFullName: "test/repo", BaseBranch: "main", WorkingBranch: "ku/BOX-1-" + id.String(), MaxRuntimeSeconds: 300}
 }
 func (f devBoxFixture) runningJob(t *testing.T) (*domain.DevBoxJob, string) {
 	t.Helper()
@@ -152,7 +152,7 @@ func TestDevBoxRepositoryPostgres(t *testing.T) {
 			case "issue":
 				invalid.IssueID = other.issueID
 			case "repo":
-				invalid.ForgejoRepoID = other.repoID
+				invalid.GitHubRepoID = other.repoID
 			case "creator":
 				invalid.RequestedByUserID = other.userID
 			case "workspace":
@@ -165,7 +165,7 @@ func TestDevBoxRepositoryPostgres(t *testing.T) {
 		require.Error(t, err)
 		_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET issue_id=$2 WHERE id=$1`, job.ID, other.issueID)
 		require.Error(t, err)
-		_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET forgejo_repo_id=$2 WHERE id=$1`, job.ID, other.repoID)
+		_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET github_repo_id=$2 WHERE id=$1`, job.ID, other.repoID)
 		require.Error(t, err)
 		_, err = db.ExecContext(t.Context(), `DELETE FROM issues WHERE id=$1`, f.issueID)
 		require.NoError(t, err)

@@ -55,7 +55,7 @@ func TestWorkspaceIdentifierHistoryTransferPostgres(t *testing.T) {
 	userID, workspaceID, teamID, issueID, otherIssueID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	foreignWorkspaceID, foreignTeamID := uuid.New(), uuid.New()
 	statusID, foreignStatusID := uuid.New(), uuid.New()
-	forgejoRepoID, forgejoPRID := uuid.New(), uuid.New()
+	githubRepoID, githubPRID := uuid.New(), uuid.New()
 	createdAt := time.Date(2025, time.March, 4, 12, 13, 14, 0, time.UTC)
 	for _, statement := range []struct {
 		query string
@@ -73,9 +73,9 @@ func TestWorkspaceIdentifierHistoryTransferPostgres(t *testing.T) {
 		{`INSERT INTO issue_identifier_history(workspace_id,identifier_text,issue_id) VALUES($1,$2,$3)`, []any{workspaceID, issueID.String(), issueID}},
 		{`UPDATE issue_identifier_history SET created_at=$1 WHERE workspace_id=$2`, []any{createdAt, workspaceID}},
 		{`INSERT INTO issues(id,workspace_id,team_id,number,identifier_text,title,creator_id,status_id) VALUES(gen_random_uuid(),$1,$2,1,'OLD-1','Foreign issue',$3,$4)`, []any{foreignWorkspaceID, foreignTeamID, userID, foreignStatusID}},
-		{`INSERT INTO forgejo_repos(id,workspace_id,forgejo_repo_id,full_name,instance_url) VALUES($1,$2,7,'transfer/repo','https://git.example.test')`, []any{forgejoRepoID, workspaceID}},
-		{`INSERT INTO forgejo_pull_requests(id,workspace_id,forgejo_repo_id,number,title,body,state,author_login,html_url) VALUES($1,$2,$3,7,'UUID-only body',$4,'open','tester','https://git.example.test/transfer/repo/pulls/7')`, []any{forgejoPRID, workspaceID, forgejoRepoID, issueID.String()}},
-		{`INSERT INTO forgejo_pull_request_issues(pr_id,issue_id) VALUES($1,$2)`, []any{forgejoPRID, issueID}},
+		{`INSERT INTO github_repos(id,workspace_id,github_repo_id,full_name,instance_url) VALUES($1,$2,7,'transfer/repo','https://git.example.test')`, []any{githubRepoID, workspaceID}},
+		{`INSERT INTO github_pull_requests(id,workspace_id,github_repo_id,number,title,body,state,author_login,html_url) VALUES($1,$2,$3,7,'UUID-only body',$4,'open','tester','https://git.example.test/transfer/repo/pulls/7')`, []any{githubPRID, workspaceID, githubRepoID, issueID.String()}},
+		{`INSERT INTO github_pull_request_issues(pr_id,issue_id) VALUES($1,$2)`, []any{githubPRID, issueID}},
 	} {
 		_, err := db.ExecContext(ctx, statement.query, statement.args...)
 		require.NoError(t, err)
@@ -108,11 +108,11 @@ func TestWorkspaceIdentifierHistoryTransferPostgres(t *testing.T) {
 		require.NotEqual(t, otherIssueID, importedOtherIssueID)
 		var importedPRID, importedPRRepoID, importedRepoID, linkedIssueID uuid.UUID
 		var importedBody string
-		require.NoError(t, db.QueryRowContext(t.Context(), `SELECT id,forgejo_repo_id,body FROM forgejo_pull_requests WHERE workspace_id=$1 AND number=7`, targetID).Scan(&importedPRID, &importedPRRepoID, &importedBody))
-		require.NoError(t, db.GetContext(t.Context(), &importedRepoID, `SELECT id FROM forgejo_repos WHERE workspace_id=$1 AND full_name='transfer/repo'`, targetID))
-		require.NoError(t, db.GetContext(t.Context(), &linkedIssueID, `SELECT issue_id FROM forgejo_pull_request_issues WHERE pr_id=$1`, importedPRID))
-		require.NotEqual(t, forgejoPRID, importedPRID)
-		require.NotEqual(t, forgejoRepoID, importedRepoID)
+		require.NoError(t, db.QueryRowContext(t.Context(), `SELECT id,github_repo_id,body FROM github_pull_requests WHERE workspace_id=$1 AND number=7`, targetID).Scan(&importedPRID, &importedPRRepoID, &importedBody))
+		require.NoError(t, db.GetContext(t.Context(), &importedRepoID, `SELECT id FROM github_repos WHERE workspace_id=$1 AND full_name='transfer/repo'`, targetID))
+		require.NoError(t, db.GetContext(t.Context(), &linkedIssueID, `SELECT issue_id FROM github_pull_request_issues WHERE pr_id=$1`, importedPRID))
+		require.NotEqual(t, githubPRID, importedPRID)
+		require.NotEqual(t, githubRepoID, importedRepoID)
 		require.Equal(t, importedRepoID, importedPRRepoID)
 		require.Equal(t, importedIssueID, linkedIssueID)
 		require.Equal(t, issueID.String(), importedBody, "external PR body must remain verbatim while references are remapped")
@@ -133,12 +133,12 @@ func TestWorkspaceIdentifierHistoryTransferPostgres(t *testing.T) {
 
 	t.Run("absent PR body uses the database default", func(t *testing.T) {
 		withoutBody := mutateWorkspaceArchive(t, archive.Path, func(_ *dto.WorkspaceExportManifest, data *dto.WorkspaceTransferData) {
-			delete(data.Tables["forgejo_pull_requests"][0], "body")
+			delete(data.Tables["github_pull_requests"][0], "body")
 		})
 		result, err := transfer.Import(t.Context(), withoutBody, "Without body", "identifier-without-body", userID)
 		require.NoError(t, err)
 		var importedBody string
-		require.NoError(t, db.GetContext(t.Context(), &importedBody, `SELECT body FROM forgejo_pull_requests WHERE workspace_id=$1 AND number=7`, result.ID))
+		require.NoError(t, db.GetContext(t.Context(), &importedBody, `SELECT body FROM github_pull_requests WHERE workspace_id=$1 AND number=7`, result.ID))
 		require.Empty(t, importedBody)
 	})
 

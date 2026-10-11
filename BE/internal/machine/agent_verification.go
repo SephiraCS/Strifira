@@ -101,7 +101,7 @@ func forbiddenChangedPaths(raw json.RawMessage, files []string) ([]string, error
 }
 
 // Repository identity comes from the selected checkout or machine and the
-// authorized Forgejo instance. Source remotes and provider claims have no say.
+// authorized GitHub instance. Source remotes and provider claims have no say.
 func (m *Manager) prepareAgentRepository(ctx context.Context, machine *domain.DevMachine, checkout *domain.DevMachineCheckout, services []domain.DevMachineService, runID uuid.UUID) (*domain.DevMachineCheckout, error) {
 	pinned, err := m.store.GetAgentRunRepository(ctx, runID)
 	if err != nil {
@@ -114,7 +114,7 @@ func (m *Manager) prepareAgentRepository(ctx context.Context, machine *domain.De
 		return nil, nil
 	}
 	repositoryFullName := checkoutRepositoryFullName(machine, checkout)
-	instanceURL, token, err := m.forgejoCredential(ctx, machine, repositoryFullName)
+	instanceURL, token, err := m.githubCredential(ctx, machine, repositoryFullName)
 	if err != nil {
 		return nil, fmt.Errorf("repository credential unavailable: %w", err)
 	}
@@ -129,7 +129,7 @@ func (m *Manager) prepareAgentRepository(ctx context.Context, machine *domain.De
 	} else {
 		selected = *checkout
 		if selected.RepositoryURL != "" && strings.TrimSuffix(selected.RepositoryURL, ".git") != repositoryURL {
-			return nil, errors.New("checkout repository does not match the authorized Forgejo instance")
+			return nil, errors.New("checkout repository does not match the authorized GitHub instance")
 		}
 		selected.RepositoryURL = repositoryURL
 	}
@@ -140,7 +140,7 @@ func (m *Manager) prepareAgentRepository(ctx context.Context, machine *domain.De
 		return nil, fmt.Errorf("repository selection could not be persisted: %w", err)
 	}
 	if err := m.runtime.PrepareAgentRepository(ctx, machine, services, &selected, runID, token); err != nil {
-		return nil, fmt.Errorf("repository preparation failed: %s", redact(safeError(err), map[string]string{"FORGEJO_TOKEN": token}))
+		return nil, fmt.Errorf("repository preparation failed: %s", redact(safeError(err), map[string]string{"GITHUB_TOKEN": token}))
 	}
 	return &selected, nil
 }
@@ -201,14 +201,14 @@ func (m *Manager) verifyAgentRun(ctx context.Context, machine *domain.DevMachine
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	instanceURL, token, err := m.forgejoCredential(ctx, machine, checkout.RepositoryFullName)
+	instanceURL, token, err := m.githubCredential(ctx, machine, checkout.RepositoryFullName)
 	if err != nil {
 		return fmt.Errorf("publishing credential unavailable: %w", err)
 	}
 	if strings.TrimRight(instanceURL, "/")+"/"+checkout.RepositoryFullName != checkout.RepositoryURL {
-		return errors.New("authorized Forgejo instance changed during the run; branch was not published")
+		return errors.New("authorized GitHub instance changed during the run; branch was not published")
 	}
-	secrets["FORGEJO_TOKEN"] = token
+	secrets["GITHUB_TOKEN"] = token
 	if err := m.runtime.PublishAgentCandidate(ctx, machine, services, checkout, run.ID, candidate, token); err != nil {
 		return fmt.Errorf("branch publication failed: %s", redact(safeError(err), secrets))
 	}

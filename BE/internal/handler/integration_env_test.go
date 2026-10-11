@@ -159,7 +159,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	webhookH := NewWebhookHandler(webhookSvc)
 	projectH := NewProjectHandler(projectSvc)
 	sharedLinkH := NewSharedLinkHandler(sharedLinkSvc, "http://ku.test")
-	forgejoH := NewForgejoHandler(service.NewForgejoService(repository.NewForgejoRepository(db), issueRepo, teamRepo, teamStatusRepo, make([]byte, 32), hub, "http://ku.test", "", nil))
+	githubH := NewGitHubHandler(service.NewGitHubService(repository.NewGitHubRepository(db), issueRepo, teamRepo, teamStatusRepo, make([]byte, 32), hub, "http://ku.test", "", nil))
 
 	env.apiKeySvc = service.NewAPIKeyService(repository.NewAPIKeyRepository(db), userRepo)
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{
@@ -186,7 +186,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	auth := e.Group("/api/auth")
 	auth.POST("/login", authH.Login)
 	e.GET("/api/public/share/:token/issues", sharedLinkH.ListPublicIssues)
-	e.POST("/api/forgejo/webhook", forgejoH.HandleWebhook)
+	e.POST("/api/github/webhook", githubH.HandleWebhook)
 	// Stand-in for the workspace import routes, which enforce their own
 	// 1 GiB limit and are exempt from the global body limit.
 	drain := func(c echo.Context) error {

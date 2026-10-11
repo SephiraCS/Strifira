@@ -43,9 +43,9 @@ func TestAgentRunRepositorySelectionDatabaseIsImmutableAcrossRestartAndMachineCh
 				require.NoError(t, err)
 				_, err = db.ExecContext(t.Context(), `INSERT INTO issues (id,workspace_id,team_id,number,identifier_text,title,creator_id,status_id) VALUES ($1,$2,$3,1,'PIN-1','Repository selection',$4,$5)`, issueID, fixture.workspaceID, teamID, fixture.userID, statusID)
 				require.NoError(t, err)
-				_, err = db.ExecContext(t.Context(), `INSERT INTO forgejo_repos (id,workspace_id,forgejo_repo_id,full_name,instance_url,default_branch) VALUES ($1,$2,$3,'ku/api','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
+				_, err = db.ExecContext(t.Context(), `INSERT INTO github_repos (id,workspace_id,github_repo_id,full_name,instance_url,default_branch) VALUES ($1,$2,$3,'ku/api','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
 				require.NoError(t, err)
-				_, err = db.ExecContext(t.Context(), `INSERT INTO dev_machine_checkouts (id,workspace_id,machine_id,issue_id,forgejo_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status) VALUES ($1,$2,$3,$4,$5,'ku/api','main','ku/task','/workspace/tasks/issue','ready')`, checkout.ID, fixture.workspaceID, machineID, issueID, repositoryID)
+				_, err = db.ExecContext(t.Context(), `INSERT INTO dev_machine_checkouts (id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status) VALUES ($1,$2,$3,$4,$5,'ku/api','main','ku/task','/workspace/tasks/issue','ready')`, checkout.ID, fixture.workspaceID, machineID, issueID, repositoryID)
 				require.NoError(t, err)
 				checkout.WorkspacePath = "/workspace/tasks/issue"
 				_, err = db.ExecContext(t.Context(), `UPDATE dev_machine_agent_runs SET checkout_id=$2 WHERE id=$1`, runID, checkout.ID)

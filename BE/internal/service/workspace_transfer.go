@@ -152,11 +152,11 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 		Counts:              counts,
 		Omitted: []string{
 			"users.password_hash", "refresh_tokens", "user_preferences", "webhooks.secret",
-			"forgejo_connections.token", "ai_settings.api_key_encrypted",
+			"github_connections.token", "ai_settings.api_key_encrypted",
 			"dev machine instances, environments, images, volumes, logs, artifacts, sessions, tokens, credentials and secret environment variables",
 		},
 		Warnings:                warnings,
-		RequiresReconfiguration: []string{"webhooks", "Forgejo", "AI provider credentials", "Dev Machine environments"},
+		RequiresReconfiguration: []string{"webhooks", "GitHub", "AI provider credentials", "Dev Machine environments"},
 	}
 
 	temp, err := os.CreateTemp("", "ku-workspace-export-*.zip")
@@ -281,9 +281,9 @@ func sanitizeExportRow(table string, row dto.WorkspaceTransferRow) {
 	case "webhooks":
 		delete(row, "secret")
 		row["is_active"] = false
-	case "forgejo_connections":
+	case "github_connections":
 		delete(row, "token")
-	case "forgejo_repos", "forgejo_auto_transitions":
+	case "github_repos", "github_auto_transitions":
 		row["is_active"] = false
 	case "shared_links":
 		delete(row, "token")
@@ -673,7 +673,7 @@ func (s *WorkspaceTransferService) Import(ctx context.Context, path, name, slug 
 				// happens to match a UUID being remapped during this import.
 				row["identifier_text"] = sourceRow["identifier_text"]
 			}
-			if spec.Name == "forgejo_pull_requests" {
+			if spec.Name == "github_pull_requests" {
 				// External PR text remains verbatim even when it matches an
 				// entity UUID or contains an asset URL from this workspace.
 				if body, ok := sourceRow["body"]; ok {
@@ -730,12 +730,12 @@ func prepareImportedRow(table string, row dto.WorkspaceTransferRow) {
 	case "shared_links":
 		row["token"] = randomTransferToken(32)
 		row["is_active"] = false
-	case "forgejo_connections":
-		// Forgejo connections require a token at the schema level. Replace the
+	case "github_connections":
+		// GitHub connections require a token at the schema level. Replace the
 		// exported secret with a fresh placeholder; the import result already
-		// marks Forgejo credentials for reconfiguration.
+		// marks GitHub credentials for reconfiguration.
 		row["token"] = randomTransferToken(32)
-	case "forgejo_repos", "forgejo_auto_transitions":
+	case "github_repos", "github_auto_transitions":
 		row["is_active"] = false
 	case "ai_settings":
 		row["api_key_encrypted"] = nil

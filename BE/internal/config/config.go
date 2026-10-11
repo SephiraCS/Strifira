@@ -14,21 +14,21 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
-// ForgejoConfig holds the optional shared Forgejo instance connection
+// GitHubConfig holds the optional shared GitHub instance connection
 // (global mode). When set, every workspace uses it instead of per-workspace
 // connection rows.
-type ForgejoConfig struct {
-	URL   string `envconfig:"FORGEJO_URL"`
-	Token string `envconfig:"FORGEJO_TOKEN"`
+type GitHubConfig struct {
+	URL   string `envconfig:"GITHUB_URL"`
+	Token string `envconfig:"GITHUB_TOKEN"`
 }
 
 // IsConfigured returns true when both URL and token are set.
-func (f ForgejoConfig) IsConfigured() bool {
+func (f GitHubConfig) IsConfigured() bool {
 	return f.URL != "" && f.Token != ""
 }
 
 // NormalizedURL returns the URL without a trailing slash.
-func (f ForgejoConfig) NormalizedURL() string {
+func (f GitHubConfig) NormalizedURL() string {
 	return strings.TrimRight(f.URL, "/")
 }
 
@@ -50,12 +50,12 @@ type Config struct {
 
 	sysadminIDs map[uuid.UUID]struct{}
 
-	// Forgejo webhook URL override (optional — for dev behind tunnels or
+	// GitHub webhook URL override (optional — for dev behind tunnels or
 	// private networks). Auto-derived from FRONTEND_URL when unset.
-	ForgejoWebhookURL string `envconfig:"FORGEJO_WEBHOOK_URL"`
+	GitHubWebhookURL string `envconfig:"GITHUB_WEBHOOK_URL"`
 
-	// Shared Forgejo instance (global mode — used by all workspaces)
-	Forgejo ForgejoConfig
+	// Shared GitHub instance (global mode — used by all workspaces)
+	GitHub GitHubConfig
 
 	// Dev machine configuration
 	DevMachine DevMachineConfig

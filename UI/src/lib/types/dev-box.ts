@@ -48,7 +48,7 @@ export interface DevBoxJob {
 	issue_identifier: string;
 	provider: DevBoxProviderId;
 	prompt: string;
-	forgejo_repo_id: string;
+	github_repo_id: string;
 	repository_url: string;
 	repository_full_name: string;
 	base_branch: string;

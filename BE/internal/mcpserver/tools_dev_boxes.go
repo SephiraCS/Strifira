@@ -246,7 +246,7 @@ func registerDevBoxJobTools(s *mcp.Server, deps Deps) {
 		Workspace          string   `json:"workspace"`
 		BoxID              string   `json:"box_id"`
 		Issue              string   `json:"issue" jsonschema:"issue identifier (e.g. ENG-42) or UUID in this workspace"`
-		RepositoryFullName string   `json:"repository_full_name" jsonschema:"active linked Forgejo repository owner/name"`
+		RepositoryFullName string   `json:"repository_full_name" jsonschema:"active linked GitHub repository owner/name"`
 		BaseBranch         string   `json:"base_branch" jsonschema:"base branch present in the worker's local checkout"`
 		Provider           string   `json:"provider" jsonschema:"claude-code, codex or opencode; must be advertised by this box"`
 		Prompt             string   `json:"prompt,omitempty"`
