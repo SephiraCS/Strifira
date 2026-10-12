@@ -276,6 +276,7 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+      statuses: read
     env:
       REGISTRY: registry.mariogk.com
       IMAGE_PREFIX: registry.mariogk.com/homelab
