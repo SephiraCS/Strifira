@@ -138,7 +138,8 @@ test('a webhook is deleted only after confirming', async ({ page }) => {
 	await deleteButton.click();
 	await dialog.getByRole('button', { name: 'Delete webhook' }).click();
 	await expect.poll(() => deletes).toEqual([`/api/workspaces/test/webhooks/${webhook.id}`]);
-	await expect(page.getByText(webhook.url)).toBeHidden();
+	// Exact match: the confirmation dialog's description also contains the URL.
+	await expect(page.getByText(webhook.url, { exact: true })).toBeHidden();
 });
 
 test('an issue template is deleted only after confirming, and its delete button is keyboard reachable', async ({
