@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.22",
+    "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.22",
+    "body": "Deployed to alpha as 9548ec1afa7c54c6dc379e5890c697f9c606167c.\n\n- fix(docs): renumber the documents migration to 000063\n- chore(ci): retrigger pipeline after release wait timed out\n- feat(docs): Notion-style markdown docs with realtime collaboration",
+    "published_at": "2026-10-12T17:12:04Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.22",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.21",
     "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.21",
     "body": "Deployed to alpha as 6a3f85f676d2a6c153e573a3e699b15eb252e54c.\n\n- Trim GitHub API usage without losing features",
