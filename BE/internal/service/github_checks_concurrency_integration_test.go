@@ -116,10 +116,6 @@ func TestGitHubWebhookOlderGreenObservationCannotBorrowNewerFailureVersion(t *te
 					t.Errorf("encode combined status: %v", err)
 				}
 			})
-			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				t.Logf("UNHANDLED: %s %s", r.Method, r.URL.String())
-				http.NotFound(w, r)
-			})
 			server := httptest.NewServer(mux)
 			t.Cleanup(func() {
 				release()
