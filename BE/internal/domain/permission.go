@@ -19,6 +19,13 @@ const (
 	PermDevMachineManage  = "dev_machine:manage"
 	PermDevMachineAdmin   = "dev_machine:admin"
 	PermShareCreate       = "share:create"
+
+	// Docs: guests may read (watch sessions, open shared pages), members
+	// and above may create, edit, move and trash documents.
+	PermDocRead   = "doc:read"
+	PermDocCreate = "doc:create"
+	PermDocUpdate = "doc:update"
+	PermDocDelete = "doc:delete"
 )
 
 var RolePermissions = map[string][]string{
@@ -28,6 +35,7 @@ var RolePermissions = map[string][]string{
 		PermMemberInvite, PermCycleManage, PermViewManage,
 		PermDevMachineRead, PermDevMachineCreate, PermDevMachineManage, PermDevMachineAdmin,
 		PermShareCreate,
+		PermDocRead, PermDocCreate, PermDocUpdate, PermDocDelete,
 	},
 	RoleAdmin: {
 		PermWorkspaceTransfer, PermTeamManage, PermIssueCreate, PermIssueRead, PermIssueUpdate,
@@ -35,15 +43,18 @@ var RolePermissions = map[string][]string{
 		PermCycleManage, PermViewManage,
 		PermDevMachineRead, PermDevMachineCreate, PermDevMachineManage, PermDevMachineAdmin,
 		PermShareCreate,
+		PermDocRead, PermDocCreate, PermDocUpdate, PermDocDelete,
 	},
 	RoleMember: {
 		PermIssueCreate, PermIssueRead, PermIssueUpdate, PermIssueDeleteOwn, PermProjectManage,
 		PermLabelManage, PermCycleManage, PermViewManage,
 		PermDevMachineRead, PermDevMachineCreate, PermDevMachineManage,
 		PermShareCreate,
+		PermDocRead, PermDocCreate, PermDocUpdate, PermDocDelete,
 	},
 	RoleGuest: {
 		PermIssueRead,
+		PermDocRead,
 	},
 }
 

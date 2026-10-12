@@ -30,6 +30,7 @@ func init() {
 		"h1", "h2", "h3", "h4", "h5", "h6",
 		"ul", "ol", "li", "blockquote", "hr",
 		"span", "div", "label",
+		"table", "thead", "tbody", "tr", "th", "td",
 	)
 
 	policy.AllowAttrs("class").Globally()
@@ -41,6 +42,10 @@ func init() {
 	policy.AllowAttrs("data-identifier").Globally()
 	policy.AllowAttrs("data-filename").Globally()
 	policy.AllowAttrs("data-size").Globally()
+	// Wiki links between documents ([[Page]] in docs).
+	policy.AllowAttrs("data-wiki-title").Globally()
+	policy.AllowAttrs("data-doc-id").Globally()
+	policy.AllowAttrs("colspan", "rowspan").OnElements("th", "td")
 
 	policy.AllowAttrs("href", "target", "rel", "download").OnElements("a")
 	policy.AllowStandardURLs()
@@ -287,6 +292,12 @@ func renderInlineMarkdown(input string) string {
 			}
 		}
 
+		if htmlLink, next, ok := renderWikiLink(input, i); ok {
+			out.WriteString(htmlLink)
+			i = next
+			continue
+		}
+
 		if htmlLink, next, ok := renderMarkdownLink(input, i); ok {
 			out.WriteString(htmlLink)
 			i = next
@@ -324,6 +335,28 @@ func renderInlineMarkdown(input string) string {
 		i += size
 	}
 	return out.String()
+}
+
+// renderWikiLink converts [[Title]] wiki links into the anchor markup the
+// editor's wikiLink node parses (a[data-type="wiki"] with data-wiki-title).
+// Unresolved links carry no data-doc-id; the client resolves titles to
+// document ids when the document is saved. Mirrors the UI markdown import
+// (UI/src/lib/features/docs/markdown.ts wikiToLinkHtml) so imported markdown
+// round-trips through markdown export ([[Title]]).
+func renderWikiLink(input string, offset int) (string, int, bool) {
+	if !strings.HasPrefix(input[offset:], "[[") {
+		return "", offset, false
+	}
+	titleStart := offset + 2
+	// Titles cannot contain brackets, so the first '[' or ']' after the
+	// opener must be the "]]" closer with a non-empty title in between.
+	endRel := strings.IndexAny(input[titleStart:], "[]")
+	if endRel <= 0 || input[titleStart+endRel] != ']' || !strings.HasPrefix(input[titleStart+endRel:], "]]") {
+		return "", offset, false
+	}
+	titleEnd := titleStart + endRel
+	title := html.EscapeString(input[titleStart:titleEnd])
+	return `<a data-type="wiki" data-wiki-title="` + title + `" class="wiki-link">` + title + `</a>`, titleEnd + 2, true
 }
 
 func renderMarkdownLink(input string, offset int) (string, int, bool) {

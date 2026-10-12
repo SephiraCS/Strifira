@@ -63,6 +63,8 @@
 	import Info from '@lucide/svelte/icons/info';
 	import CircleQuestionMark from '@lucide/svelte/icons/circle-question-mark';
 	import BarChart3 from '@lucide/svelte/icons/chart-column';
+	import BookOpen from '@lucide/svelte/icons/book-open';
+	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import Server from '@lucide/svelte/icons/server';
@@ -764,6 +766,24 @@
 					<BarChart3 size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.insights']()}</span>
 				</a>
+				<a
+					href="/{slug}/docs"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/docs`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<BookOpen size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.docs']()}</span>
+				</a>
+				<a
+					href="/{slug}/files"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/files`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<FolderOpen size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.files']()}</span>
+				</a>
 				{#if canManageDevMachines}
 					<a
 						href="/{slug}/dev-boxes"
@@ -847,25 +867,27 @@
 					</button>
 					{#if !favoritesCollapsed}
 						<div transition:slideFade>
-							{#each favorites as fav}
-								{@const href =
-									fav.entity_type === 'project'
-										? `/${slug}/projects/${fav.entity_id}`
-										: fav.entity_type === 'team'
-											? `/${slug}/teams/${fav.entity_id}`
-											: fav.entity_type === 'view'
-												? `/${slug}/views/${fav.entity_id}`
-												: `/${slug}/my-issues`}
-								<a
-									{href}
-									class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(href)
-										? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-										: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-								>
-									<Star size={14} class="shrink-0 text-yellow-500" />
-									<span class="truncate">{fav.entity_type}</span>
-								</a>
-							{/each}
+					{#each favorites as fav}
+						{@const href =
+							fav.entity_type === 'project'
+								? `/${slug}/projects/${fav.entity_id}`
+								: fav.entity_type === 'team'
+									? `/${slug}/teams/${fav.entity_id}`
+									: fav.entity_type === 'view'
+										? `/${slug}/views/${fav.entity_id}`
+										: fav.entity_type === 'document'
+											? `/${slug}/docs/${fav.entity_id}`
+											: `/${slug}/my-issues`}
+						<a
+							{href}
+							class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(href)
+								? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+								: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+						>
+							<Star size={14} class="shrink-0 text-yellow-500" />
+							<span class="truncate">{fav.entity_type}</span>
+						</a>
+					{/each}
 						</div>
 					{/if}
 				</div>

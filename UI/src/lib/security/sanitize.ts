@@ -5,15 +5,17 @@ const ALLOWED_TAGS = [
 	'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
 	'ul', 'ol', 'li', 'blockquote', 'hr',
 	'input', 'span', 'div', 'label',
-	'img'
+	'img',
+	'table', 'thead', 'tbody', 'tr', 'th', 'td'
 ];
 
 const ALLOWED_ATTR = [
 	'class', 'data-type', 'data-checked', 'data-id', 'data-label', 'data-kind', 'data-identifier',
-	'data-filename', 'data-size',
+	'data-filename', 'data-size', 'data-wiki-title', 'data-doc-id',
 	'href', 'target', 'rel', 'download',
 	'type', 'checked', 'disabled',
-	'src', 'alt', 'width', 'height'
+	'src', 'alt', 'width', 'height',
+	'colspan', 'rowspan'
 ];
 
 const SAFE_URL_PATTERN = /^(https?:|mailto:)/i;

@@ -1676,6 +1676,545 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Ok" }
 
+  /api/workspaces/{slug}/docs:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listDocuments
+      tags: [Docs]
+      summary: List workspace documents (tree payload)
+      responses:
+        "200":
+          description: Flat list of live documents; clients assemble the tree from parent_id.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentTreeItem" }
+    post:
+      operationId: createDocument
+      tags: [Docs]
+      summary: Create a document (optionally from markdown)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateDocumentRequest" }
+      responses:
+        "201":
+          description: Created document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+
+  /api/workspaces/{slug}/docs/search:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: searchDocuments
+      tags: [Docs]
+      summary: Search documents by title and content
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Matching documents (max 20).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentTreeItem" }
+
+  /api/workspaces/{slug}/docs/graph:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: documentGraph
+      tags: [Docs]
+      summary: Wiki-link graph (nodes and edges)
+      responses:
+        "200":
+          description: Documents as nodes, resolved wiki links as edges.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentGraph" }
+
+  /api/workspaces/{slug}/docs/trash:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listTrashedDocuments
+      tags: [Docs]
+      summary: List trashed documents
+      responses:
+        "200":
+          description: Soft-deleted documents, newest deletion first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentTreeItem" }
+
+  /api/workspaces/{slug}/docs/{docId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getDocument
+      tags: [Docs]
+      summary: Get one document
+      responses:
+        "200":
+          description: Document with sanitized HTML snapshot.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+    patch:
+      operationId: updateDocument
+      tags: [Docs]
+      summary: Patch title/icon/content (editor autosave)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateDocumentRequest" }
+      responses:
+        "200":
+          description: Updated document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+    delete:
+      operationId: deleteDocument
+      tags: [Docs]
+      summary: Move a document and its subtree to trash
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/docs/{docId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: restoreDocument
+      tags: [Docs]
+      summary: Restore a trashed document
+      responses:
+        "200":
+          description: Restored document (moved to root if its parent is gone).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+
+  /api/workspaces/{slug}/docs/{docId}/purge:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: purgeDocument
+      tags: [Docs]
+      summary: Permanently delete a trashed document
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/docs/{docId}/move:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: moveDocument
+      tags: [Docs]
+      summary: Re-parent / reorder a document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                parent_id: { type: string, format: uuid, nullable: true }
+                position: { type: number, nullable: true }
+      responses:
+        "200":
+          description: Moved document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+
+  /api/workspaces/{slug}/docs/{docId}/duplicate:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: duplicateDocument
+      tags: [Docs]
+      summary: Duplicate a document with its Yjs state and tags
+      responses:
+        "201":
+          description: Duplicated document.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+
+  /api/workspaces/{slug}/docs/{docId}/revisions:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listDocumentRevisions
+      tags: [Docs]
+      summary: Version history snapshots
+      responses:
+        "200":
+          description: Revisions, newest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentRevision" }
+
+  /api/workspaces/{slug}/docs/{docId}/revisions/{revisionId}/restore:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: revisionId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: restoreDocumentRevision
+      tags: [Docs]
+      summary: Rewind the document to a revision
+      responses:
+        "200":
+          description: Document at the revision's state (current state snapshotted first).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Document" }
+
+  /api/workspaces/{slug}/docs/{docId}/backlinks:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listDocumentBacklinks
+      tags: [Docs]
+      summary: Pages linking to this document
+      responses:
+        "200":
+          description: Source documents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentBacklink" }
+
+  /api/workspaces/{slug}/docs/{docId}/tags:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      operationId: setDocumentTags
+      tags: [Docs]
+      summary: Replace the document's tags (creates missing ones)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tags: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: Applied tags.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentTag" }
+
+  /api/workspaces/{slug}/docs/{docId}/comments:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listDocumentComments
+      tags: [Docs]
+      summary: Threaded comments on a document
+      responses:
+        "200":
+          description: Top-level comments with replies nested.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentComment" }
+    post:
+      operationId: createDocumentComment
+      tags: [Docs]
+      summary: Comment on a document (mentions notify)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 20000 }
+                parent_id: { type: string, format: uuid, nullable: true }
+      responses:
+        "201":
+          description: Created comment.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentComment" }
+
+  /api/workspaces/{slug}/docs/{docId}/comments/{commentId}/resolve:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: commentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: resolveDocumentComment
+      tags: [Docs]
+      summary: Resolve a comment thread
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/docs/{docId}/comments/{commentId}/reopen:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: commentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: reopenDocumentComment
+      tags: [Docs]
+      summary: Reopen a comment thread
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/docs/{docId}/collab:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: documentCollabSocket
+      tags: [Docs]
+      summary: Real-time collaborative editing WebSocket
+      description: |
+        Per-document Yjs relay. The first frame must be `join` with the
+        display identity; the server answers with `init` (base64 Yjs update
+        log), `peers`, then relays `update` frames between editors and
+        `cursor` presence frames (Yjs relative positions). Guests join
+        read-only. Updates are persisted in an append-only log, compacted
+        via `compact.request`/`snapshot` exchanges.
+      responses:
+        "101":
+          description: WebSocket upgrade.
+
+  /api/workspaces/{slug}/doc-tags:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listDocumentTags
+      tags: [Docs]
+      summary: List workspace document tags
+      responses:
+        "200":
+          description: Tags.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentTag" }
+    post:
+      operationId: createDocumentTag
+      tags: [Docs]
+      summary: Create a tag (idempotent by name)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                color: { type: string, nullable: true }
+      responses:
+        "201":
+          description: Created (or existing) tag.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DocumentTag" }
+
+  /api/workspaces/{slug}/doc-tags/{tagId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: tagId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      operationId: deleteDocumentTag
+      tags: [Docs]
+      summary: Delete a tag (unlinks it from all documents)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+
+  /api/workspaces/{slug}/assets:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listAssets
+      tags: [Uploads]
+      summary: List workspace uploads (file browser)
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100 }
+      responses:
+        "200":
+          description: Paginated asset entries with uploader names.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/AssetEntry" }
+                  total: { type: integer }
+                  page: { type: integer }
+                  per_page: { type: integer }
+
+  /api/workspaces/{slug}/assets/{assetId}/share:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: assetId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: shareAsset
+      tags: [Uploads]
+      summary: Create a public link for one file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ttl]
+              properties:
+                ttl: { type: string, enum: [1h, 24h, 7d, 30d, 365d] }
+      responses:
+        "200":
+          description: Public URL and expiry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
+                  expires_at: { type: string, format: date-time }
+
+  /api/public/files/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: publicFile
+      tags: [Public sharing]
+      summary: Download a shared file via its signed link
+      responses:
+        "200":
+          description: File stream.
+        "404":
+          description: Unknown, expired or tampered token.
+
+  /api/public/share/{token}/document:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: publicSharedDocument
+      tags: [Public sharing]
+      summary: Read-only shared document
+      responses:
+        "200":
+          description: Sanitized document content for the public view.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title: { type: string }
+                  icon: { type: string, nullable: true }
+                  content_html: { type: string }
+                  updated_at: { type: string, format: date-time }
+                  workspace_name: { type: string }
+
   /api/workspaces/{slug}/favorites:
     parameters:
       - $ref: "#/components/parameters/Slug"
@@ -2689,6 +3228,12 @@ paths:
           content:
             application/octet-stream:
               schema: { type: string, format: binary }
+    delete:
+      operationId: deleteAsset
+      tags: [Uploads]
+      summary: Delete an upload (own files, or any with issue:delete)
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
 
   /api/workspaces/{slug}/issues/{identifier}/prompt-assets:
     parameters:
@@ -5522,3 +6067,122 @@ components:
         lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
             never the registration token.}
         result: {$ref: '#/components/schemas/DevBoxCompletionResult'}
+
+    Document:
+      type: object
+      description: A wiki page. The editing source of truth is the Yjs update
+        log behind the collab socket; content_html is the sanitized snapshot
+        used for search, backlinks and public sharing.
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        parent_id: { type: string, format: uuid, nullable: true }
+        title: { type: string }
+        icon: { type: string, nullable: true }
+        content_html: { type: string }
+        content_text: { type: string }
+        position: { type: number }
+        is_template: { type: boolean }
+        created_by: { type: string, format: uuid }
+        updated_by: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        deleted_by: { type: string, format: uuid, nullable: true }
+        tags: { type: array, items: { type: string } }
+    DocumentTreeItem:
+      type: object
+      description: Compact document entry used to assemble the page tree.
+      properties:
+        id: { type: string, format: uuid }
+        parent_id: { type: string, format: uuid, nullable: true }
+        title: { type: string }
+        icon: { type: string, nullable: true }
+        position: { type: number }
+        is_template: { type: boolean }
+        updated_at: { type: string, format: date-time }
+        tags: { type: array, items: { type: string } }
+    CreateDocumentRequest:
+      type: object
+      properties:
+        title: { type: string, maxLength: 500 }
+        icon: { type: string, nullable: true }
+        parent_id: { type: string, format: uuid, nullable: true }
+        content_md: { type: string, description: Optional markdown body converted to editor HTML. }
+        is_template: { type: boolean }
+        tags: { type: array, items: { type: string } }
+    UpdateDocumentRequest:
+      type: object
+      description: Editor autosave payload. wiki_titles lists the [[wiki
+        link]] targets in the document so the server can maintain backlinks.
+      properties:
+        title: { type: string, maxLength: 500 }
+        icon: { type: string, nullable: true }
+        content_html: { type: string }
+        content_text: { type: string }
+        wiki_titles: { type: array, items: { type: string } }
+        is_template: { type: boolean }
+    DocumentRevision:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        document_id: { type: string, format: uuid }
+        title: { type: string }
+        icon: { type: string, nullable: true }
+        content_html: { type: string }
+        content_text: { type: string }
+        edited_by: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+    DocumentBacklink:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        icon: { type: string, nullable: true }
+        updated_at: { type: string, format: date-time }
+    DocumentGraph:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string, format: uuid }
+              title: { type: string }
+              icon: { type: string, nullable: true }
+        edges:
+          type: array
+          items:
+            type: object
+            properties:
+              source: { type: string, format: uuid }
+              target: { type: string, format: uuid }
+    DocumentTag:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    DocumentComment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        document_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        body: { type: string }
+        parent_id: { type: string, format: uuid, nullable: true }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        replies: { type: array, items: { $ref: "#/components/schemas/DocumentComment" } }
+    AssetEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        filename: { type: string }
+        content_type: { type: string }
+        size: { type: integer, format: int64 }
+        uploaded_by: { type: string, format: uuid }
+        uploader_name: { type: string }
+        created_at: { type: string, format: date-time }
+        url: { type: string }

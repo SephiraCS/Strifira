@@ -10,7 +10,7 @@
 	import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 	import Image from '@tiptap/extension-image';
 	import Underline from '@tiptap/extension-underline';
-	import { Extension, InputRule } from '@tiptap/core';
+	import { Extension, InputRule, type Extensions } from '@tiptap/core';
 	import { Plugin, PluginKey, NodeSelection, TextSelection } from 'prosemirror-state';
 	import { closeHistory } from '@tiptap/pm/history';
 	import { Decoration, DecorationSet } from 'prosemirror-view';
@@ -95,7 +95,12 @@
 		allowEmptyAI = false,
 		aiButtonLabel,
 		aiContextKey = '',
-		onuploadschange
+		onuploadschange,
+		extraExtensions = [],
+		extraSlashItems = [],
+		onready,
+		disableUndoRedo = false,
+		suppressExternalContent = false
 	}: {
 		content?: string;
 		placeholder?: string;
@@ -123,6 +128,16 @@
 		aiButtonLabel?: string;
 		aiContextKey?: string;
 		onuploadschange?: (pending: number) => void;
+		/** Additional Tiptap extensions appended to the shared set (docs: collaboration, tables, wiki links). */
+		extraExtensions?: Extensions;
+		/** Host-specific slash-command entries appended to the shared catalog. */
+		extraSlashItems?: SlashMenuItem[];
+		/** Called once after the editor instance is created (docs capture it for custom controls). */
+		onready?: (editor: Editor) => void;
+		/** Disable StarterKit's undo/redo (collaborative editors own undo through y-undo). */
+		disableUndoRedo?: boolean;
+		/** Collaborative sessions own their content; never re-apply the content prop. */
+		suppressExternalContent?: boolean;
 	} = $props();
 
 	let editor = $state<Editor | null>(null);
@@ -139,8 +154,8 @@
 	let slashSelectedIndex = $state(0);
 	let slashRange = $state<{ from: number; to: number } | null>(null);
 
-	const slashFilteredGroups = $derived(filterSlashItems(slashQuery));
-	const slashFlatItems = $derived(flatFilteredItems(slashQuery));
+	const slashFilteredGroups = $derived(filterSlashItems(slashQuery, extraSlashItems));
+	const slashFlatItems = $derived(flatFilteredItems(slashQuery, extraSlashItems));
 
 	// Mention state
 	let mentionActive = $state(false);
@@ -730,7 +745,8 @@
 			StarterKit.configure({
 				codeBlock: false,
 				link: false,
-				underline: false
+				underline: false,
+				...(disableUndoRedo ? { undoRedo: false as const } : {})
 			}),
 			Placeholder.configure({ placeholder }),
 			TaskList,
@@ -754,7 +770,8 @@
 				}
 			}),
 			...(SubmitShortcut ? [SubmitShortcut] : []),
-			...(imagePasteExt ? [imagePasteExt] : [])
+			...(imagePasteExt ? [imagePasteExt] : []),
+			...extraExtensions
 		];
 
 		lastExternalContent = content;
@@ -783,6 +800,7 @@
 				}
 			}
 		});
+		onready?.(editor);
 	});
 
 	// Render remote cursors as widget decorations in the editor
@@ -900,6 +918,7 @@
 	// Comparing the prop to its last value prevents blur from restoring stale server
 	// content while a local edit or AI replacement is still waiting for autosave.
 	$effect(() => {
+		if (suppressExternalContent) return;
 		if (editor && !isFocused && content !== lastExternalContent) {
 			lastExternalContent = content;
 			const current = sanitizeEditorOutput(editor.getHTML());

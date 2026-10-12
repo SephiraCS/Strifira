@@ -2,10 +2,12 @@ import { use, type ComposeOption } from 'echarts/core';
 import {
 	BarChart,
 	CustomChart,
+	GraphChart,
 	LineChart,
 	ScatterChart,
 	type BarSeriesOption,
 	type CustomSeriesOption,
+	type GraphSeriesOption,
 	type LineSeriesOption,
 	type ScatterSeriesOption
 } from 'echarts/charts';
@@ -31,6 +33,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 use([
 	BarChart,
 	CustomChart,
+	GraphChart,
 	LineChart,
 	ScatterChart,
 	DataZoomInsideComponent,
@@ -49,6 +52,7 @@ export type { ECharts } from 'echarts/core';
 export type ChartOption = ComposeOption<
 	| BarSeriesOption
 	| CustomSeriesOption
+	| GraphSeriesOption
 	| LineSeriesOption
 	| ScatterSeriesOption
 	| DataZoomComponentOption

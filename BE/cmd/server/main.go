@@ -101,6 +101,10 @@ func main() {
 	// Screen sharing: peer-to-peer WebRTC signaled over the workspace hub
 	shareRepo := repository.NewScreenShareRepository(db)
 
+	// Docs: wiki pages with Yjs collaborative editing
+	documentRepo := repository.NewDocumentRepository(db)
+	documentUpdateRepo := repository.NewDocumentUpdateRepository(db)
+
 	// Services
 	authSvc := service.NewAuthService(userRepo, refreshRepo, cfg.JWTSecret)
 	workspaceSvc := service.NewWorkspaceService(workspaceRepo, userRepo)
@@ -183,8 +187,12 @@ func main() {
 	// Forward issue/comment domain events to outgoing webhooks.
 	hub.OnBroadcast = webhookSvc.HubListener()
 	sharedLinkRepo := repository.NewSharedLinkRepository(db)
-	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, cfg.JWTSecret)
+	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, documentRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)
+	docSyncSvc := service.NewDocSyncService(documentRepo, documentUpdateRepo)
+	documentSvc := service.NewDocumentService(documentRepo, hub, notifSvc, docSyncSvc)
+	docSyncH := handler.NewDocSyncHandler(docSyncSvc, documentSvc, handler.WebSocketOriginPatterns([]string{cfg.FrontendURL}, cfg.Environment == "development"))
+	documentH := handler.NewDocumentHandler(documentSvc, userRepo)
 	shareSvc := service.NewScreenShareService(shareRepo, userRepo, hub)
 	hub.AuthorizeSharePresence = shareSvc.AuthorizePresence
 	// Persist presenter contact so the no-source GC grace survives restarts.
@@ -341,7 +349,9 @@ func main() {
 	pub := e.Group("/api/public")
 	pub.GET("/share/:token", sharedLinkH.GetPublicMeta)
 	pub.GET("/share/:token/issues", sharedLinkH.ListPublicIssues)
+	pub.GET("/share/:token/document", sharedLinkH.GetPublicDocument)
 	e.GET("/api/public/assets/:token", uploadH.PublicAsset)
+	e.GET("/api/public/files/:token", uploadH.PublicFile)
 
 	// User avatars: public read so they also render on public share views
 	// (uploaded avatars point users.avatar_url here; see AvatarHandler.Get).
@@ -581,6 +591,33 @@ func main() {
 	workers.POST("/jobs/:jobId/logs", devBoxH.AppendLog)
 	workers.POST("/jobs/:jobId/complete", devBoxH.Complete)
 
+	// Docs (wiki pages, Notion/Obsidian-style)
+	ws.GET("/docs", documentH.List)
+	ws.POST("/docs", documentH.Create, mw.RequirePermission(domain.PermDocCreate))
+	ws.GET("/docs/search", documentH.Search)
+	ws.GET("/docs/graph", documentH.Graph)
+	ws.GET("/docs/trash", documentH.ListTrash)
+	ws.GET("/docs/:docId", documentH.Get)
+	ws.PATCH("/docs/:docId", documentH.Update, mw.RequirePermission(domain.PermDocUpdate))
+	ws.DELETE("/docs/:docId", documentH.Delete, mw.RequirePermission(domain.PermDocDelete))
+	ws.POST("/docs/:docId/restore", documentH.Restore, mw.RequirePermission(domain.PermDocDelete))
+	ws.DELETE("/docs/:docId/purge", documentH.Purge, mw.RequirePermission(domain.PermDocDelete))
+	ws.POST("/docs/:docId/move", documentH.Move, mw.RequirePermission(domain.PermDocUpdate))
+	ws.POST("/docs/:docId/duplicate", documentH.Duplicate, mw.RequirePermission(domain.PermDocCreate))
+	ws.GET("/docs/:docId/revisions", documentH.ListRevisions)
+	ws.POST("/docs/:docId/revisions/:revisionId/restore", documentH.RestoreRevision, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/docs/:docId/backlinks", documentH.Backlinks)
+	ws.PUT("/docs/:docId/tags", documentH.SetTags, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/docs/:docId/comments", documentH.ListComments)
+	ws.POST("/docs/:docId/comments", documentH.CreateComment, mw.RequirePermission(domain.PermDocUpdate))
+	ws.POST("/docs/:docId/comments/:commentId/resolve", documentH.ResolveComment, mw.RequirePermission(domain.PermDocUpdate))
+	ws.POST("/docs/:docId/comments/:commentId/reopen", documentH.ReopenComment, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/doc-tags", documentH.ListTags)
+	ws.POST("/doc-tags", documentH.CreateTag, mw.RequirePermission(domain.PermDocUpdate))
+	ws.DELETE("/doc-tags/:tagId", documentH.DeleteTag, mw.RequirePermission(domain.PermDocUpdate))
+	// Real-time collaborative editing (Yjs relay + cursor presence)
+	ws.GET("/docs/:docId/collab", docSyncH.Handle)
+
 	// Favorites
 	ws.GET("/favorites", favH.List)
 	ws.POST("/favorites", favH.Create)
@@ -594,7 +631,10 @@ func main() {
 
 	// Uploads
 	ws.POST("/upload", uploadH.Upload, mw.RequirePermission("issue:create"))
+	ws.GET("/assets", uploadH.ListAssets)
 	ws.GET("/assets/:assetId", uploadH.GetAsset)
+	ws.DELETE("/assets/:assetId", uploadH.DeleteAsset)
+	ws.POST("/assets/:assetId/share", uploadH.ShareAsset, mw.RequirePermission(domain.PermShareCreate))
 	ws.POST("/issues/:identifier/prompt-assets", uploadH.SignIssuePromptAssets)
 
 	// WebSocket
@@ -642,8 +682,12 @@ func main() {
 			stopBackground: stopBackground,
 			waitBackground: background.Wait,
 			drainHTTP:      e.Shutdown,
-			drainWebSocket: hub.Shutdown,
-			closeWebhooks:  webhookSvc.Close,
+			drainWebSocket: func(ctx context.Context) error {
+				// The workspace hub and the doc-sync rooms own hijacked
+				// sockets; both must drain before the process exits.
+				return errors.Join(hub.Shutdown(ctx), docSyncSvc.Shutdown(ctx))
+			},
+			closeWebhooks: webhookSvc.Close,
 		})
 	}
 }

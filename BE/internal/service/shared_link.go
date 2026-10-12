@@ -16,6 +16,7 @@ import (
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/repository"
 	"github.com/ku/ku-backend/pkg/assettoken"
+	"github.com/ku/ku-backend/pkg/sanitize"
 )
 
 var protectedPublicAssetPattern = regexp.MustCompile(`(?i)(\b(?:src|href)=["'])(/api/workspaces/[^/"']+/assets/([0-9a-fA-F-]{36}))(\?download=1)?(["'])`)
@@ -29,6 +30,7 @@ type SharedLinkService struct {
 	issueRepo        repository.IssueRepo
 	userRepo         repository.UserRepo
 	teamStatusRepo   repository.TeamStatusRepo
+	docRepo          repository.DocumentRepo
 	assetTokenSecret string
 }
 
@@ -41,6 +43,7 @@ func NewSharedLinkService(
 	issueRepo repository.IssueRepo,
 	userRepo repository.UserRepo,
 	teamStatusRepo repository.TeamStatusRepo,
+	docRepo repository.DocumentRepo,
 	jwtSecret string,
 ) *SharedLinkService {
 	return &SharedLinkService{
@@ -52,6 +55,7 @@ func NewSharedLinkService(
 		issueRepo:        issueRepo,
 		userRepo:         userRepo,
 		teamStatusRepo:   teamStatusRepo,
+		docRepo:          docRepo,
 		assetTokenSecret: jwtSecret + ":prompt-assets",
 	}
 }
@@ -112,6 +116,14 @@ func (s *SharedLinkService) Create(ctx context.Context, workspaceID, userID uuid
 		view, err := s.viewRepo.GetByID(ctx, *scopeID)
 		if err != nil || view == nil || view.WorkspaceID != workspaceID {
 			return nil, fmt.Errorf("view not found")
+		}
+	case domain.SharedLinkScopeDocument:
+		if scopeID == nil {
+			return nil, fmt.Errorf("scope_id is required for document scope")
+		}
+		doc, err := s.docRepo.GetByID(ctx, *scopeID)
+		if err != nil || doc == nil || doc.WorkspaceID != workspaceID || doc.DeletedAt != nil {
+			return nil, fmt.Errorf("document not found")
 		}
 	default:
 		return nil, fmt.Errorf("invalid scope")
@@ -252,6 +264,13 @@ func (s *SharedLinkService) GetPublicMeta(ctx context.Context, token string) (*d
 			view, err := s.viewRepo.GetByID(ctx, *link.ScopeID)
 			if err == nil && view != nil {
 				scopeName = view.Name
+			}
+		}
+	case domain.SharedLinkScopeDocument:
+		if link.ScopeID != nil {
+			doc, err := s.docRepo.GetByID(ctx, *link.ScopeID)
+			if err == nil && doc != nil {
+				scopeName = doc.Title
 			}
 		}
 	}
@@ -410,6 +429,33 @@ func signPublicAssetURLs(description, secret string, workspaceID, issueID uuid.U
 		}
 		return parts[1] + "/api/public/assets/" + token + parts[4] + parts[5]
 	})
+}
+
+// GetPublicDocument returns a shared document's sanitized content for the
+// public read-only view.
+func (s *SharedLinkService) GetPublicDocument(ctx context.Context, token string) (*dto.PublicDocumentResponse, error) {
+	link, err := s.resolveActiveLink(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	if link.Scope != domain.SharedLinkScopeDocument || link.ScopeID == nil {
+		return nil, fmt.Errorf("not a document share")
+	}
+	doc, err := s.docRepo.GetByID(ctx, *link.ScopeID)
+	if err != nil || doc == nil || doc.WorkspaceID != link.WorkspaceID || doc.DeletedAt != nil {
+		return nil, fmt.Errorf("not found")
+	}
+	ws, err := s.workspaceRepo.GetByID(ctx, link.WorkspaceID)
+	if err != nil || ws == nil {
+		return nil, fmt.Errorf("not found")
+	}
+	return &dto.PublicDocumentResponse{
+		Title:         doc.Title,
+		Icon:          doc.Icon,
+		ContentHTML:   sanitize.SanitizeHTML(doc.ContentHTML),
+		UpdatedAt:     doc.UpdatedAt,
+		WorkspaceName: ws.Name,
+	}, nil
 }
 
 // resolveActiveLink fetches a shared link by token and validates it's active and not expired.

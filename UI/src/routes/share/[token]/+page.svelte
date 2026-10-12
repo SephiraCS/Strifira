@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { getShareMeta, listShareIssues } from '$lib/api/public';
+	import { getShareMeta, listShareIssues, getSharedDocument, type PublicSharedDocument } from '$lib/api/public';
 	import { m } from '$lib/paraglide/messages.js';
 	import type { PublicShareMeta, PublicIssue, PublicStatus } from '$lib/types/shared-link';
 	import type { PaginatedResponse } from '$lib/types/common';
@@ -25,6 +25,7 @@
 	import type { StatusCategory } from '$lib/types/team-status';
 
 	let meta = $state<PublicShareMeta | null>(null);
+	let sharedDoc = $state<PublicSharedDocument | null>(null);
 	let issues = $state<PublicIssue[]>([]);
 	let totalCount = $state(0);
 	let currentPage = $state(1);
@@ -85,7 +86,11 @@
 	onMount(async () => {
 		try {
 			meta = await getShareMeta(token);
-			await loadIssues();
+			if (meta.scope === 'document') {
+				sharedDoc = await getSharedDocument(token);
+			} else {
+				await loadIssues();
+			}
 		} catch {
 			error = m['share_page.unavailable']();
 		} finally {
@@ -195,6 +200,35 @@
 		<Globe size={32} class="text-[var(--color-text-tertiary)]" />
 		<p class="text-sm text-[var(--color-text-tertiary)]">{error}</p>
 	</div>
+{:else if meta && sharedDoc}
+	<!-- Shared document (read-only) -->
+	<div class="border-b border-[var(--app-border)] px-4 py-3">
+		<div class="flex items-center gap-3">
+			<div class="flex items-center gap-2">
+				<Globe size={16} class="text-[var(--color-text-tertiary)]" />
+				<span class="text-xs text-[var(--color-text-tertiary)]">{sharedDoc.workspace_name}</span>
+				<span class="text-xs text-[var(--color-text-tertiary)]">/</span>
+				<span class="text-sm font-medium text-[var(--color-text-primary)]">{sharedDoc.title}</span>
+			</div>
+			<span class="rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[var(--color-text-tertiary)]">
+				{m['share_page.read_only']()}
+			</span>
+			<div class="flex-1"></div>
+			<span class="text-xs text-[var(--color-text-tertiary)]">
+				{new Date(sharedDoc.updated_at).toLocaleDateString()}
+			</span>
+		</div>
+	</div>
+	<article class="mx-auto w-full max-w-3xl px-6 py-10">
+		<h1 class="mb-6 flex items-center gap-2 text-3xl font-bold text-[var(--color-text-primary)]">
+			{sharedDoc.icon ? sharedDoc.icon : ''}
+			{sharedDoc.title}
+		</h1>
+		<!-- eslint-disable-next-line svelte/no-at-html-tags -- server-sanitized HTML -->
+		<div class="prose prose-invert prose-sm max-w-none text-[var(--color-text-secondary)]">
+			{@html sharedDoc.content_html}
+		</div>
+	</article>
 {:else if meta}
 	<!-- Header -->
 	<div class="border-b border-[var(--app-border)] px-4 py-3">

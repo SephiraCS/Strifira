@@ -317,6 +317,12 @@
 			category: m['sidebar.navigation']()
 		},
 		{
+			keys: ['g', 'd'],
+			handler: () => goto(`/${slug}/docs`),
+			label: m['sidebar.go_docs'](),
+			category: m['sidebar.navigation']()
+		},
+		{
 			keys: ['g', 's'],
 			handler: () => goto(`/${slug}/settings`),
 			label: m['sidebar.go_settings'](),
@@ -667,6 +673,22 @@
 			}
 			case 'comment.created': {
 				window.dispatchEvent(new CustomEvent('ws:comment-created', { detail: msg.payload }));
+				break;
+			}
+			// Docs: any page mutation refreshes the docs tree state; comment
+			// events additionally refresh an open doc's comment thread.
+			case 'doc.created':
+			case 'doc.updated':
+			case 'doc.deleted':
+			case 'doc.restored':
+			case 'doc.moved':
+			case 'doc.purged': {
+				window.dispatchEvent(new CustomEvent('ws:doc-event', { detail: msg.payload }));
+				break;
+			}
+			case 'doc.comment.created':
+			case 'doc.comment.updated': {
+				window.dispatchEvent(new CustomEvent('ws:doc-comment', { detail: msg.payload }));
 				break;
 			}
 			case 'view.created':

@@ -199,21 +199,38 @@ export const SLASH_GROUPS: SlashGroup[] = GROUP_ORDER.map((name) => ({
 	items: ITEMS.filter((item) => item.group === name)
 }));
 
-/** Filter items by query and return grouped results */
-export function filterSlashItems(query: string): SlashGroup[] {
-	if (!query) return SLASH_GROUPS;
-	const q = query.toLowerCase();
-	return SLASH_GROUPS.map((group) => ({
+/**
+ * Merge host-supplied slash items (docs add wiki links and tables) into the
+ * shared groups; unknown group names are appended after the built-ins.
+ */
+function groupsWithExtras(extra: SlashMenuItem[]): SlashGroup[] {
+	if (extra.length === 0) return SLASH_GROUPS;
+	const groups = SLASH_GROUPS.map((group) => ({
 		...group,
-		items: group.items.filter(
-			(item) =>
-				item.label.toLowerCase().includes(q) ||
-				item.keywords.some((kw) => kw.includes(q))
-		)
-	})).filter((group) => group.items.length > 0);
+		items: [...group.items, ...extra.filter((item) => item.group === group.name)]
+	}));
+	const extraGroups = [...new Set(extra.map((item) => item.group))]
+		.filter((name) => !GROUP_ORDER.includes(name))
+		.map((name) => ({ name, items: extra.filter((item) => item.group === name) }));
+	return [...groups, ...extraGroups];
+}
+
+/** Filter items by query and return grouped results */
+export function filterSlashItems(query: string, extra: SlashMenuItem[] = []): SlashGroup[] {
+	const groups = groupsWithExtras(extra);
+	if (!query) return groups;
+	const q = query.toLowerCase();
+	return groups
+		.map((group) => ({
+			...group,
+			items: group.items.filter(
+				(item) => item.label.toLowerCase().includes(q) || item.keywords.some((kw) => kw.includes(q))
+			)
+		}))
+		.filter((group) => group.items.length > 0);
 }
 
 /** Get flat filtered items list (for keyboard navigation indexing) */
-export function flatFilteredItems(query: string): SlashMenuItem[] {
-	return filterSlashItems(query).flatMap((g) => g.items);
+export function flatFilteredItems(query: string, extra: SlashMenuItem[] = []): SlashMenuItem[] {
+	return filterSlashItems(query, extra).flatMap((g) => g.items);
 }

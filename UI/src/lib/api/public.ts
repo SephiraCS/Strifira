@@ -27,3 +27,15 @@ export function listShareIssues(
 	const query = params ? '?' + new URLSearchParams(params).toString() : '';
 	return publicFetch<PaginatedResponse<PublicIssue>>(`/api/public/share/${token}/issues${query}`);
 }
+
+export interface PublicSharedDocument {
+	title: string;
+	icon?: string;
+	content_html: string;
+	updated_at: string;
+	workspace_name: string;
+}
+
+export function getSharedDocument(token: string): Promise<PublicSharedDocument> {
+	return publicFetch<PublicSharedDocument>(`/api/public/share/${token}/document`);
+}

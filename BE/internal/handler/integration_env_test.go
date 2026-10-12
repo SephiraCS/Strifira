@@ -146,7 +146,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	projectSvc := service.NewProjectService(projectRepo, hub)
 	hub.OnBroadcast = webhookSvc.HubListener()
 	env.webhookSvc = webhookSvc
-	sharedLinkSvc := service.NewSharedLinkService(repository.NewSharedLinkRepository(db), workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, integrationJWTSecret)
+	sharedLinkSvc := service.NewSharedLinkService(repository.NewSharedLinkRepository(db), workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, repository.NewDocumentRepository(db), integrationJWTSecret)
 
 	authH := NewAuthHandler(authSvc, false, nil).
 		WithLoginThrottle(mw.NewLoginThrottle(integrationLoginMaxFailures, integrationLoginLockout))
@@ -233,6 +233,38 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	ws.POST("/shared-links", sharedLinkH.Create)
 	ws.PATCH("/shared-links/:id", sharedLinkH.Update)
 	ws.DELETE("/shared-links/:id", sharedLinkH.Delete)
+
+	// Docs (wiki) — mirrors the docs route group in cmd/server/main.go.
+	documentRepo := repository.NewDocumentRepository(db)
+	documentUpdateRepo := repository.NewDocumentUpdateRepository(db)
+	docSyncSvc := service.NewDocSyncService(documentRepo, documentUpdateRepo)
+	documentSvc := service.NewDocumentService(documentRepo, hub, notifSvc, docSyncSvc)
+	docSyncH := NewDocSyncHandler(docSyncSvc, documentSvc, WebSocketOriginPatterns(nil, true))
+	documentH := NewDocumentHandler(documentSvc, userRepo)
+	ws.GET("/docs", documentH.List)
+	ws.POST("/docs", documentH.Create, mw.RequirePermission(domain.PermDocCreate))
+	ws.GET("/docs/search", documentH.Search)
+	ws.GET("/docs/graph", documentH.Graph)
+	ws.GET("/docs/trash", documentH.ListTrash)
+	ws.GET("/docs/:docId", documentH.Get)
+	ws.PATCH("/docs/:docId", documentH.Update, mw.RequirePermission(domain.PermDocUpdate))
+	ws.DELETE("/docs/:docId", documentH.Delete, mw.RequirePermission(domain.PermDocDelete))
+	ws.POST("/docs/:docId/restore", documentH.Restore, mw.RequirePermission(domain.PermDocDelete))
+	ws.DELETE("/docs/:docId/purge", documentH.Purge, mw.RequirePermission(domain.PermDocDelete))
+	ws.POST("/docs/:docId/move", documentH.Move, mw.RequirePermission(domain.PermDocUpdate))
+	ws.POST("/docs/:docId/duplicate", documentH.Duplicate, mw.RequirePermission(domain.PermDocCreate))
+	ws.GET("/docs/:docId/revisions", documentH.ListRevisions)
+	ws.POST("/docs/:docId/revisions/:revisionId/restore", documentH.RestoreRevision, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/docs/:docId/backlinks", documentH.Backlinks)
+	ws.PUT("/docs/:docId/tags", documentH.SetTags, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/docs/:docId/comments", documentH.ListComments)
+	ws.POST("/docs/:docId/comments", documentH.CreateComment, mw.RequirePermission(domain.PermDocUpdate))
+	ws.POST("/docs/:docId/comments/:commentId/resolve", documentH.ResolveComment, mw.RequirePermission(domain.PermDocUpdate))
+	ws.POST("/docs/:docId/comments/:commentId/reopen", documentH.ReopenComment, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/doc-tags", documentH.ListTags)
+	ws.POST("/doc-tags", documentH.CreateTag, mw.RequirePermission(domain.PermDocUpdate))
+	ws.DELETE("/doc-tags/:tagId", documentH.DeleteTag, mw.RequirePermission(domain.PermDocUpdate))
+	ws.GET("/docs/:docId/collab", docSyncH.Handle)
 	return e
 }
 

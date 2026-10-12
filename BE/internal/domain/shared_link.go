@@ -14,6 +14,7 @@ const (
 	SharedLinkScopeTeam      SharedLinkScope = "team"
 	SharedLinkScopeProject   SharedLinkScope = "project"
 	SharedLinkScopeView      SharedLinkScope = "view"
+	SharedLinkScopeDocument  SharedLinkScope = "document"
 )
 
 type SharedLink struct {

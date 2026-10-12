@@ -6,7 +6,7 @@ import (
 )
 
 type CreateSharedLinkRequest struct {
-	Scope              string          `json:"scope" validate:"required,oneof=workspace team project view"`
+	Scope              string          `json:"scope" validate:"required,oneof=workspace team project view document"`
 	ScopeID            *string         `json:"scope_id" validate:"omitempty,uuid"`
 	Filters            json.RawMessage `json:"filters"`
 	IncludeDescription bool            `json:"include_description"`
@@ -70,4 +70,12 @@ type PublicUserResponse struct {
 	Name        string  `json:"name"`
 	DisplayName string  `json:"display_name"`
 	AvatarURL   *string `json:"avatar_url,omitempty"`
+}
+
+type PublicDocumentResponse struct {
+	Title         string    `json:"title"`
+	Icon          *string   `json:"icon,omitempty"`
+	ContentHTML   string    `json:"content_html"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	WorkspaceName string    `json:"workspace_name"`
 }

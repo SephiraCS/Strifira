@@ -26,7 +26,7 @@ Ku's published releases are runnable MVPs, not a mature enterprise platform. Thi
 
 | Area             | State                                                                                                                                                                                                                                                     |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, and WebSocket events. |
+| **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, docs (collaborative wiki), and WebSocket events. |
 | **Planning**     | Implemented: cycles with burndown/velocity charts, project management with Gantt view, and full cycle/project UI.                                                                                                                                         |
 | **Integrations** | Available: workspace webhooks and GitHub with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, links to rerun in GitHub, and cancellation. |
 | **Analytics**    | Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on current issue data and stored lifecycle timestamps.                                                                                                                                              |
@@ -62,7 +62,7 @@ The distribution model is deliberately simple:
 - no per-user software fee;
 - infrastructure, backups, monitoring, and updates remain the operator's responsibility.
 
-The product is intentionally smaller than broad project-management suites. It covers issues, cycles, projects, saved views, analytics, GitHub automation, public sharing, real-time events, and portable per-workspace transfer. It does not currently include enterprise identity, a wiki, or modules.
+The product is intentionally smaller than broad project-management suites. It covers issues, cycles, projects, docs, saved views, analytics, GitHub automation, public sharing, real-time events, and portable per-workspace transfer. It does not currently include enterprise identity or modules.
 
 ## ✨ Features
 
@@ -77,6 +77,8 @@ The product is intentionally smaller than broad project-management suites. It co
 | 🏷️  | **Labels**             | Hierarchical, workspace-scoped, with soft delete and default labels on creation  |
 | 👁️  | **Views**              | Saved views with personal/workspace/team scoping, drag-and-drop reorder          |
 | 🔔  | **Notifications**      | Inbox with snooze, read status, and archive                                      |
+| 📄  | **Docs**               | Notion/Obsidian-style wiki: page tree, real-time collaborative editing with live cursors, `[[wiki links]]` with backlinks and a graph view, tags, full-text search, favorites, templates, daily notes, version history, comments, Markdown import/export, and read-only public share links |
+| 📁  | **File Management**    | Workspace file browser with uploads, authenticated links, and expiring public share links for single files |
 | 🔗  | **Webhooks**           | Plug into external services and integrations                                     |
 | ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, GitHub, and presence |
 | 🖥️  | **Dev Machines**       | Unreleased multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
@@ -162,7 +164,7 @@ Here's what Ku runs on and what each piece does:
 | **Frontend**      | SvelteKit + Svelte 5                 | SPA with TypeScript, runes-based reactivity, static adapter           |
 | **UI**            | Tailwind CSS + shadcn-svelte         | Utility-first styling with accessible component primitives            |
 | **Editor**        | Tiptap v3 + Yjs                      | Rich text with code blocks, mentions, slash commands, task lists      |
-| **Real-time**     | WebSocket (nhooyr.io)                | Workspace events, issue presence, and targeted notifications          |
+| **Real-time**     | WebSocket (nhooyr.io)                | Workspace events, issue presence, targeted notifications, and per-document collaborative editing |
 | **Storage**       | Local FS or S3-compatible            | AWS S3, Cloudflare R2, MinIO, SeaweedFS                               |
 | **Reverse Proxy** | Caddy                                | Production HTTPS and routing                                          |
 | **Dev Machines**  | Docker + Caddy + Go gateway/manager + code-server + ttyd/xterm + Chrome/KasmVNC | Unreleased multi-container development environments with issue worktrees and provider abstraction |

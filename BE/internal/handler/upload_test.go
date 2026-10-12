@@ -65,6 +65,20 @@ func (r *memoryAssetRepo) GetByID(_ context.Context, id uuid.UUID) (*domain.Asse
 	return asset, nil
 }
 
+func (r *memoryAssetRepo) ListByWorkspace(_ context.Context, _ uuid.UUID, _ string, _, _ int) ([]domain.AssetWithUploader, error) {
+	return nil, nil
+}
+
+func (r *memoryAssetRepo) CountByWorkspace(_ context.Context, _ uuid.UUID, _ string) (int, error) {
+	return len(r.assets), nil
+}
+
+func (r *memoryAssetRepo) Delete(_ context.Context, _ uuid.UUID, id uuid.UUID) (*domain.Asset, error) {
+	asset := r.assets[id]
+	delete(r.assets, id)
+	return asset, nil
+}
+
 func TestUploadCreatesProtectedAssetURL(t *testing.T) {
 	e := echo.New()
 	store := &memoryStorage{}

@@ -161,6 +161,21 @@ func (h *SharedLinkHandler) ListPublicIssues(c echo.Context) error {
 	return response.Success(c, http.StatusOK, result)
 }
 
+// GetPublicDocument serves the read-only public view of a shared document.
+func (h *SharedLinkHandler) GetPublicDocument(c echo.Context) error {
+	token := c.Param("token")
+	if token == "" {
+		return response.NotFound(c, "Share link")
+	}
+
+	doc, err := h.sharedLinkSvc.GetPublicDocument(c.Request().Context(), token)
+	if err != nil {
+		return response.NotFound(c, "Share link")
+	}
+
+	return response.Success(c, http.StatusOK, doc)
+}
+
 func (h *SharedLinkHandler) toSharedLinkResponse(link domain.SharedLink) dto.SharedLinkResponse {
 	resp := dto.SharedLinkResponse{
 		ID:                 link.ID.String(),

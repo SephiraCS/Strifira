@@ -20,6 +20,11 @@ function getColor(userId: string): string {
 	return COLORS[Math.abs(hash) % COLORS.length];
 }
 
+/** Deterministic presence color for a user id (docs cursors, presence chips). */
+export function presenceColorFor(userId: string): string {
+	return getColor(userId);
+}
+
 export interface FocusInfo {
 	field: string; // 'title' | 'description' | 'comment-{id}' | 'reply-{id}'
 	position: number;

@@ -2,11 +2,14 @@
 	import { goto } from '$app/navigation';
 	import type { Team } from '$lib/types/team';
 	import type { Issue } from '$lib/types/issue';
+	import type { DocTreeNode } from '$lib/types/docs';
 	import { listIssues } from '$lib/api/issues';
+	import { searchDocuments } from '$lib/api/docs';
 	import { Kbd } from '$lib/components/ui/kbd';
 	import IssueStatusIcon from '$lib/features/issues/IssueStatusIcon.svelte';
 	import IssuePriorityIcon from '$lib/features/issues/IssuePriorityIcon.svelte';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import FileText from '@lucide/svelte/icons/file-text';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { onMount } from 'svelte';
@@ -25,6 +28,7 @@
 	let search = $state('');
 	let selectedIndex = $state(0);
 	let issueResults = $state<Issue[]>([]);
+	let docResults = $state<DocTreeNode[]>([]);
 	let issueLoading = $state(false);
 	let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -65,6 +69,7 @@
 			{ label: m['sidebar.go_inbox'](), keys: ['G', 'I'], action: () => navigate(`/${slug}/inbox`) },
 			{ label: m['sidebar.go_my_issues'](), keys: ['G', 'M'], action: () => navigate(`/${slug}/my-issues`) },
 			{ label: m['sidebar.go_projects'](), keys: ['G', 'P'], action: () => navigate(`/${slug}/projects`) },
+			{ label: m['sidebar.go_docs'](), keys: ['G', 'D'], action: () => navigate(`/${slug}/docs`) },
 			{ label: m['sidebar.go_settings'](), keys: ['G', 'S'], action: () => navigate(`/${slug}/settings`) },
 			...teams.map((t) => ({
 				label: m['sidebar.go_to_team']({ name: t.name }),
@@ -77,7 +82,7 @@
 		return items.filter((i) => i.label.toLowerCase().includes(search.toLowerCase()));
 	});
 
-	const totalItems = $derived(commands.length + issueResults.length);
+	const totalItems = $derived(commands.length + docResults.length + issueResults.length);
 	const shortcuts = [
 		{ keys: ['↑', '↓'], label: m['sidebar.cmd_move_selection']() },
 		{ keys: ['Enter'], label: m['sidebar.cmd_open_selected']() },
@@ -96,16 +101,22 @@
 			debounceTimer = setTimeout(async () => {
 				issueLoading = true;
 				try {
-					const res = await listIssues(slug, { search, per_page: '12' });
+					const [res, docs] = await Promise.all([
+						listIssues(slug, { search, per_page: '12' }),
+						searchDocuments(slug, search).catch(() => [])
+					]);
 					issueResults = res.data;
+					docResults = docs;
 				} catch {
 					issueResults = [];
+					docResults = [];
 				} finally {
 					issueLoading = false;
 				}
 			}, 300);
 		} else {
 			issueResults = [];
+			docResults = [];
 			issueLoading = false;
 		}
 		selectedIndex = 0;
@@ -198,7 +209,14 @@
 			return;
 		}
 
-		const issue = issueResults[index - commands.length];
+		const docIndex = index - commands.length;
+		if (docIndex < docResults.length) {
+			const doc = docResults[docIndex];
+			if (doc) navigate(`/${slug}/docs/${doc.id}`);
+			return;
+		}
+
+		const issue = issueResults[docIndex - docResults.length];
 		if (issue) navigate(`/${slug}/issue/${issue.identifier}`);
 	}
 
@@ -279,8 +297,31 @@
 						{/each}
 					{/if}
 
-					{#if canSearchIssues(search) && (issueLoading || issueResults.length > 0 || commands.length > 0)}
+					{#if canSearchIssues(search) && docResults.length > 0}
 						<div class="px-3 py-1 {commands.length > 0 ? 'mt-1 border-t border-[var(--app-border)] pt-2' : ''}">
+							<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{m['sidebar.docs']()}</span>
+						</div>
+						{#each docResults as doc, i}
+							{@const idx = commands.length + i}
+							<button
+								class="flex w-full items-center gap-2 px-4 py-2 text-left text-sm {idx === selectedIndex
+									? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]'
+									: 'text-[var(--color-text-secondary)]'}"
+								onmouseenter={() => (selectedIndex = idx)}
+								onclick={() => navigate(`/${slug}/docs/${doc.id}`)}
+							>
+								<FileText size={14} class="shrink-0 text-[var(--color-text-tertiary)]" />
+								<span class="min-w-0 flex-1 truncate">
+									{#each highlightedSegments(doc.title || m['docs.untitled'](), search) as segment}
+										<span class={highlightClass(segment.match)}>{segment.text}</span>
+									{/each}
+								</span>
+							</button>
+						{/each}
+					{/if}
+
+					{#if canSearchIssues(search) && (issueLoading || issueResults.length > 0 || commands.length > 0)}
+						<div class="px-3 py-1 {commands.length > 0 || docResults.length > 0 ? 'mt-1 border-t border-[var(--app-border)] pt-2' : ''}">
 							<span class="text-[10px] font-medium uppercase text-[var(--color-text-tertiary)]">{m['sidebar.issues']()}</span>
 						</div>
 						{#if issueLoading}
@@ -289,7 +330,7 @@
 							</div>
 						{:else if issueResults.length > 0}
 							{#each issueResults as issue, i}
-								{@const idx = commands.length + i}
+								{@const idx = commands.length + docResults.length + i}
 								{@const snippet = descriptionSnippet(issue.description, search)}
 								<button
 									class="flex w-full items-start gap-2 px-4 py-2 text-left text-sm {idx === selectedIndex
@@ -330,7 +371,7 @@
 						{/if}
 					{/if}
 
-					{#if commands.length === 0 && issueResults.length === 0 && !issueLoading}
+					{#if commands.length === 0 && issueResults.length === 0 && docResults.length === 0 && !issueLoading}
 						<p class="px-4 py-2 text-sm text-[var(--color-text-tertiary)]">{m['sidebar.no_results']()}</p>
 					{/if}
 				</div>

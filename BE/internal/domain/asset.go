@@ -16,3 +16,9 @@ type Asset struct {
 	UploadedBy  uuid.UUID `json:"uploaded_by" db:"uploaded_by"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
 }
+
+// AssetWithUploader joins the uploader's display name for file listings.
+type AssetWithUploader struct {
+	Asset
+	UploaderName string `json:"uploader_name" db:"uploader_name"`
+}

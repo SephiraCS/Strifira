@@ -87,6 +87,58 @@ func TestSanitizeEditorContentKeepsAttachmentMetadata(t *testing.T) {
 	assertContains(t, got, `/api/workspaces/acme/assets/`+assetID+`?download=1`)
 }
 
+func TestSanitizeEditorContentConvertsMarkdownWikiLinks(t *testing.T) {
+	input := strings.Join([]string{
+		`# Project Home`,
+		``,
+		`See [[Meeting Notes]] and [[Q2 "Roadmap" & <Plans>]], plus [docs](https://example.com).`,
+	}, "\n")
+
+	got := SanitizeEditorContent(input)
+
+	// Exact anchor the editor's wikiLink node parses (a[data-type="wiki"],
+	// title from data-wiki-title) and markdown export serializes back to
+	// [[Meeting Notes]].
+	assertContains(t, got, `<a data-type="wiki" data-wiki-title="Meeting Notes" class="wiki-link">Meeting Notes</a>`)
+	assertContains(t, got, `data-wiki-title="Q2 &#34;Roadmap&#34; &amp; &lt;Plans&gt;"`)
+	assertContains(t, got, `href="https://example.com"`)
+}
+
+func TestSanitizeEditorContentKeepsMarkdownWikiLinksInCode(t *testing.T) {
+	input := strings.Join([]string{
+		"```",
+		`[[Fenced]]`,
+		"```",
+		``,
+		`Inline ` + "`[[Inline]]`" + ` stays literal.`,
+	}, "\n")
+
+	got := SanitizeEditorContent(input)
+
+	assertContains(t, got, `<code>[[Fenced]]</code>`)
+	assertContains(t, got, `<code>[[Inline]]</code>`)
+	assertNotContains(t, got, `data-type="wiki"`)
+}
+
+func TestSanitizeEditorContentLeavesIncompleteWikiSyntaxAlone(t *testing.T) {
+	input := `Broken [[link and [bracket] stay text, so does [[]].`
+
+	got := SanitizeEditorContent(input)
+
+	assertNotContains(t, got, `data-type="wiki"`)
+	assertContains(t, got, `Broken [[link`)
+}
+
+func TestSanitizeEditorContentKeepsResolvedWikiLinkAnchor(t *testing.T) {
+	input := `<p><a data-type="wiki" data-wiki-title="Meeting Notes" data-doc-id="123e4567-e89b-12d3-a456-426614174000" class="wiki-link" href="#">Meeting Notes</a></p>`
+
+	got := SanitizeEditorContent(input)
+
+	assertContains(t, got, `data-type="wiki"`)
+	assertContains(t, got, `data-wiki-title="Meeting Notes"`)
+	assertContains(t, got, `data-doc-id="123e4567-e89b-12d3-a456-426614174000"`)
+}
+
 func assertContains(t *testing.T, value, substring string) {
 	t.Helper()
 	if !strings.Contains(value, substring) {

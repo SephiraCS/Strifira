@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,6 +109,51 @@ type IssueRepo interface {
 type AssetRepo interface {
 	Create(ctx context.Context, asset *domain.Asset) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Asset, error)
+	ListByWorkspace(ctx context.Context, workspaceID uuid.UUID, search string, limit, offset int) ([]domain.AssetWithUploader, error)
+	CountByWorkspace(ctx context.Context, workspaceID uuid.UUID, search string) (int, error)
+	Delete(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Asset, error)
+}
+
+type DocumentRepo interface {
+	Create(ctx context.Context, doc *domain.Document) error
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.Document, error)
+	GetByTitle(ctx context.Context, workspaceID uuid.UUID, title string) (*domain.Document, error)
+	ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Document, error)
+	ListDeleted(ctx context.Context, workspaceID uuid.UUID) ([]domain.Document, error)
+	Update(ctx context.Context, doc *domain.Document) error
+	MarkDeleted(ctx context.Context, workspaceID, id, userID uuid.UUID) error
+	Restore(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Document, error)
+	Delete(ctx context.Context, workspaceID, id uuid.UUID) error
+	Search(ctx context.Context, workspaceID uuid.UUID, q string, limit int) ([]domain.Document, error)
+	Duplicate(ctx context.Context, src *domain.Document, dst *domain.Document) error
+	CreateRevision(ctx context.Context, rev *domain.DocumentRevision) error
+	ListRevisions(ctx context.Context, documentID uuid.UUID, limit int) ([]domain.DocumentRevision, error)
+	GetRevisionByID(ctx context.Context, id uuid.UUID) (*domain.DocumentRevision, error)
+	LastRevisionAt(ctx context.Context, documentID uuid.UUID) (sql.NullTime, error)
+	ReplaceLinks(ctx context.Context, documentID uuid.UUID, targetIDs []uuid.UUID) error
+	ListBacklinks(ctx context.Context, documentID uuid.UUID) ([]domain.Document, error)
+	ListLinksByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.DocumentLink, error)
+	ListTags(ctx context.Context, workspaceID uuid.UUID) ([]domain.DocumentTag, error)
+	CreateTag(ctx context.Context, tag *domain.DocumentTag) error
+	GetTagByName(ctx context.Context, workspaceID uuid.UUID, name string) (*domain.DocumentTag, error)
+	DeleteTag(ctx context.Context, workspaceID, tagID uuid.UUID) error
+	SetDocumentTags(ctx context.Context, documentID uuid.UUID, tagIDs []uuid.UUID) error
+	ListTagsForDocument(ctx context.Context, documentID uuid.UUID) ([]domain.DocumentTag, error)
+	ListTagsForDocuments(ctx context.Context, documentIDs []uuid.UUID) (map[uuid.UUID][]string, error)
+	CreateComment(ctx context.Context, comment *domain.DocumentComment) error
+	ListComments(ctx context.Context, documentID uuid.UUID) ([]domain.DocumentComment, error)
+	ListCommentReplies(ctx context.Context, parentID uuid.UUID) ([]domain.DocumentComment, error)
+	GetCommentByID(ctx context.Context, id uuid.UUID) (*domain.DocumentComment, error)
+	ResolveComment(ctx context.Context, id uuid.UUID) error
+	ReopenComment(ctx context.Context, id uuid.UUID) error
+}
+
+type DocumentUpdateRepo interface {
+	AppendUpdates(ctx context.Context, documentID uuid.UUID, updates [][]byte) error
+	ListUpdates(ctx context.Context, documentID uuid.UUID) ([][]byte, error)
+	CountUpdates(ctx context.Context, documentID uuid.UUID) (int, error)
+	Compact(ctx context.Context, documentID uuid.UUID, snapshot []byte, tail [][]byte) error
+	DeleteByDocument(ctx context.Context, documentID uuid.UUID) error
 }
 
 type UserAvatarRepo interface {

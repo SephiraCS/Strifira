@@ -10,12 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/ku/ku-backend/internal/domain"
 	"github.com/ku/ku-backend/internal/middleware"
@@ -56,18 +58,20 @@ var allowedUploadExtensions = map[string]map[string]bool{
 }
 
 type UploadHandler struct {
-	store       storage.Backend
-	assetRepo   repository.AssetRepo
-	issueRepo   repository.IssueRepo
-	tokenSecret string
+	store           storage.Backend
+	assetRepo       repository.AssetRepo
+	issueRepo       repository.IssueRepo
+	tokenSecret     string
+	fileShareSecret string
 }
 
 func NewUploadHandler(store storage.Backend, assetRepo repository.AssetRepo, issueRepo repository.IssueRepo, jwtSecret string) *UploadHandler {
 	return &UploadHandler{
-		store:       store,
-		assetRepo:   assetRepo,
-		issueRepo:   issueRepo,
-		tokenSecret: jwtSecret + ":prompt-assets",
+		store:           store,
+		assetRepo:       assetRepo,
+		issueRepo:       issueRepo,
+		tokenSecret:     jwtSecret + ":prompt-assets",
+		fileShareSecret: jwtSecret + ":file-share",
 	}
 }
 
@@ -156,6 +160,141 @@ func (h *UploadHandler) GetAsset(c echo.Context) error {
 	}
 
 	c.Response().Header().Set("Cache-Control", "private, max-age=300")
+	h.setAssetDisposition(c, asset)
+	return h.streamAsset(c, asset)
+}
+
+// ListAssets serves the workspace file browser (uploads of every kind).
+func (h *UploadHandler) ListAssets(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+	if perPage < 1 || perPage > 100 {
+		perPage = 30
+	}
+	search := strings.TrimSpace(c.QueryParam("search"))
+
+	ctx := c.Request().Context()
+	assets, err := h.assetRepo.ListByWorkspace(ctx, ws.ID, search, perPage, (page-1)*perPage)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	total, err := h.assetRepo.CountByWorkspace(ctx, ws.ID, search)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+
+	type assetEntry struct {
+		ID           string    `json:"id"`
+		Filename     string    `json:"filename"`
+		ContentType  string    `json:"content_type"`
+		Size         int64     `json:"size"`
+		UploadedBy   string    `json:"uploaded_by"`
+		UploaderName string    `json:"uploader_name"`
+		CreatedAt    time.Time `json:"created_at"`
+		URL          string    `json:"url"`
+	}
+	entries := make([]assetEntry, len(assets))
+	for i, a := range assets {
+		entries[i] = assetEntry{
+			ID:           a.ID.String(),
+			Filename:     a.Filename,
+			ContentType:  a.ContentType,
+			Size:         a.Size,
+			UploadedBy:   a.UploadedBy.String(),
+			UploaderName: a.UploaderName,
+			CreatedAt:    a.CreatedAt,
+			URL:          fmt.Sprintf("/api/workspaces/%s/assets/%s", ws.Slug, a.ID),
+		}
+	}
+	return response.Success(c, http.StatusOK, map[string]any{
+		"items":    entries,
+		"total":    total,
+		"page":     page,
+		"per_page": perPage,
+	})
+}
+
+// DeleteAsset removes an upload. Uploaders may remove their own files;
+// anyone with issue:delete (admin/owner) may remove any.
+func (h *UploadHandler) DeleteAsset(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	userID := middleware.GetUserID(c)
+	assetID, err := uuid.Parse(c.Param("assetId"))
+	if err != nil {
+		return response.NotFound(c, "Asset")
+	}
+	ctx := c.Request().Context()
+	asset, err := h.assetRepo.GetByID(ctx, assetID)
+	if err != nil || asset == nil || asset.WorkspaceID != ws.ID {
+		return response.NotFound(c, "Asset")
+	}
+	if asset.UploadedBy != userID && !domain.HasPermission(c.Get("workspace_role").(string), domain.PermIssueDelete) {
+		return response.Forbidden(c)
+	}
+	if _, err := h.assetRepo.Delete(ctx, ws.ID, assetID); err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	if err := h.store.Delete(ctx, asset.StorageKey); err != nil {
+		log.WithError(err).WithField("storage_key", asset.StorageKey).Warn("asset row deleted but storage object remains")
+	}
+	return response.Success(c, http.StatusOK, map[string]bool{"ok": true})
+}
+
+var fileShareTTLs = map[string]time.Duration{
+	"1h":   time.Hour,
+	"24h":  24 * time.Hour,
+	"7d":   7 * 24 * time.Hour,
+	"30d":  30 * 24 * time.Hour,
+	"365d": 365 * 24 * time.Hour,
+}
+
+// ShareAsset signs a public link for one file with the requested lifetime.
+func (h *UploadHandler) ShareAsset(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	assetID, err := uuid.Parse(c.Param("assetId"))
+	if err != nil {
+		return response.NotFound(c, "Asset")
+	}
+	var req struct {
+		TTL string `json:"ttl"`
+	}
+	if err := c.Bind(&req); err != nil && c.Request().Body != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	ttl, ok := fileShareTTLs[req.TTL]
+	if !ok {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Unsupported ttl (use 1h, 24h, 7d, 30d or 365d)")
+	}
+
+	asset, err := h.assetRepo.GetByID(c.Request().Context(), assetID)
+	if err != nil || asset == nil || asset.WorkspaceID != ws.ID {
+		return response.NotFound(c, "Asset")
+	}
+	token, expiresAt, err := assettoken.GenerateFileShare(h.fileShareSecret, asset.ID, ws.ID, ttl)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	return response.Success(c, http.StatusOK, map[string]string{
+		"url":        "/api/public/files/" + token,
+		"expires_at": expiresAt.Format(time.RFC3339),
+	})
+}
+
+// PublicFile streams a shared file for holders of a valid share token.
+func (h *UploadHandler) PublicFile(c echo.Context) error {
+	assetID, workspaceID, err := assettoken.ValidateFileShare(c.Param("token"), h.fileShareSecret)
+	if err != nil {
+		return response.NotFound(c, "File")
+	}
+	asset, err := h.assetRepo.GetByID(c.Request().Context(), assetID)
+	if err != nil || asset == nil || asset.WorkspaceID != workspaceID {
+		return response.NotFound(c, "File")
+	}
+	c.Response().Header().Set("Cache-Control", "private, max-age=3600")
 	h.setAssetDisposition(c, asset)
 	return h.streamAsset(c, asset)
 }
