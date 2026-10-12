@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.21",
+    "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.21",
+    "body": "Deployed to alpha as 6a3f85f676d2a6c153e573a3e699b15eb252e54c.\n\n- Trim GitHub API usage without losing features",
+    "published_at": "2026-10-12T15:09:01Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.21",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.20",
     "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.20",
     "body": "Deployed to alpha as a9cee5e4a7a8425e8985ac76396f6b7e9dc22801.\n\n- Match the template title exactly when asserting its row disappears\n- Drop the debug catch-all handler from the concurrency test fixture",
