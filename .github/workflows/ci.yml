@@ -9,8 +9,9 @@ on:
   # that also re-cuts the release: `gh workflow run ci.yml --ref main`.
   workflow_dispatch:
 
+# Main never cancels: every main run builds the image the deployer rolls.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -31,6 +32,41 @@ permissions:
 # deploy/alpha is green the Release job bumps the version, tags and
 # publishes it; pull requests never edit versions (scripts/ci/release.sh).
 jobs:
+  # Pull requests run only the jobs whose inputs they change; pushes to main
+  # and workflow_dispatch run everything, so the deployer always sees the
+  # full set of check runs. The `test` job at the end aggregates the result.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.backend == 'true' }}
+      web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.web == 'true' }}
+      e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.e2e == 'true' }}
+    steps:
+      - uses: dorny/paths-filter@v3 # v3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            backend:
+              - 'BE/**'
+              - 'devmachine/**'
+              - 'scripts/ci/check-image-versions.sh'
+              - 'scripts/ci/check-test-database.sh'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'UI/**'
+              - 'WEB/**'
+              - '.github/workflows/ci.yml'
+            e2e:
+              - 'UI/**'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+
   # TS-795 switch guard: fails when the change adds an on/off setting.
   # Vendored into scripts/ci/zero-config-check.py from TerraScale/ts-builder
   # (guard ref 8dacab4) when that repository left the server in the Tools
@@ -55,6 +91,8 @@ jobs:
           python3 scripts/ci/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
 
   check:
+    needs: [changes]
+    if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -100,7 +138,10 @@ jobs:
         working-directory: WEB
         run: npm run test:responsive
 
-  test:
+  # Fast backend suite. The required check is the `test` aggregate below.
+  backend:
+    needs: [changes]
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -144,6 +185,7 @@ jobs:
           # and check-gofmt must match the toolchain the code is formatted
           # with (the former Forgejo builder image also ran 1.27.2).
           go-version: 1.27.2
+          cache: true
           cache-dependency-path: BE/go.sum
 
       - name: Check the devmachine image tool pins
@@ -173,6 +215,8 @@ jobs:
   # (ops/deployer/apps.json in the Homelab repo): keep "e2e shard N" stable.
   e2e:
     name: e2e shard ${{ matrix.shard }}
+    needs: [changes]
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -220,6 +264,22 @@ jobs:
           path: UI/test-results/**/error-context.md
           if-no-files-found: ignore
 
+  # The required check. It always reports: green when every gate passed or
+  # was skipped as unaffected, red when any failed or was cancelled.
+  test:
+    needs: [changes, guard, check, backend, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success | skipped) ;; *) exit 1 ;; esac
+          done
+
   # The image the homelab-deployer on alpha rolls to: it watches the check
   # runs of this commit, and once they are all green it pulls
   # registry.mariogk.com/homelab/ku:<sha12> from Harbor, rolls the Incus
@@ -246,18 +306,23 @@ jobs:
         shell: bash
         run: echo "sha12=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
+      - uses: docker/setup-buildx-action@v3 # v3
+
+      # Both tags, same manifest: homelab-deployer discovers the image by
+      # the full 40-hex sha tag and rebuilds the instance from sha12. The
+      # gha layer cache keeps the go and npm dependency layers between runs.
       - name: Build and push the image
-        env:
-          SHA12: ${{ steps.sha.outputs.sha12 }}
-        run: |
-          set -euo pipefail
-          # Both tags, same manifest: homelab-deployer discovers the image by
-          # the full 40-hex sha tag and rebuilds the instance from sha12.
-          docker build --build-arg "KU_VERSION=${GITHUB_SHA}" \
-            --tag "registry.mariogk.com/homelab/ku:${GITHUB_SHA}" \
-            --tag "registry.mariogk.com/homelab/ku:${SHA12}" .
-          docker push "registry.mariogk.com/homelab/ku:${GITHUB_SHA}"
-          docker push "registry.mariogk.com/homelab/ku:${SHA12}"
+        uses: docker/build-push-action@v6 # v6
+        with:
+          context: .
+          push: true
+          provenance: false
+          build-args: KU_VERSION=${{ github.sha }}
+          tags: |
+            registry.mariogk.com/homelab/ku:${{ github.sha }}
+            registry.mariogk.com/homelab/ku:${{ steps.sha.outputs.sha12 }}
+          cache-from: type=gha,scope=ci-build
+          cache-to: type=gha,mode=max,scope=ci-build
 
   # Cuts the next patch release of the deployed commit: waits for the
   # homelab-deployer's deploy/alpha commit status on the pushed sha to turn
