@@ -164,7 +164,7 @@ test('an issue template is deleted only after confirming, and its delete button 
 	await deleteButton.click();
 	await dialog.getByRole('button', { name: 'Delete template' }).click();
 	await expect.poll(() => deletes).toEqual([`/api/workspaces/test/issue-templates/${template.id}`]);
-	await expect(page.getByText(template.title)).toBeHidden();
+	await expect(page.getByText(template.title, { exact: true })).toBeHidden();
 });
 
 test('the delete dialog keeps Tab inside it and returns focus to its trigger when cancelled', async ({ page }) => {
