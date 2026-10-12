@@ -11,7 +11,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import ErrorState from '$lib/components/shared/ErrorState.svelte';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getCachedGitHubStatus } from '$lib/api/github';
 	import { createDevMachine, deleteDevMachineEnvironment, deleteDevMachineScopeSetting, getDevMachinePolicy, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachinePolicy, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
 	import { getWorkspace } from '$lib/api/workspaces';
 	import type { DevMachineEnvironment, DevMachinePolicy } from '$lib/types/dev-machine';
@@ -49,7 +49,7 @@
 		failed = false;
 		try {
 			const [loaded, workspace, github, scope, availableEnvironments] = await Promise.all([
-				getDevMachinePolicy(slug), getWorkspace(slug), getGitHubStatus(slug),
+				getDevMachinePolicy(slug), getWorkspace(slug), getCachedGitHubStatus(slug),
 				getDevMachineScopeSetting(slug, 'workspace'), listDevMachineEnvironments(slug)
 			]);
 			policy = { ...loaded, allowed_providers: loaded.allowed_providers ?? [], allowed_repositories: loaded.allowed_repositories ?? [] };

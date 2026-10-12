@@ -1,10 +1,12 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -31,21 +33,32 @@ func TestConditionalGETReusesCachedBodyOn304(t *testing.T) {
 		fmt.Fprint(w, `{"id":7,"login":"octo","name":"Octo Cat"}`)
 	}))
 	defer server.Close()
+	conn := connectionKey(server.URL+"/api/v3", "etag-token")
 
 	first, err := NewClient(server.URL, "etag-token").GetCurrentUser(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "octo", first.Login)
 
-	// A fresh client instance for the same connection reuses the cache.
+	// Within the freshness window the GET is answered from the cache with no
+	// round trip at all.
 	second, err := NewClient(server.URL, "etag-token").GetCurrentUser(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "octo", second.Login)
-	assert.EqualValues(t, 2, requests.Load(), "the second GET must be conditional and answered from cache on 304")
+	assert.EqualValues(t, 1, requests.Load(), "a fresh entry must be served without revalidation")
 
-	// The rotated ETag from the 304 serves the next conditional request.
+	// Past the window, a fresh client instance for the same connection sends a
+	// conditional GET and reuses the cached body on 304.
+	expireFreshness(t, conn, "/user")
 	third, err := NewClient(server.URL, "etag-token").GetCurrentUser(t.Context())
 	require.NoError(t, err)
 	assert.Equal(t, "octo", third.Login)
+	assert.EqualValues(t, 2, requests.Load(), "the revalidated GET must be conditional and answered from cache on 304")
+
+	// The rotated ETag from the 304 serves the next conditional request.
+	expireFreshness(t, conn, "/user")
+	fourth, err := NewClient(server.URL, "etag-token").GetCurrentUser(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "octo", fourth.Login)
 	assert.EqualValues(t, 3, requests.Load())
 }
 
@@ -205,4 +218,152 @@ func TestCacheEvictsWithinBudget(t *testing.T) {
 	assert.False(t, cached, "the oldest entry is evicted once the entry cap is reached")
 	_, cached = sharedCache.lookup(conn, fmt.Sprintf("/page-%d", maxCondEntries))
 	assert.True(t, cached)
+}
+
+// expireFreshness backdates a stored entry beyond the freshness window so the
+// next GET revalidates instead of being served without a round trip.
+func expireFreshness(t *testing.T, conn, path string) {
+	t.Helper()
+	sharedCache.mu.Lock()
+	defer sharedCache.mu.Unlock()
+	key := conn + "\x00" + path
+	if entry, ok := sharedCache.entries[key]; ok {
+		entry.storedAt = time.Now().Add(-condFreshWindow - time.Second)
+		sharedCache.entries[key] = entry
+	}
+}
+
+func TestFreshEntryServesRepeatedCallsWithoutRequests(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.Header().Set("ETag", `"v1"`)
+		fmt.Fprint(w, `{"id":7,"login":"octo"}`)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "fresh-token")
+
+	for i := 0; i < 5; i++ {
+		user, err := client.GetCurrentUser(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, "octo", user.Login)
+	}
+	assert.EqualValues(t, 1, requests.Load(), "calls within the freshness window make no HTTP request at all")
+}
+
+func TestConcurrentIdenticalGETsShareOneRoundTrip(t *testing.T) {
+	var requests atomic.Int32
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		// Hold the leader's response open so every concurrent caller joins
+		// the in-flight call instead of issuing its own request.
+		<-release
+		w.Header().Set("ETag", `"v1"`)
+		fmt.Fprint(w, `{"id":7,"login":"octo"}`)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "shared-token")
+
+	const callers = 20
+	results := make(chan error, callers)
+	var started sync.WaitGroup
+	started.Add(callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			defer started.Done()
+			_, err := client.GetCurrentUser(context.Background())
+			results <- err
+		}()
+	}
+	time.Sleep(300 * time.Millisecond)
+	close(release)
+	started.Wait()
+	close(results)
+	for err := range results {
+		require.NoError(t, err)
+	}
+	assert.EqualValues(t, 1, requests.Load(), "concurrent identical GETs must collapse into one upstream request")
+}
+
+func TestWaiterRetriesOwnAttemptAfterLeaderTransportFailure(t *testing.T) {
+	var requests atomic.Int32
+	arrived := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if requests.Add(1) == 1 {
+			close(arrived)
+			// Abort the connection: the leader sees a transport error.
+			panic(http.ErrAbortHandler)
+		}
+		w.Header().Set("ETag", `"v1"`)
+		fmt.Fprint(w, `{"id":7,"login":"octo"}`)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "fallback-token")
+
+	leader := make(chan error, 1)
+	go func() {
+		_, err := client.GetCurrentUser(context.Background())
+		leader <- err
+	}()
+	<-arrived
+	waiter := make(chan error, 1)
+	go func() {
+		_, err := client.GetCurrentUser(context.Background())
+		waiter <- err
+	}()
+	// Give the waiter time to block on the leader's flight before the leader
+	// aborts, so the fallback path is exercised deterministically.
+	time.Sleep(200 * time.Millisecond)
+
+	err := <-leader
+	require.ErrorIs(t, err, ErrUnavailable, "the leader reports the transport failure")
+
+	// The waiter must not inherit the failure; it leads its own attempt.
+	user, err := client.GetCurrentUser(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, "octo", user.Login)
+	require.NoError(t, <-waiter, "a waiter falls through to its own attempt instead of sharing the error")
+	assert.EqualValues(t, 2, requests.Load())
+}
+
+func TestWaiterReturnsContextErrorWhenCanceled(t *testing.T) {
+	var requests atomic.Int32
+	arrived := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		close(arrived)
+		<-release
+		w.Header().Set("ETag", `"v1"`)
+		fmt.Fprint(w, `{"id":7,"login":"octo"}`)
+	}))
+	defer server.Close()
+	client := NewClient(server.URL, "cancel-token")
+
+	leader := make(chan error, 1)
+	go func() {
+		_, err := client.GetCurrentUser(context.Background())
+		leader <- err
+	}()
+	<-arrived
+
+	ctx, cancel := context.WithCancel(context.Background())
+	waiter := make(chan error, 1)
+	go func() {
+		_, err := client.GetCurrentUser(ctx)
+		waiter <- err
+	}()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-waiter:
+		require.ErrorIs(t, err, context.Canceled, "a canceled waiter must return its context error")
+	case <-time.After(5 * time.Second):
+		t.Fatal("the canceled waiter did not return")
+	}
+	close(release)
+	require.NoError(t, <-leader)
+	assert.EqualValues(t, 1, requests.Load())
 }

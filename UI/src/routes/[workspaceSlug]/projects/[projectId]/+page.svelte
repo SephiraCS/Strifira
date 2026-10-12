@@ -23,7 +23,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getCachedGitHubStatus } from '$lib/api/github';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
 	import type { GitHubRepo } from '$lib/types/github';
 	import type { DevMachineEnvironment } from '$lib/types/dev-machine';
@@ -98,7 +98,7 @@
 			if (!isCurrentDevelopmentScope(s, pid, version)) return;
 			canManageDevelopment = workspace.current_user_role === 'owner' || workspace.current_user_role === 'admin';
 			const [github, developmentSetting, availableEnvironments] = await Promise.all([
-				getGitHubStatus(s), getDevMachineScopeSetting(s, 'project', pid), listDevMachineEnvironments(s)
+				getCachedGitHubStatus(s), getDevMachineScopeSetting(s, 'project', pid), listDevMachineEnvironments(s)
 			]);
 			if (!isCurrentDevelopmentScope(s, pid, version)) return;
 			developmentRepositories = github.repos ?? [];

@@ -2,6 +2,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { page } from '$app/state';
 	import {
+		getCachedGitHubStatus,
 		getGitHubStatus,
 		connectGitHub,
 		disconnectGitHub,
@@ -175,12 +176,14 @@
 		enabling = false;
 		showDisableConfirm = false;
 		serverOverrideOpen = false;
-		try {
-			const connection = await getGitHubStatus(workspaceSlug);
-			if (!isCurrent(workspaceSlug, requestGeneration)) return;
-			status = connection;
-			if (connection.instance_url) instanceUrl = connection.instance_url;
-			if (connection.connected) await loadConfiguration(workspaceSlug, requestGeneration);
+	try {
+		// Page load tolerates a ≤30s-stale status; every mutation below
+		// re-fetches fresh (and the mutation helpers drop the cache entry).
+		const connection = await getCachedGitHubStatus(workspaceSlug);
+		if (!isCurrent(workspaceSlug, requestGeneration)) return;
+		status = connection;
+		if (connection.instance_url) instanceUrl = connection.instance_url;
+		if (connection.connected) await loadConfiguration(workspaceSlug, requestGeneration);
 		} catch (error) {
 			if (isCurrent(workspaceSlug, requestGeneration))
 				loadError = errorMessage(error, m['settings.github.failed_status']());

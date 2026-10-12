@@ -13,7 +13,7 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import * as Select from '$lib/components/ui/select';
 	import * as Popover from '$lib/components/ui/popover';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getCachedGitHubStatus } from '$lib/api/github';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
 	import type { GitHubRepo } from '$lib/types/github';
 	import type { DevMachineEnvironment } from '$lib/types/dev-machine';
@@ -205,7 +205,7 @@
 			canManageDevelopment = workspace.current_user_role === 'owner' || workspace.current_user_role === 'admin';
 			if (!canManageDevelopment) return;
 			const [github, setting, environments] = await Promise.all([
-				getGitHubStatus(s), getDevMachineScopeSetting(s, 'team', t), listDevMachineEnvironments(s)
+				getCachedGitHubStatus(s), getDevMachineScopeSetting(s, 'team', t), listDevMachineEnvironments(s)
 			]);
 			if (!isCurrentDevelopmentScope(s, t, version)) return;
 			developmentRepositories = github.repos ?? [];

@@ -1,11 +1,13 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strconv"
@@ -28,6 +30,11 @@ const (
 	maxRateLimitRetry  = 3 * time.Second
 	maxRateLimitWindow = time.Hour
 	fallbackRateWindow = time.Minute
+	// condFreshWindow is how long a stored GET answer is served without any
+	// round trip, not even a conditional one. Webhook bursts and multiple
+	// viewers polling the same resource collapse into the stored response;
+	// older entries revalidate with If-None-Match (304s are free).
+	condFreshWindow = 2 * time.Second
 )
 
 // ErrRateLimited reports an exhausted or briefly throttled API budget. Callers
@@ -49,6 +56,38 @@ type condEntry struct {
 	etag         string
 	lastModified string
 	body         []byte
+	storedAt     time.Time
+}
+
+// fresh reports whether the entry is still inside the window where it is
+// served without revalidation.
+func (e condEntry) fresh() bool {
+	return time.Since(e.storedAt) < condFreshWindow
+}
+
+// inflightCall is one shared round trip for identical concurrent GETs: the
+// leader performs the request, waiters reuse its outcome. retryable marks a
+// transport-level failure that waiters must not inherit — each retries on
+// its own instead.
+type inflightCall struct {
+	done      chan struct{}
+	status    int
+	header    http.Header
+	body      []byte
+	err       error
+	retryable bool
+}
+
+// response materializes the shared outcome as a fresh response every waiter
+// can read independently.
+func (call *inflightCall) response(request *http.Request) *http.Response {
+	return &http.Response{
+		Status:     http.StatusText(call.status),
+		StatusCode: call.status,
+		Header:     call.header.Clone(),
+		Body:       io.NopCloser(bytes.NewReader(call.body)),
+		Request:    request,
+	}
 }
 
 type requestCache struct {
@@ -58,6 +97,8 @@ type requestCache struct {
 	bytes   int
 
 	blocked map[string]time.Time
+
+	inflight map[string]*inflightCall
 }
 
 var sharedCache = &requestCache{
@@ -103,9 +144,38 @@ func (rc *requestCache) store(conn, path string, header http.Header, body []byte
 			delete(rc.entries, evict)
 		}
 	}
-	rc.entries[key] = condEntry{etag: etag, lastModified: lastModified, body: body}
+	rc.entries[key] = condEntry{etag: etag, lastModified: lastModified, body: body, storedAt: time.Now()}
 	rc.order = append(rc.order, key)
 	rc.bytes += len(body)
+}
+
+// beginFlight registers call as the in-flight round trip for conn+path and
+// reports leadership: a non-nil return is the already-running call to wait on.
+func (rc *requestCache) beginFlight(conn, path string, call *inflightCall) *inflightCall {
+	key := conn + "\x00" + path
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.inflight == nil {
+		rc.inflight = map[string]*inflightCall{}
+	}
+	if existing, ok := rc.inflight[key]; ok {
+		return existing
+	}
+	rc.inflight[key] = call
+	return nil
+}
+
+// finishFlight withdraws the call (later requests lead a fresh round trip)
+// and publishes the outcome to every waiter. The leader must fill the call's
+// result fields before calling this.
+func (rc *requestCache) finishFlight(conn, path string, call *inflightCall) {
+	key := conn + "\x00" + path
+	rc.mu.Lock()
+	if rc.inflight != nil && rc.inflight[key] == call {
+		delete(rc.inflight, key)
+	}
+	rc.mu.Unlock()
+	close(call.done)
 }
 
 // refreshValidators updates an entry's validators when a 304 response carries

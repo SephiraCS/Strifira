@@ -103,11 +103,14 @@ func registerGitHubTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, err
 		}
-		status, err := deps.GitHubSvc.GetStatus(ctx, w.workspace.ID)
+		// Mapping the full name to a linked-repo id only needs the database
+		// rows; resolving it through the status would validate the token
+		// against GitHub for no benefit.
+		repos, err := deps.GitHubSvc.ListLinkedRepos(ctx, w.workspace.ID)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read GitHub status: %w", err)
+			return nil, nil, fmt.Errorf("failed to read linked repositories: %w", err)
 		}
-		for _, repo := range status.Repos {
+		for _, repo := range repos {
 			if !strings.EqualFold(repo.FullName, strings.TrimSpace(in.Repo)) {
 				continue
 			}

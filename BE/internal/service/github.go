@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -63,6 +64,71 @@ type GitHubService struct {
 	frontendURL    string
 	webhookURL     string              // optional override for private-network dev
 	global         *GlobalGitHubConfig // nil = per-workspace connections
+
+	// statusChecks caches successful token checks backing GetStatus so page
+	// loads do not each cost a live /user request.
+	statusCheckMu sync.Mutex
+	statusChecks  map[uuid.UUID]githubStatusCheck
+}
+
+// githubStatusCheckTTL bounds how long one successful token check serves
+// later status reads: connected/account stay at most this stale, while every
+// mutation invalidates immediately. Hardcoded by design, not a setting.
+const githubStatusCheckTTL = 5 * time.Minute
+
+// githubStatusCheck remembers one connection's verified account. connKey
+// carries the connection identity so a rotated token or moved instance
+// invalidates the entry naturally.
+type githubStatusCheck struct {
+	connKey   string
+	login     string
+	avatarURL string
+	checkedAt time.Time
+}
+
+// githubConnKey identifies an instance + token pair without retaining the
+// token.
+func githubConnKey(instanceURL, token string) string {
+	digest := sha256.Sum256([]byte(instanceURL + "\x00" + token))
+	return hex.EncodeToString(digest[:])
+}
+
+// recallStatusCheck returns the workspace's cached token check when it is
+// still within the TTL and belongs to the current connection.
+func (s *GitHubService) recallStatusCheck(workspaceID uuid.UUID, conn *githubConnection) (githubStatusCheck, bool) {
+	key := githubConnKey(conn.InstanceURL, conn.Token)
+	s.statusCheckMu.Lock()
+	defer s.statusCheckMu.Unlock()
+	check, ok := s.statusChecks[workspaceID]
+	if !ok || check.connKey != key || time.Since(check.checkedAt) >= githubStatusCheckTTL {
+		return githubStatusCheck{}, false
+	}
+	return check, true
+}
+
+// rememberStatusCheck caches a successful token check. Failures are never
+// cached: an unreachable instance must keep reporting connected=false and
+// retry on the next read.
+func (s *GitHubService) rememberStatusCheck(workspaceID uuid.UUID, conn *githubConnection, user *gh.User) {
+	s.statusCheckMu.Lock()
+	defer s.statusCheckMu.Unlock()
+	if s.statusChecks == nil {
+		s.statusChecks = map[uuid.UUID]githubStatusCheck{}
+	}
+	s.statusChecks[workspaceID] = githubStatusCheck{
+		connKey:   githubConnKey(conn.InstanceURL, conn.Token),
+		login:     user.Login,
+		avatarURL: user.AvatarURL,
+		checkedAt: time.Now(),
+	}
+}
+
+// invalidateStatusCheck drops the workspace's cached token check so the next
+// status read contacts GitHub again.
+func (s *GitHubService) invalidateStatusCheck(workspaceID uuid.UUID) {
+	s.statusCheckMu.Lock()
+	defer s.statusCheckMu.Unlock()
+	delete(s.statusChecks, workspaceID)
 }
 
 type githubConnection struct {
@@ -216,6 +282,9 @@ func (s *GitHubService) Connect(ctx context.Context, workspaceID uuid.UUID, inst
 	if err := s.fRepo.UpsertConnection(ctx, conn); err != nil {
 		return nil, err
 	}
+	// The stored connection changed; the next status read re-checks the new
+	// token instead of trusting the previous connection's cached account.
+	s.invalidateStatusCheck(workspaceID)
 
 	s.seedDefaultsIfMissing(ctx, workspaceID)
 	return &dto.GitHubAccountResponse{Login: user.Login, AvatarURL: user.AvatarURL}, nil
@@ -225,6 +294,7 @@ func (s *GitHubService) Connect(ctx context.Context, workspaceID uuid.UUID, inst
 // failures retain the credentials for retry; GitHub webhooks are best-effort.
 // The workspace disable marker is deliberately untouched.
 func (s *GitHubService) Disconnect(ctx context.Context, workspaceID uuid.UUID) error {
+	s.invalidateStatusCheck(workspaceID)
 	repos, err := s.fRepo.ListReposByWorkspace(ctx, workspaceID)
 	if err != nil {
 		return fmt.Errorf("listing linked GitHub repositories: %w", err)
@@ -241,6 +311,9 @@ func (s *GitHubService) Disconnect(ctx context.Context, workspaceID uuid.UUID) e
 // workspace. Disabling unlinks every repo — like Disconnect — but keeps the
 // connection row: it is a pause, not a removal. Enabling is idempotent.
 func (s *GitHubService) SetDisabled(ctx context.Context, workspaceID uuid.UUID, disabled bool) error {
+	// Both directions drop the cached token check: a paused integration must
+	// not resurface a stale account, and resuming re-checks immediately.
+	s.invalidateStatusCheck(workspaceID)
 	if !disabled {
 		return s.fRepo.ClearWorkspaceDisable(ctx, workspaceID)
 	}
@@ -362,6 +435,8 @@ func (s *GitHubService) ListLinkedRepos(ctx context.Context, workspaceID uuid.UU
 
 // GetStatus returns the integration status for a workspace. A disabled
 // workspace reports the pause and nothing else, without contacting GitHub.
+// The token check behind connected/account is cached for a short TTL and
+// invalidated by every connection mutation.
 func (s *GitHubService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (*dto.GitHubStatusResponse, error) {
 	resp := &dto.GitHubStatusResponse{Repos: []dto.GitHubRepoResponse{}}
 
@@ -384,9 +459,15 @@ func (s *GitHubService) GetStatus(ctx context.Context, workspaceID uuid.UUID) (*
 			resp.ManagedBy = "workspace"
 		}
 
-		if account, err := conn.client().GetCurrentUser(ctx); err == nil {
+		if account, cached := s.recallStatusCheck(workspaceID, conn); cached {
 			resp.Connected = true
-			resp.Account = &dto.GitHubAccountResponse{Login: account.Login, AvatarURL: account.AvatarURL}
+			resp.Account = &dto.GitHubAccountResponse{Login: account.login, AvatarURL: account.avatarURL}
+		} else if user, err := conn.client().GetCurrentUser(ctx); err == nil {
+			// Only a successful check is cached; a failed one keeps reporting
+			// connected=false and retries on the next read.
+			resp.Connected = true
+			resp.Account = &dto.GitHubAccountResponse{Login: user.Login, AvatarURL: user.AvatarURL}
+			s.rememberStatusCheck(workspaceID, conn, user)
 		}
 
 		// Global mode has no Connect flow to seed defaults; self-heal once.

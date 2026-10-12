@@ -62,6 +62,13 @@ func (s *workspaceConfigStore) UpsertConnection(_ context.Context, conn *domain.
 	return nil
 }
 
+func (s *workspaceConfigStore) DeleteConnection(_ context.Context, workspaceID uuid.UUID) error {
+	if s.conn != nil && s.conn.WorkspaceID == workspaceID {
+		s.conn = nil
+	}
+	return nil
+}
+
 func (s *workspaceConfigStore) ListReposByWorkspace(_ context.Context, workspaceID uuid.UUID) ([]domain.GitHubRepoModel, error) {
 	var repos []domain.GitHubRepoModel
 	for _, repo := range s.repos {
@@ -425,6 +432,125 @@ func TestGitHubGetStatusShapes(t *testing.T) {
 		assert.Empty(t, status.ManagedBy)
 		assert.Empty(t, status.Repos)
 	})
+}
+
+func TestGitHubGetStatusCachesTokenCheckWithinTTL(t *testing.T) {
+	var requests atomic.Int64
+	server := githubUserServer(t, &requests)
+	key := crypto.DeriveKey("workspace-config-fixture")
+	workspaceID := uuid.New()
+	store := &workspaceConfigStore{
+		conn: &domain.GitHubConnection{WorkspaceID: workspaceID, InstanceURL: server.URL, Token: encryptedWorkspaceToken(t, key, "token")},
+	}
+	svc := &GitHubService{fRepo: store, encryptionKey: key}
+
+	for range 2 {
+		status, err := svc.GetStatus(t.Context(), workspaceID)
+		require.NoError(t, err)
+		assert.True(t, status.Connected)
+		require.NotNil(t, status.Account)
+		assert.Equal(t, "alice", status.Account.Login)
+		assert.Equal(t, "https://avatars.example/alice", status.Account.AvatarURL)
+	}
+	assert.EqualValues(t, 1, requests.Load(), "a status read within the TTL reuses the successful token check")
+}
+
+func TestGitHubGetStatusDoesNotCacheFailedTokenCheck(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	key := crypto.DeriveKey("workspace-config-fixture")
+	workspaceID := uuid.New()
+	store := &workspaceConfigStore{
+		conn: &domain.GitHubConnection{WorkspaceID: workspaceID, InstanceURL: server.URL, Token: encryptedWorkspaceToken(t, key, "token")},
+	}
+	svc := &GitHubService{fRepo: store, encryptionKey: key}
+
+	for range 2 {
+		status, err := svc.GetStatus(t.Context(), workspaceID)
+		require.NoError(t, err)
+		assert.True(t, status.Configured)
+		assert.False(t, status.Connected, "a failed check must keep reporting disconnected")
+		assert.Nil(t, status.Account)
+	}
+	assert.EqualValues(t, 2, requests.Load(), "a failed check is never cached; every read retries")
+}
+
+func TestGitHubConnectInvalidatesCachedTokenCheck(t *testing.T) {
+	var requests atomic.Int64
+	server := githubUserServer(t, &requests)
+	key := crypto.DeriveKey("workspace-config-fixture")
+	workspaceID := uuid.New()
+	store := &workspaceConfigStore{
+		conn: &domain.GitHubConnection{WorkspaceID: workspaceID, InstanceURL: server.URL, Token: encryptedWorkspaceToken(t, key, "old-token")},
+	}
+	svc := &GitHubService{fRepo: store, encryptionKey: key}
+
+	status, err := svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Connected)
+
+	_, err = svc.Connect(t.Context(), workspaceID, server.URL, "new-token", nil)
+	require.NoError(t, err)
+
+	status, err = svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Connected)
+	assert.EqualValues(t, 3, requests.Load(), "after Connect the status read must re-check the new token, not reuse the old check")
+}
+
+func TestGitHubDisconnectInvalidatesCachedTokenCheck(t *testing.T) {
+	var requests atomic.Int64
+	server := githubUserServer(t, &requests)
+	key := crypto.DeriveKey("workspace-config-fixture")
+	workspaceID := uuid.New()
+	conn := &domain.GitHubConnection{WorkspaceID: workspaceID, InstanceURL: server.URL, Token: encryptedWorkspaceToken(t, key, "token")}
+	store := &workspaceConfigStore{conn: conn}
+	svc := &GitHubService{fRepo: store, encryptionKey: key}
+
+	status, err := svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Connected)
+
+	require.NoError(t, svc.Disconnect(t.Context(), workspaceID))
+
+	// A connection row reappearing without going through Connect (for example
+	// a restored backup) must not be answered with the pre-disconnect check.
+	store.conn = conn
+	status, err = svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Connected)
+	assert.EqualValues(t, 2, requests.Load(), "the cached check dies with the connection")
+}
+
+func TestGitHubSetDisabledInvalidatesCachedTokenCheck(t *testing.T) {
+	var requests atomic.Int64
+	server := githubUserServer(t, &requests)
+	key := crypto.DeriveKey("workspace-config-fixture")
+	workspaceID := uuid.New()
+	store := &workspaceConfigStore{
+		conn: &domain.GitHubConnection{WorkspaceID: workspaceID, InstanceURL: server.URL, Token: encryptedWorkspaceToken(t, key, "token")},
+	}
+	svc := &GitHubService{fRepo: store, encryptionKey: key}
+
+	status, err := svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Connected)
+
+	require.NoError(t, svc.SetDisabled(t.Context(), workspaceID, true))
+	status, err = svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Disabled)
+	assert.False(t, status.Connected)
+
+	require.NoError(t, svc.SetDisabled(t.Context(), workspaceID, false))
+	status, err = svc.GetStatus(t.Context(), workspaceID)
+	require.NoError(t, err)
+	assert.True(t, status.Connected)
+	assert.EqualValues(t, 2, requests.Load(), "resuming must re-check the token instead of reusing the pre-pause check")
 }
 
 // githubRepoListServer fakes paginated repo discovery.

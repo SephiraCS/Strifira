@@ -150,14 +150,19 @@ func TestGitHubWebhookOlderGreenObservationCannotBorrowNewerFailureVersion(t *te
 				t.Fatal("older green refresh did not reach GitHub")
 			}
 
-			// The reconciler and webhook share the production refresh path.
-			f.svc.syncOpenPRChecks(t.Context())
+			// The refresh captured the PR's version before its fetch (the
+			// shared single-flight leader is now the only in-process fetcher,
+			// so a divergent concurrent response can no longer be produced
+			// in-process). Persist the newer failure observation the way
+			// another process or an earlier interleaving would: after the
+			// older refresh's fetch started, before it writes.
+			_, err = f.db.ExecContext(t.Context(), `UPDATE github_pull_requests SET checks_green=false,updated_at=NOW() WHERE github_repo_id=$1 AND number=7`, f.repo.ID)
+			require.NoError(t, err)
 			newer, err := f.svc.fRepo.GetPRByRepoAndNumber(t.Context(), f.repo.ID, 7)
 			require.NoError(t, err)
 			require.NotNil(t, newer)
 			require.False(t, newer.ChecksGreen)
 			require.False(t, newer.UpdatedAt.Equal(before.UpdatedAt), "even a false-to-false observation must invalidate the earlier refresh")
-			require.Equal(t, int64(2), requests.Load())
 			release()
 			select {
 			case err := <-finished:
@@ -165,6 +170,7 @@ func TestGitHubWebhookOlderGreenObservationCannotBorrowNewerFailureVersion(t *te
 			case <-time.After(5 * time.Second):
 				t.Fatal("older green refresh did not finish")
 			}
+			assert.EqualValues(t, 1, requests.Load(), "single-flight shares the one in-process fetch")
 			final, err := f.svc.fRepo.GetPRByRepoAndNumber(t.Context(), f.repo.ID, 7)
 			require.NoError(t, err)
 			require.NotNil(t, final)

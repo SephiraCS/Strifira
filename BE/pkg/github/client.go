@@ -243,7 +243,10 @@ func (c *Client) attempt(ctx context.Context, client *http.Client, method, path,
 }
 
 // exchange performs one HTTP round trip with conditional-request headers for
-// cacheable GETs and records the observed rate-limit budget.
+// cacheable GETs and records the observed rate-limit budget. Cacheable GETs
+// additionally get a short freshness window (no round trip at all for very
+// recent answers) and single-flight deduplication of concurrent identical
+// requests.
 func (c *Client) exchange(ctx context.Context, client *http.Client, method, path, accept string, body any, conn string) (*http.Response, error) {
 	apiBase, err := c.apiEndpoint()
 	if err != nil {
@@ -268,14 +271,33 @@ func (c *Client) exchange(ctx context.Context, client *http.Client, method, path
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	conditional := false
-	if method == http.MethodGet && body == nil {
-		if entry, cached := sharedCache.lookup(conn, path); cached {
-			applyConditional(request, entry)
-			conditional = true
-		}
+	if method != http.MethodGet || body != nil {
+		return c.roundTrip(ctx, client, request, conn)
 	}
+	entry, cached := sharedCache.lookup(conn, path)
+	if cached && entry.fresh() {
+		// Report the stored answer as a synthetic 304: consumers already
+		// serve 304s from the cached body, and the entry is not re-stored,
+		// so the window cannot extend itself forever.
+		return &http.Response{
+			Status:     http.StatusText(http.StatusNotModified),
+			StatusCode: http.StatusNotModified,
+			Header:     http.Header{},
+			Body:       http.NoBody,
+			Request:    request,
+		}, nil
+	}
+	conditional := false
+	if cached {
+		applyConditional(request, entry)
+		conditional = true
+	}
+	return c.roundTripShared(ctx, client, request, conn, path, conditional)
+}
 
+// roundTrip performs the HTTP round trip for requests that are never shared
+// between callers (mutations).
+func (c *Client) roundTrip(ctx context.Context, client *http.Client, request *http.Request, conn string) (*http.Response, error) {
 	response, err := client.Do(request)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -285,21 +307,91 @@ func (c *Client) exchange(ctx context.Context, client *http.Client, method, path
 	}
 	sharedCache.observeRateLimit(conn, response.Header)
 	if until, throttled := rateLimitExhausted(response); throttled {
+		io.Copy(io.Discard, response.Body)
 		response.Body.Close()
 		sharedCache.block(conn, until)
 		return nil, &RateLimitError{RetryAt: until}
-	}
-	if conditional && response.StatusCode == http.StatusNotModified {
-		// The cached body answers the request; 304s are free.
-		io.Copy(io.Discard, response.Body)
-		response.Body.Close()
-		response.Body = http.NoBody
-		return response, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		response.Body.Close()
 		return nil, &APIError{StatusCode: response.StatusCode}
 	}
+	return response, nil
+}
+
+// roundTripShared runs the cacheable GET's round trip with single-flight
+// deduplication: while one identical request is in flight, later callers wait
+// for it and reuse its outcome. A leader that fails at the transport level
+// does not cascade its failure — each waiter falls through to its own attempt.
+func (c *Client) roundTripShared(ctx context.Context, client *http.Client, request *http.Request, conn, path string, conditional bool) (*http.Response, error) {
+	call := &inflightCall{done: make(chan struct{})}
+	for {
+		if leader := sharedCache.beginFlight(conn, path, call); leader != nil {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-leader.done:
+			}
+			if leader.retryable {
+				call = &inflightCall{done: make(chan struct{})}
+				continue
+			}
+			if leader.err != nil {
+				return nil, leader.err
+			}
+			return leader.response(request), nil
+		}
+		break
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		call.retryable = true
+		sharedCache.finishFlight(conn, path, call)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, ErrUnavailable
+	}
+	sharedCache.observeRateLimit(conn, response.Header)
+	if until, throttled := rateLimitExhausted(response); throttled {
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		sharedCache.block(conn, until)
+		rateErr := &RateLimitError{RetryAt: until}
+		call.err = rateErr
+		sharedCache.finishFlight(conn, path, call)
+		return nil, rateErr
+	}
+	if conditional && response.StatusCode == http.StatusNotModified {
+		// The cached body answers the request; 304s are free.
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		call.status, call.header = response.StatusCode, response.Header.Clone()
+		sharedCache.finishFlight(conn, path, call)
+		response.Body = http.NoBody
+		return response, nil
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		response.Body.Close()
+		apiErr := &APIError{StatusCode: response.StatusCode}
+		call.err = apiErr
+		sharedCache.finishFlight(conn, path, call)
+		return nil, apiErr
+	}
+	// Read the body once so waiters can share the outcome byte for byte.
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, maxJSONBytes+1))
+	response.Body.Close()
+	if readErr != nil {
+		call.retryable = true
+		sharedCache.finishFlight(conn, path, call)
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, ErrUnavailable
+	}
+	call.status, call.header, call.body = response.StatusCode, response.Header.Clone(), body
+	sharedCache.finishFlight(conn, path, call)
+	response.Body = io.NopCloser(bytes.NewReader(body))
 	return response, nil
 }
 
@@ -386,15 +478,6 @@ func (c *Client) ListRepos(ctx context.Context) ([]Repository, error) {
 		}
 	}
 	return nil, errors.New("GitHub repository count exceeds the discovery limit")
-}
-
-// GetRepo fetches one repository by owner/name.
-func (c *Client) GetRepo(owner, name string) (*Repository, error) {
-	var repo Repository
-	if err := c.do(http.MethodGet, "/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(name), nil, &repo); err != nil {
-		return nil, err
-	}
-	return &repo, nil
 }
 
 // webhookEvents is the subscription ku creates on every linked repository.

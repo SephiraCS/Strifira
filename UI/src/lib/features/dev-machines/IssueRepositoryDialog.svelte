@@ -7,7 +7,7 @@
 	import ComboboxPopover from '$lib/components/shared/ComboboxPopover.svelte';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import GitBranch from '@lucide/svelte/icons/git-branch';
-	import { getGitHubStatus } from '$lib/api/github';
+	import { getCachedGitHubStatus } from '$lib/api/github';
 	import { deleteDevMachineScopeSetting, getDevMachineScopeSetting, listDevMachineEnvironments, updateDevMachineScopeSetting } from '$lib/api/dev-machines';
 	import type { GitHubRepo } from '$lib/types/github';
 	import type { DevMachineEnvironment } from '$lib/types/dev-machine';
@@ -37,7 +37,7 @@
 		loading = true;
 		try {
 			const [github, setting, availableEnvironments] = await Promise.all([
-				getGitHubStatus(slug), getDevMachineScopeSetting(slug, 'issue', issue.id), listDevMachineEnvironments(slug)
+				getCachedGitHubStatus(slug), getDevMachineScopeSetting(slug, 'issue', issue.id), listDevMachineEnvironments(slug)
 			]);
 			repositories = github.repos ?? [];
 			environments = (availableEnvironments ?? []).filter((item) => item.status === 'ready');
