@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   backend:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     # Same throwaway services as ci.yml's test job.
     services:
@@ -76,7 +76,7 @@ jobs:
         run: make test-slow-backend
 
   frontend:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5 # v5
@@ -108,7 +108,7 @@ jobs:
           find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
   live:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5 # v5
@@ -153,7 +153,7 @@ jobs:
   report:
     needs: [backend, frontend, live]
     if: failure()
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       actions: read

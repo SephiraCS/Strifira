@@ -36,7 +36,7 @@ jobs:
   # (guard ref 8dacab4) when that repository left the server in the Tools
   # org move; re-point this job at ts-builder when it is reachable again.
   guard:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5 # v5
@@ -55,7 +55,7 @@ jobs:
           python3 scripts/ci/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
 
   check:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5 # v5
@@ -101,7 +101,7 @@ jobs:
         run: npm run test:responsive
 
   test:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
       # Throwaway test state; readiness is enforced by the health options,
@@ -173,7 +173,7 @@ jobs:
   # (ops/deployer/apps.json in the Homelab repo): keep "e2e shard N" stable.
   e2e:
     name: e2e shard ${{ matrix.shard }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -228,7 +228,7 @@ jobs:
   build:
     needs: [guard]
     if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5 # v5
@@ -272,7 +272,7 @@ jobs:
   release:
     needs: [guard, build]
     if: github.ref == 'refs/heads/main'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: write
@@ -339,7 +339,7 @@ jobs:
       && needs.release.result == 'failure'
       && github.event_name != 'pull_request'
       && github.ref == 'refs/heads/main'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       actions: read
