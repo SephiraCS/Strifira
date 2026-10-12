@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   image-security:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     # The app leg builds the root Dockerfile that ci.yml pushes to Harbor.
     strategy:
@@ -132,7 +132,7 @@ jobs:
   report:
     needs: [image-security]
     if: failure() && github.event_name != 'pull_request'
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       actions: read
