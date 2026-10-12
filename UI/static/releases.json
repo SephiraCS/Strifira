@@ -1,134 +1,13 @@
 [
   {
-    "tag_name": "v0.3.17",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.17",
-    "body": "Deployed to alpha as acc01970bfd4c5a6483ef9d6e746349b511619e5.\n\n- docs(agents): always commit finished work and verify its deployment\n- fix(shares): keep screen-share signaling alive through socket races\n- feat(ui): confirm workspace switches during a live share, open workspaces in new tabs",
-    "published_at": "2026-10-08T19:48:58Z",
+    "tag_name": "v0.3.18",
+    "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.18",
+    "body": "Deployed to alpha as ff3f74beb39c52ce0e6be7743c31ef27100b4f20.\n\n- Read commit statuses in the release job\n- Fix the GitHub webhook tests' premises and the checks fetch on pull requests\n- Keep pull-request webhook deliveries best-effort and re-home the storage-bound upgrade test\n- Fix 000062's down migration and the dev-box test schema pins\n- Fix the forgejo→github migration and the runner tool mismatches\n- Move CI to GitHub Actions and slim the GitHub API budget\n- Migrate the repository integration from Forgejo to GitHub\n- Per-workspace Forgejo configuration and CI re-setup for the Tools move\n- Merge pull request 'TS-802: Simplify Forgejo workflows' (#28) from cos/ts-802-simple-workflows into main\n- Merge pull request 'TS-795: Enforce zero-configuration policy and CI guard' (#27) from cos/ts-795-zero-config into main",
+    "published_at": "2026-10-12T01:55:35Z",
     "prerelease": false,
     "force_upgrade": false,
     "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.17",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.16",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.16",
-    "body": "Deployed to alpha as a5fd39059e72da2b7097febef8a6158936edcd2c.\n\n- fix(logging): surface 5xx causes, keep client IPs, drop benign proxy warns\n- TS-629: Fix security audit and CI test timing (#25)\n- Merge pull request 'TS-629: Apertar Esc para voltar' (#24) from cos/ts-629-ku-apertar-esc-para-voltar into main",
-    "published_at": "2026-10-08T17:01:08Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.16",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.15",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.15",
-    "body": "Deployed to alpha as f93ae6b389dee74ecb27becc9daee20ee45a41af.\n\n- Merge pull request 'fix(ui): tidy the issue comment section' (#22) from mariogk/comments-ui-refresh into main\n- Merge pull request 'fix(ui): tidy the issue comment section' (#21) from mariogk/ui-comment-section into main",
-    "published_at": "2026-10-07T18:38:27Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.15",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.14",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.14",
-    "body": "Deployed to alpha as 9f6ebefc9280d1a340b920064cd1f2181438a02e.\n\n- ci: the release reporter fires on a failed release (explicit needs result)",
-    "published_at": "2026-10-07T15:37:22Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.14",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.13",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.13",
-    "body": "Deployed to alpha as a24e5d8a4229211f3076790e98659633abeee71f.\n\n- ci: name the registry-push failure and make the release reporter survive flaky checkouts\n- fix(ui): release keyboard focus when a selector popover closes",
-    "published_at": "2026-10-07T15:24:59Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.13",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.12",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.12",
-    "body": "Deployed to alpha as c041ca893ae2a4414f863caea7566fe8f687fbbc.\n\n- feat(issues): Escape leaves the full-page issue view\n- fix(editor): refresh an expired session before editor uploads\n- fix(issues): keep the create-issue draft when creation fails\n- fix(ui): tidy the issue comment section",
-    "published_at": "2026-10-07T14:58:27Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.12",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.10",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.10",
-    "body": "Deployed to alpha as 7f04189e4b0b70813dac4cf2028a1e315480e48b.\n\n- ci: release failures file a Forgejo issue with their redacted logs\n- fix(issues): show who created an issue in the activity feed\n- fix(ui): pin the header on projects, views and archived-issues pages",
-    "published_at": "2026-10-07T13:58:46Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.10",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.8",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.8",
-    "body": "Deployed to alpha as 697b27d58cb6af5d368beda736f42b07bb1443b9.\n\n- fix(scripts): the screen-share live check runs on Docker-only machines",
-    "published_at": "2026-10-05T21:03:19Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.8",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.6",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.6",
-    "body": "Deployed to alpha as 5d5a2a789c0afa24742088a3d08b741b89608619.\n\n- fix(editor): Shift+Enter over an inline image no longer eats the image or the draft",
-    "published_at": "2026-10-05T20:20:30Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.6",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.4",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.4",
-    "body": "Deployed to alpha as 1459bf2e35b331bf993ec081822fdbf1b6fa074c.\n\n- Ban AI attribution in commits and PRs (#17)",
-    "published_at": "2026-10-04T15:40:55Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.4",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.3.3",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.3",
-    "body": "Deployed to alpha as 602ebad0e5d3950b08cded8ad7b16e0eeb5322fc.\n\n- Merge pull request 'TS-423: Quick wins for security, observability, frontend and CI' (#16) from ts-423/quick-wins into main\n- Merge pull request 'TS-420: Fix Forgejo status automation and move Actions into the issue view' (#15) from fix/ts-420-forgejo-automation into main\n- TS-386: Run local builds and tests at low CPU priority (#14)\n- Merge pull request 'Fix CI store cleanup, browser startup and image security patches' (#13) from fix/ci-store-and-browser-stability into main\n- Merge pull request 'Complete AI tools, dev-box delegation, sharing sessions and Forgejo Actions' (#11) from feat/ku-v0.3.0 into main\n- Merge pull request 'Run nested podman on an overlay store and reuse dependency caches in image builds' (#12) from ci/speed-ku into main\n- Merge pull request 'Fix jumping board cards, halve the initial page JS, update every dependency' (#10) from chore/latest-deps into main\n- Merge pull request 'Cut the push-to-alpha pipeline from ~12 to ~4 minutes' (#9) from ci/fast-deploy into main\n- chore(docs): sync openapi info.version with 0.2.10\n- chore: bump version to 0.2.10 — the board flicker fix (a5c2903) shipped without its own bump\n- fix(boards): kill the per-refresh board flicker — identical data now touches zero DOM\n- feat(docs): OpenAPI 3.1 description of the REST API, browsable with Scalar at /docs\n- feat(teams): change a team's identifier from Settings → Teams too\n- feat(board): archive every done issue in one click + sort each kanban column\n- chore: bump version to 0.2.7 — the team rename shipped without its own bump\n- feat(teams): rename a team and change its identifier, cascading to every ticket\n- fix(boards): team board mount load follows every page — moved cards vanished at refresh\n- ci: retrigger deploy (ed79760 staged but its deploy job did not complete)\n- chore: restore trailing comma in playwright config\n- perf(boards): fetch board pages in parallel\n- fix(boards): fetch every page — moving an issue past the first page made it vanish\n- fix(ui): stop boards blank-flashing on every background refresh\n- fix(make): test-frontend called the nonexistent 'npm run test' script\n- feat(ai): make AI rework visible and usable everywhere\n- fix(tickets): stop issues vanishing on In Progress — additive automation, strict status validation, per-team boards\n- Merge pull request 'Stop rebuilding every image on every pull request' (#8) from ci/faster-actions into main\n- Add issue archiving and workspace improvements\n- Merge pull request 'Simplify CI on the ts-builder image and deploy main to alpha' (#7) from ci/speedup into main\n- Merge pull request 'fix(issues): open editor images in viewer on click' (#6) from fix/issue-image-modal into main\n- Revert \"fix(issues): open editor images in viewer on click\"\n- fix(issues): open editor images in viewer on click\n- Add repository agent rules\n- test(shares): navigate to the issue via in-app links in the prod spec\n- feat(shares): persistent presenter session, restart-surviving signaling\n- fix(ui): default My Issues quick-add assignee on assigned tab\n- feat(ui): kanban quick-add on My Issues\n- feat(forgejo): map logins to Ku workspace members\n- feat(forgejo): assign in-progress issues to matching Ku user\n- fix(forgejo): preserve separate assignee changes\n- fix(forgejo): reconcile PR checks every five minutes\n- feat(forgejo): configure issue assignee for PR automation\n- fix(forgejo): seed PR review status for new workspaces\n- fix(forgejo): target the PR review workflow state\n- fix(forgejo): move PRs to review on green Actions webhooks\n- feat(issues): preview attached images with zoom, download and copy\n- fix(security): agent runtime apk upgrade; sweep code-server's nested undici\n- fix(security): sweep vulnerable nested npm deps out of dev-machine images\n- fix(security): patch the UI image's caddy build (the scanned one)\n- fix(security): patch the dev image's caddy build and Go builder\n- fix(security): echo v4.15.3 and x/crypto v0.55.0 for CVE-2026-55677/56854\n- ci: faster throwaway postgres, wider migration-test budget\n- fix(auth): repair rotation SQL and surface refresh store errors as 500s\n- ci+sec: bump the remaining Go builder bases, invoke govulncheck by path\n- fix(auth): refresh rotation grace keeps shared-cookie sessions alive\n- ci: debian12 browser builds, docker-backed test databases, mknod-free bases\n- ci: skip Docker integration without quota support\n- fix: use Ubuntu 24.04 for runtime images\n- fix: remove runner pebble device before image commit\n- stabilize ku integration image and migration test\n- fix workspace transfer after Forgejo migration\n- Migrate workspace transfer to forgejo integration tables\n- make ku CI portable on the builder runner\n- ci+be: round three — real test failures surface now that lanes run\n- ci: install Go directly, override Playwright host platform, fetch logs with the token\n- ci: fix every failing automation lane\n- feat(forgejo): automations target picker uses configured workflow states\n- chore: remove forgejo e2e marker files\n- Merge pull request 'Forgejo E2E round 3 (KU-2)' (#4) from KU-2-e2e3 into main\n- fix(forgejo): attribute automation status history to the issue creator\n- Merge pull request 'Forgejo E2E round 2 (KU-2)' (#3) from KU-2-forgejo-e2e2 into main\n- fix(forgejo): PR upsert must return the stored row id; branch ref prefix; webhook error logs\n- Merge pull request 'Forgejo integration E2E (KU-2)' (#2) from KU-2-forgejo-e2e into main\n- feat(forgejo): CI status poller and lazy seeding for global mode\n- fix(forgejo): renumber integration migration to 000042\n- fix(shares): multi-share walls — retry hung negotiations, fill-page grid\n- feat(forgejo): replace GitHub App integration with Forgejo\n- feat(kanban): show every assignee avatar on cards\n- feat(preferences): preferred default view (list/kanban)\n- feat(shares): confirm before leaving a tab that is presenting\n- feat(pwa): installable web app (manifest, icons, service worker)\n- feat(avatars): workspace logo uploads; avatar row overflow fix\n- fix(shares): switch surface must not block on replaceTrack settlement\n- fix(storage): local backend creates namespaced key subdirectories\n- feat(avatars): upload avatar files (PNG/JPEG/GIF/WebP/AVIF/BMP/SVG)\n- feat(settings): remove the open-source licenses page\n- fix(shares): renumber p2p migration to 000037\n- test(wall): overrideable viewer engines + dynamic watching count\n- feat(shares): peer-to-peer WebRTC screen sharing; drop the LiveKit SFU\n- fix(auth): unique jti in refresh tokens — same-second re-login 500\n- feat(shares): capture-first sharing; remove Recent history\n- fix(shares): server end before onEnded so the wall reload cannot race it\n- fix(shares): settle tile state before async teardown\n- fix(shares): auto-remove shares with no source\n- feat(shares): video wall, presenter-named shares, live surface switching\n- fix(shares): presenter Stop ends the share server-side\n- feat: live screen sharing module backed by LiveKit\n- fix(ui): show member avatars in the assignee filter and context-menu assign\n- fix(mcp): list_team_states accepts a friendly team reference\n- feat(mcp): full UI parity — 44 tools with friendly references\n- fix(mcp): nest comment replies in list_comments and get_issue",
-    "published_at": "2026-10-04T00:47:21Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.3.3",
-    "upgrade_message": null
-  },
-  {
-    "tag_name": "v0.2.0",
-    "html_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.2.0",
-    "body": "",
-    "published_at": "2026-09-17T17:59:09Z",
-    "prerelease": false,
-    "force_upgrade": false,
-    "minimum_supported_version": null,
-    "upgrade_url": "https://git.terrascale.tech/TerraScale/ku/releases/tag/v0.2.0",
+    "upgrade_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.18",
     "upgrade_message": null
   }
 ]
