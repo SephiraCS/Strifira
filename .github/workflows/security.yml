@@ -1,0 +1,82 @@
+name: Security Scan
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * *'
+
+# Pull requests run per ref and yield to newer pushes. Tag and nightly runs
+# share one queue, so two of them never file the same failure issue at once
+# (scripts/ci/report-failure.sh also folds a duplicate opened in a race
+# into the oldest issue).
+concurrency:
+  group: security-${{ github.event_name == 'pull_request' && github.ref || 'scheduled' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Container images are scanned by image-security.yml; build, vet, and test
+# coverage lives in ci.yml.
+permissions:
+  contents: read
+
+jobs:
+  go-security:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5 # v5
+        with:
+          go-version-file: BE/go.mod
+          cache-dependency-path: BE/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - working-directory: BE
+        run: govulncheck ./...
+
+  frontend-security:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      # npm audit reads the lockfile; no install needed.
+      - working-directory: UI
+        run: npm audit --audit-level=high
+
+  # Nightly and tag scans gate nothing, so a failure files (or updates) a
+  # GitHub issue instead of going unnoticed. Pull requests show their own.
+  report:
+    needs: [go-security, frontend-security]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: File the failure as an issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT_TITLE: 'Security scan failed'
+          REPRO: |
+            (cd BE && govulncheck ./...)
+            (cd UI && npm audit --audit-level=high)
+        run: scripts/ci/report-failure.sh

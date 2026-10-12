@@ -13,7 +13,7 @@ if [ ! -e "$user_settings_dir/settings.json" ]; then
   printf '%s\n' '{"workbench.colorTheme":"Default Dark Modern"}' > "$user_settings_dir/settings.json"
 fi
 
-unset FORGEJO_TOKEN GITHUB_TOKEN KU_GIT_CREDENTIAL_HELPER KU_FORGEJO_HOST KU_GIT_REPOSITORY
+unset GITHUB_TOKEN KU_GIT_CREDENTIAL_HELPER KU_GITHUB_HOST KU_GIT_REPOSITORY
 export GIT_TERMINAL_PROMPT=0
 mkdir -p /workspace/tasks
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Files a failed non-blocking run (slow suite, nightly scans) as a Forgejo
+# Files a failed non-blocking run (slow suite, nightly scans) as a GitHub
 # issue, so a red run that gates nothing is still seen and owned.
 #
 #   scripts/ci/report-failure.sh
@@ -12,47 +12,50 @@
 # command, and a redacted tail of every failed job's log.
 #
 # Environment:
-#   FORGEJO_TOKEN   job token (forgejo.token); needs issue write and run read
+#   GITHUB_TOKEN    job token (secrets.GITHUB_TOKEN); needs issue write and
+#                   actions read
 #   REPORT_TITLE    issue title (default "CI failure: <workflow>")
 #   REPRO           reproduction command(s), shown verbatim
 #   FAILED_JOBS     fallback job list when the run's jobs cannot be listed
 #   REDACT          extra literal values to mask, one per line
 #   LOG_LINES       log tail length per failed job (default 60)
 #   REPORT_DRY_RUN  1 prints the report instead of filing it
-# plus the GITHUB_* variables every Actions job gets.
+# plus the GITHUB_* variables every Actions job gets. Calls go through the
+# gh CLI, which authenticates with GITHUB_TOKEN.
 set -eu
 export LC_ALL=C
 
-: "${FORGEJO_TOKEN:?FORGEJO_TOKEN is required}"
+: "${GITHUB_TOKEN:?GITHUB_TOKEN is required}"
 : "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${GITHUB_SHA:?}"
 workflow=${GITHUB_WORKFLOW:-CI}
 title=${REPORT_TITLE:-"CI failure: $workflow"}
 log_lines=${LOG_LINES:-60}
-api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
-run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_NUMBER:-$GITHUB_RUN_ID}"
+repo_api="repos/$GITHUB_REPOSITORY"
+run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/${GITHUB_RUN_ID}"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 call() {
-	# call <method> <path> [json body file]; prints the body, fails on non-2xx.
+	# call <method> <endpoint> [json body file]; prints the body, fails on
+	# non-2xx. gh api follows the log-download redirects itself.
 	if [ -n "${3:-}" ]; then
-		set -- "$1" "$2" --header 'Content-Type: application/json' --data-binary "@$3"
+		set -- "$1" "$2" --header 'Content-Type: application/json' --input "$3"
+	else
+		set -- "$1" "$2"
 	fi
-	method=$1 path=$2
+	method=$1 endpoint=$2
 	shift 2
-	curl --silent --show-error --fail --max-time 30 --request "$method" \
-		--header "Authorization: token $FORGEJO_TOKEN" --header 'Accept: application/json' \
-		"$@" "$api/$path"
+	gh api --method "$method" "$@" "$endpoint"
 }
 
-# Forgejo already masks registered secrets as ***; this also catches values
+# GitHub already masks registered secrets as ***; this also catches values
 # that never were secrets (tokens echoed by tools, URLs with credentials,
 # KEY=value assignments, bearer headers, JWTs, private keys) and the literal
-# values in REDACT and FORGEJO_TOKEN.
+# values in REDACT and GITHUB_TOKEN.
 # shellcheck disable=SC2016 # the sed scripts hold literal $ and backticks
 redact() {
 	{
-		printf '%s\n' "$FORGEJO_TOKEN"
+		printf '%s\n' "$GITHUB_TOKEN"
 		printf '%s\n' "${REDACT:-}"
 	} | awk 'length($0) >= 6' >"$work/literals"
 	# Terminal formatting goes first, so a secret split by a color escape or
@@ -89,27 +92,27 @@ redact() {
 			}
 			print out rest
 		}' |
-		sed -E \
-			-e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
-			-e 's#([A-Za-z][A-Za-z0-9+.-]*://)[^/@ :]+:[^/@ ]+@#\1[REDACTED]@#g' \
-			-e 's/((authorization|proxy-authorization)["'\'']?[[:space:]]*[:=]?[[:space:]]*["'\'']?((token|bearer|basic|digest|negotiate)[[:space:]]+)?)[^[:space:]"'\'',}]+/\1[REDACTED]/Ig' \
-			-e 's/(bearer[[:space:]]+)[A-Za-z0-9._~+\/=-]{8,}/\1[REDACTED]/Ig' \
-			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/Ig' \
-			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)'\''[^'\'']*'\''/\1[REDACTED]/Ig' \
-			-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["]?[[:space:]]*[:=][[:space:]]*["]?)[^[:space:]"&,]+/\1[REDACTED]/Ig' \
-			-e 's/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/[REDACTED-JWT]/g' \
-			-e 's/\b(gh[pousr]|glpat|xox[abpr]|sk|kub)[_-][A-Za-z0-9_-]{16,}/[REDACTED]/g' \
-			-e 's/AKIA[0-9A-Z]{16}/[REDACTED]/g' \
-			-e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
+	sed -E \
+		-e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z //' \
+		-e 's#([A-Za-z][A-Za-z0-9+.-]*://)[^/@ :]+:[^/@ ]+@#\1[REDACTED]@#g' \
+		-e 's/((authorization|proxy-authorization)["'\'']?[[:space:]]*[:=]?[[:space:]]*["'\'']?((token|bearer|basic|digest|negotiate)[[:space:]]+)?)[^[:space:]"'\'',}]+/\1[REDACTED]/Ig' \
+		-e 's/(bearer[[:space:]]+)[A-Za-z0-9._~+\/=-]{8,}/\1[REDACTED]/Ig' \
+		-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)"[^"]*"/\1"[REDACTED]"/Ig' \
+		-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["'\'']?[[:space:]]*[:=][[:space:]]*)'\''[^'\'']*'\''/\1[REDACTED]/Ig' \
+		-e 's/([A-Za-z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|APIKEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIAL)[A-Za-z0-9_]*["]?[[:space:]]*[:=][[:space:]]*["]?)[^[:space:]"&,]+/\1[REDACTED]/Ig' \
+		-e 's/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+/[REDACTED-JWT]/g' \
+		-e 's/\b(gh[pousr]|glpat|xox[abpr]|sk|kub)[_-][A-Za-z0-9_-]{16,}/[REDACTED]/g' \
+		-e 's/AKIA[0-9A-Z]{16}/[REDACTED]/g' \
+		-e '/-----BEGIN [A-Z ]*PRIVATE KEY-----/,/-----END [A-Z ]*PRIVATE KEY-----/c\
 [REDACTED PRIVATE KEY]' |
-		sed 's/`\{3,\}/` ` `/g'
+	sed 's/`\{3,\}/` ` `/g'
 }
 
 # Failed jobs of this run, as "<id>\t<name>" lines.
 : >"$work/failed"
-if call GET "actions/runs/$GITHUB_RUN_ID/jobs" >"$work/jobs.json" 2>"$work/jobs.err"; then
-	jq -r '(if type == "array" then . else (.jobs // []) end)[]
-		| select((.conclusion // .status) as $s | $s == "failure" or $s == "timedout" or $s == "cancelled")
+if call GET "$repo_api/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" >"$work/jobs.json" 2>"$work/jobs.err"; then
+	jq -r '(.jobs // [])[]
+		| select((.conclusion // .status) as $s | $s == "failure" or $s == "timed_out" or $s == "cancelled" or $s == "startup_failure")
 		| "\(.id)\t\(.name)"' "$work/jobs.json" >"$work/failed" || :
 else
 	echo "warning: could not list the run's jobs: $(cat "$work/jobs.err")" >&2
@@ -141,7 +144,7 @@ fi
 : >"$work/logs.md"
 while IFS="$(printf '\t')" read -r id name; do
 	[ "$id" != - ] || continue
-	if ! call GET "actions/jobs/$id/logs" >"$work/log" 2>/dev/null; then
+	if ! call GET "$repo_api/actions/jobs/$id/logs" >"$work/log" 2>/dev/null; then
 		printf '\n<details><summary>%s</summary>\n\nThe log could not be fetched; see the run.\n</details>\n' "$name" >>"$work/logs.md"
 		continue
 	fi
@@ -153,10 +156,9 @@ while IFS="$(printf '\t')" read -r id name; do
 		sed "s|^|[$name] |" | head -n 40 >>"$work/tests" || :
 	{
 		printf '\n<details><summary>%s: last %s log lines (redacted)</summary>\n\n```text\n' "$name" "$log_lines"
-		# The tail before the post-job cleanup steps holds the failure.
 		# Redact the whole log before cutting it, so a multi-line private
 		# key that starts above the tail is still recognized and masked.
-		awk '/⭐ Run Post |🏁  Job /{ exit } { print }' "$work/log" | redact | tail -n "$log_lines"
+		redact <"$work/log" | tail -n "$log_lines"
 		printf '```\n</details>\n'
 	} >>"$work/logs.md"
 done <"$work/failed"
@@ -184,30 +186,32 @@ fi
 
 # open_issues: the numbers of the open issues titled exactly $title, oldest
 # first. A failed lookup fails the reporter rather than filing a duplicate.
-query=$(jq -rn --arg t "$title" '$t | @uri')
 # The search also matches other titles, so every page is read: until an
-# empty page, which also copes with a server that caps limit below 50.
+# empty page, capped at the search API's thousand-result limit.
 open_issues() {
 	: >"$work/matches"
 	page=1
 	while :; do
-		call GET "issues?state=open&type=issues&limit=50&page=$page&q=$query" >"$work/issues.json"
-		count=$(jq -er 'if type == "array" then length else error("not a list") end' "$work/issues.json")
+		call GET "search/issues?per_page=100&page=$page&q=$query" >"$work/issues.json"
+		count=$(jq -er 'if type == "object" and has("items") then (.items | length) else error("not a search result") end' "$work/issues.json")
 		[ "$count" -gt 0 ] || break
-		jq -r --arg t "$title" '.[] | select(.title == $t and (.pull_request == null)) | .number' \
+		jq -r --arg t "$title" '.items[] | select(.title == $t and (.pull_request == null)) | .number' \
 			"$work/issues.json" >>"$work/matches"
 		page=$((page + 1))
-		if [ "$page" -gt 200 ]; then
-			echo "more than 199 pages of open issues match \"$title\"; giving up" >&2
+		if [ "$page" -gt 10 ]; then
+			echo "more than ten pages of open issues match \"$title\"; giving up" >&2
 			exit 1
 		fi
 	done
 	sort -n -u "$work/matches"
 }
+# The search finds the words anywhere in title, body and comments; the
+# exact-title filter below keeps only real matches.
+query=$(jq -rn --arg q "repo:$GITHUB_REPOSITORY is:issue is:open $title" '$q | @uri')
 
 comment() {
 	jq -n --rawfile body "$work/body.md" '{body: ("Failed again.\n\n" + $body)}' >"$work/request.json"
-	call POST "issues/$1/comments" "$work/request.json" >/dev/null
+	call POST "$repo_api/issues/$1/comments" "$work/request.json" >/dev/null
 	echo "Commented on issue #$1: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/$1"
 }
 
@@ -220,7 +224,7 @@ if [ -n "$number" ]; then
 fi
 
 jq -n --arg title "$title" --rawfile body "$work/body.md" '{title: $title, body: $body}' >"$work/request.json"
-call POST issues "$work/request.json" >"$work/created.json"
+call POST "$repo_api/issues" "$work/request.json" >"$work/created.json"
 number=$(jq -r '.number // empty' "$work/created.json")
 [ -n "$number" ] || { echo "the created issue has no number: $(cat "$work/created.json")" >&2; exit 1; }
 echo "Opened issue #$number: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/issues/$number"
@@ -235,8 +239,8 @@ if [ -n "$oldest" ] && [ "$oldest" != "$number" ]; then
 	comment "$oldest"
 	jq -n --arg body "Duplicate of #$oldest, which another run opened at the same time; the report was added there." \
 		'{body: $body}' >"$work/request.json"
-	call POST "issues/$number/comments" "$work/request.json" >/dev/null
+	call POST "$repo_api/issues/$number/comments" "$work/request.json" >/dev/null
 	echo '{"state":"closed"}' >"$work/request.json"
-	call PATCH "issues/$number" "$work/request.json" >/dev/null
+	call PATCH "$repo_api/issues/$number" "$work/request.json" >/dev/null
 	echo "Closed #$number as a duplicate of #$oldest."
 fi

@@ -1093,6 +1093,17 @@ func (o checksObservation) allGreen() bool {
 }
 
 func (s *GitHubService) refreshChecksForSHA(ctx context.Context, repo *domain.GitHubRepoModel, sha string) error {
+	// Webhook deliveries tolerate GitHub's short propagation lag with retries.
+	return s.fetchAndApplyChecks(ctx, repo, sha, 3)
+}
+
+// reconcileChecksForSHA reads each signal once. Webhooks drive live updates;
+// the safety-net reconciler only catches up on long-settled state.
+func (s *GitHubService) reconcileChecksForSHA(ctx context.Context, repo *domain.GitHubRepoModel, sha string) error {
+	return s.fetchAndApplyChecks(ctx, repo, sha, 1)
+}
+
+func (s *GitHubService) fetchAndApplyChecks(ctx context.Context, repo *domain.GitHubRepoModel, sha string, attempts int) error {
 	// Keep these versions from before the external fetch. Reloading afterward
 	// would let an older response borrow a newer observation's version token.
 	openPRs, err := s.fRepo.ListOpenPRsByHeadSHA(ctx, repo.ID, sha)
@@ -1114,7 +1125,7 @@ func (s *GitHubService) refreshChecksForSHA(ctx context.Context, repo *domain.Gi
 	client := conn.client()
 	var observation checksObservation
 	var fetchErr error
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < attempts; attempt++ {
 		checkRuns, checksErr := client.GetCheckRunsForRef(ctx, owner, name, sha)
 		status, statusErr := client.GetCombinedStatus(ctx, owner, name, sha)
 		fetchErr = errors.Join(checksErr, statusErr)
@@ -1123,8 +1134,12 @@ func (s *GitHubService) refreshChecksForSHA(ctx context.Context, repo *domain.Gi
 			if observation.settled() {
 				break
 			}
+		} else if errors.Is(fetchErr, gh.ErrRateLimited) {
+			// The budget is exhausted; the block window keeps later ticks and
+			// deliveries from hammering GitHub until it resets.
+			break
 		}
-		if attempt < 2 {
+		if attempt < attempts-1 {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -1290,8 +1305,10 @@ func (s *GitHubService) ReconcileWebhookEvents(ctx context.Context) {
 	s.syncOpenPRChecks(ctx)
 }
 
-// StartStatusReconciler catches missed Actions webhook deliveries. Webhooks
-// remain the immediate path; each tick reads current PR heads from GitHub.
+// StartStatusReconciler runs the low-frequency safety net that catches missed
+// webhook deliveries (status, check_run, workflow_run). Webhooks drive the
+// immediate path; the ticker only reads current PR heads once per interval,
+// and conditional requests keep an unchanged pass nearly free.
 func (s *GitHubService) StartStatusReconciler(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -1322,7 +1339,7 @@ func (s *GitHubService) syncOpenPRChecks(ctx context.Context) {
 				continue
 			}
 			seen[*pr.HeadSHA] = true
-			if err := s.refreshChecksForSHA(ctx, &repos[i], *pr.HeadSHA); err != nil {
+			if err := s.reconcileChecksForSHA(ctx, &repos[i], *pr.HeadSHA); err != nil {
 				log.WithError(err).WithFields(log.Fields{"repo": repos[i].FullName, "pr": pr.Number}).Warn("failed to reconcile GitHub checks")
 			}
 		}

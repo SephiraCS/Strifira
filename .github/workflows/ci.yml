@@ -1,0 +1,352 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Re-runs the pipeline when a runner hiccup fails a good build; on main
+  # that also re-cuts the release: `gh workflow run ci.yml --ref main`.
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+# Go and Node.js come from the setup actions; PostgreSQL and Redis run as
+# service containers.
+#
+# Every push to main deploys to alpha: the build job pushes the image to
+# Harbor as homelab/ku:<sha12>, and the homelab-deployer daemon on alpha
+# (a separate repository) rolls the instance itself once every check run on
+# main is green, health-gates the new instance with rollback, and posts the
+# deploy/alpha commit status. CI never touches alpha over SSH.
+#
+# Tests (AGENTS.md): integration tests only, in two suites. This workflow
+# runs the fast suite (`make test-fast`), which gates the deploy; the slow
+# suite (`make test-slow`) runs in slow.yml and never blocks it. Once
+# deploy/alpha is green the Release job bumps the version, tags and
+# publishes it; pull requests never edit versions (scripts/ci/release.sh).
+jobs:
+  # TS-795 switch guard: fails when the change adds an on/off setting.
+  # Vendored into scripts/ci/zero-config-check.py from TerraScale/ts-builder
+  # (guard ref 8dacab4) when that repository left the server in the Tools
+  # org move; re-point this job at ts-builder when it is reachable again.
+  guard:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - env:
+          ZERO_CONFIG_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          ZERO_CONFIG_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          if [ -z "$ZERO_CONFIG_BASE" ] || [ "$ZERO_CONFIG_BASE" = "0000000000000000000000000000000000000000" ]; then
+            ZERO_CONFIG_BASE=$(git rev-parse "$ZERO_CONFIG_HEAD^")
+          fi
+          python3 scripts/ci/zero-config-check.py "$ZERO_CONFIG_BASE" "$ZERO_CONFIG_HEAD"
+
+  check:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5 # v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            UI/package-lock.json
+            WEB/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: UI
+        run: npm ci --no-audit --no-fund
+
+      - name: Svelte check (UI)
+        working-directory: UI
+        run: npm run check
+
+      - name: Install marketing site dependencies
+        working-directory: WEB
+        run: npm ci --no-audit --no-fund
+
+      - name: Svelte check (WEB)
+        working-directory: WEB
+        run: npm run check
+
+      - name: Build and SEO validation
+        working-directory: WEB
+        run: npm run validate
+
+      - name: Responsive layout tests
+        working-directory: WEB
+        run: npm run test:responsive
+
+  test:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    services:
+      # Throwaway test state; readiness is enforced by the health options,
+      # so the first step already sees a migrated-ready database.
+      postgres:
+        image: docker.io/library/postgres:16-alpine
+        env:
+          POSTGRES_USER: ku
+          POSTGRES_PASSWORD: ku
+          POSTGRES_DB: ku_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ku -d ku_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: docker.io/library/redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: test-secret-that-is-at-least-32-characters-long
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5 # v5
+        with:
+          go-version-file: BE/go.mod
+          cache-dependency-path: BE/go.sum
+
+      - name: Check the devmachine image tool pins
+        run: sh scripts/ci/check-image-versions.sh
+
+      - run: go vet ./...
+        working-directory: BE
+
+      # The timeout covers a whole package, so allow 10m while retaining
+      # stacks before the 30m job limit.
+      - name: Fast suite (backend) with coverage
+        run: |
+          set -euo pipefail
+          make test-fast-backend \
+            GO_TEST_FLAGS="-race -count=1 -timeout=10m -coverprofile=coverage.out -covermode=atomic"
+          (cd BE && go tool cover -func=coverage.out | tail -1)
+
+      # Runs even when tests fail, so both problems show in one run.
+      - name: Check formatting
+        if: ${{ !cancelled() }}
+        run: make check-gofmt
+
+  # The fast browser suite (FAST_SPECS in UI/playwright.config.ts), split
+  # across three runners. Each shard builds the app itself and hands the
+  # build to Playwright (E2E_PREBUILT=1). Workers stay at two per shard.
+  # The job name is the check-run name homelab-deployer waits for
+  # (ops/deployer/apps.json in the Homelab repo): keep "e2e shard N" stable.
+  e2e:
+    name: e2e shard ${{ matrix.shard }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    defaults:
+      run:
+        working-directory: UI
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5 # v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: UI/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - run: npm run build
+
+      - name: Fast suite (browser)
+        working-directory: .
+        env:
+          E2E_PREBUILT: '1'
+        run: |
+          (cd UI && npx playwright install chromium ffmpeg)
+          make test-fast-frontend E2E_FLAGS="--shard=${{ matrix.shard }}/3 --workers=2"
+
+      # Artifacts work on GitHub: keep the failure context in the log and
+      # attach it for reading without digging through the run.
+      - name: Print failure context
+        if: failure()
+        run: |
+          find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
+
+      - name: Upload failure context
+        if: failure()
+        uses: actions/upload-artifact@v4 # v4
+        with:
+          name: error-context-shard-${{ matrix.shard }}
+          path: UI/test-results/**/error-context.md
+          if-no-files-found: ignore
+
+  # The image the homelab-deployer on alpha rolls to: it watches the check
+  # runs of this commit, and once they are all green it pulls
+  # registry.mariogk.com/homelab/ku:<sha12> from Harbor, rolls the Incus
+  # instance with a health gate and rollback, and posts the deploy/alpha
+  # commit status. The deploy itself is entirely the deployer's job.
+  build:
+    needs: [guard]
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          persist-credentials: false
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USER: ${{ secrets.HARBOR_USER }}
+          HARBOR_TOKEN: ${{ secrets.HARBOR_TOKEN }}
+        run: printf '%s' "$HARBOR_TOKEN" | docker login registry.mariogk.com --username "$HARBOR_USER" --password-stdin
+
+      - name: Compute the short commit
+        id: sha
+        shell: bash
+        run: echo "sha12=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the image
+        env:
+          SHA12: ${{ steps.sha.outputs.sha12 }}
+        run: |
+          set -euo pipefail
+          # Both tags, same manifest: homelab-deployer discovers the image by
+          # the full 40-hex sha tag and rebuilds the instance from sha12.
+          docker build --build-arg "KU_VERSION=${GITHUB_SHA}" \
+            --tag "registry.mariogk.com/homelab/ku:${GITHUB_SHA}" \
+            --tag "registry.mariogk.com/homelab/ku:${SHA12}" .
+          docker push "registry.mariogk.com/homelab/ku:${GITHUB_SHA}"
+          docker push "registry.mariogk.com/homelab/ku:${SHA12}"
+
+  # Cuts the next patch release of the deployed commit: waits for the
+  # homelab-deployer's deploy/alpha commit status on the pushed sha to turn
+  # green (replacing the old Deploy to Alpha job this workflow used to run),
+  # then bumps UI/package.json and the OpenAPI version in a "[skip ci]"
+  # commit on main, tags it, creates the GitHub release, and pushes the
+  # images built from it to Harbor (homelab/ku:<release-sha12> and
+  # homelab/ku:vX.Y.Z) so the deployer can roll alpha to the release commit
+  # (it treats a [skip ci] commit with an existing image as deployable).
+  # No loop: pushes made with GITHUB_TOKEN never trigger workflows, and
+  # "[skip ci]" also keeps CI off that commit (see scripts/ci/release.sh).
+  release:
+    needs: [guard, build]
+    if: github.ref == 'refs/heads/main'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      REGISTRY: registry.mariogk.com
+      IMAGE_PREFIX: registry.mariogk.com/homelab
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_TOKEN: ${{ secrets.HARBOR_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # The deployer rolls alpha only after every check run of this commit
+      # is green and the Harbor image exists, so this wait covers the rest
+      # of CI too: no deploy/alpha status means the tests are still running.
+      - name: Wait for the deployer to roll alpha
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 25 * 60 ))
+          state=
+          while :; do
+            state=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status" \
+              | jq -r '.statuses[]? | select(.context == "deploy/alpha") | .state' | head -n 1)
+            case "$state" in
+            success)
+              echo "deploy/alpha is green on ${GITHUB_SHA}."
+              break
+              ;;
+            failure | error)
+              echo "::error::The deployer reported deploy/alpha ${state} on ${GITHUB_SHA}; not releasing." >&2
+              exit 1
+              ;;
+            esac
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Timed out after 25m waiting for the deploy/alpha commit status on ${GITHUB_SHA} (last state: ${state:-none})." >&2
+              exit 1
+            fi
+            echo "deploy/alpha is ${state:-not posted} on ${GITHUB_SHA}; waiting."
+            sleep 30
+          done
+
+      - name: Bump the version, tag and create the release
+        id: release
+        run: scripts/ci/release.sh "${{ github.sha }}"
+
+      - name: Build and push the release images
+        if: steps.release.outputs.version != ''
+        run: scripts/ci/publish-images.sh "${{ steps.release.outputs.version }}" --push
+
+  # The Release job has never blocked anything a deploy needs, so its
+  # failure must be seen and owned the same way slow-suite failures are:
+  # one open issue collects the redacted log tails of every failed job.
+  report-release-failure:
+    needs: [release]
+    # failure() chained with && never fired on Forgejo; always() plus the
+    # explicit needs result is the dependable form.
+    if: >-
+      always()
+      && !cancelled()
+      && needs.release.result == 'failure'
+      && github.event_name != 'pull_request'
+      && github.ref == 'refs/heads/main'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - name: Check out the source revision
+        uses: actions/checkout@v5 # v5
+        with:
+          persist-credentials: false
+
+      - name: File the failure as an issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT_TITLE: 'Release failed'
+          LOG_LINES: 150
+          REPRO: |
+            # The release resumes idempotently once the cause is fixed:
+            gh workflow run ci.yml --ref main
+        run: scripts/ci/report-failure.sh

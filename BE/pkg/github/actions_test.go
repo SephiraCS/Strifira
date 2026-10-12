@@ -33,7 +33,11 @@ func TestActionsClientGitHubContract(t *testing.T) {
 		case "/api/v3/repos/org/project/actions/runs/44":
 			fmt.Fprint(w, `{"id":44,"status":"in_progress"}`)
 		case "/api/v3/repos/org/project/actions/runs/44/jobs":
+			assert.Equal(t, "100", r.URL.Query().Get("per_page"))
+			assert.Equal(t, "1", r.URL.Query().Get("page"))
 			fmt.Fprint(w, `{"total_count":1,"jobs":[{"id":52,"run_id":44,"run_attempt":3,"name":"Build","status":"completed","conclusion":"failure"}]}`)
+		case "/api/v3/repos/org/project/actions/jobs/52":
+			fmt.Fprint(w, `{"id":52,"run_id":44,"run_attempt":3,"name":"Build","status":"completed","conclusion":"failure"}`)
 		case "/api/v3/repos/org/project/actions/jobs/52/logs":
 			w.Header().Set("Content-Type", "text/plain")
 			fmt.Fprint(w, "build failed\n")
@@ -61,10 +65,15 @@ func TestActionsClientGitHubContract(t *testing.T) {
 	run, err := client.GetActionRun(t.Context(), "org", "project", 44)
 	require.NoError(t, err)
 	assert.Equal(t, "in_progress", run.Status)
-	jobs, err := client.ListActionJobs(t.Context(), "org", "project", 44)
+	jobs, err := client.ListActionJobs(t.Context(), "org", "project", 44, 1, 100)
 	require.NoError(t, err)
-	require.Len(t, jobs, 1)
-	assert.EqualValues(t, 3, jobs[0].Attempt)
+	assert.EqualValues(t, 1, jobs.TotalCount)
+	require.Len(t, jobs.Jobs, 1)
+	assert.EqualValues(t, 3, jobs.Jobs[0].Attempt)
+	job, err := client.GetActionJob(t.Context(), "org", "project", 52)
+	require.NoError(t, err)
+	assert.Equal(t, int64(52), job.ID)
+	assert.Equal(t, int64(44), job.RunID)
 	log, err := client.GetActionJobLog(t.Context(), "org", "project", 52)
 	require.NoError(t, err)
 	assert.Equal(t, "build failed\n", log.Content)
@@ -73,7 +82,7 @@ func TestActionsClientGitHubContract(t *testing.T) {
 	assert.Equal(t, []string{
 		"GET /api/v3/repos/org/project/actions/runs", "GET /api/v3/repos/org/project/actions/workflows/ci.yaml/runs",
 		"GET /api/v3/repos/org/project/actions/runs/44", "GET /api/v3/repos/org/project/actions/runs/44/jobs",
-		"GET /api/v3/repos/org/project/actions/jobs/52/logs", "POST /api/v3/repos/org/project/actions/runs/44/cancel",
+		"GET /api/v3/repos/org/project/actions/jobs/52", "GET /api/v3/repos/org/project/actions/jobs/52/logs", "POST /api/v3/repos/org/project/actions/runs/44/cancel",
 	}, requests)
 }
 

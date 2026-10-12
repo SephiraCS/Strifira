@@ -233,10 +233,11 @@ func main() {
 	)
 	githubH := handler.NewGitHubHandler(githubSvc)
 	githubActionsH := handler.NewGitHubActionsHandler(githubSvc)
-	// GitHub Actions completion webhooks trigger CI status refreshes.
-	// Reconcile open PRs every five minutes in case a delivery is missed.
+	// GitHub Actions completion webhooks (status, check_run, workflow_run)
+	// drive CI status refreshes; an hourly safety-net pass catches missed
+	// deliveries, with conditional requests keeping unchanged polls free.
 	background.Go("github webhook reconcile", func() { githubSvc.ReconcileWebhookEvents(bgCtx) })
-	background.Go("github status reconciler", func() { githubSvc.StartStatusReconciler(bgCtx, 5*time.Minute) })
+	background.Go("github status reconciler", func() { githubSvc.StartStatusReconciler(bgCtx, time.Hour) })
 
 	// Archive completed issues once at startup and then hourly.
 	background.Go("issue auto-archive", func() {

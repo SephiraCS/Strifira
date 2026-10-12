@@ -3,7 +3,9 @@
 #
 #   scripts/ci/release.sh <deployed-sha>
 #
-# Run by the Release job of ci.yml after Deploy to Alpha succeeds on main.
+# Run by the Release job of ci.yml once the homelab-deployer has posted a
+# green deploy/alpha commit status for the sha on main (the workflow waits
+# for it before calling this script; the deployer rolls alpha itself).
 # Versions are never edited by hand (AGENTS.md: the version is bumped
 # automatically); pull requests leave UI/package.json and the OpenAPI
 # info.version alone. This script:
@@ -15,19 +17,21 @@
 #   2. writes it to UI/package.json, UI/package-lock.json, the OpenAPI
 #      info.version, and the public release manifest UI/static/releases.json;
 #   3. commits that as "chore(release): vX.Y.Z [skip ci]" on top of the
-#      deployed commit, tags it, and pushes both atomically to main;
-#   4. creates the Forgejo release with the first-parent commit subjects
+#      deployed commit, tags it, and pushes both to main;
+#   4. creates the GitHub release with the first-parent commit subjects
 #      since the previous tag as notes;
-#   5. writes version=vX.Y.Z, sha=<release commit> and deployed=<its parent>
-#      to $GITHUB_OUTPUT; the Release job then publishes the images and rolls
-#      alpha forward to the release commit (scripts/ci/deploy-release.sh).
+#   5. writes version=vX.Y.Z and sha=<release commit> to $GITHUB_OUTPUT;
+#      the Release job then publishes the images of the release commit to
+#      Harbor (homelab/ku:<release-sha12> and homelab/ku:vX.Y.Z), which the
+#      deployer picks up to roll alpha to the release commit.
 #
-# No loop: the push uses the job token, and Forgejo never starts workflows
-# for changes authored with it; "[skip ci]" also keeps CI off that commit if
+# No loop: the push uses GITHUB_TOKEN, and GitHub never starts workflows
+# for changes pushed with it; "[skip ci]" also keeps CI off that commit if
 # a personal token is ever used instead. The release commit only moves
 # version fields and the release manifest, so it skips the test suites, but
-# the Release job still rolls alpha to it so alpha shows the new version and
-# manifest (rolling alpha starts no workflow either).
+# its image is published so alpha shows the new version and manifest (the
+# deployer treats a [skip ci] commit with an existing image as deployable;
+# pushing it starts no workflow either).
 #
 # When main has moved past the deployed commit (another merge is queued
 # behind this run), the release is left to the newer commit's run so the
@@ -47,9 +51,8 @@
 set -eu
 
 sha=${1:?usage: $0 <deployed-sha>}
-: "${FORGEJO_TOKEN:?FORGEJO_TOKEN is required}"
+: "${GITHUB_TOKEN:?GITHUB_TOKEN is required}"
 : "${GITHUB_SERVER_URL:?}" "${GITHUB_REPOSITORY:?}"
-api="$GITHUB_SERVER_URL/api/v1/repos/$GITHUB_REPOSITORY"
 host=${GITHUB_SERVER_URL#https://}
 output=${GITHUB_OUTPUT:-/dev/null}
 
@@ -57,7 +60,7 @@ output=${GITHUB_OUTPUT:-/dev/null}
 # helper shell expands the token from the environment.
 # shellcheck disable=SC2016
 git config --local credential.helper \
-	'!f() { echo username=forgejo-actions; echo "password=$FORGEJO_TOKEN"; }; f'
+	'!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f'
 remote=${RELEASE_REMOTE:-"https://$host/$GITHUB_REPOSITORY.git"}
 git fetch --quiet --tags --force "$remote" "+refs/heads/main:refs/remotes/release/main"
 
@@ -74,29 +77,29 @@ notes() {
 	printf 'Deployed to alpha as %s.\n\n%s\n' "$deployed" "${log:-- No changes recorded.}"
 }
 
-# create_release <tag> <notes>: creates the Forgejo release; an existing one
+# create_release <tag> <notes>: creates the GitHub release; an existing one
 # counts as created, so re-runs are idempotent.
 create_release() {
-	jq -n --arg tag "$1" --arg body "$2" \
-		'{tag_name: $tag, name: $tag, body: $body, draft: false, prerelease: false}' >"${TMPDIR:-/tmp}/release-request.json"
-	code=$(curl --silent --output "${TMPDIR:-/tmp}/release-response.json" --write-out '%{http_code}' --max-time 30 \
-		--header "Authorization: token $FORGEJO_TOKEN" --header 'Content-Type: application/json' \
-		--data-binary "@${TMPDIR:-/tmp}/release-request.json" "$api/releases" || :)
-	case "$code" in
-	201) echo "Created release $1." ;;
-	409) echo "Release $1 already exists." ;;
-	*) echo "Creating release $1 failed with HTTP ${code:-000}:" >&2; cat "${TMPDIR:-/tmp}/release-response.json" >&2 2>/dev/null || :; exit 1 ;;
-	esac
+	response=$(gh api --method POST "repos/$GITHUB_REPOSITORY/releases" \
+		--field tag_name="$1" --field name="$1" --field body="$2" \
+		--field draft=false --field prerelease=false 2>&1) || {
+		if printf '%s' "$response" | grep -q 'already_exists'; then
+			echo "Release $1 already exists."
+			return 0
+		fi
+		echo "Creating release $1 failed:" >&2
+		printf '%s\n' "$response" >&2
+		exit 1
+	}
+	echo "Created release $1."
 }
 
-# outputs <tag> <release commit>: also names the commit the release commit
-# bumps (deployed=), which alpha must still run for the Release job to roll
-# it forward to the release commit.
+# outputs <tag> <release commit>: names the commit the images are built
+# from; publish-images.sh derives its tags from it.
 outputs() {
 	{
 		echo "version=$1"
 		echo "sha=$2"
-		echo "deployed=$(git rev-parse "$2^")"
 	} >>"$output"
 }
 
@@ -124,7 +127,7 @@ release_commit() {
 }
 
 # resume <release commit> <tag>: finishes a release whose commit and tag are
-# already on main: (re)creates the Forgejo release and writes the outputs so
+# already on main: (re)creates the GitHub release and writes the outputs so
 # the images are published, without touching main.
 resume() {
 	deployed=$(git rev-parse "$1^")
@@ -191,11 +194,9 @@ grep -q "^  version: $next\$" BE/internal/apidocs/openapi.yaml || {
 }
 
 # The manifest lists published releases newest first, this one included.
-now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-curl --silent --show-error --fail --max-time 30 \
-	--header "Authorization: token $FORGEJO_TOKEN" "$api/releases?limit=100" >"${TMPDIR:-/tmp}/releases.json"
+gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" >"${TMPDIR:-/tmp}/releases.json"
 jq --arg tag "$tag" --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag" \
-	--arg body "$notes" --arg now "$now" '
+	--arg body "$notes" --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
 	def entry: {
 		tag_name, html_url, body, published_at: .created_at,
 		prerelease: (.prerelease // false), force_upgrade: false,
@@ -205,23 +206,22 @@ jq --arg tag "$tag" --arg url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/ta
 	+ [.[] | select(.draft == false and .tag_name != $tag) | entry]' \
 	"${TMPDIR:-/tmp}/releases.json" >UI/static/releases.json
 
-git -c user.name='forgejo-actions[bot]' -c user.email=noreply@git.terrascale.tech \
+git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
 	commit --quiet -m "chore(release): $tag [skip ci]" \
 	-m "Automatic version bump after $sha was deployed to alpha." \
 	-- UI/package.json UI/package-lock.json UI/static/releases.json BE/internal/apidocs/openapi.yaml
-git -c user.name='forgejo-actions[bot]' -c user.email=noreply@git.terrascale.tech \
+git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
 	tag --annotate "$tag" -m "$tag"
 release_sha=$(git rev-parse HEAD)
 
-# Atomic: either main and the tag both move, or neither does. A rejected
-# push is only a race when main has since moved past the deployed commit
-# (the newer run releases); a push whose response was lost but landed
-# continues; anything else fails the job.
-if ! git push --atomic "$remote" "HEAD:refs/heads/main" "refs/tags/$tag"; then
-	git tag --delete "$tag" >/dev/null
+# main and then the tag move in that order (a single --atomic push is not
+# guaranteed server-side here). A rejected push is only a race when main has
+# since moved past the deployed commit (the newer run releases); a push whose
+# response was lost but landed continues; anything else fails the job.
+if ! git push "$remote" "HEAD:refs/heads/main"; then
 	git fetch --quiet --tags --force "$remote" "+refs/heads/main:refs/remotes/release/main"
 	main=$(git rev-parse release/main)
-	if [ "$main" = "$release_sha" ] && [ "$(released_tag "$main" || :)" = "$tag" ]; then
+	if [ "$main" = "$release_sha" ]; then
 		echo "The push of $tag landed despite the error; continuing."
 	elif [ "$main" != "$sha" ] && git merge-base --is-ancestor "$sha" "$main"; then
 		echo "main moved to $main while releasing; the newer commit's run releases." >&2
@@ -230,6 +230,14 @@ if ! git push --atomic "$remote" "HEAD:refs/heads/main" "refs/tags/$tag"; then
 		echo "Pushing $tag to main failed, and main ($main) has not moved past $sha; not a race." >&2
 		exit 1
 	fi
+fi
+if ! git push "$remote" "refs/tags/$tag"; then
+	git fetch --quiet --tags --force "$remote"
+	if [ "$(git rev-parse --verify --quiet "refs/tags/$tag^{commit}")" != "$release_sha" ]; then
+		echo "Pushing the tag $tag failed." >&2
+		exit 1
+	fi
+	echo "The tag $tag landed despite the error; continuing."
 fi
 
 create_release "$tag" "$notes"

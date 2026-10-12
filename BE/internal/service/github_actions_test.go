@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,6 +18,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// parseIntDefault reads GitHub-style pagination query parameters in fakes.
+func parseIntDefault(t *testing.T, value string, fallback int) int {
+	t.Helper()
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	require.NoError(t, err)
+	return parsed
+}
 
 // Embedding the store interface makes unexpected calls fail immediately;
 // overrides below are the only persistence calls these flows need.
@@ -109,7 +122,27 @@ func TestGitHubActionsMapsModelsAndPaginatesJobs(t *testing.T) {
 			assert.Equal(t, "20", r.URL.Query().Get("per_page"))
 			fmt.Fprint(w, `{"workflow_runs":[{"id":4,"display_title":"Build project","run_number":8,"path":"build.yaml","name":"Build","head_branch":"feature/work","head_sha":"0123456789","event":"push","status":"completed","conclusion":"success","created_at":"2026-09-30T12:00:00Z","updated_at":"2026-09-30T12:00:01Z","run_started_at":"0001-01-01T00:00:00Z","html_url":"javascript:alert(1)"}],"total_count":22}`)
 		case "/api/v3/repos/org/project/actions/runs/4/jobs":
-			fmt.Fprint(w, `{"total_count":3,"jobs":[{"id":1,"run_id":4,"name":"Test"},{"id":2,"run_id":4,"name":"Build","run_attempt":3,"status":"completed","conclusion":"failure"},{"id":3,"run_id":4,"name":"Deploy"}]}`)
+			all := []string{
+				`{"id":1,"run_id":4,"name":"Test"}`,
+				`{"id":2,"run_id":4,"name":"Build","run_attempt":3,"status":"completed","conclusion":"failure"}`,
+				`{"id":3,"run_id":4,"name":"Deploy"}`,
+			}
+			page := parseIntDefault(t, r.URL.Query().Get("page"), 1)
+			perPage := parseIntDefault(t, r.URL.Query().Get("per_page"), 100)
+			start, end := (page-1)*perPage, page*perPage
+			if start > len(all) {
+				start = len(all)
+			}
+			if end > len(all) {
+				end = len(all)
+			}
+			jobs := make([]string, 0, end-start)
+			for _, job := range all[start:end] {
+				jobs = append(jobs, job)
+			}
+			fmt.Fprintf(w, `{"total_count":3,"jobs":[%s]}`, strings.Join(jobs, ","))
+		case "/api/v3/repos/org/project/actions/jobs/2":
+			fmt.Fprint(w, `{"id":2,"run_id":4,"name":"Build","run_attempt":3,"status":"completed","conclusion":"failure"}`)
 		case "/api/v3/repos/org/project/actions/jobs/2/logs":
 			fmt.Fprint(w, "attempt two failed\n")
 		default:
@@ -165,32 +198,34 @@ func TestGitHubActionsMapsModelsAndPaginatesJobs(t *testing.T) {
 	}
 }
 
-func TestGitHubActionsCancellationRequiresActiveRun(t *testing.T) {
-	for _, status := range []string{"completed", "queued", "in_progress"} {
-		t.Run(status, func(t *testing.T) {
+func TestGitHubActionsCancellationTranslatesRunStateConflict(t *testing.T) {
+	for _, tc := range []struct {
+		status      string
+		upstream    int
+		expectedErr error
+	}{
+		{status: "queued", upstream: http.StatusAccepted, expectedErr: nil},
+		{status: "in_progress", upstream: http.StatusAccepted, expectedErr: nil},
+		{status: "completed", upstream: http.StatusConflict, expectedErr: ErrGitHubActionState},
+	} {
+		t.Run(tc.status, func(t *testing.T) {
 			workspaceID, repoID := uuid.New(), uuid.New()
 			var mutations int
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method == http.MethodGet {
-					assert.Equal(t, "/api/v3/repos/org/project/actions/runs/9", r.URL.Path)
-					fmt.Fprintf(w, `{"id":9,"status":%q}`, status)
-					return
-				}
-				mutations++
-				assert.Equal(t, http.MethodPost, r.Method)
+				assert.Equal(t, http.MethodPost, r.Method, "cancellation state checks are left to the API")
 				assert.Equal(t, "/api/v3/repos/org/project/actions/runs/9/cancel", r.URL.Path)
-				w.WriteHeader(http.StatusAccepted)
+				mutations++
+				w.WriteHeader(tc.upstream)
 			}))
 			defer server.Close()
 			svc := &GitHubService{fRepo: &actionsTestStore{repo: &domain.GitHubRepoModel{WorkspaceID: workspaceID, InstanceURL: server.URL, FullName: "org/project", IsActive: true}}, global: &GlobalGitHubConfig{URL: server.URL, Token: "token"}}
 			err := svc.CancelActionRun(t.Context(), workspaceID, repoID, 9)
-			if status == "queued" || status == "in_progress" {
-				require.NoError(t, err)
-				assert.Equal(t, 1, mutations)
+			if tc.expectedErr == nil {
+				assert.NoError(t, err)
 			} else {
-				assert.ErrorIs(t, err, ErrGitHubActionState)
-				assert.Zero(t, mutations)
+				assert.ErrorIs(t, err, tc.expectedErr)
 			}
+			assert.Equal(t, 1, mutations, "cancelling costs exactly one API call")
 		})
 	}
 }
@@ -239,10 +274,10 @@ func TestGitHubJobLogsAuthorizeThroughRunJobs(t *testing.T) {
 	workspaceID, repoID := uuid.New(), uuid.New()
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests = append(requests, r.URL.RequestURI())
+		requests = append(requests, r.URL.Path)
 		switch r.URL.Path {
-		case "/api/v3/repos/org/project/actions/runs/9/jobs":
-			fmt.Fprint(w, `{"total_count":1,"jobs":[{"id":42,"run_id":9,"run_attempt":3,"status":"completed","conclusion":"success"}]}`)
+		case "/api/v3/repos/org/project/actions/jobs/42":
+			fmt.Fprint(w, `{"id":42,"run_id":9,"run_attempt":3,"status":"completed","conclusion":"success"}`)
 		case "/api/v3/repos/org/project/actions/jobs/42/logs":
 			w.Header().Set("Content-Type", "text/plain")
 			fmt.Fprint(w, "GitHub Actions log\n")
@@ -266,9 +301,9 @@ func TestGitHubJobLogsAuthorizeThroughRunJobs(t *testing.T) {
 	assert.Equal(t, "GitHub Actions log\n", current.Content)
 	assert.Equal(t, current, explicit)
 	assert.Equal(t, []string{
-		"/api/v3/repos/org/project/actions/runs/9/jobs?per_page=100&page=1", "/api/v3/repos/org/project/actions/jobs/42/logs",
-		"/api/v3/repos/org/project/actions/runs/9/jobs?per_page=100&page=1", "/api/v3/repos/org/project/actions/jobs/42/logs",
-		"/api/v3/repos/org/project/actions/runs/9/jobs?per_page=100&page=1",
+		"/api/v3/repos/org/project/actions/jobs/42", "/api/v3/repos/org/project/actions/jobs/42/logs",
+		"/api/v3/repos/org/project/actions/jobs/42", "/api/v3/repos/org/project/actions/jobs/42/logs",
+		"/api/v3/repos/org/project/actions/jobs/42",
 	}, requests)
 }
 
@@ -277,17 +312,15 @@ func TestGitHubActionsRejectJobOutsideRunBeforeReadingLogs(t *testing.T) {
 		name, body string
 		status     int
 	}{
-		{"missing job", `{"total_count":0,"jobs":[]}`, http.StatusOK},
-		{"different job", `{"total_count":1,"jobs":[{"id":43,"run_id":9}]}`, http.StatusOK},
-		{"wrong run", `{"total_count":1,"jobs":[{"id":42,"run_id":10}]}`, http.StatusOK},
-		{"missing run", ``, http.StatusNotFound},
+		{"missing job", ``, http.StatusNotFound},
+		{"wrong run", `{"id":42,"run_id":10}`, http.StatusOK},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			workspaceID, repoID := uuid.New(), uuid.New()
 			var requests []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				requests = append(requests, r.URL.Path)
-				assert.Equal(t, "/api/v3/repos/org/project/actions/runs/9/jobs", r.URL.Path)
+				assert.Equal(t, "/api/v3/repos/org/project/actions/jobs/42", r.URL.Path)
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
 			}))
@@ -300,7 +333,7 @@ func TestGitHubActionsRejectJobOutsideRunBeforeReadingLogs(t *testing.T) {
 			assert.ErrorIs(t, err, ErrGitHubActionJobNotFound)
 			_, err = svc.GetActionJobLog(t.Context(), workspaceID, repoID, 9, 42, 0)
 			assert.ErrorIs(t, err, ErrGitHubActionJobNotFound)
-			assert.Equal(t, []string{"/api/v3/repos/org/project/actions/runs/9/jobs", "/api/v3/repos/org/project/actions/runs/9/jobs"}, requests)
+			assert.Equal(t, []string{"/api/v3/repos/org/project/actions/jobs/42", "/api/v3/repos/org/project/actions/jobs/42"}, requests)
 		})
 	}
 }

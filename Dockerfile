@@ -216,8 +216,8 @@ RUN chmod +x /app/start.sh
 
 ENV HOME=/app/.home XDG_CONFIG_HOME=/app/.home/config XDG_DATA_HOME=/app/.home/data
 EXPOSE 3000
-# Docker-format images only (scripts/ci/build-image.sh builds with
-# --format docker); Incus on alpha ignores it and ku-deploy polls /health.
+# Docker-format images only (CI builds with plain docker build); Incus on
+# alpha ignores the healthcheck and the homelab-deployer polls /health.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1
 ENTRYPOINT ["/app/start.sh"]

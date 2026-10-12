@@ -234,6 +234,8 @@ func githubActionError(c echo.Context, err error, logs bool) error {
 		return response.Error(c, http.StatusGatewayTimeout, "GITHUB_TIMEOUT", "GitHub did not respond in time")
 	case errors.Is(err, context.Canceled), errors.Is(err, gh.ErrUnavailable):
 		return response.Error(c, http.StatusBadGateway, "GITHUB_UNAVAILABLE", "GitHub is unavailable; try again later")
+	case errors.Is(err, gh.ErrRateLimited):
+		return response.Error(c, http.StatusServiceUnavailable, "GITHUB_RATE_LIMITED", "GitHub API rate limit is exhausted; ku backs off and retries automatically; try again later")
 	}
 	if upstream, ok := errors.AsType[*gh.APIError](err); ok {
 		switch upstream.StatusCode {

@@ -39,7 +39,7 @@ def is_config_surface(path: str) -> bool:
         return True
     if name == "Makefile" or name.startswith("Dockerfile") or name.startswith("Containerfile"):
         return True
-    if path.startswith(".forgejo/workflows/") and name.endswith((".yml", ".yaml")):
+    if path.startswith(".github/workflows/") and name.endswith((".yml", ".yaml")):
         return True
     if name.endswith(CONFIG_SUFFIXES):
         return True

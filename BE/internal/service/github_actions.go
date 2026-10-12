@@ -122,16 +122,15 @@ func (s *GitHubService) ListActionJobs(ctx context.Context, workspaceID, repoID 
 	if err != nil {
 		return nil, err
 	}
-	jobs, err := client.ListActionJobs(ctx, owner, name, runID)
+	jobs, err := client.ListActionJobs(ctx, owner, name, runID, page, perPage)
 	if err != nil {
 		return nil, err
 	}
-	start := min((page-1)*perPage, len(jobs))
-	end := min(start+perPage, len(jobs))
 	result := &dto.ListResponse[dto.GitHubActionJobResponse]{
-		Data: make([]dto.GitHubActionJobResponse, 0, end-start), TotalCount: len(jobs), Page: page, PerPage: perPage, HasMore: end < len(jobs),
+		Data: make([]dto.GitHubActionJobResponse, 0, len(jobs.Jobs)), TotalCount: int(jobs.TotalCount),
+		Page: page, PerPage: perPage, HasMore: int64(page)*int64(perPage) < jobs.TotalCount,
 	}
-	for _, job := range jobs[start:end] {
+	for _, job := range jobs.Jobs {
 		result.Data = append(result.Data, actionJobResponse(job))
 	}
 	return result, nil
@@ -177,22 +176,21 @@ func (s *GitHubService) GetActionJobLog(ctx context.Context, workspaceID, repoID
 	return &dto.GitHubActionLogResponse{Content: log.Content, Truncated: log.Truncated, MaxBytes: log.MaxBytes}, nil
 }
 
-// GitHub scopes jobs under the run; verify both IDs before returning metadata
-// or reading the separate job log endpoint.
+// GitHub scopes jobs under the run. One single-job read verifies both IDs
+// before returning metadata or reading the separate job log endpoint — no
+// per-run job listing is needed.
 func findActionJob(ctx context.Context, client *gh.Client, owner, name string, runID, jobID int64) (gh.ActionJob, error) {
-	jobs, err := client.ListActionJobs(ctx, owner, name, runID)
+	job, err := client.GetActionJob(ctx, owner, name, jobID)
 	if err != nil {
 		if upstream, ok := errors.AsType[*gh.APIError](err); ok && upstream.StatusCode == 404 {
 			return gh.ActionJob{}, ErrGitHubActionJobNotFound
 		}
 		return gh.ActionJob{}, err
 	}
-	for _, job := range jobs {
-		if job.ID == jobID && job.RunID == runID {
-			return job, nil
-		}
+	if job.RunID != runID {
+		return gh.ActionJob{}, ErrGitHubActionJobNotFound
 	}
-	return gh.ActionJob{}, ErrGitHubActionJobNotFound
+	return *job, nil
 }
 
 func (s *GitHubService) CancelActionRun(ctx context.Context, workspaceID, repoID uuid.UUID, runID int64) error {
@@ -203,15 +201,15 @@ func (s *GitHubService) CancelActionRun(ctx context.Context, workspaceID, repoID
 	if err != nil {
 		return err
 	}
-	run, err := client.GetActionRun(ctx, owner, name, runID)
-	if err != nil {
+	// GitHub rejects cancellation of a finished run with 409, so the state
+	// check is left to the API: cancelling costs one call instead of two.
+	if err := client.CancelActionRun(ctx, owner, name, runID); err != nil {
+		if upstream, ok := errors.AsType[*gh.APIError](err); ok && upstream.StatusCode == 409 {
+			return ErrGitHubActionState
+		}
 		return err
 	}
-	active := slices.Contains([]string{"queued", "in_progress"}, run.Status)
-	if !active {
-		return ErrGitHubActionState
-	}
-	return client.CancelActionRun(ctx, owner, name, runID)
+	return nil
 }
 
 func actionURL(value, instance string) string {

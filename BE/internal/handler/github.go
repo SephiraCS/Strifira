@@ -11,6 +11,7 @@ import (
 	"github.com/ku/ku-backend/internal/dto"
 	"github.com/ku/ku-backend/internal/metrics"
 	"github.com/ku/ku-backend/internal/service"
+	gh "github.com/ku/ku-backend/pkg/github"
 	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
@@ -83,6 +84,9 @@ func (h *GitHubHandler) Enable(c echo.Context) error {
 func githubConnectionError(c echo.Context, err error) error {
 	if errors.Is(err, service.ErrGitHubDisabled) {
 		return response.Error(c, http.StatusConflict, "GITHUB_DISABLED", "GitHub is disabled for this workspace")
+	}
+	if errors.Is(err, gh.ErrRateLimited) {
+		return response.Error(c, http.StatusServiceUnavailable, "GITHUB_RATE_LIMITED", "GitHub API rate limit is exhausted; ku backs off and retries automatically; try again later")
 	}
 	return response.ServiceError(c, err)
 }

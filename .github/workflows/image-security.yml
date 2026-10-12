@@ -1,0 +1,155 @@
+name: Image Security Scan
+
+# Pull requests build and scan only the images whose inputs they change;
+# source-only changes are covered by ci.yml. Tags and the nightly run always
+# scan every image, which also catches new advisories against unchanged ones.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/Dockerfile*'
+      - '**/.dockerignore'
+      - 'devmachine/**'
+      - 'BE/go.mod'
+      - 'BE/go.sum'
+      - 'UI/package.json'
+      - 'UI/package-lock.json'
+      - 'UI/Caddyfile'
+      - 'scripts/ci/**'
+      - '.github/workflows/image-security.yml'
+  schedule:
+    - cron: '0 0 * * *'
+
+# Pull requests run per ref and yield to newer pushes. Tag and nightly runs
+# share one queue, so two of them never file the same failure issue at once
+# (scripts/ci/report-failure.sh also folds a duplicate opened in a race
+# into the oldest issue).
+concurrency:
+  group: image-security-${{ github.event_name == 'pull_request' && github.ref || 'scheduled' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Each matrix leg builds on its own runner with BuildKit layer caching
+# (type=gha) in place of the old runner's mounted go and npm caches; every
+# image still gets scanned.
+permissions:
+  contents: read
+
+jobs:
+  image-security:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 45
+    # The app leg builds the root Dockerfile that ci.yml pushes to Harbor.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: app, context: ., file: ./Dockerfile, inputs: 'Dockerfile .dockerignore BE/go.mod BE/go.sum UI/package.json UI/package-lock.json' }
+          - { id: backend, context: ./BE, file: ./BE/Dockerfile, inputs: 'BE/Dockerfile BE/go.mod BE/go.sum' }
+          - { id: frontend, context: ./UI, file: ./UI/Dockerfile, inputs: 'UI/Dockerfile UI/.dockerignore UI/Caddyfile UI/package.json UI/package-lock.json' }
+          - { id: gateway, context: ./BE, file: ./BE/Dockerfile.machine-gateway, inputs: 'BE/Dockerfile.machine-gateway BE/go.mod BE/go.sum' }
+          - { id: manager, context: ./BE, file: ./BE/Dockerfile.machine-manager, inputs: 'BE/Dockerfile.machine-manager BE/go.mod BE/go.sum' }
+          - { id: ide, context: ./devmachine, file: ./devmachine/ide/Dockerfile, inputs: devmachine }
+          - { id: browser, context: ./devmachine, file: ./devmachine/browser/Dockerfile, inputs: devmachine }
+          - { id: collector, context: ./devmachine, file: ./devmachine/collector/Dockerfile, inputs: devmachine }
+          - { id: egress, context: ./devmachine, file: ./devmachine/egress/Dockerfile, inputs: devmachine }
+          - { id: agent-claude, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: claude-code, inputs: devmachine }
+          - { id: agent-opencode, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: opencode, inputs: devmachine }
+          - { id: agent-codex, context: ./devmachine, file: ./devmachine/agent/Dockerfile, provider: codex, inputs: devmachine }
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          # Pull requests need the merge base to tell what they change.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+
+      # A leg whose inputs the pull request leaves alone skips its build. The
+      # release job bumps only the version in UI/package.json and its lockfile,
+      # which changes nothing an image installs, so a version-only change
+      # does not count (scripts/ci/image-inputs-changed.sh). If the check
+      # itself fails, the leg builds and scans anyway.
+      - name: Check whether this pull request changes the image
+        id: inputs
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          INPUTS: ${{ matrix.inputs }}
+        run: |
+          # shellcheck disable=SC2086 # INPUTS is a space-separated path list
+          if ! sh scripts/ci/image-inputs-changed.sh "${BASE_SHA}" $INPUTS scripts/ci .github/workflows/image-security.yml; then
+            echo "This pull request does not change the ${{ matrix.id }} image; skipping it."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # PROVIDER selects the agent flavor; an empty build-args value would
+      # set the arg to the empty string, which the Dockerfile rejects.
+      - name: Resolve the build arguments
+        id: args
+        if: steps.inputs.outputs.skip != 'true'
+        env:
+          PROVIDER: ${{ matrix.provider }}
+        run: |
+          if [ -n "$PROVIDER" ]; then
+            echo "build-args=PROVIDER=${PROVIDER}" >> "$GITHUB_OUTPUT"
+          else
+            echo "build-args=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Buildx
+        if: steps.inputs.outputs.skip != 'true'
+        uses: docker/setup-buildx-action@v3 # v3
+
+      - name: Build the image
+        if: steps.inputs.outputs.skip != 'true'
+        uses: docker/build-push-action@v6 # v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          load: true
+          provenance: false
+          tags: 'ku-${{ matrix.id }}:scan'
+          build-args: ${{ steps.args.outputs.build-args }}
+          cache-from: type=gha,scope=image-${{ matrix.id }}
+          cache-to: type=gha,scope=image-${{ matrix.id }},mode=max
+
+      # Severity gate and exceptions live in .trivyignore.yaml; the DB is
+      # fetched per leg (runners do not share a Trivy cache volume).
+      - name: Scan the image
+        if: steps.inputs.outputs.skip != 'true'
+        uses: aquasecurity/trivy-action@0.33.1 # v0.33.1
+        with:
+          scan-type: image
+          image-ref: 'ku-${{ matrix.id }}:scan'
+          severity: CRITICAL,HIGH
+          exit-code: '1'
+          ignorefile: .trivyignore.yaml
+
+  # Nightly and tag scans gate nothing, so a failure files (or updates) a
+  # GitHub issue instead of going unnoticed. Pull requests show their own.
+  report:
+    needs: [image-security]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5 # v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: File the failure as an issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPORT_TITLE: 'Image security scan failed'
+          REPRO: |
+            # Build and scan one image the way the failed leg does, e.g. the app:
+            docker build -t ku-app:scan .
+            trivy image --severity CRITICAL,HIGH --exit-code 1 ku-app:scan
+        run: scripts/ci/report-failure.sh

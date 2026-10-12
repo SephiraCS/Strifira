@@ -103,8 +103,8 @@ def tool_environment():
         "CGO_ENABLED",
         "REGISTRY_AUTH_FILE",
         "CONTAINERS_REGISTRIES_CONF",
-        # The job's isolated podman store and its containers.conf override
-        # (cgroups disabled under the nested CI runner; scripts/ci/podman-store.sh).
+        # Podman storage configuration passthrough for environments that
+        # isolate the store (a bare assignment elsewhere is harmless).
         "CONTAINERS_STORAGE_CONF",
         "CONTAINERS_CONF_OVERRIDE",
     )

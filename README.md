@@ -402,6 +402,10 @@ Pull requests are welcome. Keep changes focused, explain the behavior being chan
 3. Commit your changes
 4. Push and open a PR
 
+### CI and deployment
+
+Every push to `main` runs CI: the zero-configuration guard, svelte-check for UI and WEB, the fast backend suite (PostgreSQL and Redis as service containers), and the fast browser suite in three shards. The build job pushes the commit's image to Harbor as `registry.mariogk.com/homelab/ku:<sha12>`. The homelab-deployer daemon on alpha (a separate repository) rolls the alpha instance itself once every check run on the commit is green, health-gates the new instance with rollback, and posts the `deploy/alpha` commit status. The Release job waits for that status, then bumps the version (`UI/package.json` and the OpenAPI `info.version`) in a `[skip ci]` commit, tags `vX.Y.Z`, creates the GitHub release, and publishes the release-commit image to Harbor as `homelab/ku:<release-sha12>` and `homelab/ku:vX.Y.Z` so the deployer rolls alpha to the release commit. Pull requests run the checks and tests only; versions are never edited by hand.
+
 ## 📄 License
 
 Apache 2.0, see [`LICENSE`](LICENSE).

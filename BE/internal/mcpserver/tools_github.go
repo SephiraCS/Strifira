@@ -14,7 +14,7 @@ func registerGitHubTools(s *mcp.Server, deps Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "github_status",
 		Title:       "GitHub integration status",
-		Description: "Report the workspace's GitHub connection (instance URL, account, linked repositories). Read tool.",
+		Description: "Report the workspace's GitHub connection (instance URL, account, linked repositories, paused state). Read tool.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct {
 		Workspace string `json:"workspace"`
 	}) (*mcp.CallToolResult, any, error) {
@@ -41,6 +41,7 @@ func registerGitHubTools(s *mcp.Server, deps Deps) {
 		return nil, map[string]any{
 			"configured":    status.Configured,
 			"connected":     status.Connected,
+			"disabled":      status.Disabled,
 			"global_config": status.GlobalConfig,
 			"instance_url":  status.InstanceURL,
 			"account":       account,

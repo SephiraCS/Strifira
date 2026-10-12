@@ -144,25 +144,43 @@ func (c *Client) GetActionRun(ctx context.Context, owner, name string, runID int
 	return &run, nil
 }
 
-// ListActionJobs lists every job of a run across GitHub's pagination.
-func (c *Client) ListActionJobs(ctx context.Context, owner, name string, runID int64) ([]ActionJob, error) {
+// ListActionJobs reads one page of a run's jobs. per_page is capped at 100 so
+// callers fetch exactly the page they render; GitHub reports the full
+// total_count alongside every page.
+func (c *Client) ListActionJobs(ctx context.Context, owner, name string, runID int64, page, perPage int) (*ActionJobList, error) {
 	path, err := actionRepoPath(owner, name)
 	if err != nil {
 		return nil, err
 	}
-	var all []ActionJob
-	for page := 1; page <= maxActionPages; page++ {
-		var jobs ActionJobList
-		listPath := fmt.Sprintf("%s/runs/%d/jobs?per_page=%d&page=%d", path, runID, actionPageSize, page)
-		if err := c.doContext(ctx, http.MethodGet, listPath, nil, &jobs); err != nil {
-			return nil, err
-		}
-		all = append(all, jobs.Jobs...)
-		if len(jobs.Jobs) < actionPageSize {
-			return all, nil
-		}
+	if page < 1 {
+		page = 1
 	}
-	return nil, errors.New("GitHub Actions job count exceeds the limit")
+	if perPage < 1 || perPage > actionPageSize {
+		perPage = actionPageSize
+	}
+	var jobs ActionJobList
+	listPath := fmt.Sprintf("%s/runs/%d/jobs?per_page=%d&page=%d", path, runID, perPage, page)
+	if err := c.doContext(ctx, http.MethodGet, listPath, nil, &jobs); err != nil {
+		return nil, err
+	}
+	if jobs.Jobs == nil {
+		jobs.Jobs = []ActionJob{}
+	}
+	return &jobs, nil
+}
+
+// GetActionJob reads one job by ID. Its run_id scopes the job to a run without
+// listing every job in the run.
+func (c *Client) GetActionJob(ctx context.Context, owner, name string, jobID int64) (*ActionJob, error) {
+	path, err := actionRepoPath(owner, name)
+	if err != nil {
+		return nil, err
+	}
+	var job ActionJob
+	if err := c.doContext(ctx, http.MethodGet, fmt.Sprintf("%s/jobs/%d", path, jobID), nil, &job); err != nil {
+		return nil, err
+	}
+	return &job, nil
 }
 
 // GetActionJobLog downloads a job log. GitHub answers with a 302 to a signed

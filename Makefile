@@ -56,7 +56,7 @@ reset-dev:
 #
 #   fast  critical paths; blocks every deploy to alpha (ci.yml).
 #   slow  everything else; runs in slow.yml after each push to main and
-#         nightly, files a Forgejo issue on failure, never blocks a deploy.
+#         nightly, files an issue on failure, never blocks a deploy.
 #
 # Membership:
 #   Go          tests named TestSlow* are slow; every other test is fast.

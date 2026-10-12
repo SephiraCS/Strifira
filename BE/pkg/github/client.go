@@ -217,6 +217,38 @@ func (c *Client) requestWith(ctx context.Context, client *http.Client, method, p
 	if err != nil {
 		return nil, err
 	}
+	conn := connectionKey(apiBase, c.token)
+	response, err := c.attempt(ctx, client, method, path, accept, body, conn)
+	if err == nil {
+		return response, nil
+	}
+	// A short server-asked backoff on an idempotent GET is waited out once
+	// inside the request; longer windows surface as RateLimitError.
+	var rateLimited *RateLimitError
+	if errors.As(err, &rateLimited) && method == http.MethodGet && body == nil && time.Until(rateLimited.RetryAt) <= maxRateLimitRetry {
+		if waitErr := sleepUntil(ctx, rateLimited.RetryAt); waitErr != nil {
+			return nil, waitErr
+		}
+		return c.attempt(ctx, client, method, path, accept, body, conn)
+	}
+	return nil, err
+}
+
+// attempt runs one rate-limit-gated round trip.
+func (c *Client) attempt(ctx context.Context, client *http.Client, method, path, accept string, body any, conn string) (*http.Response, error) {
+	if until, blocked := sharedCache.blockedUntil(conn); blocked {
+		return nil, &RateLimitError{RetryAt: until}
+	}
+	return c.exchange(ctx, client, method, path, accept, body, conn)
+}
+
+// exchange performs one HTTP round trip with conditional-request headers for
+// cacheable GETs and records the observed rate-limit budget.
+func (c *Client) exchange(ctx context.Context, client *http.Client, method, path, accept string, body any, conn string) (*http.Response, error) {
+	apiBase, err := c.apiEndpoint()
+	if err != nil {
+		return nil, err
+	}
 	var reader io.Reader
 	if body != nil {
 		encoded, err := json.Marshal(body)
@@ -236,6 +268,13 @@ func (c *Client) requestWith(ctx context.Context, client *http.Client, method, p
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
+	conditional := false
+	if method == http.MethodGet && body == nil {
+		if entry, cached := sharedCache.lookup(conn, path); cached {
+			applyConditional(request, entry)
+			conditional = true
+		}
+	}
 
 	response, err := client.Do(request)
 	if err != nil {
@@ -243,6 +282,19 @@ func (c *Client) requestWith(ctx context.Context, client *http.Client, method, p
 			return nil, ctx.Err()
 		}
 		return nil, ErrUnavailable
+	}
+	sharedCache.observeRateLimit(conn, response.Header)
+	if until, throttled := rateLimitExhausted(response); throttled {
+		response.Body.Close()
+		sharedCache.block(conn, until)
+		return nil, &RateLimitError{RetryAt: until}
+	}
+	if conditional && response.StatusCode == http.StatusNotModified {
+		// The cached body answers the request; 304s are free.
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		response.Body = http.NoBody
+		return response, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		response.Body.Close()
@@ -262,7 +314,21 @@ func (c *Client) doContextHeaders(ctx context.Context, method, path string, body
 		return nil, err
 	}
 	defer response.Body.Close()
-	if result == nil {
+	if response.StatusCode == http.StatusNotModified {
+		apiBase, err := c.apiEndpoint()
+		if err != nil {
+			return nil, err
+		}
+		entry, cached := sharedCache.lookup(connectionKey(apiBase, c.token), path)
+		if !cached {
+			return nil, errors.New("GitHub returned an invalid response")
+		}
+		sharedCache.refreshValidators(connectionKey(apiBase, c.token), path, response.Header)
+		if result != nil {
+			if err := json.Unmarshal(entry.body, result); err != nil {
+				return nil, errors.New("GitHub returned an invalid response")
+			}
+		}
 		return response.Header, nil
 	}
 	encoded, err := io.ReadAll(io.LimitReader(response.Body, maxJSONBytes+1))
@@ -275,18 +341,25 @@ func (c *Client) doContextHeaders(ctx context.Context, method, path string, body
 	if len(encoded) > maxJSONBytes {
 		return nil, errors.New("GitHub response exceeds the size limit")
 	}
-	if err := json.Unmarshal(encoded, result); err != nil {
-		return nil, errors.New("GitHub returned an invalid response")
+	if method == http.MethodGet && body == nil {
+		if apiBase, err := c.apiEndpoint(); err == nil {
+			sharedCache.store(connectionKey(apiBase, c.token), path, response.Header, encoded)
+		}
+	}
+	if result != nil {
+		if err := json.Unmarshal(encoded, result); err != nil {
+			return nil, errors.New("GitHub returned an invalid response")
+		}
 	}
 	return response.Header, nil
 }
 
-// Discovery pagination caps: 20 pages of 100 items each.
+// Pagination caps: repo discovery walks at most 20 pages of 100 items;
+// job listings fetch single server-side pages capped at 100 items.
 const (
 	repoPageSize   = 100
 	maxRepoPages   = 20
 	actionPageSize = 100
-	maxActionPages = 20
 )
 
 // GetCurrentUser validates the token and returns the authenticated user.
