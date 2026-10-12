@@ -95,7 +95,10 @@ func TestGitHubWebhookOlderGreenObservationCannotBorrowNewerFailureVersion(t *te
 			failure := &gh.CombinedStatus{SHA: "head-commit", State: "failure", TotalCount: 1, Statuses: []gh.CommitStatus{{Context: "tests", State: "failure"}}}
 			current.Store(failure)
 			mux := http.NewServeMux()
-			mux.HandleFunc("GET /api/v1/repos/org/project/commits/head-commit/status", func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc("GET /api/v3/repos/org/project/commits/head-commit/check-runs", func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprint(w, `{"total_count":0,"check_runs":[]}`)
+			})
+			mux.HandleFunc("GET /api/v3/repos/org/project/commits/head-commit/status", func(w http.ResponseWriter, r *http.Request) {
 				assert.Equal(t, "Bearer disposable-github-token", r.Header.Get("Authorization"))
 				combined := current.Load()
 				if requests.Add(1) == 1 {
@@ -113,6 +116,10 @@ func TestGitHubWebhookOlderGreenObservationCannotBorrowNewerFailureVersion(t *te
 					t.Errorf("encode combined status: %v", err)
 				}
 			})
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				t.Logf("UNHANDLED: %s %s", r.Method, r.URL.String())
+				http.NotFound(w, r)
+			})
 			server := httptest.NewServer(mux)
 			t.Cleanup(func() {
 				release()
@@ -120,10 +127,11 @@ func TestGitHubWebhookOlderGreenObservationCannotBorrowNewerFailureVersion(t *te
 			})
 			f := setupGitHubWebhook(t, server.URL)
 			reviewID := f.addStatus(t, f.team, "reviewing", "started", 2)
+			reviewAssignee := f.pusherID.String()
 			require.NoError(t, f.svc.UpdateAutoTransitions(t.Context(), f.workspace, dto.UpdateAutoTransitionsRequest{
 				Transitions: []dto.AutoTransitionRule{
 					{Event: "pr_opened", TargetStatus: "in_progress", IsActive: true},
-					{Event: "pr_checks_green", TargetStatus: "reviewing", TargetAssigneeID: new(f.pusherID.String()), IsActive: true},
+					{Event: "pr_checks_green", TargetStatus: "reviewing", TargetAssigneeID: &reviewAssignee, IsActive: true},
 				},
 			}))
 			require.NoError(t, f.deliver(t, "pull_request", f.pullRequest(t, "opened", "Fixes FA-1", "pusher", false)))

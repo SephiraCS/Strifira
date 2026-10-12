@@ -102,7 +102,7 @@ func TestDevBoxResultStorageBoundUpgrade(t *testing.T) {
 
 	_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET result=jsonb_build_object('status','failed','summary',repeat('x',2200000)) WHERE id=$1`, jobID)
 	require.NoError(t, err, "the upgraded schema accepts a result beyond the old bound")
-	_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET result=jsonb_build_object('status','failed','summary',repeat('x',24000000)) WHERE id=$1`, jobID)
+	_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET result=jsonb_build_object('status','failed','summary',repeat('x',26000000)) WHERE id=$1`, jobID)
 	pgErr, ok = errors.AsType[*pgconn.PgError](err)
 	require.True(t, ok, "the aggregate bound still rejects oversized results")
 	require.Equal(t, "23514", pgErr.Code)

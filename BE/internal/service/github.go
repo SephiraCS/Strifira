@@ -837,18 +837,10 @@ func (s *GitHubService) processPullRequestEvent(ctx context.Context, payload []b
 	if len(linkedIssues) > 0 {
 		s.broadcastAppRefresh(repo.WorkspaceID, "issues")
 	}
-	// opened, synchronize and reopened introduce a fresh head commit: read
-	// its current checks so an already-green PR can transition immediately.
-	// Best effort: everything this delivery owed is already applied, and a
-	// fetch failure (an unreachable instance, a blip) must not fail the
-	// delivery and mask it. The status and check-run webhooks and the hourly
-	// reconciler deliver the same observation.
-	if (event.Action == "opened" || event.Action == "synchronize" || event.Action == "reopened") && headSHA != "" {
-		if err := s.refreshChecksForSHA(ctx, repo, headSHA); err != nil {
-			log.WithError(err).WithField("repo", repo.FullName).WithField("sha", headSHA).
-				Warn("failed to refresh checks after a pull request event")
-		}
-	}
+	// Checks are only read from the status, check-run and workflow-run
+	// deliveries (and the reconciler); a pull-request delivery never fetches
+	// them, so instances that only serve webhook payloads stay reachable and
+	// an already-green PR transitions when its own checks events arrive.
 	return nil
 }
 

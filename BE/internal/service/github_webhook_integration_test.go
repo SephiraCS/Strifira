@@ -329,8 +329,7 @@ func TestGitHubWebhookLifecycleWaitsForEveryWorkflowAndMergesOnce(t *testing.T) 
 	assert.Equal(t, "in_progress", f.issueStatusSlug(t, f.issueID), "successful CI must not move a draft PR's issue into review")
 	require.NoError(t, f.db.GetContext(t.Context(), &green, `SELECT checks_green FROM github_pull_requests WHERE github_repo_id=$1 AND number=7`, f.repo.ID))
 	assert.True(t, green)
-	ready, err := json.Marshal(f.pullRequest(t, "ready_for_review", "Fixes FA-1", "unmapped-contributor", false))
-	require.NoError(t, err)
+	ready := f.pullRequest(t, "ready_for_review", "Fixes FA-1", "unmapped-contributor", false)
 	require.NoError(t, f.deliver(t, "pull_request", ready))
 	f.svc.syncOpenPRChecks(t.Context())
 	assert.Equal(t, "reviewing", f.issueStatusSlug(t, f.issueID))
@@ -605,7 +604,7 @@ func TestGitHubWebhookOldHeadChecksCannotMoveUpdatedPullRequest(t *testing.T) {
 		t.Fatal("old-head status request did not reach GitHub")
 	}
 	var updated map[string]any
-	require.NoError(t, json.Unmarshal(f.pullRequest(t, "synchronized", "Fixes FA-1", "pusher", false), &updated))
+	require.NoError(t, json.Unmarshal(f.pullRequest(t, "synchronize", "Fixes FA-1", "pusher", false), &updated))
 	updated["pull_request"].(map[string]any)["head"].(map[string]any)["sha"] = "new-head-commit"
 	body, err := json.Marshal(updated)
 	require.NoError(t, err)
