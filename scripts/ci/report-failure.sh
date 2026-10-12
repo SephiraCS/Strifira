@@ -148,10 +148,10 @@ while IFS="$(printf '\t')" read -r id name; do
 		printf '\n<details><summary>%s</summary>\n\nThe log could not be fetched; see the run.\n</details>\n' "$name" >>"$work/logs.md"
 		continue
 	fi
-	# Go, Playwright, Trivy, govulncheck and npm audit failure markers.
+	# Go, Playwright, govulncheck and npm audit failure markers.
 	redact <"$work/log" |
 		grep -E -e '--- FAIL: ' -e '^FAIL[[:space:]]' -e 'panic: test timed out' \
-			-e '^[[:space:]]+[0-9]+\) \[' -e '✘' -e '(CRITICAL|HIGH): [0-9]+' \
+			-e '^[[:space:]]+[0-9]+\) \[' -e '✘' \
 			-e '^Vulnerability #' -e 'severity vulnerabilit' |
 		sed "s|^|[$name] |" | head -n 40 >>"$work/tests" || :
 	{

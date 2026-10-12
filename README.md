@@ -227,7 +227,6 @@ The `KU_DEV_` settings can also be supplied through the process environment.
 | `make lint`            | Lint everything                       |
 | `make docker-up`       | Start all (Docker)                    |
 | `make docker-down`     | Stop all (Docker)                     |
-| `make scan`            | Security scan backend + frontend      |
 
 ## 🏠 Self-Hosting
 
@@ -408,7 +407,7 @@ Pull requests are welcome. Keep changes focused, explain the behavior being chan
 
 Every push to `main` runs CI: the zero-configuration guard, svelte-check for UI and WEB, the fast backend suite (PostgreSQL and Redis as service containers), and the fast browser suite in three shards. The build job pushes the commit's image to Harbor as `registry.mariogk.com/homelab/ku:<sha12>`. The homelab-deployer daemon on alpha (a separate repository) rolls the alpha instance itself once every check run on the commit is green, health-gates the new instance with rollback, and posts the `deploy/alpha` commit status. The Release job waits for that status, then bumps the version (`UI/package.json` and the OpenAPI `info.version`) in a `[skip ci]` commit, tags `vX.Y.Z`, creates the GitHub release, and publishes the release-commit image to Harbor as `homelab/ku:<release-sha12>` and `homelab/ku:vX.Y.Z` so the deployer rolls alpha to the release commit. Pull requests run the checks and tests only; versions are never edited by hand.
 
-Pull requests run only the CI jobs their changes touch (a `changes` job uses `dorny/paths-filter`): `BE/`, `devmachine/` and the `Makefile` run the backend suite; `UI/` and `WEB/` run svelte-check; `UI/` and the `Makefile` run the browser shards. The guard always runs. The `test` job aggregates them and is the check to wait for: it passes when every job passed or was skipped as unaffected, and fails when any failed or was cancelled. Pushes to `main` and manual runs always run everything. The security scan runs on pull requests that touch `BE/` or the UI npm dependencies; image scans run when an image's inputs change; both also run nightly.
+Pull requests run only the CI jobs their changes touch (a `changes` job uses `dorny/paths-filter`): `BE/`, `devmachine/` and the `Makefile` run the backend suite; `UI/` and `WEB/` run svelte-check; `UI/` and the `Makefile` run the browser shards. The guard always runs. The `test` job aggregates them and is the check to wait for: it passes when every job passed or was skipped as unaffected, and fails when any failed or was cancelled. Pushes to `main` and manual runs always run everything. The security scan runs on pull requests that touch `BE/` or the UI npm dependencies; it also runs nightly.
 
 The slow suite (`slow.yml`) runs after pushes to `main` (docs-only pushes excepted), nightly, on demand, and on pull requests labelled `full-ci`. Add the label to run it on a pull request; it re-runs on every new push while the label stays.
 

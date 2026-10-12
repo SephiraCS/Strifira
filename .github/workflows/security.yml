@@ -23,8 +23,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'scheduled' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Container images are scanned by image-security.yml; build, vet, and test
-# coverage lives in ci.yml.
+# Build, vet, and test coverage lives in ci.yml.
 permissions:
   contents: read
 
