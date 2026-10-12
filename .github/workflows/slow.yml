@@ -2,7 +2,8 @@ name: Slow Tests
 
 # The slow suite (AGENTS.md): every integration test that is not on a
 # deploy's critical path. It runs next to ci.yml after each push to main,
-# nightly, and on demand (`gh workflow run slow.yml --ref main`). It never
+# nightly, on demand (`gh workflow run slow.yml --ref main`), and on pull
+# requests labelled `full-ci` (adding the label starts a run). It never
 # blocks a deploy and is never a required check; a failure files or updates
 # the open "Slow test suite failed" issue (scripts/ci/report-failure.sh).
 #
@@ -13,13 +14,23 @@ name: Slow Tests
 on:
   push:
     branches: [main]
+    # Docs-only pushes cannot break a suite; the nightly run covers them.
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'assets/**'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
   schedule:
     - cron: '30 1 * * *'
   workflow_dispatch:
 
 # A newer push tests a superset, so an older run still in progress yields.
+# Pull request events that run nothing (no `full-ci` label, or another label
+# added) use their own group so they never cancel a real run.
 concurrency:
-  group: slow-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci'))) && 'run' || 'noop' }}
   cancel-in-progress: true
 
 permissions:
@@ -27,6 +38,7 @@ permissions:
 
 jobs:
   backend:
+    if: (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Same throwaway services as ci.yml's test job.
@@ -70,12 +82,14 @@ jobs:
           # and check-gofmt must match the toolchain the code is formatted
           # with (the former Forgejo builder image also ran 1.27.2).
           go-version: 1.27.2
+          cache: true
           cache-dependency-path: BE/go.sum
 
       - name: Slow suite (backend)
         run: make test-slow-backend
 
   frontend:
+    if: (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')))
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -108,6 +122,7 @@ jobs:
           find test-results -name 'error-context.md' -print -exec cat {} \; 2>/dev/null | head -c 200000 || true
 
   live:
+    if: (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')))
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -122,6 +137,7 @@ jobs:
           # and check-gofmt must match the toolchain the code is formatted
           # with (the former Forgejo builder image also ran 1.27.2).
           go-version: 1.27.2
+          cache: true
           cache-dependency-path: BE/go.sum
 
       - uses: actions/setup-node@v5 # v5
@@ -152,7 +168,8 @@ jobs:
 
   report:
     needs: [backend, frontend, live]
-    if: failure()
+    # Pull requests show their own failures; only main/nightly file issues.
+    if: failure() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

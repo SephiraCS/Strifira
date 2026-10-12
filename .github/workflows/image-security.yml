@@ -27,7 +27,7 @@ on:
 # (scripts/ci/report-failure.sh also folds a duplicate opened in a race
 # into the oldest issue).
 concurrency:
-  group: image-security-${{ github.event_name == 'pull_request' && github.ref || 'scheduled' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || 'scheduled' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Each matrix leg builds on its own runner with BuildKit layer caching
