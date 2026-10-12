@@ -90,6 +90,12 @@ jobs:
         working-directory: WEB
         run: npm run validate
 
+      # The responsive suite launches a headless browser; the runners do not
+      # bake one in (the former Forgejo job image did).
+      - name: Install the Playwright browser
+        working-directory: WEB
+        run: npx playwright install chromium
+
       - name: Responsive layout tests
         working-directory: WEB
         run: npm run test:responsive
@@ -134,7 +140,10 @@ jobs:
 
       - uses: actions/setup-go@v5 # v5
         with:
-          go-version-file: BE/go.mod
+          # 1.27.2, not go.mod's floor: gofmt's output changed after 1.26,
+          # and check-gofmt must match the toolchain the code is formatted
+          # with (the former Forgejo builder image also ran 1.27.2).
+          go-version: 1.27.2
           cache-dependency-path: BE/go.sum
 
       - name: Check the devmachine image tool pins

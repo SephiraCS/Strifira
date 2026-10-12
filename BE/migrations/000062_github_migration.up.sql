@@ -8,15 +8,18 @@
 
 ALTER TABLE forgejo_connections RENAME TO github_connections;
 ALTER TABLE forgejo_repos RENAME TO github_repos;
-ALTER TABLE forgejo_repos RENAME COLUMN forgejo_repo_id TO github_repo_id;
+ALTER TABLE github_repos RENAME COLUMN forgejo_repo_id TO github_repo_id;
 ALTER TABLE forgejo_pull_requests RENAME TO github_pull_requests;
+ALTER TABLE github_pull_requests RENAME COLUMN forgejo_repo_id TO github_repo_id;
 ALTER TABLE forgejo_pull_request_issues RENAME TO github_pull_request_issues;
 ALTER TABLE forgejo_branches RENAME TO github_branches;
+ALTER TABLE github_branches RENAME COLUMN forgejo_repo_id TO github_repo_id;
 ALTER TABLE forgejo_commits RENAME TO github_commits;
+ALTER TABLE github_commits RENAME COLUMN forgejo_repo_id TO github_repo_id;
 ALTER TABLE forgejo_auto_transitions RENAME TO github_auto_transitions;
-ALTER TABLE forgejo_auto_transitions RENAME COLUMN assign_forgejo_user TO assign_github_user;
+ALTER TABLE github_auto_transitions RENAME COLUMN assign_forgejo_user TO assign_github_user;
 ALTER TABLE forgejo_user_mappings RENAME TO github_user_mappings;
-ALTER TABLE forgejo_user_mappings RENAME COLUMN forgejo_login TO github_login;
+ALTER TABLE github_user_mappings RENAME COLUMN forgejo_login TO github_login;
 ALTER TABLE forgejo_workspace_disables RENAME TO github_workspace_disables;
 
 -- Forgejo-named columns on dev-machine tables (created by 000042/000045/

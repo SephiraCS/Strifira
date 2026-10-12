@@ -33,7 +33,10 @@ jobs:
 
       - uses: actions/setup-go@v5 # v5
         with:
-          go-version-file: BE/go.mod
+          # 1.27.2, not go.mod's floor: gofmt's output changed after 1.26,
+          # and check-gofmt must match the toolchain the code is formatted
+          # with (the former Forgejo builder image also ran 1.27.2).
+          go-version: 1.27.2
           cache-dependency-path: BE/go.sum
 
       - name: Install govulncheck

@@ -3,10 +3,13 @@
 -- and keep their historical labels.
 ALTER TABLE github_connections RENAME TO forgejo_connections;
 ALTER TABLE github_repos RENAME TO forgejo_repos;
-ALTER TABLE github_repos RENAME COLUMN github_repo_id TO forgejo_repo_id;
+ALTER TABLE forgejo_repos RENAME COLUMN github_repo_id TO forgejo_repo_id;
+ALTER TABLE github_pull_requests RENAME COLUMN github_repo_id TO forgejo_repo_id;
 ALTER TABLE github_pull_requests RENAME TO forgejo_pull_requests;
 ALTER TABLE github_pull_request_issues RENAME TO forgejo_pull_request_issues;
+ALTER TABLE github_branches RENAME COLUMN github_repo_id TO forgejo_repo_id;
 ALTER TABLE github_branches RENAME TO forgejo_branches;
+ALTER TABLE github_commits RENAME COLUMN github_repo_id TO forgejo_repo_id;
 ALTER TABLE github_commits RENAME TO forgejo_commits;
 ALTER TABLE github_auto_transitions RENAME TO forgejo_auto_transitions;
 ALTER TABLE github_auto_transitions RENAME COLUMN assign_github_user TO assign_forgejo_user;
