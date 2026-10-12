@@ -839,8 +839,15 @@ func (s *GitHubService) processPullRequestEvent(ctx context.Context, payload []b
 	}
 	// opened, synchronize and reopened introduce a fresh head commit: read
 	// its current checks so an already-green PR can transition immediately.
+	// Best effort: everything this delivery owed is already applied, and a
+	// fetch failure (an unreachable instance, a blip) must not fail the
+	// delivery and mask it. The status and check-run webhooks and the hourly
+	// reconciler deliver the same observation.
 	if (event.Action == "opened" || event.Action == "synchronize" || event.Action == "reopened") && headSHA != "" {
-		return s.refreshChecksForSHA(ctx, repo, headSHA)
+		if err := s.refreshChecksForSHA(ctx, repo, headSHA); err != nil {
+			log.WithError(err).WithField("repo", repo.FullName).WithField("sha", headSHA).
+				Warn("failed to refresh checks after a pull request event")
+		}
 	}
 	return nil
 }

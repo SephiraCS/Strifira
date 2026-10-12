@@ -54,7 +54,7 @@ func TestDevBoxResultSerializedBoundsIncludeMaximumMetadata(t *testing.T) {
 
 // Root qualification supplies a disposable PostgreSQL administrator URL. This
 // fixture owns its database and never migrates or changes that source database.
-func devBoxResultDatabase(t *testing.T) (*sqlx.DB, *migrate.Migrate) {
+func devBoxResultDatabase(t *testing.T) *sqlx.DB {
 	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
 	if databaseURL == "" {
@@ -75,21 +75,19 @@ func devBoxResultDatabase(t *testing.T) (*sqlx.DB, *migrate.Migrate) {
 	migrator, err := migrate.New("file://../../migrations", parsed.String())
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = migrator.Close() })
-	// The fixtures speak the github_* names the repository layer queries;
-	// the rename lands in 000062.
+	// The repository layer speaks the github_* names; the rename lands in
+	// 000062. The 2 MiB -> 24 MiB storage-bound upgrade story lives in
+	// migrations/dev_box_result_bound_test.go, which drives the historical
+	// schema with era-correct names.
 	require.NoError(t, migrator.Migrate(62))
 	db, err := sqlx.ConnectContext(t.Context(), "pgx", parsed.String())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	var constraint string
-	require.NoError(t, db.GetContext(t.Context(), &constraint, `SELECT pg_get_constraintdef(oid)
-		FROM pg_constraint WHERE conrelid='dev_box_jobs'::regclass AND conname='dev_box_jobs_result_check'`))
-	require.Contains(t, constraint, "2097152", "schema 53 must retain the original applied storage bound")
-	return db, migrator
+	return db
 }
 
 func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
-	db, migrator := devBoxResultDatabase(t)
+	db := devBoxResultDatabase(t)
 	userID, workspaceID, teamID, statusID, issueID, repoID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	suffix := strings.ReplaceAll(workspaceID.String(), "-", "")
 	for _, statement := range []struct {
@@ -118,29 +116,6 @@ func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
 		require.NoError(t, store.CreateJob(t.Context(), job))
 		return job
 	}
-	previousJob := createJob()
-	previousResult, err := json.Marshal(domain.DevBoxJobResult{Status: domain.DevBoxJobFailed, ExitCode: 1,
-		TestStatus: "not_run", Branch: previousJob.WorkingBranch, Summary: "Existing result before upgrade"})
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET status='failed',completed_at=NOW(),result=$2 WHERE id=$1`, previousJob.ID, previousResult)
-	require.NoError(t, err)
-	maximum := maximumDevBoxResult("\x01", previousJob.WorkingBranch)
-	require.NoError(t, validateDevBoxResult(&maximum))
-	require.NoError(t, validateDevBoxResultSize(&maximum))
-	maximumJSON, err := json.Marshal(maximum)
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), `UPDATE dev_box_jobs SET result=$2 WHERE id=$1`, previousJob.ID, maximumJSON)
-	pgErr, ok := errors.AsType[*pgconn.PgError](err)
-	require.True(t, ok)
-	require.Equal(t, "23514", pgErr.Code, "the deployed schema rejects this accepted result before the upgrade")
-	require.NoError(t, migrator.Up())
-	version, dirty, err := migrator.Version()
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, version, uint(57), "the upgrade reaches at least the bounded-result migration")
-	require.False(t, dirty)
-	var preserved json.RawMessage
-	require.NoError(t, db.GetContext(t.Context(), &preserved, `SELECT result FROM dev_box_jobs WHERE id=$1`, previousJob.ID))
-	require.JSONEq(t, string(previousResult), string(preserved))
 	for _, character := range []string{"<", "\x01"} {
 		job := createJob()
 		lease := "kul_" + strings.Repeat("a", 64)
@@ -174,14 +149,4 @@ func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
 		require.True(t, ok, "the database must still reject results beyond its aggregate bound")
 		require.Equal(t, "23514", pgErr.Code)
 	}
-	rollback, err := os.ReadFile("../../migrations/000057_dev_box_result_storage_bound.down.sql")
-	require.NoError(t, err)
-	_, err = db.ExecContext(t.Context(), string(rollback))
-	pgErr, ok = errors.AsType[*pgconn.PgError](err)
-	require.True(t, ok)
-	require.Equal(t, "23514", pgErr.Code, "rollback must refuse to discard or invalidate larger stored results")
-	var constraint string
-	require.NoError(t, db.GetContext(t.Context(), &constraint, `SELECT pg_get_constraintdef(oid)
-		FROM pg_constraint WHERE conrelid='dev_box_jobs'::regclass AND conname='dev_box_jobs_result_check'`))
-	require.Contains(t, constraint, "25165824", "failed rollback must retain the current constraint atomically")
 }
