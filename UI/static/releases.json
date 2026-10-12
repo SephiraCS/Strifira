@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.20",
+    "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.20",
+    "body": "Deployed to alpha as a9cee5e4a7a8425e8985ac76396f6b7e9dc22801.\n\n- Match the template title exactly when asserting its row disappears\n- Drop the debug catch-all handler from the concurrency test fixture",
+    "published_at": "2026-10-12T02:21:01Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.20",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.19",
     "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.19",
     "body": "Deployed to alpha as 26d473f24d47f5d9bca40851eddb230bba218999.\n\n- Match the webhook URL exactly when asserting its row disappears",
