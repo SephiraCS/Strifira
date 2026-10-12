@@ -12,9 +12,9 @@ ALTER TABLE github_branches RENAME TO forgejo_branches;
 ALTER TABLE github_commits RENAME COLUMN github_repo_id TO forgejo_repo_id;
 ALTER TABLE github_commits RENAME TO forgejo_commits;
 ALTER TABLE github_auto_transitions RENAME TO forgejo_auto_transitions;
-ALTER TABLE github_auto_transitions RENAME COLUMN assign_github_user TO assign_forgejo_user;
+ALTER TABLE forgejo_auto_transitions RENAME COLUMN assign_github_user TO assign_forgejo_user;
 ALTER TABLE github_user_mappings RENAME TO forgejo_user_mappings;
-ALTER TABLE github_user_mappings RENAME COLUMN github_login TO forgejo_login;
+ALTER TABLE forgejo_user_mappings RENAME COLUMN github_login TO forgejo_login;
 ALTER TABLE github_workspace_disables RENAME TO forgejo_workspace_disables;
 
 ALTER TABLE dev_machine_scope_settings RENAME COLUMN github_repo_id TO forgejo_repo_id;

@@ -67,7 +67,9 @@ func devBoxTestDatabase(t *testing.T) *sqlx.DB {
 	migrator, err := migrate.New("file://../../migrations", parsed.String())
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = migrator.Close() })
-	require.NoError(t, migrator.Migrate(50))
+	// The dev-box fixtures speak the github_* names the repository layer
+	// queries; the rename lands in 000062.
+	require.NoError(t, migrator.Migrate(62))
 	db, err := sqlx.ConnectContext(t.Context(), "pgx", parsed.String())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
