@@ -102,8 +102,15 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: UI/package-lock.json
+
+      # The npm cache, keyed by the lockfiles: every job restores it, only ci.yml on main saves it. A
+      # release commit changes UI/package-lock.json, so a miss falls back to the newest one.
+      - id: npm-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.npm
+          key: npm-ui-${{ runner.os }}-${{ hashFiles('UI/package-lock.json') }}
+          restore-keys: npm-ui-${{ runner.os }}-
 
       # Browsers are keyed by the locked Playwright version; only main saves them.
       - id: playwright-version
@@ -153,8 +160,15 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: UI/package-lock.json
+
+      # The npm cache, keyed by the lockfiles: every job restores it, only ci.yml on main saves it. A
+      # release commit changes UI/package-lock.json, so a miss falls back to the newest one.
+      - id: npm-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.npm
+          key: npm-ui-${{ runner.os }}-${{ hashFiles('UI/package-lock.json') }}
+          restore-keys: npm-ui-${{ runner.os }}-
 
       # Browsers are keyed by the locked Playwright version; only main saves them.
       - id: playwright-version
