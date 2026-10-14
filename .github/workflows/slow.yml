@@ -36,12 +36,11 @@ concurrency:
 permissions:
   contents: read
 
-# Repo variable CI_RUNNER=alpha selects the self-hosted alpha runners (persistent local
-# caches, so GitHub cache steps are skipped there); unset = GitHub-hosted.
+# All jobs run on GitHub-hosted runners.
 jobs:
   backend:
     if: (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')))
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     # Same throwaway services as ci.yml's test job.
     services:
@@ -84,7 +83,7 @@ jobs:
           # and check-gofmt must match the toolchain the code is formatted
           # with (the former Forgejo builder image also ran 1.27.2).
           go-version: 1.27.2
-          cache: ${{ !vars.CI_RUNNER }}
+          cache: true
           cache-dependency-path: BE/go.sum
 
       - name: Slow suite (backend)
@@ -92,7 +91,7 @@ jobs:
 
   frontend:
     if: (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')))
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5 # v5
@@ -103,7 +102,7 @@ jobs:
       - uses: actions/setup-node@v5 # v5
         with:
           node-version: 24
-          cache: ${{ !vars.CI_RUNNER && 'npm' || '' }}
+          cache: npm
           cache-dependency-path: UI/package-lock.json
 
       - name: Install dependencies
@@ -125,7 +124,7 @@ jobs:
 
   live:
     if: (github.event_name != 'pull_request' || (contains(github.event.pull_request.labels.*.name, 'full-ci') && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')))
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5 # v5
@@ -139,13 +138,13 @@ jobs:
           # and check-gofmt must match the toolchain the code is formatted
           # with (the former Forgejo builder image also ran 1.27.2).
           go-version: 1.27.2
-          cache: ${{ !vars.CI_RUNNER }}
+          cache: true
           cache-dependency-path: BE/go.sum
 
       - uses: actions/setup-node@v5 # v5
         with:
           node-version: 24
-          cache: ${{ !vars.CI_RUNNER && 'npm' || '' }}
+          cache: npm
           cache-dependency-path: UI/package-lock.json
 
       - name: Install dependencies
@@ -172,7 +171,7 @@ jobs:
     needs: [backend, frontend, live]
     # Pull requests show their own failures; only main/nightly file issues.
     if: failure() && github.event_name != 'pull_request'
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       actions: read
