@@ -47,7 +47,7 @@ jobs:
       web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.web == 'true' }}
       e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.e2e == 'true' }}
     steps:
-      - uses: dorny/paths-filter@v3 # v3
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
         id: filter
         if: github.event_name == 'pull_request'
         with:
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
@@ -97,17 +97,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            UI/package-lock.json
-            WEB/package-lock.json
+
+      # The npm cache, keyed by the lockfiles: every job restores it, only main saves it. A
+      # release commit changes UI/package-lock.json, so a miss falls back to the newest one.
+      - id: npm-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.npm
+          key: npm-ui-web-${{ runner.os }}-${{ hashFiles('UI/package-lock.json', 'WEB/package-lock.json') }}
+          restore-keys: npm-ui-web-${{ runner.os }}-
 
       - name: Install UI dependencies
         working-directory: UI
@@ -129,15 +134,35 @@ jobs:
         working-directory: WEB
         run: npm run validate
 
+      # Browsers are keyed by the locked Playwright version; only main saves them.
+      - id: playwright-version
+        run: echo "version=$(node -p 'require("./WEB/package-lock.json").packages["node_modules/playwright"].version')" >> "$GITHUB_OUTPUT"
+      - id: playwright
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium
+
       # The responsive suite launches a headless browser; the runners do not
       # bake one in (the former Forgejo job image did).
       - name: Install the Playwright browser
         working-directory: WEB
         run: npx playwright install chromium
+      - if: github.event_name == 'push' && steps.playwright.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright.outputs.cache-primary-key }}
 
       - name: Responsive layout tests
         working-directory: WEB
         run: npm run test:responsive
+
+      - if: github.event_name == 'push' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
 
   # Fast backend suite. The required check is the `test` aggregate below.
   backend:
@@ -176,11 +201,11 @@ jobs:
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: test-secret-that-is-at-least-32-characters-long
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v5 # v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           # 1.27.2, not go.mod's floor: gofmt's output changed after 1.26,
           # and check-gofmt must match the toolchain the code is formatted
@@ -228,17 +253,34 @@ jobs:
       run:
         working-directory: UI
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: UI/package-lock.json
+
+      # The npm cache, keyed by the lockfiles: every job restores it, only main saves it. A
+      # release commit changes UI/package-lock.json, so a miss falls back to the newest one.
+      - id: npm-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.npm
+          key: npm-ui-${{ runner.os }}-${{ hashFiles('UI/package-lock.json') }}
+          restore-keys: npm-ui-${{ runner.os }}-
 
       - run: npm ci --no-audit --no-fund
+
+      # Browsers are keyed by the locked Playwright version; only main saves them.
+      - id: playwright-version
+        working-directory: .
+        run: echo "version=$(node -p 'require("./UI/package-lock.json").packages["node_modules/playwright"].version')" >> "$GITHUB_OUTPUT"
+      - id: playwright
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}-chromium-ffmpeg
 
       - run: npm run build
 
@@ -250,6 +292,18 @@ jobs:
           (cd UI && npx playwright install chromium ffmpeg)
           make test-fast-frontend E2E_FLAGS="--shard=${{ matrix.shard }}/3 --workers=2"
 
+      - if: github.event_name == 'push' && matrix.shard == 1 && steps.playwright.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright.outputs.cache-primary-key }}
+
+      - if: github.event_name == 'push' && matrix.shard == 1 && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
+
       # Artifacts work on GitHub: keep the failure context in the log and
       # attach it for reading without digging through the run.
       - name: Print failure context
@@ -259,7 +313,7 @@ jobs:
 
       - name: Upload failure context
         if: failure()
-        uses: actions/upload-artifact@v4 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: error-context-shard-${{ matrix.shard }}
           path: UI/test-results/**/error-context.md
@@ -292,7 +346,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
@@ -307,7 +361,7 @@ jobs:
         shell: bash
         run: echo "sha12=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
         with:
           driver: docker-container
 
@@ -316,7 +370,7 @@ jobs:
       # layer cache (gha) keeps the
       # go and npm dependency layers between runs.
       - name: Build and push the image
-        uses: docker/build-push-action@v6 # v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: true
@@ -353,7 +407,7 @@ jobs:
       HARBOR_USER: ${{ secrets.HARBOR_USER }}
       HARBOR_TOKEN: ${{ secrets.HARBOR_TOKEN }}
     steps:
-      - uses: actions/checkout@v5 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -416,7 +470,7 @@ jobs:
       issues: write
     steps:
       - name: Check out the source revision
-        uses: actions/checkout@v5 # v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
