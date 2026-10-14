@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.23",
+    "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.23",
+    "body": "Deployed to alpha as 40f2e5d8eddfbfe4c0887f45ef49e35e95d6ba81.\n\n- ci: always run on GitHub-hosted runners, drop CI_RUNNER (#10)\n- ci: run on the alpha self-hosted runners when CI_RUNNER is set (#9)\n- ci: remove container image scanning (#8)\n- ci: cut Actions minutes with path filters, full-ci gating and caches (#7)\n- ci: remove Blacksmith runners, use GitHub-hosted runners (#6)",
+    "published_at": "2026-10-14T12:47:12Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.23",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.22",
     "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.22",
     "body": "Deployed to alpha as 9548ec1afa7c54c6dc379e5890c697f9c606167c.\n\n- fix(docs): renumber the documents migration to 000063\n- chore(ci): retrigger pipeline after release wait timed out\n- feat(docs): Notion-style markdown docs with realtime collaboration",
