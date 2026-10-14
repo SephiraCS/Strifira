@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.24",
+    "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.24",
+    "body": "Deployed to alpha as 40581f1401f0092355c569caa4620b86d387ed04.\n\n- ci: cache Playwright browsers, pin actions (#11)",
+    "published_at": "2026-10-14T18:32:49Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.24",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.23",
     "html_url": "https://github.com/TerraScale/ku/releases/tag/v0.3.23",
     "body": "Deployed to alpha as 40f2e5d8eddfbfe4c0887f45ef49e35e95d6ba81.\n\n- ci: always run on GitHub-hosted runners, drop CI_RUNNER (#10)\n- ci: run on the alpha self-hosted runners when CI_RUNNER is set (#9)\n- ci: remove container image scanning (#8)\n- ci: cut Actions minutes with path filters, full-ci gating and caches (#7)\n- ci: remove Blacksmith runners, use GitHub-hosted runners (#6)",
