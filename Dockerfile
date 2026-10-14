@@ -23,8 +23,11 @@ COPY BE/go.mod BE/go.sum ./
 RUN go mod download
 COPY BE/ .
 # The commit is baked into the binary and reported by /health, so CI can
-# verify that the rolled instance runs the commit it deployed.
-ARG KU_VERSION=dev
+# verify that the rolled instance runs the commit it deployed. CI passes
+# KU_VERSION directly; Coolify passes SOURCE_COMMIT (include_source_commit_in_build)
+# and local builds fall back to dev.
+ARG SOURCE_COMMIT=dev
+ARG KU_VERSION=${SOURCE_COMMIT}
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X github.com/ku/ku-backend/internal/handler.Version=${KU_VERSION}" \
     -o server ./cmd/server
