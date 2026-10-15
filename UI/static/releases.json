@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.32",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.32",
+    "body": "Deployed to alpha as d61c79aeea3a4f2fa39744ee3b601ba0cefe5bf6.\n\n- docs(readme): list only Sephira contributors",
+    "published_at": "2026-10-15T08:52:35Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.32",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.31",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.31",
     "body": "Deployed to alpha as 58b298260c20fe1c0ec62c6ddaeb515a81f7fc94.\n\n- docs(readme): include Brazilian Portuguese in interface languages\n- docs(readme): refresh contributors and contact",
