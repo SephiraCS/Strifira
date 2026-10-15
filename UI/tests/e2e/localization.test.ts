@@ -124,6 +124,7 @@ async function mockWorkspace(page: Page) {
 
 for (const { locale, title, view, copyLink, placeholder } of [
 	{ locale: 'it', title: 'Attività creata', view: 'Visualizza attività', copyLink: 'Copia link attività', placeholder: 'Titolo attività' },
+	{ locale: 'pt-BR', title: 'Issue criada', view: 'Ver issue', copyLink: 'Copiar link da issue', placeholder: 'Título da issue' },
 	{ locale: 'zh-CN', title: '议题已创建', view: '查看议题', copyLink: '复制议题链接', placeholder: '议题标题' }
 ]) {
 	test(`the issue created toast is translated (${locale})`, async ({ page }) => {
