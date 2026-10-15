@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.26",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.26",
+    "body": "Deployed to alpha as f6859e5ed2a563f1eabe0efedc0d4e106d505e4f.\n\n- fix(test): align dev-box service test literals with the sfw_ prefix",
+    "published_at": "2026-10-15T04:12:12Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.26",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.25",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.25",
     "body": "Deployed to alpha as 3c385de346c2a21b4a20798b62c315965afb80d0.\n\n- fix(brand): separate worker token prefix and guard exemption\n- feat(brand): rebrand Ku/Kuayle to Strifira across the stack\n- feat(assets): add Strifira wordmark and logo+name lockups\n- feat(assets): add white wolf variant and rename hq/ to SVG/\n- feat(assets): add smoothed high-quality wolf vector (hq.svg) with PNG size ladder\n- build(docker): fall back to SOURCE_COMMIT for the baked version",
