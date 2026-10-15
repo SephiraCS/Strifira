@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.29",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.29",
+    "body": "Deployed to alpha as cfbef31a52c0e64cde353a2650f46f134e5b011e.\n\n- docs(readme): align with the current system",
+    "published_at": "2026-10-15T05:32:32Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.29",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.28",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.28",
     "body": "Deployed to alpha as 4c6cc7b697b8605658585929adb799ebd979e5e9.\n\n- feat(web): contact email strifira@sephira.app.br",
