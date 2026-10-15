@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
-echo "=== Ku - Seed Data ==="
+echo "=== Strifira - Seed Data ==="
 
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 
@@ -26,13 +26,13 @@ refuse_production() {
 refuse_production "$ENVIRONMENT_FROM_CALLER"
 refuse_production "${ENVIRONMENT:-development}"
 
-POSTGRES_USER="${POSTGRES_USER:-ku}"
-POSTGRES_DB="${POSTGRES_DB:-ku}"
+POSTGRES_USER="${POSTGRES_USER:-strifira}"
+POSTGRES_DB="${POSTGRES_DB:-strifira}"
 
 PSQL=(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q -v ON_ERROR_STOP=1)
 
 echo "Generating bcrypt hash for Password123!..."
-HASHGEN_FILE="$(mktemp "${TMPDIR:-/tmp}/ku-hashgen.XXXXXX.go")"
+HASHGEN_FILE="$(mktemp "${TMPDIR:-/tmp}/strifira-hashgen.XXXXXX.go")"
 trap 'rm -f "$HASHGEN_FILE"' EXIT
 cat >"$HASHGEN_FILE" <<'GOEOF'
 package main
@@ -140,11 +140,11 @@ CASCADE;
 -- USERS - 5 demo users fixed IDs used by UI demo defaults
 -- ============================================================
 INSERT INTO users (id, email, name, display_name, password_hash) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'alice@ku.dev', 'Alice Chen', 'Alice', :'hash'),
-    ('a0000000-0000-0000-0000-000000000002', 'bob@ku.dev', 'Bob Martinez', 'Bob', :'hash'),
-    ('a0000000-0000-0000-0000-000000000003', 'carol@ku.dev', 'Carol Kim', 'Carol', :'hash'),
-    ('a0000000-0000-0000-0000-000000000004', 'dave@ku.dev', 'Dave Johnson', 'Dave', :'hash'),
-    ('a0000000-0000-0000-0000-000000000005', 'eve@ku.dev', 'Eve Williams', 'Eve', :'hash');
+    ('a0000000-0000-0000-0000-000000000001', 'alice@strifira.dev', 'Alice Chen', 'Alice', :'hash'),
+    ('a0000000-0000-0000-0000-000000000002', 'bob@strifira.dev', 'Bob Martinez', 'Bob', :'hash'),
+    ('a0000000-0000-0000-0000-000000000003', 'carol@strifira.dev', 'Carol Kim', 'Carol', :'hash'),
+    ('a0000000-0000-0000-0000-000000000004', 'dave@strifira.dev', 'Dave Johnson', 'Dave', :'hash'),
+    ('a0000000-0000-0000-0000-000000000005', 'eve@strifira.dev', 'Eve Williams', 'Eve', :'hash');
 
 -- ============================================================
 -- USER PREFERENCES - one row per demo user
@@ -458,11 +458,11 @@ echo "  Login credentials:"
 echo "  ┌──────────────────────┬───────────────┬──────────┐"
 echo "  │ Email                │ Name          │ Role     │"
 echo "  ├──────────────────────┼───────────────┼──────────┤"
-echo "  │ alice@ku.dev     │ Alice Chen    │ owner    │"
-echo "  │ bob@ku.dev       │ Bob Martinez  │ admin    │"
-echo "  │ carol@ku.dev     │ Carol Kim     │ member   │"
-echo "  │ dave@ku.dev      │ Dave Johnson  │ member   │"
-echo "  │ eve@ku.dev       │ Eve Williams  │ guest    │"
+echo "  │ alice@strifira.dev     │ Alice Chen    │ owner    │"
+echo "  │ bob@strifira.dev       │ Bob Martinez  │ admin    │"
+echo "  │ carol@strifira.dev     │ Carol Kim     │ member   │"
+echo "  │ dave@strifira.dev      │ Dave Johnson  │ member   │"
+echo "  │ eve@strifira.dev       │ Eve Williams  │ guest    │"
 echo "  └──────────────────────┴───────────────┴──────────┘"
 echo "  Password for all: Password123!"
 echo ""

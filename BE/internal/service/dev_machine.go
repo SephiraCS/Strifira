@@ -13,13 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	cryptoutil "github.com/SephiraCS/strifira-backend/pkg/crypto"
+	githubclient "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	githubclient "github.com/ku/ku-backend/pkg/github"
 )
 
 var (
@@ -249,7 +249,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 			}
 		}
 	}
-	volumeName := "ku-workspace-" + routingKey
+	volumeName := "strifira-workspace-" + routingKey
 	volumes := []domain.DevMachineVolume{{
 		ID: uuid.New(), MachineID: machineID, VolumeType: "workspace", RuntimeName: volumeName,
 		MountPath: "/workspace", SizeLimitBytes: int64(diskGB) * 1024 * 1024 * 1024,
@@ -267,7 +267,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		return nil, nil, err
 	}
 	envVars = append(envVars, domain.DevMachineEnvVar{
-		ID: uuid.New(), MachineID: machineID, TargetService: "collector", Name: "KU_MACHINE_TOKEN",
+		ID: uuid.New(), MachineID: machineID, TargetService: "collector", Name: "STRIFIRA_MACHINE_TOKEN",
 		EncryptedValue: encryptedCollectorToken, EncryptionKeyVersion: 1, IsSecret: true, ExpiresAt: &machine.ExpiresAt,
 	})
 	if req.Services.Browser {
@@ -281,7 +281,7 @@ func (s *DevMachineService) Create(ctx context.Context, workspaceID, userID uuid
 		}
 		for _, targetService := range []string{"browser", "collector"} {
 			envVars = append(envVars, domain.DevMachineEnvVar{
-				ID: uuid.New(), MachineID: machineID, TargetService: targetService, Name: "KU_BROWSER_CDP_TOKEN",
+				ID: uuid.New(), MachineID: machineID, TargetService: targetService, Name: "STRIFIRA_BROWSER_CDP_TOKEN",
 				EncryptedValue: encryptedBrowserCDPToken, EncryptionKeyVersion: 1, IsSecret: true, ExpiresAt: &machine.ExpiresAt,
 			})
 		}
@@ -406,9 +406,9 @@ func splitRepositoryFullName(fullName string) (string, string) {
 
 func defaultWorkingBranch(machineName string, issue *domain.Issue) string {
 	if issue != nil && issue.Identifier != "" {
-		return "ku/" + strings.ToLower(issue.Identifier)
+		return "strifira/" + strings.ToLower(issue.Identifier)
 	}
-	return "ku/" + machineName
+	return "strifira/" + machineName
 }
 
 func (s *DevMachineService) buildProviders(machineID uuid.UUID, policy *domain.DevMachineWorkspacePolicy, requested []dto.DevMachineAgentInput) ([]domain.DevMachineAgentProvider, error) {
@@ -455,7 +455,7 @@ func (s *DevMachineService) buildProviders(machineID uuid.UUID, policy *domain.D
 }
 
 func (s *DevMachineService) buildServices(machine *domain.DevMachine) []domain.DevMachineService {
-	base := "ku-" + machine.RoutingKey + "-"
+	base := "strifira-" + machine.RoutingKey + "-"
 	services := []domain.DevMachineService{
 		newService(machine.WorkspaceID, machine.ID, "collector", "collector", base+"collector", s.images.Collector, machine.RoutingKey+"-collector", 8091),
 		newService(machine.WorkspaceID, machine.ID, "egress", "egress", base+"egress", s.images.Egress, machine.RoutingKey+"-egress", 3128),
@@ -483,7 +483,7 @@ func newService(workspaceID, machineID uuid.UUID, serviceType, key, name, image,
 func (s *DevMachineService) buildEnvVars(machineID uuid.UUID, inputs []dto.DevMachineEnvVarInput) ([]domain.DevMachineEnvVar, error) {
 	envVars := make([]domain.DevMachineEnvVar, 0, len(inputs))
 	for _, input := range inputs {
-		if input.Name == "GITHUB_TOKEN" || strings.HasPrefix(input.Name, "KU_") {
+		if input.Name == "GITHUB_TOKEN" || strings.HasPrefix(input.Name, "STRIFIRA_") {
 			return nil, fmt.Errorf("%w: environment variable %s is reserved", ErrInvalidMachineInput, input.Name)
 		}
 		if !validEnvName(input.Name) {
@@ -917,7 +917,7 @@ func (s *DevMachineService) CheckoutIssue(ctx context.Context, workspaceID, mach
 		GitHubRepoID: linkedRepository.ID, RepositoryFullName: linkedRepository.FullName,
 		RepositoryURL: strings.TrimRight(linkedRepository.InstanceURL, "/") + "/" + linkedRepository.FullName,
 		BaseBranch:    baseBranch,
-		WorkingBranch: "ku/" + identifier, WorkspacePath: "/workspace/tasks/" + identifier, Status: "queued",
+		WorkingBranch: "strifira/" + identifier, WorkspacePath: "/workspace/tasks/" + identifier, Status: "queued",
 	}
 	operation := &domain.DevMachineOperation{
 		ID: uuid.New(), MachineID: machineID, CheckoutID: &checkout.ID, WorkspaceID: workspaceID,
@@ -989,7 +989,7 @@ func (s *DevMachineService) SnapshotEnvironment(ctx context.Context, workspaceID
 	environmentID := uuid.New()
 	environment := &domain.DevMachineEnvironment{
 		ID: environmentID, WorkspaceID: workspaceID, Name: strings.TrimSpace(request.Name),
-		ImageRef: "ku/dev-environment-" + environmentID.String() + ":snapshot", Status: "pending",
+		ImageRef: "strifira/dev-environment-" + environmentID.String() + ":snapshot", Status: "pending",
 		SourceMachineID: &machineID, CreatedByUserID: &userID,
 	}
 	if environment.Name == "" || strings.ContainsAny(environment.Name, "\x00\r\n") {
@@ -1276,8 +1276,8 @@ func (s *DevMachineService) CreateAgentRun(ctx context.Context, workspaceID, mac
 		if !validEnvName(name) {
 			return nil, fmt.Errorf("%w: invalid secret name %q", ErrInvalidMachineInput, name)
 		}
-		if name == "GITHUB_TOKEN" || strings.HasPrefix(name, "KU_") {
-			return nil, fmt.Errorf("%w: secret %s is managed by Ku and cannot be selected", ErrInvalidMachineInput, name)
+		if name == "GITHUB_TOKEN" || strings.HasPrefix(name, "STRIFIRA_") {
+			return nil, fmt.Errorf("%w: secret %s is managed by Strifira and cannot be selected", ErrInvalidMachineInput, name)
 		}
 		allowedSecretSet[name] = true
 	}
@@ -2022,7 +2022,7 @@ func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineChe
 	fmt.Fprintf(&builder, "- Repository: %s\n- Base branch: %s\n- Working branch: %s\n", repository, baseBranch, workingBranch)
 	fmt.Fprintf(&builder, "- Work only inside %s. Never print or persist credentials.\n", workspacePath)
 	if len(request.ForbiddenPaths) > 0 {
-		fmt.Fprintf(&builder, "- Do not change these paths (Ku verifies before publication): %s\n", strings.Join(request.ForbiddenPaths, ", "))
+		fmt.Fprintf(&builder, "- Do not change these paths (Strifira verifies before publication): %s\n", strings.Join(request.ForbiddenPaths, ", "))
 	}
 	if len(request.AllowedCommands) > 0 {
 		fmt.Fprintf(&builder, "- Requested command restrictions (advisory, not an OS sandbox): %s\n", strings.Join(request.AllowedCommands, ", "))
@@ -2037,7 +2037,7 @@ func buildAgentPrompt(machine *domain.DevMachine, checkout *domain.DevMachineChe
 		fmt.Fprintf(&builder, "- Run this exact test argv: %q\n", request.TestCommand)
 	}
 	if !request.UseRootWorkspace && (request.PushBranch == nil || *request.PushBranch) {
-		builder.WriteString("- Leave the completed changes on the working branch. Ku independently runs the required tests, checks forbidden paths, and commits and publishes the branch after verification. Do not push or open a pull request yourself.\n")
+		builder.WriteString("- Leave the completed changes on the working branch. Strifira independently runs the required tests, checks forbidden paths, and commits and publishes the branch after verification. Do not push or open a pull request yourself.\n")
 	}
 	builder.WriteString("- Finish with a concise summary, changed files, commits, tests, and risks.\n")
 	return builder.String()

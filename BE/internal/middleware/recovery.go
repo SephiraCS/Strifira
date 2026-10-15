@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/ku/ku-backend/pkg/response"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )

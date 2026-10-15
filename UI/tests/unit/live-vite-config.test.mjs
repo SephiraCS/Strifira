@@ -10,7 +10,7 @@ const uiDir = fileURLToPath(new URL('../..', import.meta.url));
 const launcher = fileURLToPath(new URL('../../../scripts/check-screen-share-live.mjs', import.meta.url));
 
 test('the shipped live launcher retains all Vite plugins and isolates both environment loads', async () => {
-	const fixture = await mkdtemp(path.join(os.tmpdir(), 'ku-live-vite-config-test-'));
+	const fixture = await mkdtemp(path.join(os.tmpdir(), 'strifira-live-vite-config-test-'));
 	try {
 		const fixtureUI = path.join(fixture, 'UI');
 		const isolatedEnv = path.join(fixture, 'isolated');
@@ -22,11 +22,11 @@ test('the shipped live launcher retains all Vite plugins and isolates both envir
 		await writeFile(path.join(fixtureUI, 'package.json'), '{"type":"module"}\n');
 		await writeFile(
 			path.join(fixture, '.env'),
-			'KU_DEV_API_URL=http://repository-env.invalid:43111\nKU_DEV_UI_PORT=43112\n'
+			'STRIFIRA_DEV_API_URL=http://repository-env.invalid:43111\nSTRIFIRA_DEV_UI_PORT=43112\n'
 		);
 		await writeFile(
 			path.join(fixture, '.env.production'),
-			'KU_DEV_API_URL=http://repository-production-env.invalid:43211\nKU_DEV_UI_PORT=43212\n'
+			'STRIFIRA_DEV_API_URL=http://repository-production-env.invalid:43211\nSTRIFIRA_DEV_UI_PORT=43212\n'
 		);
 		const source = `
 import { loadConfigFromFile } from 'vite';

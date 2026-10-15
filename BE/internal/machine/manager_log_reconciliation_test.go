@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -83,11 +83,11 @@ func newReconciliationRun(t *testing.T, stdout, stderr string) (*Manager, *recon
 			Status: domain.DevMachineStatusRunning, DesiredStatus: domain.DevMachineStatusRunning, Generation: 1},
 		agentRun: &domain.DevMachineAgentRun{ID: runID, MachineID: machineID, WorkspaceID: workspaceID,
 			ProviderID: "opencode", Mode: "autonomous", Status: domain.DevMachineAgentRunStatusQueued, MaxRuntimeSeconds: 30},
-		provider: &domain.DevMachineAgentProvider{MachineID: machineID, ProviderID: "opencode", ImageRef: "ku/opencode:test", Enabled: true},
+		provider: &domain.DevMachineAgentProvider{MachineID: machineID, ProviderID: "opencode", ImageRef: "strifira/opencode:test", Enabled: true},
 	}, logFailures: make(map[string]int), eventFailures: make(map[string]int), eventCommitErrors: make(map[string]int),
 		logAttempts: make(map[string]int), eventAttempts: make(map[string]int), eventAttemptOccurrences: make(map[string][]uuid.UUID)}
 	runtime := &runtimeFake{agentExecution: &AgentExecution{ContainerID: "test-agent", Stdout: stdout, Stderr: stderr}}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("strifira/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 	operation := &domain.DevMachineOperation{MachineID: machineID, WorkspaceID: workspaceID, AgentRunID: new(runID), Action: domain.DevMachineOpRunAgent, Generation: 1}
 	return manager, store, runtime, operation
 }
@@ -210,7 +210,7 @@ func TestManagerBuffersPartialJSONLAndRedactsBeforePersistence(t *testing.T) {
 	line := `{"type":"message","message":"secret-token"}`
 	manager, store, _, _ := newReconciliationRun(t, line+"\n", "")
 	logs := &agentRunLogs{manager: manager, machine: store.machine, run: store.agentRun,
-		service: &domain.DevMachineService{ID: uuid.New()}, provider: agent.NewOpenCodeProvider("ku/opencode:test"),
+		service: &domain.DevMachineService{ID: uuid.New()}, provider: agent.NewOpenCodeProvider("strifira/opencode:test"),
 		secrets: map[string]string{"API_KEY": "secret-token"}, streams: make(map[string]*agentRunLogStream), eventOccurrences: make(map[[32]byte]int)}
 	logs.observe(t.Context(), "test-agent", "stdout", `{"type":"message","message":"secret-`)
 	require.Empty(t, store.logChunks)
@@ -229,7 +229,7 @@ func TestManagerBuffersPartialJSONLAndRedactsBeforePersistence(t *testing.T) {
 	require.Len(t, store.logChunks, 1, "callbacks after reconciliation must not append output")
 
 	logs = &agentRunLogs{manager: manager, machine: store.machine, run: store.agentRun,
-		service: &domain.DevMachineService{ID: uuid.New()}, provider: agent.NewOpenCodeProvider("ku/opencode:test"),
+		service: &domain.DevMachineService{ID: uuid.New()}, provider: agent.NewOpenCodeProvider("strifira/opencode:test"),
 		secrets: map[string]string{"API_KEY": "secret-token"}, streams: make(map[string]*agentRunLogStream), eventOccurrences: make(map[[32]byte]int)}
 	logs.observe(t.Context(), "test-agent", "stderr", "diagnostic secret-")
 	require.NoError(t, logs.finish(t.Context(), "", ""))

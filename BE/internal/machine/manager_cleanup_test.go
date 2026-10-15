@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -170,9 +170,9 @@ func TestManagerTerminalCleanupUsesPinnedDefaultRepositoryWithoutCredentials(t *
 	for _, mode := range []string{"unchanged", "changed-machine-and-link", "no-selection", "wrong-authority"} {
 		t.Run(mode, func(t *testing.T) {
 			machine := fixtureHelperMachine()
-			machine.RepoOwner, machine.RepoName = "ku", "api"
-			machine.RepoURL = "https://git.example.com/ku/api"
-			machine.BaseBranch, machine.WorkingBranch = "main", "ku/task"
+			machine.RepoOwner, machine.RepoName = "strifira", "api"
+			machine.RepoURL = "https://git.example.com/strifira/api"
+			machine.BaseBranch, machine.WorkingBranch = "main", "strifira/task"
 			checkout, err := defaultRepositoryCheckout(machine, "https://git.example.com")
 			require.NoError(t, err)
 			run := &domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Status: domain.DevMachineAgentRunStatusTimeout}
@@ -203,8 +203,8 @@ func TestManagerTerminalCleanupUsesPinnedDefaultRepositoryWithoutCredentials(t *
 				} else {
 					require.Equal(t, machine.ID, runtime.checkout.ID)
 					require.Equal(t, "/workspace/repository", runtime.checkout.WorkspacePath)
-					require.Equal(t, "https://git.example.com/ku/api", runtime.checkout.RepositoryURL)
-					require.Equal(t, "ku/task", runtime.checkout.WorkingBranch)
+					require.Equal(t, "https://git.example.com/strifira/api", runtime.checkout.RepositoryURL)
+					require.Equal(t, "strifira/task", runtime.checkout.WorkingBranch)
 				}
 			}
 			require.Empty(t, store.runtimeCredentials)

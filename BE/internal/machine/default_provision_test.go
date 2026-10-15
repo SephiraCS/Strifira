@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,7 +43,7 @@ func TestDefaultRepositoryMigrationPreservesDirtyFilesIndexAndLinkedIssuePointer
 			root := f.workspace
 			destination := filepath.Join(root, "repository")
 			for _, name := range []string{"linked-a", "linked-b"} {
-				f.git(t, root, "worktree", "add", "--quiet", "-b", "ku/"+name, filepath.Join(root, "tasks", name))
+				f.git(t, root, "worktree", "add", "--quiet", "-b", "strifira/"+name, filepath.Join(root, "tasks", name))
 			}
 			head := f.git(t, root, "rev-parse", "HEAD")
 			index, err := os.ReadFile(filepath.Join(root, ".git", "index"))
@@ -79,11 +79,11 @@ func TestDefaultRepositoryMigrationPreservesDirtyFilesIndexAndLinkedIssuePointer
 			}
 			for _, name := range []string{"linked-a", "linked-b"} {
 				require.Equal(t, head, f.git(t, filepath.Join(root, "tasks", name), "rev-parse", "HEAD"))
-				require.Equal(t, "ku/"+name, f.git(t, filepath.Join(root, "tasks", name), "branch", "--show-current"))
+				require.Equal(t, "strifira/"+name, f.git(t, filepath.Join(root, "tasks", name), "branch", "--show-current"))
 			}
 			output, err = f.script(t, migrateLegacyRootCheckoutScript, false, root, destination, f.repository, checkoutID, key)
 			require.NoError(t, err, output)
-			require.NoDirExists(t, filepath.Join(root, ".ku-root-"+key))
+			require.NoDirExists(t, filepath.Join(root, ".strifira-root-"+key))
 		})
 	}
 }
@@ -153,7 +153,7 @@ func TestDefaultRepositoryMigrationRefusesCollisionsWithoutMovingOwnerData(t *te
 				require.NoError(t, os.Mkdir(destination, 0o700))
 				require.NoError(t, os.WriteFile(filepath.Join(destination, "owner"), []byte("other project"), 0o600))
 			case "stage":
-				require.NoError(t, os.Mkdir(filepath.Join(root, ".ku-root-"+key), 0o700))
+				require.NoError(t, os.Mkdir(filepath.Join(root, ".strifira-root-"+key), 0o700))
 			case "tracked-reserved":
 				f.git(t, root, "add", "tasks/keep")
 			case "foreign-linked-pointer":
@@ -176,7 +176,7 @@ func TestDefaultRepositoryMigrationRecoversNewRootDataAfterJournalCreation(t *te
 		t.Run(mode, func(t *testing.T) {
 			f, id, key := defaultMigrationFixture(t)
 			root, destination := f.workspace, filepath.Join(f.workspace, "repository")
-			f.git(t, root, "worktree", "add", "--quiet", "-b", "ku/linked", filepath.Join(root, "tasks", "linked"))
+			f.git(t, root, "worktree", "add", "--quiet", "-b", "strifira/linked", filepath.Join(root, "tasks", "linked"))
 			head := f.git(t, root, "rev-parse", "HEAD")
 			index := readCheckoutFixtureFile(t, filepath.Join(root, ".git", "index"))
 			needle := `atomic_volume_move -n "$journal/worktree" "$stage"`
@@ -218,14 +218,14 @@ func TestDefaultRepositoryMigrationRecoversNewRootDataAfterJournalCreation(t *te
 
 func TestDefaultProvisionUsesCanonicalBackendCredentialOutsideServiceSecrets(t *testing.T) {
 	machine := fixtureHelperMachine()
-	machine.RepoOwner, machine.RepoName = "ku", "api"
-	machine.RepoURL = "https://git.example.com/ku/api"
-	machine.BaseBranch, machine.WorkingBranch = "main", "ku/task"
+	machine.RepoOwner, machine.RepoName = "strifira", "api"
+	machine.RepoURL = "https://git.example.com/strifira/api"
+	machine.BaseBranch, machine.WorkingBranch = "main", "strifira/task"
 	store := &managerStoreFake{machine: machine, linkedRepository: &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}}
 	manager := NewManager(store, &runtimeFake{}, nil, nil, &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "backend-only-token"}, make([]byte, 32), nil, "test")
 	provision, err := manager.defaultRepositoryProvision(t.Context(), machine)
 	require.NoError(t, err)
-	require.Equal(t, "https://git.example.com/ku/api", provision.Checkout.RepositoryURL)
+	require.Equal(t, "https://git.example.com/strifira/api", provision.Checkout.RepositoryURL)
 	require.Equal(t, machine.ID, provision.Checkout.ID)
 	require.NoError(t, validateRepositoryProvision(machine, provision))
 	require.Error(t, validateRepositoryProvision(machine, nil))
@@ -236,8 +236,8 @@ func TestDefaultProvisionUsesCanonicalBackendCredentialOutsideServiceSecrets(t *
 
 func TestDefaultRepositoryRefusesGitHubOriginReplacement(t *testing.T) {
 	machine := fixtureHelperMachine()
-	machine.RepoOwner, machine.RepoName = "ku", "api"
-	machine.RepoURL = "https://original.example/ku/api"
+	machine.RepoOwner, machine.RepoName = "strifira", "api"
+	machine.RepoURL = "https://original.example/strifira/api"
 	machine.BaseBranch, machine.WorkingBranch = "main", "owner/default"
 	store := &managerStoreFake{machine: machine, linkedRepository: &domain.GitHubRepoModel{InstanceURL: "https://replacement.example"}}
 	manager := NewManager(store, &runtimeFake{}, nil, nil, &GlobalGitHubCredentials{URL: "https://replacement.example", Token: "backend-only-token"}, make([]byte, 32), nil, "test")
@@ -245,7 +245,7 @@ func TestDefaultRepositoryRefusesGitHubOriginReplacement(t *testing.T) {
 	require.ErrorContains(t, err, "original GitHub URL")
 	require.Nil(t, provision)
 	checkout := &domain.DevMachineCheckout{ID: machine.ID, MachineID: machine.ID, WorkspaceID: machine.WorkspaceID,
-		RepositoryFullName: "ku/api", RepositoryURL: "https://replacement.example/ku/api", BaseBranch: "main",
+		RepositoryFullName: "strifira/api", RepositoryURL: "https://replacement.example/strifira/api", BaseBranch: "main",
 		WorkingBranch: "owner/default", WorkspacePath: "/workspace/repository"}
 	require.Error(t, validateRepositoryProvision(machine, &RepositoryProvision{Checkout: checkout, Token: "backend-only-token"}))
 	store.linkedRepository.InstanceURL = "https://original.example"

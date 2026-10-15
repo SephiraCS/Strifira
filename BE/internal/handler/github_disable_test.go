@@ -10,11 +10,11 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/service"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )

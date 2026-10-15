@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )

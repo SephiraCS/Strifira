@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 var ErrDuplicateEmail = errors.New("email already exists")

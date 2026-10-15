@@ -52,7 +52,7 @@ async function stubCommon(page: import('@playwright/test').Page, enabled: boolea
 	await page.exposeFunction('__endShare', () => {
 		shareEnded = true;
 	});
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {

@@ -1,8 +1,8 @@
 # GitHub Actions through MCP
 
-Ku exposes its native GitHub Actions integration through the streamable HTTP
-MCP endpoint at `/mcp`. Authenticate with a personal Ku API key in the
-`Authorization: Bearer ku_…` header. The existing REST Actions endpoints continue
+Strifira exposes its native GitHub Actions integration through the streamable HTTP
+MCP endpoint at `/mcp`. Authenticate with a personal Strifira API key in the
+`Authorization: Bearer strifira_…` header. The existing REST Actions endpoints continue
 to use JWT authentication.
 
 Every call checks the API key owner's current workspace membership and resolves
@@ -15,8 +15,8 @@ middleware.
 
 ## Tools and arguments
 
-Every tool takes `workspace`, the Ku workspace slug, and `repo`, preferably the
-linked repository's full name such as `Tools/ku`. `repo` also accepts the Ku
+Every tool takes `workspace`, the Strifira workspace slug, and `repo`, preferably the
+linked repository's full name such as `Tools/strifira`. `repo` also accepts the Strifira
 repository-link UUID. It does not accept an arbitrary upstream repository ID.
 Repository names are matched without case sensitivity; an ambiguous name
 requires the UUID.
@@ -56,7 +56,7 @@ List in-progress runs:
   "name": "github_list_action_runs",
   "arguments": {
     "workspace": "terrascale",
-    "repo": "Tools/ku",
+    "repo": "Tools/strifira",
     "status": "in_progress",
     "per_page": 20
   }
@@ -70,7 +70,7 @@ Read a specific job's logs, using IDs returned by the run and job tools:
   "name": "github_get_action_job_logs",
   "arguments": {
     "workspace": "terrascale",
-    "repo": "Tools/ku",
+    "repo": "Tools/strifira",
     "run_id": 42,
     "job_id": 91
   }

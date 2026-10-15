@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultRepositoryProvisionActualDocker(t *testing.T) {
-	image := os.Getenv("KU_GIT_HELPER_IMAGE")
+	image := os.Getenv("STRIFIRA_GIT_HELPER_IMAGE")
 	if image == "" {
-		t.Skip("set KU_GIT_HELPER_IMAGE to the freshly built shipped collector image")
+		t.Skip("set STRIFIRA_GIT_HELPER_IMAGE to the freshly built shipped collector image")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Minute)
 	defer cancel()
@@ -33,8 +33,8 @@ func TestDefaultRepositoryProvisionActualDocker(t *testing.T) {
 				machine := fixtureHelperMachine()
 				machine.ID = uuid.New()
 				machine.RoutingKey = "helper-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-				machine.WorkspaceVolumeName = new("ku-workspace-" + machine.RoutingKey)
-				machine.DockerNetworkName = new("ku-machine-" + machine.RoutingKey)
+				machine.WorkspaceVolumeName = new("strifira-workspace-" + machine.RoutingKey)
+				machine.DockerNetworkName = new("strifira-machine-" + machine.RoutingKey)
 				created, err := runtime.ensureVolume(ctx, *machine.WorkspaceVolumeName, machineLabels(machine), 1)
 				require.NoError(t, err)
 				require.True(t, created)
@@ -53,7 +53,7 @@ test -z "${GITHUB_TOKEN:-}"
 test ! -e /sys/class/net/eth0
 test "$(stat -c %u:%a /volume)" = 0:755
 if touch /volume/cannot-write; then exit 1; fi
-for record in /volume/.ku-layout-*; do
+for record in /volume/.strifira-layout-*; do
   if cat "$record/ready"; then exit 1; fi
 done
 # Keeping the source inode open rules out copy/delete plus inode reuse. Both
@@ -90,7 +90,7 @@ else
   mv /workspace/staging/source.txt /workspace/source.txt
   rmdir /workspace/staging
 fi
-git -C /workspace worktree add --quiet -b ku/issue /workspace/tasks/legacy
+git -C /workspace worktree add --quiet -b strifira/issue /workspace/tasks/legacy
 printf 'staged\n' > /workspace/source.txt
 git -C /workspace add source.txt
 printf 'later worktree edit\n' > /workspace/source.txt
@@ -159,7 +159,7 @@ mv -T -n -- /workspace/source.txt "/workspace/$1"
 					require.NoError(t, err, output)
 					output, err = run(`set -eu
 test ! -e /workspace/.git
-test ! -e "/workspace/.ku-root-$1"
+test ! -e "/workspace/.strifira-root-$1"
 test "$(cat /workspace/.cache/keep)" = infrastructure
 test "$(cat /workspace/repository/source.txt)" = 'later worktree edit'
 test "$(git -C /workspace/repository show :source.txt)" = staged
@@ -168,7 +168,7 @@ last
 '
 test "$(cat "/workspace/repository/$name")" = 'untracked data'
 test "$(readlink /workspace/repository/source-link)" = source.txt
-test "$(git -C /workspace/tasks/legacy symbolic-ref --short HEAD)" = ku/issue
+test "$(git -C /workspace/tasks/legacy symbolic-ref --short HEAD)" = strifira/issue
 git -C /workspace/tasks/legacy rev-parse --verify HEAD > /tmp/issue-head
 git -C /workspace/repository rev-parse HEAD > /tmp/default-head
 cmp /tmp/issue-head /tmp/default-head

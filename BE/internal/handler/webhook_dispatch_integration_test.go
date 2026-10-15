@@ -23,11 +23,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/metrics"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/crypto"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/metrics"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
 )
 
 type webhookDelivery struct {

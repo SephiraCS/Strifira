@@ -38,7 +38,7 @@ handle_terminate() {
 	exit 143
 }
 
-echo "=== Ku - Self-host Update ==="
+echo "=== Strifira - Self-host Update ==="
 
 # 1. Pull latest code
 echo "Pulling latest changes..."

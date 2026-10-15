@@ -616,7 +616,7 @@ for (const resource of ['user-mappings', 'members']) {
 		);
 		await page.getByRole('link', { name: 'GitHub', exact: true }).click();
 		const login = page.getByLabel('GitHub login', { exact: true });
-		const member = page.getByLabel('Ku member', { exact: true });
+		const member = page.getByLabel('Strifira member', { exact: true });
 		await expect(
 			page.getByText('Mapping data is temporarily unavailable', {
 				exact: true

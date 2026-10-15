@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -231,7 +231,7 @@ func TestGatewayStripsKuCredentialsBeforeProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		authorization = request.Header.Get("Authorization")
 		cookie = request.Header.Get("Cookie")
-		internalHeader = request.Header.Get("X-Ku-Internal")
+		internalHeader = request.Header.Get("X-Strifira-Internal")
 		writer.WriteHeader(http.StatusNoContent)
 	}))
 	defer upstream.Close()
@@ -254,7 +254,7 @@ func TestGatewayStripsKuCredentialsBeforeProxy(t *testing.T) {
 	request.Host = machineHost
 	request.AddCookie(&http.Cookie{Name: machineSessionCookie, Value: strings.Repeat("a", 64)})
 	request.Header.Set("Authorization", "Bearer user-token")
-	request.Header.Set("X-Ku-Internal", "secret")
+	request.Header.Set("X-Strifira-Internal", "secret")
 	recorder := httptest.NewRecorder()
 	gateway.ServeHTTP(recorder, request)
 	require.Equal(t, http.StatusNoContent, recorder.Code)

@@ -9,7 +9,7 @@
 			icon: ScrollText,
 			title: 'Apache 2.0 license',
 			description:
-				'Use, modify and redistribute Ku, including for commercial purposes, subject to the Apache 2.0 terms.'
+				'Use, modify and redistribute Strifira, including for commercial purposes, subject to the Apache 2.0 terms.'
 		},
 		{
 			icon: GitFork,
@@ -34,7 +34,7 @@
 				One public edition
 			</h2>
 			<p class="mt-4 text-lg text-muted-foreground">
-				Ku is distributed under Apache 2.0 from one public repository. There is no separate
+				Strifira is distributed under Apache 2.0 from one public repository. There is no separate
 				commercial codebase for the features listed on this site.
 			</p>
 		</div>
@@ -60,7 +60,7 @@
 			<a href="/open-source" class="text-brand-200 underline underline-offset-4 hover:text-brand-100">Read how the licensing model works</a>.
 			Verify the claims directly:
 			<a
-				href="https://github.com/carbogninalberto/kuayle"
+				href="https://github.com/SephiraCS/Strifira"
 				target="_blank"
 				rel="noopener"
 				class="text-brand-200 underline underline-offset-4 hover:text-brand-100"

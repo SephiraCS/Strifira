@@ -1,5 +1,5 @@
 /**
- * Ku cookie consent store.
+ * Strifira cookie consent store.
  *
  * The marketing site is statically pre-rendered, so consent is persisted
  * client-side in localStorage and exposed as Svelte 5 reactive state.
@@ -22,7 +22,7 @@ export interface ConsentState {
 	version: number;
 }
 
-const STORAGE_KEY = 'ku_cookie_consent';
+const STORAGE_KEY = 'strifira_cookie_consent';
 const CURRENT_VERSION = 1;
 
 const DEFAULTS: ConsentState = {

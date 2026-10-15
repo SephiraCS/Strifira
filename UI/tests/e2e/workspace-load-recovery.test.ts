@@ -34,7 +34,7 @@ async function mockWorkspace(
 	await page
 		.context()
 		.addCookies([
-			{ name: 'ku-recovery-session', value: 'preserved-session', url: new URL('/', baseURL).href, httpOnly: true }
+			{ name: 'strifira-recovery-session', value: 'preserved-session', url: new URL('/', baseURL).href, httpOnly: true }
 		]);
 	await page.route('https://raw.githubusercontent.com/**/releases.json', (route) => route.fulfill({ json: [] }));
 	await page.route('**/api/**', async (route) => {
@@ -100,7 +100,7 @@ async function mockWorkspace(
 			calls.members++;
 			// headers() omits security headers; inspect the complete Cookie header.
 			const cookieHeader = await route.request().headerValue('cookie');
-			if (cookieHeader?.split(';').some((cookie) => cookie.trim() === 'ku-recovery-session=preserved-session'))
+			if (cookieHeader?.split(';').some((cookie) => cookie.trim() === 'strifira-recovery-session=preserved-session'))
 				calls.authenticatedMembers++;
 			const held = holdMembers;
 			holdMembers = undefined;
@@ -133,7 +133,7 @@ for (const failure of [503, 403, 404, 'network'] as const) {
 		await expect(page.getByText('Something went wrong', { exact: true })).toHaveCount(0);
 		await expect(page).toHaveURL(/\/test\/projects$/);
 		expect(calls).toMatchObject({ auth: 1, members: 2, refresh: 0, authenticatedMembers: 2 });
-		expect((await page.context().cookies()).find((cookie) => cookie.name === 'ku-recovery-session')?.value).toBe(
+		expect((await page.context().cookies()).find((cookie) => cookie.name === 'strifira-recovery-session')?.value).toBe(
 			'preserved-session'
 		);
 	});

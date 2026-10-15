@@ -2,7 +2,7 @@
  * Screen-share signaling over the workspace WebSocket.
  *
  * Media is peer-to-peer WebRTC: viewers send offers to the presenter,
- * the presenter answers, and ICE candidates trickle both ways. The ku
+ * the presenter answers, and ICE candidates trickle both ways. The strifira
  * backend only relays opaque signaling messages between share members
  * (see BE/internal/realtime/hub.go); no media server exists.
  */

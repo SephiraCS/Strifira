@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
+	"github.com/SephiraCS/strifira-backend/pkg/validate"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/response"
-	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )

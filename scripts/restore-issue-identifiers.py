@@ -56,7 +56,7 @@ def connection_environment():
         PGUSER=urllib.parse.unquote(parsed.username or "postgres"),
         PGPASSWORD=urllib.parse.unquote(parsed.password or ""),
         PGCONNECT_TIMEOUT="10",
-        PGAPPNAME="ku-restore-issue-identifiers",
+        PGAPPNAME="strifira-restore-issue-identifiers",
     )
     env.update({supported[key]: values[0] for key, values in query.items()})
     return env

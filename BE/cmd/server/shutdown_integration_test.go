@@ -25,11 +25,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/crypto"
-	"github.com/ku/ku-backend/pkg/safego"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
+	"github.com/SephiraCS/strifira-backend/pkg/safego"
 )
 
 const shutdownTestSecret = "shutdown-test-secret-at-least-32-characters"
@@ -46,7 +46,7 @@ func shutdownTestDB(t *testing.T) *sqlx.DB {
 	admin, err := sql.Open("pgx", baseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_shutdown_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_shutdown_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.Exec(`CREATE DATABASE "` + name + `"`)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = admin.Exec(`DROP DATABASE "` + name + `" WITH (FORCE)`) })

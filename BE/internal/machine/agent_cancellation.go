@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -19,12 +19,12 @@ import (
 // execution after cancellation was acknowledged. Cleanup does not publish or
 // execute provider/test code and may still remove the run's private files.
 func agentCancellationName(machine *domain.DevMachine, runID uuid.UUID) string {
-	return "ku-" + machine.RoutingKey + "-cancel-" + runID.String()
+	return "strifira-" + machine.RoutingKey + "-cancel-" + runID.String()
 }
 
 func validateAgentCancellation(inspection container.InspectResponse, machine *domain.DevMachine, runID uuid.UUID) error {
 	config, host, state := inspection.Config, inspection.HostConfig, inspection.State
-	if machine == nil || runID == uuid.Nil || config == nil || host == nil || state == nil || inspection.ID == "" || inspection.Name != "/"+agentCancellationName(machine, runID) || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.ku.workspace-id"] != machine.WorkspaceID.String() || config.Labels["com.ku.routing-key"] != machine.RoutingKey || config.Labels["com.ku.agent-run-id"] != runID.String() || config.Labels["com.ku.service"] != "agent-cancellation" || config.Labels["com.ku.cancellation-version"] != "1" {
+	if machine == nil || runID == uuid.Nil || config == nil || host == nil || state == nil || inspection.ID == "" || inspection.Name != "/"+agentCancellationName(machine, runID) || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.strifira.workspace-id"] != machine.WorkspaceID.String() || config.Labels["com.strifira.routing-key"] != machine.RoutingKey || config.Labels["com.strifira.agent-run-id"] != runID.String() || config.Labels["com.strifira.service"] != "agent-cancellation" || config.Labels["com.strifira.cancellation-version"] != "1" {
 		return errors.New("agent cancellation record ownership is invalid")
 	}
 	if !isImmutableLocalImageID(config.Image) || config.User != "1000:1000" || len(host.Mounts) != 0 || len(host.Binds) != 0 || len(host.VolumesFrom) != 0 || len(config.Volumes) != 0 || host.Privileged || !host.ReadonlyRootfs || host.NetworkMode != "none" || len(host.CapAdd) != 0 || state.Running || state.Paused || state.Restarting || state.Status != container.StateCreated && state.Status != container.StateExited {
@@ -81,7 +81,7 @@ func (r *DockerRuntime) recordAgentCancellation(ctx context.Context, machine *do
 		return errors.New("cancellation record requires the protected layout's immutable image")
 	}
 	labels := machineLabels(machine)
-	labels["com.ku.service"], labels["com.ku.cancellation-version"], labels["com.ku.agent-run-id"] = "agent-cancellation", "1", runID.String()
+	labels["com.strifira.service"], labels["com.strifira.cancellation-version"], labels["com.strifira.agent-run-id"] = "agent-cancellation", "1", runID.String()
 	_, createErr := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name, Config: &container.Config{Image: layout.Container.Config.Image, User: "1000:1000", Entrypoint: []string{"/bin/true"}, Labels: labels},
 		HostConfig: &container.HostConfig{NetworkMode: "none", ReadonlyRootfs: true, CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges=true"}, Resources: container.Resources{Memory: 16 * 1024 * 1024, MemorySwap: 16 * 1024 * 1024, NanoCPUs: 100_000_000, PidsLimit: new(int64(8))}},
@@ -97,33 +97,33 @@ func (r *DockerRuntime) recordAgentCancellation(ctx context.Context, machine *do
 
 func validateAgentCancellationTarget(inspection container.InspectResponse, machine *domain.DevMachine, runID uuid.UUID) error {
 	config := inspection.Config
-	if config == nil || inspection.ID == "" || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.ku.workspace-id"] != machine.WorkspaceID.String() || config.Labels["com.ku.routing-key"] != machine.RoutingKey || config.Labels["com.ku.agent-run-id"] != runID.String() && config.Labels["com.ku.source-sync-run"] != runID.String() {
+	if config == nil || inspection.ID == "" || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.strifira.workspace-id"] != machine.WorkspaceID.String() || config.Labels["com.strifira.routing-key"] != machine.RoutingKey || config.Labels["com.strifira.agent-run-id"] != runID.String() && config.Labels["com.strifira.source-sync-run"] != runID.String() {
 		return errors.New("agent cancellation target ownership is invalid")
 	}
-	for _, key := range []string{"com.ku.agent-run-id", "com.ku.source-sync-run"} {
+	for _, key := range []string{"com.strifira.agent-run-id", "com.strifira.source-sync-run"} {
 		if value := config.Labels[key]; value != "" && value != runID.String() {
 			return errors.New("agent cancellation target has conflicting run authority")
 		}
 	}
-	prefix := "ku-" + machine.RoutingKey
+	prefix := "strifira-" + machine.RoutingKey
 	var wanted string
-	switch config.Labels["com.ku.service"] {
+	switch config.Labels["com.strifira.service"] {
 	case "agent":
 		wanted = prefix + "-agent-" + runID.String()
 	case "git-verification", "workspace-verification":
-		operation, err := uuid.Parse(config.Labels["com.ku.repository-operation"])
-		if err != nil || operation == uuid.Nil || operation.String() != config.Labels["com.ku.repository-operation"] || !isImmutableLocalImageID(config.Image) {
+		operation, err := uuid.Parse(config.Labels["com.strifira.repository-operation"])
+		if err != nil || operation == uuid.Nil || operation.String() != config.Labels["com.strifira.repository-operation"] || !isImmutableLocalImageID(config.Image) {
 			return errors.New("agent cancellation verification authority is invalid")
 		}
 		wanted = prefix + "-verification-" + runID.String()
 	case "git-helper", "git-checkout":
-		operation, err := uuid.Parse(config.Labels["com.ku.repository-operation"])
-		if err != nil || operation == uuid.Nil || operation.String() != config.Labels["com.ku.repository-operation"] || !isImmutableLocalImageID(config.Image) {
+		operation, err := uuid.Parse(config.Labels["com.strifira.repository-operation"])
+		if err != nil || operation == uuid.Nil || operation.String() != config.Labels["com.strifira.repository-operation"] || !isImmutableLocalImageID(config.Image) {
 			return errors.New("agent cancellation helper authority is invalid")
 		}
 		wanted = prefix + "-git-" + operation.String()
-		if config.Labels["com.ku.source-sync-run"] != "" {
-			if config.Labels["com.ku.source-sync-run"] != runID.String() {
+		if config.Labels["com.strifira.source-sync-run"] != "" {
+			if config.Labels["com.strifira.source-sync-run"] != runID.String() {
 				return errors.New("source synchronization run authority changed")
 			}
 			wanted = prefix + "-source-sync-" + runID.String()
@@ -149,10 +149,10 @@ func (r *DockerRuntime) CancelAgent(ctx context.Context, machine *domain.DevMach
 		return errors.Join(returnedErr, err)
 	}
 	for _, item := range listed.Items {
-		if item.Labels["com.ku.agent-run-id"] != run.ID.String() && item.Labels["com.ku.source-sync-run"] != run.ID.String() {
+		if item.Labels["com.strifira.agent-run-id"] != run.ID.String() && item.Labels["com.strifira.source-sync-run"] != run.ID.String() {
 			continue
 		}
-		if item.Labels["com.ku.service"] == "agent-cancellation" || item.Labels["com.ku.service"] == "git-cleanup" {
+		if item.Labels["com.strifira.service"] == "agent-cancellation" || item.Labels["com.strifira.service"] == "git-cleanup" {
 			continue
 		}
 		inspection, err := r.client.ContainerInspect(ctx, item.ID, client.ContainerInspectOptions{})

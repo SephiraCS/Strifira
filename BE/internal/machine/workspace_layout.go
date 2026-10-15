@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -30,11 +30,11 @@ nonce=$2
 mode=$3
 case "$nonce" in ''|*[!a-f0-9-]*) exit 1 ;; esac
 root=$(realpath -e "$root")
-state="$root/.ku-layout-$nonce"
+state="$root/.strifira-layout-$nonce"
 # A missing Docker authority record must not rewrap a previously protected
 # layout or expose its retained repositories inside the writable workspace.
 # Old metadata is a reason to fail closed, never authority to adopt its nonce.
-for previous in "$root"/.ku-layout-*; do
+for previous in "$root"/.strifira-layout-*; do
   [ -e "$previous" ] || [ -L "$previous" ] || continue
   [ "$previous" != "$state" ] || continue
   if [ "$(stat -c %u "$previous")" = 0 ]; then exit 77; fi
@@ -114,7 +114,7 @@ verify_ready
 `
 
 func workspaceLayoutName(machine *domain.DevMachine) string {
-	return "ku-" + machine.RoutingKey + "-workspace-layout"
+	return "strifira-" + machine.RoutingKey + "-workspace-layout"
 }
 
 func validateWorkspaceLayoutRecord(inspection container.InspectResponse, machine *domain.DevMachine, volumeName string) (string, error) {
@@ -122,9 +122,9 @@ func validateWorkspaceLayoutRecord(inspection container.InspectResponse, machine
 		return "", errors.New("workspace layout record is incomplete")
 	}
 	labels := inspection.Config.Labels
-	key, err := uuid.Parse(labels["com.ku.layout-key"])
-	if err != nil || key == uuid.Nil || key.String() != labels["com.ku.layout-key"] || !ownedByMachine(labels, machine.ID) ||
-		labels["com.ku.service"] != "workspace-layout" || labels["com.ku.layout-version"] != workspaceLayoutVersion || labels["com.ku.layout-volume"] != volumeName ||
+	key, err := uuid.Parse(labels["com.strifira.layout-key"])
+	if err != nil || key == uuid.Nil || key.String() != labels["com.strifira.layout-key"] || !ownedByMachine(labels, machine.ID) ||
+		labels["com.strifira.service"] != "workspace-layout" || labels["com.strifira.layout-version"] != workspaceLayoutVersion || labels["com.strifira.layout-volume"] != volumeName ||
 		len(inspection.HostConfig.Mounts) != 0 || len(inspection.HostConfig.Binds) != 0 || len(inspection.Config.Volumes) != 0 {
 		return "", errors.New("workspace layout record does not match this machine and volume")
 	}
@@ -201,8 +201,8 @@ func (r *DockerRuntime) retireLegacyWorkspaceContainers(ctx context.Context, mac
 		config := inspection.Container.Config
 		trustedHelper := false
 		if config != nil {
-			operationID, operationErr := uuid.Parse(config.Labels["com.ku.repository-operation"])
-			trustedHelper = ownedByMachine(config.Labels, machine.ID) && config.Labels["com.ku.service"] == "git-helper" &&
+			operationID, operationErr := uuid.Parse(config.Labels["com.strifira.repository-operation"])
+			trustedHelper = ownedByMachine(config.Labels, machine.ID) && config.Labels["com.strifira.service"] == "git-helper" &&
 				operationErr == nil && operationID != uuid.Nil && config.Image == imageID && config.User == "1000:1000"
 		}
 		legacy := !workspaceConsumerHasSubpaths(inspection.Container.HostConfig, volumeName) &&
@@ -377,8 +377,8 @@ func (r *DockerRuntime) prepareProtectedWorkspaceVolume(ctx context.Context, mac
 	if key == "" {
 		key = uuid.NewString()
 		labels := machineLabels(machine)
-		labels["com.ku.service"], labels["com.ku.layout-version"] = "workspace-layout", workspaceLayoutVersion
-		labels["com.ku.layout-volume"], labels["com.ku.layout-key"] = volumeName, key
+		labels["com.strifira.service"], labels["com.strifira.layout-version"] = "workspace-layout", workspaceLayoutVersion
+		labels["com.strifira.layout-volume"], labels["com.strifira.layout-key"] = volumeName, key
 		_, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 			Name:   name,
 			Config: &container.Config{Image: image.ID, User: "1000:1000", Entrypoint: []string{"/bin/true"}, Labels: labels},
@@ -408,14 +408,14 @@ func (r *DockerRuntime) prepareProtectedWorkspaceVolume(ctx context.Context, mac
 
 func (r *DockerRuntime) runWorkspaceLayoutInitializer(ctx context.Context, machine *domain.DevMachine, volumeName, imageID, key, mode string) (returnedErr error) {
 	labels := machineLabels(machine)
-	labels["com.ku.service"], labels["com.ku.layout-key"] = "volume-init", key
+	labels["com.strifira.service"], labels["com.strifira.layout-key"] = "volume-init", key
 	capabilities := []string{}
 	if mode == "migrate" {
 		capabilities = []string{"CHOWN", "FOWNER", "DAC_OVERRIDE"}
 	}
 	operationID := uuid.NewString()
-	name := "ku-" + machine.RoutingKey + "-layout-init-" + operationID
-	labels["com.ku.layout-operation"] = operationID
+	name := "strifira-" + machine.RoutingKey + "-layout-init-" + operationID
+	labels["com.strifira.layout-operation"] = operationID
 	containerID := ""
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -437,7 +437,7 @@ func (r *DockerRuntime) runWorkspaceLayoutInitializer(ctx context.Context, machi
 				return
 			}
 			labels := inspection.Container.Config.Labels
-			if !ownedByMachine(labels, machine.ID) || labels["com.ku.layout-key"] != key || labels["com.ku.service"] != "volume-init" || labels["com.ku.layout-operation"] != operationID {
+			if !ownedByMachine(labels, machine.ID) || labels["com.strifira.layout-key"] != key || labels["com.strifira.service"] != "volume-init" || labels["com.strifira.layout-operation"] != operationID {
 				cleanupFailed(errors.New("layout initializer cleanup ownership mismatch"))
 				return
 			}
@@ -453,7 +453,7 @@ func (r *DockerRuntime) runWorkspaceLayoutInitializer(ctx context.Context, machi
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{Image: imageID, User: "0:0", WorkingDir: "/volume", Labels: labels,
-			Entrypoint: isolatedGitCommand(workspaceLayoutScript, "ku-volume-layout", "/volume", key, mode)},
+			Entrypoint: isolatedGitCommand(workspaceLayoutScript, "strifira-volume-layout", "/volume", key, mode)},
 		HostConfig: &container.HostConfig{NetworkMode: "none", ReadonlyRootfs: true, CapDrop: []string{"ALL"}, CapAdd: capabilities,
 			SecurityOpt: []string{"no-new-privileges=true"}, LogConfig: boundedLogConfig(),
 			Mounts:    []mount.Mount{{Type: mount.TypeVolume, Source: volumeName, Target: "/volume", ReadOnly: mode == "verify", VolumeOptions: &mount.VolumeOptions{NoCopy: true}}},

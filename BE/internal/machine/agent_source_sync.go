@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 type RepositorySourceSync struct {
@@ -27,7 +27,7 @@ func (r *DockerRuntime) SynchronizeAgentCandidate(ctx context.Context, machine *
 		return RepositorySourceSync{}, err
 	}
 	output, err := r.runImmutableGitHelper(ctx, machine, services, isolatedGitCommand(synchronizeRepositoryCandidateScript,
-		"ku-sync-agent-source", checkout.WorkspacePath, repository, runID.String(), stageKey, candidate.Branch, candidate.Commit, candidate.SourceCommit, candidate.SourceIndexHash), "", repositoryHelperInvocation{RunID: runID, Checkout: true, SourceSync: true})
+		"strifira-sync-agent-source", checkout.WorkspacePath, repository, runID.String(), stageKey, candidate.Branch, candidate.Commit, candidate.SourceCommit, candidate.SourceIndexHash), "", repositoryHelperInvocation{RunID: runID, Checkout: true, SourceSync: true})
 	if err != nil {
 		return RepositorySourceSync{}, err
 	}
@@ -60,13 +60,13 @@ case "$stage_key" in *[!a-f0-9]*) exit 1 ;; esac
 git check-ref-format "refs/heads/$working_branch"
 [ "$(realpath -e "$workspace_path")" = "$workspace_path" ]
 [ "$(realpath -e "$repository_dir")" = "$repository_dir" ]
-exec 9> "$repository_dir/ku.lock"
+exec 9> "$repository_dir/strifira.lock"
 flock -w 30 9
-stage="$repository_dir/ku-runs/$run_key/source-sync-$stage_key"
+stage="$repository_dir/strifira-runs/$run_key/source-sync-$stage_key"
 [ ! -L "$stage" ]
 if [ "$recovery_only" = true ]; then
-  [ -f "$repository_dir/ku-runs/$run_key/terminal-cleanup" ]
-  result_file="$repository_dir/ku-runs/$run_key/cleanup.source-result"
+  [ -f "$repository_dir/strifira-runs/$run_key/terminal-cleanup" ]
+  result_file="$repository_dir/strifira-runs/$run_key/cleanup.source-result"
   [ ! -L "$result_file" ]
   if [ ! -e "$stage" ]; then
     if [ -f "$result_file" ]; then cat "$result_file"; else printf 'unchanged\n'; fi
@@ -76,11 +76,11 @@ if [ "$recovery_only" = true ]; then
   [ ! -L "$stage/transaction" ]
   if [ ! -e "$stage/transaction" ]; then rm -rf -- "$stage"; printf 'unchanged\n'; exit 0; fi
   [ -f "$stage/transaction" ]
-  [ "$(cat "$stage/transaction")" = "ku-source-sync:$run_key:$stage_key:$working_branch:$candidate:$source_commit:$source_index_hash" ] || exit 1
+  [ "$(cat "$stage/transaction")" = "strifira-source-sync:$run_key:$stage_key:$working_branch:$candidate:$source_commit:$source_index_hash" ] || exit 1
 else
-  [ ! -e "$repository_dir/ku-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
+  [ ! -e "$repository_dir/strifira-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
 fi
-[ "$(git --git-dir="$repository_dir" rev-parse --verify "refs/ku/runs/$run_key/candidate^{commit}")" = "$candidate" ]
+[ "$(git --git-dir="$repository_dir" rev-parse --verify "refs/strifira/runs/$run_key/candidate^{commit}")" = "$candidate" ]
 git_dir="$workspace_path/.git"
 [ -d "$git_dir" ] && [ ! -L "$git_dir" ]
 [ "$(realpath -e "$git_dir")" = "$git_dir" ]
@@ -115,11 +115,11 @@ while [ "${relative#*/}" != "$relative" ]; do
 done
 branch_ref="$git_dir/refs/heads/$working_branch"
 [ ! -L "$branch_ref" ]
-stage="$repository_dir/ku-runs/$run_key/source-sync-$stage_key"
+stage="$repository_dir/strifira-runs/$run_key/source-sync-$stage_key"
 [ ! -L "$stage" ]
 if [ ! -e "$stage" ]; then mkdir -m 0700 "$stage"; fi
 [ -d "$stage" ] && [ "$(realpath -e "$stage")" = "$stage" ]
-marker="ku-source-sync:$run_key:$stage_key"
+marker="strifira-source-sync:$run_key:$stage_key"
 transaction="$marker:$working_branch:$candidate:$source_commit:$source_index_hash"
 recovering=false
 if [ -e "$stage/transaction" ]; then

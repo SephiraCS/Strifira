@@ -3,8 +3,8 @@ package middleware
 import (
 	"strings"
 
-	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
-	"github.com/ku/ku-backend/pkg/response"
+	jwtpkg "github.com/SephiraCS/strifira-backend/pkg/jwt"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 

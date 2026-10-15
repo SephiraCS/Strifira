@@ -10,6 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
@@ -17,9 +20,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +40,7 @@ func maximumDevBoxResult(character, branch string) domain.DevBoxJobResult {
 
 func TestDevBoxResultSerializedBoundsIncludeMaximumMetadata(t *testing.T) {
 	for _, character := range []string{"<", "\x01"} {
-		result := maximumDevBoxResult(character, "ku/"+strings.Repeat("b", 252))
+		result := maximumDevBoxResult(character, "strifira/"+strings.Repeat("b", 252))
 		require.NoError(t, validateDevBoxResult(&result))
 		require.NoError(t, validateDevBoxResultSize(&result))
 		encoded, err := json.Marshal(result)
@@ -63,7 +63,7 @@ func devBoxResultDatabase(t *testing.T) *sqlx.DB {
 	admin, err := sqlx.ConnectContext(t.Context(), "pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_devbox_result_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_devbox_result_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -106,19 +106,19 @@ func TestDevBoxCompletionPostgresBoundary(t *testing.T) {
 		require.NoError(t, err)
 	}
 	store := repository.NewDevBoxRepository(db)
-	box := &domain.DevBox{ID: uuid.New(), WorkspaceID: workspaceID, CreatedByUserID: userID, Name: "Boundary", Enabled: true, TokenHash: strings.Repeat("b", 64), TokenPrefix: "kub_test", Providers: json.RawMessage(`[{"id":"codex","version":"test"}]`)}
+	box := &domain.DevBox{ID: uuid.New(), WorkspaceID: workspaceID, CreatedByUserID: userID, Name: "Boundary", Enabled: true, TokenHash: strings.Repeat("b", 64), TokenPrefix: "strifira_test", Providers: json.RawMessage(`[{"id":"codex","version":"test"}]`)}
 	require.NoError(t, store.CreateBox(t.Context(), box))
 	svc := NewDevBoxService(store, nil, nil, nil)
 	createJob := func() *domain.DevBoxJob {
 		jobID := uuid.New()
 		job := &domain.DevBoxJob{ID: jobID, WorkspaceID: workspaceID, BoxID: box.ID, RequestedByUserID: userID, IssueID: issueID, IssueIdentifier: "BOX-1", GitHubRepoID: repoID,
-			Provider: "codex", Prompt: "Boundary test", RepositoryURL: "https://github.test/tests/repo.git", RepositoryFullName: "tests/repo", BaseBranch: "main", WorkingBranch: "ku/BOX-1-" + jobID.String(), MaxRuntimeSeconds: 300}
+			Provider: "codex", Prompt: "Boundary test", RepositoryURL: "https://github.test/tests/repo.git", RepositoryFullName: "tests/repo", BaseBranch: "main", WorkingBranch: "strifira/BOX-1-" + jobID.String(), MaxRuntimeSeconds: 300}
 		require.NoError(t, store.CreateJob(t.Context(), job))
 		return job
 	}
 	for _, character := range []string{"<", "\x01"} {
 		job := createJob()
-		lease := "kul_" + strings.Repeat("a", 64)
+		lease := "sfl_" + strings.Repeat("a", 64)
 		hash := hashDevBoxToken(lease)
 		claimed, err := store.ClaimJob(t.Context(), box.ID, box.TokenHash, hash, time.Minute)
 		require.NoError(t, err)

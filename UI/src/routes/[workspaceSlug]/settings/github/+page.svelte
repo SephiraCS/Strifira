@@ -915,12 +915,12 @@
 						maxlength={100}
 					/>
 					<select
-						aria-label={m['settings.github.ku_member']()}
+						aria-label={m['settings.github.strifira_member']()}
 						class="h-8 min-w-36 flex-1 rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-2 text-xs text-[var(--color-text-primary)]"
 						bind:value={mappingUserID}
 						disabled={!canManage || savingMappings || loadingMappings || !!mappingsError}
 					>
-						<option value="">{m['settings.github.ku_member']()}</option>
+						<option value="">{m['settings.github.strifira_member']()}</option>
 						{#each members as member (member.user_id)}
 							<option value={member.user_id}>{member.name || member.email}</option>
 						{/each}

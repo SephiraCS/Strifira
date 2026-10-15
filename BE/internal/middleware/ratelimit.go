@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ku/ku-backend/pkg/response"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 

@@ -1,4 +1,4 @@
-// ku service worker: makes the app installable and gives navigations an
+// strifira service worker: makes the app installable and gives navigations an
 // offline fallback. Deliberately no precaching — the shell and its hashed
 // assets must never go stale across deploys; every real request still goes
 // to the network.
@@ -7,7 +7,7 @@ const OFFLINE_HTML = `<!doctype html>
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
-	<title>Ku — offline</title>
+	<title>Strifira — offline</title>
 	<style>
 		html { background: #111111; color: #f5f5f5; font-family: system-ui, sans-serif; }
 		body { min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
@@ -15,7 +15,7 @@ const OFFLINE_HTML = `<!doctype html>
 	</style>
 </head>
 <body>
-	<p>Ku is offline. Reconnect and reload.</p>
+	<p>Strifira is offline. Reconnect and reload.</p>
 </body>
 </html>`;
 

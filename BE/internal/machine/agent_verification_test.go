@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -58,8 +58,8 @@ func TestAgentVerificationBlocksForbiddenChangesAndUnexpectedBranchBeforePublish
 		files        []string
 		wantError    string
 	}{
-		{"forbidden dirty file", "ku/task", []string{"src/main.go", "secrets/token"}, "forbidden paths changed"},
-		{"forbidden new environment file", "ku/task", []string{".env"}, "forbidden paths changed"},
+		{"forbidden dirty file", "strifira/task", []string{"src/main.go", "secrets/token"}, "forbidden paths changed"},
+		{"forbidden new environment file", "strifira/task", []string{".env"}, "forbidden paths changed"},
 		{"wrong branch", "main", []string{"src/main.go"}, "changed the working branch"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -84,7 +84,7 @@ func TestAgentPublishesOnlyVerifiedSelectedBranch(t *testing.T) {
 	store.linkedRepository = &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}
 	run.PushBranch = true
 	run.ForbiddenPaths = json.RawMessage(`[".env","secrets/"]`)
-	runtime.candidate.GitState = GitState{Branch: "ku/task", ChangedFiles: []string{"src/main.go"}}
+	runtime.candidate.GitState = GitState{Branch: "strifira/task", ChangedFiles: []string{"src/main.go"}}
 	require.NoError(t, manager.runAgent(t.Context(), store.machine, &domain.DevMachineOperation{AgentRunID: &run.ID, Generation: 1}))
 	require.Equal(t, domain.DevMachineAgentRunStatusSucceeded, store.completedRun.Status)
 	require.Equal(t, 1, runtime.publishedBranches)
@@ -224,7 +224,7 @@ func TestRootWorkspaceTaskCanRunWithoutGitAndDoesNotClaimPathVerification(t *tes
 
 func TestWorkspaceCommandPreservesArgvAndActualExitStatus(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "command.pid")
-	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "ku-command", pidFile, "/bin/sh", "-c", `printf '%s' "$1"; exit 7`, "test", "spaces; $(not executed)")
+	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "strifira-command", pidFile, "/bin/sh", "-c", `printf '%s' "$1"; exit 7`, "test", "spaces; $(not executed)")
 	output, err := cmd.Output()
 	var exitErr *exec.ExitError
 	require.ErrorAs(t, err, &exitErr)
@@ -235,11 +235,11 @@ func TestWorkspaceCommandPreservesArgvAndActualExitStatus(t *testing.T) {
 
 func TestWorkspaceCommandCancellationTerminatesItsProcessGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "command.pid")
-	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "ku-command", pidFile, "/bin/sh", "-c", "sleep 30 & wait")
+	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "strifira-command", pidFile, "/bin/sh", "-c", "sleep 30 & wait")
 	require.NoError(t, cmd.Start())
 	t.Cleanup(func() { _ = cmd.Process.Kill() })
 	require.Eventually(t, func() bool { _, err := os.Stat(pidFile); return err == nil }, 2*time.Second, 10*time.Millisecond)
-	stop := exec.CommandContext(t.Context(), "/bin/sh", "-c", cancelWorkspaceCommandScript, "ku-stop", pidFile)
+	stop := exec.CommandContext(t.Context(), "/bin/sh", "-c", cancelWorkspaceCommandScript, "strifira-stop", pidFile)
 	require.NoError(t, stop.Run())
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
@@ -254,7 +254,7 @@ func TestWorkspaceCommandCancellationTerminatesItsProcessGroup(t *testing.T) {
 
 func TestWorkspaceCommandPreservesInputInItsProcessGroup(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "command.pid")
-	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "ku-command", pidFile, "/bin/sh", "-c", `IFS= read -r input; printf '%s' "$input"`)
+	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "strifira-command", pidFile, "/bin/sh", "-c", `IFS= read -r input; printf '%s' "$input"`)
 	cmd.Stdin = strings.NewReader("disposable-token\n")
 	output, err := cmd.Output()
 	require.NoError(t, err)
@@ -264,9 +264,9 @@ func TestWorkspaceCommandPreservesInputInItsProcessGroup(t *testing.T) {
 func TestWorkspaceCommandCancellationBeforePIDPublicationCannotBeLost(t *testing.T) {
 	dir := t.TempDir()
 	pidFile, modified := filepath.Join(dir, "command.pid"), filepath.Join(dir, "modified")
-	stop := exec.CommandContext(t.Context(), "/bin/sh", "-c", cancelWorkspaceCommandScript, "ku-stop", pidFile)
+	stop := exec.CommandContext(t.Context(), "/bin/sh", "-c", cancelWorkspaceCommandScript, "strifira-stop", pidFile)
 	require.NoError(t, stop.Run())
-	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "ku-command", pidFile, "/bin/sh", "-c", `printf changed > "$1"`, "command", modified)
+	cmd := exec.CommandContext(t.Context(), "/bin/sh", "-c", workspaceCommandScript, "strifira-command", pidFile, "/bin/sh", "-c", `printf changed > "$1"`, "command", modified)
 	err := cmd.Run()
 	require.Error(t, err)
 	require.NoFileExists(t, modified, "cancelled test code must not start")
@@ -278,10 +278,10 @@ func verificationFixture(t *testing.T) (*Manager, *managerStoreFake, *runtimeFak
 	t.Helper()
 	machineID, workspaceID, runID := uuid.New(), uuid.New(), uuid.New()
 	run := &domain.DevMachineAgentRun{ID: runID, MachineID: machineID, WorkspaceID: workspaceID, ProviderID: "opencode", Mode: "autonomous", Status: domain.DevMachineAgentRunStatusQueued, MaxRuntimeSeconds: 30}
-	store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, DesiredStatus: domain.DevMachineStatusRunning, Generation: 1, WorkingBranch: "ku/task", BaseBranch: "main", RepoOwner: "octo", RepoName: "repo", RepoURL: "https://git.example.com/octo/repo"}, agentRun: run, provider: &domain.DevMachineAgentProvider{ProviderID: "opencode", ImageRef: "ku/opencode:test"}}
-	runtime := &runtimeFake{agentExecution: &AgentExecution{ContainerID: "test-agent", Stdout: `{"type":"text","part":{"type":"text","text":"Completed requested changes"}}`}, candidate: RepositoryCandidate{GitState: GitState{Branch: "ku/task"}, Commit: strings.Repeat("a", 40), BaseCommit: strings.Repeat("b", 40), SourceCommit: strings.Repeat("c", 40), SourceIndexHash: strings.Repeat("d", 64)}}
+	store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, DesiredStatus: domain.DevMachineStatusRunning, Generation: 1, WorkingBranch: "strifira/task", BaseBranch: "main", RepoOwner: "octo", RepoName: "repo", RepoURL: "https://git.example.com/octo/repo"}, agentRun: run, provider: &domain.DevMachineAgentProvider{ProviderID: "opencode", ImageRef: "strifira/opencode:test"}}
+	runtime := &runtimeFake{agentExecution: &AgentExecution{ContainerID: "test-agent", Stdout: `{"type":"text","part":{"type":"text","text":"Completed requested changes"}}`}, candidate: RepositoryCandidate{GitState: GitState{Branch: "strifira/task"}, Commit: strings.Repeat("a", 40), BaseCommit: strings.Repeat("b", 40), SourceCommit: strings.Repeat("c", 40), SourceIndexHash: strings.Repeat("d", 64)}}
 	store.linkedRepository = &domain.GitHubRepoModel{InstanceURL: "https://git.example.com"}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("strifira/opencode:test")), githubAPIFake{}, &GlobalGitHubCredentials{URL: "https://git.example.com", Token: "scoped-publish-test-token"}, make([]byte, 32), make([]byte, 32), "test")
 	return manager, store, runtime, run
 }
 
@@ -353,11 +353,11 @@ func TestAgentRepositorySelectionIsPersistedBeforeAnyHelperAndSurvivesMachineCha
 func TestAgentPinsExplicitCheckoutWhoseCanonicalURLIsNotStoredInCheckoutTable(t *testing.T) {
 	manager, store, _, run := verificationFixture(t)
 	checkout := &domain.DevMachineCheckout{ID: uuid.New(), MachineID: store.machine.ID, WorkspaceID: store.machine.WorkspaceID,
-		RepositoryFullName: "ku/api", BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/tasks/pin-1"}
+		RepositoryFullName: "strifira/api", BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/tasks/pin-1"}
 	run.CheckoutID = &checkout.ID
 	selected, err := manager.prepareAgentRepository(t.Context(), store.machine, checkout, nil, run.ID)
 	require.NoError(t, err)
-	require.Equal(t, "https://git.example.com/ku/api", selected.RepositoryURL)
+	require.Equal(t, "https://git.example.com/strifira/api", selected.RepositoryURL)
 	require.Equal(t, selected.RepositoryURL, store.pinnedRepository.RepositoryURL)
 	require.Empty(t, checkout.RepositoryURL, "the ordinary checkout row does not store this derived URL")
 }

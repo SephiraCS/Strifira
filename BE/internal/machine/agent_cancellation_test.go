@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
@@ -19,7 +19,7 @@ import (
 
 func fixtureCancellationRecord(machine *domain.DevMachine, runID uuid.UUID) container.InspectResponse {
 	labels := machineLabels(machine)
-	labels["com.ku.service"], labels["com.ku.cancellation-version"], labels["com.ku.agent-run-id"] = "agent-cancellation", "1", runID.String()
+	labels["com.strifira.service"], labels["com.strifira.cancellation-version"], labels["com.strifira.agent-run-id"] = "agent-cancellation", "1", runID.String()
 	return container.InspectResponse{ID: "cancellation-record", Name: "/" + agentCancellationName(machine, runID), Config: &container.Config{Image: fixtureHelperImageID, User: "1000:1000", Labels: labels}, HostConfig: &container.HostConfig{NetworkMode: "none", ReadonlyRootfs: true}, State: &container.State{Status: container.StateCreated}}
 }
 
@@ -69,24 +69,24 @@ func TestAgentCancellationStopsEveryOwnedRunContainerAndPreservesForeignRuns(t *
 			operation := uuid.NewString()
 			for _, role := range []string{"agent", "git-verification", "workspace-verification", "git-helper", "git-checkout", "source-sync"} {
 				labels := machineLabels(machine)
-				labels["com.ku.service"], labels["com.ku.agent-run-id"] = role, run.ID.String()
-				labels["com.ku.repository-operation"] = operation
-				name := "ku-" + machine.RoutingKey + "-git-" + operation
+				labels["com.strifira.service"], labels["com.strifira.agent-run-id"] = role, run.ID.String()
+				labels["com.strifira.repository-operation"] = operation
+				name := "strifira-" + machine.RoutingKey + "-git-" + operation
 				if role == "agent" {
-					name = "ku-" + machine.RoutingKey + "-agent-" + run.ID.String()
+					name = "strifira-" + machine.RoutingKey + "-agent-" + run.ID.String()
 				}
 				if verificationService(role) {
-					name = "ku-" + machine.RoutingKey + "-verification-" + run.ID.String()
+					name = "strifira-" + machine.RoutingKey + "-verification-" + run.ID.String()
 				}
 				if role == "source-sync" {
-					labels["com.ku.service"], labels["com.ku.source-sync-run"] = "git-helper", run.ID.String()
-					delete(labels, "com.ku.agent-run-id")
-					name = "ku-" + machine.RoutingKey + "-source-sync-" + run.ID.String()
+					labels["com.strifira.service"], labels["com.strifira.source-sync-run"] = "git-helper", run.ID.String()
+					delete(labels, "com.strifira.agent-run-id")
+					name = "strifira-" + machine.RoutingKey + "-source-sync-" + run.ID.String()
 				}
 				inspections[role] = container.InspectResponse{ID: role, Name: "/" + name, Config: &container.Config{Image: fixtureHelperImageID, Labels: labels}}
 			}
 			if mode == "foreign-target" {
-				inspections["agent"].Config.Labels["com.ku.workspace-id"] = uuid.NewString()
+				inspections["agent"].Config.Labels["com.strifira.workspace-id"] = uuid.NewString()
 			}
 			if mode == "changed-inspection" {
 				changed := inspections["agent"]
@@ -108,7 +108,7 @@ func TestAgentCancellationStopsEveryOwnedRunContainerAndPreservesForeignRuns(t *
 					require.NoError(t, json.NewEncoder(w).Encode(marker))
 				case path == "/containers/"+workspaceLayoutName(machine)+"/json":
 					labels := machineLabels(machine)
-					labels["com.ku.service"], labels["com.ku.layout-version"], labels["com.ku.layout-volume"], labels["com.ku.layout-key"] = "workspace-layout", workspaceLayoutVersion, *machine.WorkspaceVolumeName, uuid.NewString()
+					labels["com.strifira.service"], labels["com.strifira.layout-version"], labels["com.strifira.layout-volume"], labels["com.strifira.layout-key"] = "workspace-layout", workspaceLayoutVersion, *machine.WorkspaceVolumeName, uuid.NewString()
 					require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{ID: "layout", Config: &container.Config{Image: fixtureHelperImageID, Labels: labels}, HostConfig: &container.HostConfig{}}))
 				case path == "/containers/create":
 					require.Equal(t, agentCancellationName(machine, run.ID), r.URL.Query().Get("name"))
@@ -136,9 +136,9 @@ func TestAgentCancellationStopsEveryOwnedRunContainerAndPreservesForeignRuns(t *
 						items = append(items, container.Summary{ID: id, Labels: inspection.Config.Labels})
 					}
 					other := machineLabels(machine)
-					other["com.ku.agent-run-id"] = uuid.NewString()
+					other["com.strifira.agent-run-id"] = uuid.NewString()
 					cleanup := machineLabels(machine)
-					cleanup["com.ku.agent-run-id"], cleanup["com.ku.service"] = run.ID.String(), "git-cleanup"
+					cleanup["com.strifira.agent-run-id"], cleanup["com.strifira.service"] = run.ID.String(), "git-cleanup"
 					items = append(items, container.Summary{ID: "other-run", Labels: other}, container.Summary{ID: marker.ID, Labels: marker.Config.Labels}, container.Summary{ID: "cleanup", Labels: cleanup})
 					require.NoError(t, json.NewEncoder(w).Encode(items))
 				case r.Method == http.MethodGet && strings.HasSuffix(path, "/json"):
@@ -251,15 +251,15 @@ func TestAgentCancellationRejectsUnrelatedAuthority(t *testing.T) {
 			require.NoError(t, json.Unmarshal(raw, &record))
 			switch mode {
 			case "foreign-machine":
-				record.Config.Labels["com.ku.machine-id"] = uuid.NewString()
+				record.Config.Labels["com.strifira.machine-id"] = uuid.NewString()
 			case "foreign-workspace":
-				record.Config.Labels["com.ku.workspace-id"] = uuid.NewString()
+				record.Config.Labels["com.strifira.workspace-id"] = uuid.NewString()
 			case "wrong-run":
-				record.Config.Labels["com.ku.agent-run-id"] = uuid.NewString()
+				record.Config.Labels["com.strifira.agent-run-id"] = uuid.NewString()
 			case "wrong-name":
 				record.Name = "/foreign"
 			case "wrong-version":
-				record.Config.Labels["com.ku.cancellation-version"] = ""
+				record.Config.Labels["com.strifira.cancellation-version"] = ""
 			case "running":
 				record.State.Running = true
 			case "mount":

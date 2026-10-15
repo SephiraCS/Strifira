@@ -26,7 +26,7 @@ const (
 	// defaultInstance is used when an instance URL is empty.
 	defaultInstance = "https://github.com"
 	apiVersion      = "2022-11-28"
-	userAgent       = "ku-backend"
+	userAgent       = "strifira-backend"
 )
 
 // NewClient creates a GitHub API client. baseURL is the web origin
@@ -480,10 +480,10 @@ func (c *Client) ListRepos(ctx context.Context) ([]Repository, error) {
 	return nil, errors.New("GitHub repository count exceeds the discovery limit")
 }
 
-// webhookEvents is the subscription ku creates on every linked repository.
+// webhookEvents is the subscription strifira creates on every linked repository.
 var webhookEvents = []string{"push", "pull_request", "create", "status", "check_run", "workflow_run"}
 
-// WebhookEvents returns the event subscription ku configures on linked
+// WebhookEvents returns the event subscription strifira configures on linked
 // repositories; webhook reconciliation compares it against live hooks.
 func WebhookEvents() []string {
 	return append([]string(nil), webhookEvents...)

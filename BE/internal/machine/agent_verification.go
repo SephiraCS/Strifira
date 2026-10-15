@@ -10,19 +10,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 const workspaceCommandScript = `set -eu
 pid_file=$1
 shift
 umask 077
-export KU_COMMAND_PID_FILE="$pid_file"
-export KU_COMMAND_CANCEL_FILE="$pid_file.cancel"
+export STRIFIRA_COMMAND_PID_FILE="$pid_file"
+export STRIFIRA_COMMAND_CANCEL_FILE="$pid_file.cancel"
 exec 3<&0
-setsid /bin/sh -c 'set -eu; [ ! -e "$KU_COMMAND_CANCEL_FILE" ] || exit 130; printf "%s\n" "$$" > "$KU_COMMAND_PID_FILE"; [ ! -e "$KU_COMMAND_CANCEL_FILE" ] || exit 130; exec "$@"' ku-command "$@" <&3 &
+setsid /bin/sh -c 'set -eu; [ ! -e "$STRIFIRA_COMMAND_CANCEL_FILE" ] || exit 130; printf "%s\n" "$$" > "$STRIFIRA_COMMAND_PID_FILE"; [ ! -e "$STRIFIRA_COMMAND_CANCEL_FILE" ] || exit 130; exec "$@"' strifira-command "$@" <&3 &
 child=$!
 exec 3<&-
 cleanup() {
@@ -31,10 +31,10 @@ cleanup() {
     case "$pid" in ''|*[!0-9]*) ;; *) /usr/bin/env kill -TERM -- "-$pid" 2>/dev/null || true ;; esac
     rm -f "$pid_file"
   fi
-  rm -f "$KU_COMMAND_CANCEL_FILE"
+  rm -f "$STRIFIRA_COMMAND_CANCEL_FILE"
 }
 cancel_command() {
-  : > "$KU_COMMAND_CANCEL_FILE"
+  : > "$STRIFIRA_COMMAND_CANCEL_FILE"
   /usr/bin/env kill -TERM -- "-$child" 2>/dev/null || true
   /usr/bin/env kill -TERM -- "$child" 2>/dev/null || true
   wait "$child" 2>/dev/null || true
@@ -69,7 +69,7 @@ func (r *DockerRuntime) commandCancellation(ctx context.Context, containerID, pi
 	cancelCommand := sync.OnceFunc(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_, _ = r.execOutput(cleanupCtx, containerID, []string{"/bin/sh", "-c", cancelWorkspaceCommandScript, "ku-command-stop", pidFile})
+		_, _ = r.execOutput(cleanupCtx, containerID, []string{"/bin/sh", "-c", cancelWorkspaceCommandScript, "strifira-command-stop", pidFile})
 	})
 	return cancelCommand, context.AfterFunc(ctx, cancelCommand)
 }
@@ -228,10 +228,10 @@ func (m *Manager) verifyAgentTests(ctx context.Context, machine *domain.DevMachi
 		stdout := redactLogFragment(execution.Stdout, secrets, execution.StdoutTruncated)
 		stderr := redactLogFragment(execution.Stderr, secrets, execution.StderrTruncated)
 		if execution.StdoutTruncated {
-			stdout += "\n[Ku: stdout truncated after the 4 MiB capture limit]\n"
+			stdout += "\n[Strifira: stdout truncated after the 4 MiB capture limit]\n"
 		}
 		if execution.StderrTruncated {
-			stderr += "\n[Ku: stderr truncated after the 4 MiB capture limit]\n"
+			stderr += "\n[Strifira: stderr truncated after the 4 MiB capture limit]\n"
 		}
 		truncated := execution.StdoutTruncated || execution.StderrTruncated
 		output := stdout + stderr

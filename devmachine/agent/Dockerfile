@@ -34,17 +34,17 @@ RUN apk upgrade --no-cache && apk add --no-cache bash ca-certificates curl git m
     && npm --version
 
 COPY --from=go-stage /usr/local/go /usr/local/go
-ENV GOPATH=/home/ku/go \
-    GOCACHE=/home/ku/.cache/go-build \
-    GOMODCACHE=/home/ku/go/pkg/mod \
+ENV GOPATH=/home/strifira/go \
+    GOCACHE=/home/strifira/.cache/go-build \
+    GOMODCACHE=/home/strifira/go/pkg/mod \
     PATH="/usr/local/go/bin:${PATH}"
 
-COPY common/ku-agent-runner /usr/local/bin/ku-agent-runner
-RUN chmod 0755 /usr/local/bin/ku-agent-runner \
-    && mkdir -p /home/ku /home/ku/go /home/ku/.cache/go-build \
-    && chown -R 1000:1000 /home/ku
+COPY common/strifira-agent-runner /usr/local/bin/strifira-agent-runner
+RUN chmod 0755 /usr/local/bin/strifira-agent-runner \
+    && mkdir -p /home/strifira /home/strifira/go /home/strifira/.cache/go-build \
+    && chown -R 1000:1000 /home/strifira
 
 USER 1000:1000
-ENV HOME=/home/ku
+ENV HOME=/home/strifira
 WORKDIR /workspace
-ENTRYPOINT ["/usr/local/bin/ku-agent-runner"]
+ENTRYPOINT ["/usr/local/bin/strifira-agent-runner"]

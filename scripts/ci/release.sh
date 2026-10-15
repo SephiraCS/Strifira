@@ -3,9 +3,9 @@
 #
 #   scripts/ci/release.sh <deployed-sha>
 #
-# Run by the Release job of ci.yml once the homelab-deployer has posted a
-# green deploy/alpha commit status for the sha on main (the workflow waits
-# for it before calling this script; the deployer rolls alpha itself).
+# Run by the Release job of ci.yml once alpha serves the sha on main (the
+# workflow polls /health before calling this script; Coolify rolls the
+# deployment itself off the repository webhook).
 # Versions are never edited by hand (AGENTS.md: the version is bumped
 # automatically); pull requests leave UI/package.json and the OpenAPI
 # info.version alone. This script:
@@ -20,30 +20,25 @@
 #      deployed commit, tags it, and pushes both to main;
 #   4. creates the GitHub release with the first-parent commit subjects
 #      since the previous tag as notes;
-#   5. writes version=vX.Y.Z and sha=<release commit> to $GITHUB_OUTPUT;
-#      the Release job then publishes the images of the release commit to
-#      Harbor (homelab/ku:<release-sha12> and homelab/ku:vX.Y.Z), which the
-#      deployer picks up to roll alpha to the release commit.
+#   5. writes version=vX.Y.Z and sha=<release commit> to $GITHUB_OUTPUT.
 #
 # No loop: the push uses GITHUB_TOKEN, and GitHub never starts workflows
-# for changes pushed with it; "[skip ci]" also keeps CI off that commit if
-# a personal token is ever used instead. The release commit only moves
-# version fields and the release manifest, so it skips the test suites, but
-# its image is published so alpha shows the new version and manifest (the
-# deployer treats a [skip ci] commit with an existing image as deployable;
-# pushing it starts no workflow either).
+# or webhooks for changes pushed with it; "[skip ci]" also keeps CI off
+# that commit if a personal token is ever used instead. The release commit
+# only moves version fields and the release manifest, so it skips the test
+# suites; it is rolled to alpha via the Coolify deployment API so alpha
+# shows the new version and manifest.
 #
 # When main has moved past the deployed commit (another merge is queued
 # behind this run), the release is left to the newer commit's run so the
 # release commit never lands on top of undeployed code. A re-run of a run
 # whose commit was already released resumes it instead: when a tagged
 # release commit of this commit is on main (whether or not main has moved on
-# since), a release-API or image failure after the push is repaired by
+# since), a release-API failure after the push is repaired by
 # re-running the job, which (re)creates the release idempotently and writes
 # the outputs again without touching main. The same happens when the
 # deployed commit is itself a tagged release commit (CI dispatched on main
-# right after a release). publish-images.sh then publishes that version but
-# only moves latest when it is still the newest release.
+# right after a release).
 #
 # A push that fails because main moved on is skipped like above; any other
 # push failure (authentication, outage, protected branch, conflicting tag)
@@ -94,8 +89,8 @@ create_release() {
 	echo "Created release $1."
 }
 
-# outputs <tag> <release commit>: names the commit the images are built
-# from; publish-images.sh derives its tags from it.
+# outputs <tag> <release commit>: records what was released for the job
+# log and for idempotent re-runs.
 outputs() {
 	{
 		echo "version=$1"

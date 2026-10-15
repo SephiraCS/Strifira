@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
@@ -26,13 +26,13 @@ func reservationFixture(t *testing.T, sourceSync bool) (*domain.DevMachine, clie
 	var err error
 	if sourceSync {
 		options, err = repositoryHelperOptions(machine, fixtureHelperImageID, uuid.NewString(), []string{"true"})
-		options.Name = "ku-" + machine.RoutingKey + "-source-sync-" + run.String()
-		options.Config.Labels["com.ku.source-sync-run"] = run.String()
+		options.Name = "strifira-" + machine.RoutingKey + "-source-sync-" + run.String()
+		options.Config.Labels["com.strifira.source-sync-run"] = run.String()
 		options.HostConfig.NetworkMode = "none"
 		options.HostConfig.Mounts[0].ReadOnly = false
 		options.NetworkingConfig = nil
 	} else {
-		checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/repository"}
+		checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/repository"}
 		candidate := RepositoryCandidate{GitState: GitState{Branch: checkout.WorkingBranch}, Commit: strings.Repeat("a", 40)}
 		options, err = candidateVerificationOptions(machine, fixtureHelperImageID, uuid.NewString(), checkout, run, candidate, []string{"true"})
 	}
@@ -43,7 +43,7 @@ func reservationFixture(t *testing.T, sourceSync bool) (*domain.DevMachine, clie
 	require.NoError(t, err)
 	var old container.InspectResponse
 	require.NoError(t, json.Unmarshal(encoded, &old))
-	old.Config.Labels["com.ku.repository-operation"] = uuid.NewString()
+	old.Config.Labels["com.strifira.repository-operation"] = uuid.NewString()
 	old.Config.Labels[repositoryReservationVersionLabel] = "1"
 	old.Config.Labels[repositoryReservationDeadlineLabel] = strconv.FormatInt(time.Now().Add(-time.Minute).UnixNano(), 10)
 	return machine, options, old, run
@@ -82,20 +82,20 @@ func TestRepositoryReservationRecoveryPolicy(t *testing.T) {
 					case "missing-version":
 						delete(old.Config.Labels, repositoryReservationVersionLabel)
 					case "invalid-operation":
-						old.Config.Labels["com.ku.repository-operation"] = "invalid"
+						old.Config.Labels["com.strifira.repository-operation"] = "invalid"
 					case "foreign-machine":
-						old.Config.Labels["com.ku.machine-id"] = uuid.NewString()
+						old.Config.Labels["com.strifira.machine-id"] = uuid.NewString()
 					case "foreign-workspace":
-						old.Config.Labels["com.ku.workspace-id"] = uuid.NewString()
+						old.Config.Labels["com.strifira.workspace-id"] = uuid.NewString()
 					case "foreign-routing":
-						old.Config.Labels["com.ku.routing-key"] = "other"
+						old.Config.Labels["com.strifira.routing-key"] = "other"
 					case "wrong-name":
 						old.Name = "/other"
 					case "missing-id":
 						old.ID = ""
 					case "wrong-run":
-						old.Config.Labels["com.ku.agent-run-id"] = uuid.NewString()
-						old.Config.Labels["com.ku.source-sync-run"] = uuid.NewString()
+						old.Config.Labels["com.strifira.agent-run-id"] = uuid.NewString()
+						old.Config.Labels["com.strifira.source-sync-run"] = uuid.NewString()
 					case "wrong-image":
 						old.Config.Image = "mutable:latest"
 					case "wrong-user":
@@ -103,7 +103,7 @@ func TestRepositoryReservationRecoveryPolicy(t *testing.T) {
 					case "wrong-directory":
 						old.Config.WorkingDir = "/other"
 					case "wrong-candidate":
-						old.Config.Labels["com.ku.verification-commit"] = strings.Repeat("b", 40)
+						old.Config.Labels["com.strifira.verification-commit"] = strings.Repeat("b", 40)
 					case "wrong-mount":
 						old.HostConfig.Mounts[0].Source = "foreign-volume"
 					case "writable-root":
@@ -155,7 +155,7 @@ func TestWorkspaceVerificationReservationRecoveryPolicy(t *testing.T) {
 			require.NoError(t, err)
 			var old container.InspectResponse
 			require.NoError(t, json.Unmarshal(encoded, &old))
-			old.Config.Labels["com.ku.repository-operation"] = uuid.NewString()
+			old.Config.Labels["com.strifira.repository-operation"] = uuid.NewString()
 			old.Config.Labels[repositoryReservationVersionLabel] = "1"
 			old.Config.Labels[repositoryReservationDeadlineLabel] = strconv.FormatInt(time.Now().Add(-time.Minute).UnixNano(), 10)
 			switch mode {
@@ -164,9 +164,9 @@ func TestWorkspaceVerificationReservationRecoveryPolicy(t *testing.T) {
 			case "unexpired":
 				old.Config.Labels[repositoryReservationDeadlineLabel] = strconv.FormatInt(time.Now().Add(time.Minute).UnixNano(), 10)
 			case "other-run":
-				old.Config.Labels["com.ku.agent-run-id"] = uuid.NewString()
+				old.Config.Labels["com.strifira.agent-run-id"] = uuid.NewString()
 			case "other-service":
-				old.Config.Labels["com.ku.service"] = "git-verification"
+				old.Config.Labels["com.strifira.service"] = "git-verification"
 			case "live-workspace-mount":
 				old.HostConfig.Mounts[0].VolumeOptions.Subpath = "workspace"
 			}

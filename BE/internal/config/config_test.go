@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/aiegress"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/aiegress"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -130,14 +130,14 @@ func TestGatewayValidationDoesNotRequireControlPlaneSecrets(t *testing.T) {
 func TestLoadMachineGatewayDoesNotRequireJWTOrRedis(t *testing.T) {
 	setMachineGatewayEnv(t)
 	t.Setenv("DATABASE_URL", "")
-	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://gateway-db/ku?sslmode=disable")
+	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://gateway-db/strifira?sslmode=disable")
 	t.Setenv("JWT_SECRET", "")
 	t.Setenv("REDIS_URL", "")
 
 	cfg, err := LoadMachineGateway()
 
 	require.NoError(t, err)
-	require.Equal(t, "postgres://gateway-db/ku?sslmode=disable", cfg.DatabaseURL)
+	require.Equal(t, "postgres://gateway-db/strifira?sslmode=disable", cfg.DatabaseURL)
 	require.Empty(t, cfg.JWTSecret)
 	require.Empty(t, cfg.RedisURL)
 	require.Equal(t, "https://app.example.com", cfg.FrontendURL)
@@ -204,7 +204,7 @@ func TestLoadMachineGatewayRejectsMissingAndInvalidGatewayValues(t *testing.T) {
 	t.Run("production rejects application database user", func(t *testing.T) {
 		setMachineGatewayEnv(t)
 		t.Setenv("ENVIRONMENT", "production")
-		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres:gateway@postgres/ku?sslmode=disable")
+		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres:gateway@postgres/strifira?sslmode=disable")
 
 		_, err := LoadMachineGateway()
 
@@ -215,7 +215,7 @@ func TestLoadMachineGatewayRejectsMissingAndInvalidGatewayValues(t *testing.T) {
 		setMachineGatewayEnv(t)
 		t.Setenv("ENVIRONMENT", "production")
 		t.Setenv("DATABASE_URL", "")
-		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres/ku")
+		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://postgres/strifira")
 
 		_, err := LoadMachineGateway()
 
@@ -225,18 +225,18 @@ func TestLoadMachineGatewayRejectsMissingAndInvalidGatewayValues(t *testing.T) {
 	t.Run("production accepts restricted gateway credential", func(t *testing.T) {
 		setMachineGatewayEnv(t)
 		t.Setenv("ENVIRONMENT", "production")
-		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://ku_gateway:gateway@postgres/ku?sslmode=disable")
+		t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://strifira_gateway:gateway@postgres/strifira?sslmode=disable")
 
 		cfg, err := LoadMachineGateway()
 
 		require.NoError(t, err)
-		require.Equal(t, "postgres://ku_gateway:gateway@postgres/ku?sslmode=disable", cfg.DatabaseURL)
+		require.Equal(t, "postgres://strifira_gateway:gateway@postgres/strifira?sslmode=disable", cfg.DatabaseURL)
 	})
 }
 
 func setMachineGatewayEnv(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATABASE_URL", "postgres://postgres@postgres/ku?sslmode=disable")
+	t.Setenv("DATABASE_URL", "postgres://postgres@postgres/strifira?sslmode=disable")
 	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "")
 	t.Setenv("FRONTEND_URL", "https://app.example.com")
 	t.Setenv("DEV_MACHINES_ENABLED", "true")
@@ -275,7 +275,7 @@ func TestDemoDevMachineAllowed(t *testing.T) {
 
 func TestLoadMachineGatewayReadsDemoConfig(t *testing.T) {
 	setMachineGatewayEnv(t)
-	t.Setenv("DATABASE_URL", "postgres://postgres/ku?sslmode=disable")
+	t.Setenv("DATABASE_URL", "postgres://postgres/strifira?sslmode=disable")
 	sysAdminID := uuid.New()
 	t.Setenv("SYSADMINS", sysAdminID.String())
 	t.Setenv("PUBLIC_DEMO_MODE", "true")

@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ku/ku-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 )
 
 // crossWorkspaceFixture: owner A manages workspace A; owner B owns workspace

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/require"
 )
@@ -22,12 +22,12 @@ func prepareVerificationFixture(t *testing.T, f *protectedRepositoryFixture, can
 	require.NoError(t, err, output)
 	output, err = f.script(t, prepareCandidateVerificationScript, false, f.repository, f.run, candidate.Commit, fixtureVerificationOwner, f.branch)
 	require.NoError(t, err, output)
-	return filepath.Join(f.repository, "ku-runs", f.run, "verification")
+	return filepath.Join(f.repository, "strifira-runs", f.run, "verification")
 }
 
 func TestCandidateVerificationMountPolicy(t *testing.T) {
 	machine := fixtureHelperMachine()
-	checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/repository"}
+	checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/repository"}
 	candidate := RepositoryCandidate{GitState: GitState{Branch: checkout.WorkingBranch}, Commit: strings.Repeat("a", 40)}
 	options, err := candidateVerificationOptions(machine, fixtureHelperImageID, uuid.NewString(), checkout, uuid.New(), candidate, []string{"true"})
 	require.NoError(t, err)
@@ -36,9 +36,9 @@ func TestCandidateVerificationMountPolicy(t *testing.T) {
 	encoded, err := json.Marshal(baseline)
 	require.NoError(t, err)
 	for name, mutate := range map[string]func(*container.InspectResponse){
-		"foreign machine":     func(i *container.InspectResponse) { i.Config.Labels["com.ku.machine-id"] = uuid.NewString() },
-		"foreign operation":   func(i *container.InspectResponse) { i.Config.Labels["com.ku.repository-operation"] = "unknown" },
-		"foreign run":         func(i *container.InspectResponse) { i.Config.Labels["com.ku.agent-run-id"] = uuid.NewString() },
+		"foreign machine":     func(i *container.InspectResponse) { i.Config.Labels["com.strifira.machine-id"] = uuid.NewString() },
+		"foreign operation":   func(i *container.InspectResponse) { i.Config.Labels["com.strifira.repository-operation"] = "unknown" },
+		"foreign run":         func(i *container.InspectResponse) { i.Config.Labels["com.strifira.agent-run-id"] = uuid.NewString() },
 		"mutable image":       func(i *container.InspectResponse) { i.Config.Image = "latest" },
 		"root user":           func(i *container.InspectResponse) { i.Config.User = "0:0" },
 		"missing config":      func(i *container.InspectResponse) { i.Config = nil },
@@ -47,7 +47,7 @@ func TestCandidateVerificationMountPolicy(t *testing.T) {
 		"whole volume":        func(i *container.InspectResponse) { i.HostConfig.Mounts[0].VolumeOptions.Subpath = "" },
 		"parent traversal":    func(i *container.InspectResponse) { i.HostConfig.Mounts[0].VolumeOptions.Subpath += "/../.." },
 		"sibling run": func(i *container.InspectResponse) {
-			i.HostConfig.Mounts[0].VolumeOptions.Subpath = strings.ReplaceAll(i.HostConfig.Mounts[0].VolumeOptions.Subpath, i.Config.Labels["com.ku.agent-run-id"], uuid.NewString())
+			i.HostConfig.Mounts[0].VolumeOptions.Subpath = strings.ReplaceAll(i.HostConfig.Mounts[0].VolumeOptions.Subpath, i.Config.Labels["com.strifira.agent-run-id"], uuid.NewString())
 		},
 		"workspace alias": func(i *container.InspectResponse) { i.HostConfig.Mounts[0].Target = "/workspace" },
 		"foreign volume":  func(i *container.InspectResponse) { i.HostConfig.Mounts[0].Source = "foreign" },
@@ -119,8 +119,8 @@ func TestCandidateVerificationUsesRetainedContentAndPreservesLaterSourceEdits(t 
 	outputText, err := f.script(t, cleanupCandidateVerificationScript, false, f.repository, f.run, candidate.Commit, fixtureVerificationOwner)
 	require.NoError(t, err, outputText)
 	require.NoDirExists(t, worktree)
-	require.FileExists(t, filepath.Join(f.repository, "ku-runs", f.run, "candidate.info"))
-	require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/ku/runs/"+f.run+"/candidate"))
+	require.FileExists(t, filepath.Join(f.repository, "strifira-runs", f.run, "candidate.info"))
+	require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/strifira/runs/"+f.run+"/candidate"))
 }
 
 func TestCandidateVerificationRejectsTrackedChangesDespiteHostileGitMetadata(t *testing.T) {
@@ -166,7 +166,7 @@ func TestCandidateVerificationRejectsTrackedChangesDespiteHostileGitMetadata(t *
 			require.Error(t, err, output)
 			require.Contains(t, output, "tests changed tracked candidate content")
 			require.NoFileExists(t, marker)
-			require.NoDirExists(t, filepath.Join(f.repository, "ku-runs", f.run, "verification-stage"))
+			require.NoDirExists(t, filepath.Join(f.repository, "strifira-runs", f.run, "verification-stage"))
 		})
 	}
 }
@@ -180,7 +180,7 @@ func TestCandidateVerificationRetryRebuildsFromRetainedCommit(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "source.txt"), []byte("mutation\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(worktree, "test-output"), []byte("old run\n"), 0o600))
 	require.NoError(t, os.RemoveAll(filepath.Join(worktree, ".git")))
-	stage := filepath.Join(f.repository, "ku-runs", f.run, "verification-stage")
+	stage := filepath.Join(f.repository, "strifira-runs", f.run, "verification-stage")
 	require.NoError(t, os.Mkdir(stage, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(stage, "interrupted-copy"), []byte("partial\n"), 0o600))
 	require.Equal(t, worktree, prepareVerificationFixture(t, f, candidate))
@@ -225,7 +225,7 @@ func TestCandidateVerificationRejectsForeignCommitAndUnsafeDirectories(t *testin
 			} else if strings.HasPrefix(mode, "scratch") {
 				name = "verification-scratch"
 			}
-			path := filepath.Join(f.repository, "ku-runs", f.run, name)
+			path := filepath.Join(f.repository, "strifira-runs", f.run, name)
 			require.NoError(t, os.RemoveAll(path))
 			if mode == "foreign commit" {
 				commit = f.base
@@ -249,7 +249,7 @@ func TestCandidateVerificationRejectsForeignCommitAndUnsafeDirectories(t *testin
 
 func TestCandidateVerificationMountsOnlyPrivateWorktreeAndReadOnlyObjects(t *testing.T) {
 	machine := fixtureHelperMachine()
-	checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/tasks/task-1"}
+	checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/tasks/task-1"}
 	run := uuid.New()
 	candidate := RepositoryCandidate{GitState: GitState{Branch: checkout.WorkingBranch}, Commit: strings.Repeat("a", 40)}
 	argv := []string{"/bin/sh", "-c", "printf '%s\\n' 'test argument'"}
@@ -261,17 +261,17 @@ func TestCandidateVerificationMountsOnlyPrivateWorktreeAndReadOnlyObjects(t *tes
 	require.Equal(t, checkout.WorkspacePath, options.Config.WorkingDir)
 	require.Empty(t, options.Config.Cmd)
 	require.False(t, options.Config.OpenStdin)
-	require.Equal(t, "git-verification", options.Config.Labels["com.ku.service"])
-	require.Equal(t, run.String(), options.Config.Labels["com.ku.agent-run-id"])
-	require.Equal(t, candidate.Commit, options.Config.Labels["com.ku.verification-commit"])
+	require.Equal(t, "git-verification", options.Config.Labels["com.strifira.service"])
+	require.Equal(t, run.String(), options.Config.Labels["com.strifira.agent-run-id"])
+	require.Equal(t, candidate.Commit, options.Config.Labels["com.strifira.verification-commit"])
 	require.Len(t, options.HostConfig.Mounts, 3)
 	require.False(t, options.HostConfig.Mounts[0].ReadOnly)
 	require.Equal(t, checkout.WorkspacePath, options.HostConfig.Mounts[0].Target)
-	require.Equal(t, strings.TrimPrefix(repository, "/")+"/ku-runs/"+run.String()+"/verification", options.HostConfig.Mounts[0].VolumeOptions.Subpath)
+	require.Equal(t, strings.TrimPrefix(repository, "/")+"/strifira-runs/"+run.String()+"/verification", options.HostConfig.Mounts[0].VolumeOptions.Subpath)
 	require.True(t, options.HostConfig.Mounts[1].ReadOnly)
 	require.Nil(t, options.HostConfig.Tmpfs)
 	require.Equal(t, "/tmp", options.HostConfig.Mounts[2].Target)
-	require.Equal(t, strings.TrimPrefix(repository, "/")+"/ku-runs/"+run.String()+"/verification-scratch", options.HostConfig.Mounts[2].VolumeOptions.Subpath)
+	require.Equal(t, strings.TrimPrefix(repository, "/")+"/strifira-runs/"+run.String()+"/verification-scratch", options.HostConfig.Mounts[2].VolumeOptions.Subpath)
 	require.Equal(t, "repositories", options.HostConfig.Mounts[1].VolumeOptions.Subpath)
 	require.True(t, options.HostConfig.ReadonlyRootfs)
 	require.Equal(t, int64(machine.MemoryMB)*1024*1024, options.HostConfig.Resources.Memory)
@@ -330,7 +330,7 @@ func TestCandidateVerificationReservationGenerationFencesDelayedHelpers(t *testi
 	output, err = f.script(t, cleanupCandidateVerificationScript, false, f.repository, f.run, candidate.Commit, newer)
 	require.NoError(t, err, output)
 	require.NoDirExists(t, worktree)
-	ownerBytes, err := os.ReadFile(filepath.Join(f.repository, "ku-runs", f.run, "verification.owner"))
+	ownerBytes, err := os.ReadFile(filepath.Join(f.repository, "strifira-runs", f.run, "verification.owner"))
 	require.NoError(t, err)
 	require.Equal(t, newer+"\n", string(ownerBytes), "cleanup must preserve the fence against delayed requests")
 	output, err = f.script(t, prepareCandidateVerificationScript, false, f.repository, f.run, candidate.Commit, fixtureVerificationOwner, f.branch)

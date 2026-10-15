@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -138,9 +138,9 @@ func workspaceVerificationOptions(machine *domain.DevMachine, imageID, operation
 	if machine.PidsLimit <= 0 {
 		return client.ContainerCreateOptions{}, errors.New("workspace verification requires a process budget")
 	}
-	options.Config.Labels["com.ku.service"] = "workspace-verification"
-	options.Config.Labels["com.ku.agent-run-id"] = runID.String()
-	options.Name = "ku-" + machine.RoutingKey + "-verification-" + runID.String()
+	options.Config.Labels["com.strifira.service"] = "workspace-verification"
+	options.Config.Labels["com.strifira.agent-run-id"] = runID.String()
+	options.Name = "strifira-" + machine.RoutingKey + "-verification-" + runID.String()
 	options.Config.WorkingDir = "/workspace"
 	options.Config.OpenStdin, options.Config.StdinOnce, options.Config.AttachStdin = false, false, false
 	options.HostConfig.Tmpfs = nil
@@ -157,10 +157,10 @@ func workspaceVerificationOptions(machine *domain.DevMachine, imageID, operation
 
 func protectedWorkspaceVerificationMounts(inspection container.InspectResponse, machine *domain.DevMachine) bool {
 	config, host := inspection.Config, inspection.HostConfig
-	if machine == nil || machine.WorkspaceVolumeName == nil || machine.DockerNetworkName == nil || config == nil || host == nil || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.ku.workspace-id"] != machine.WorkspaceID.String() || config.Labels["com.ku.routing-key"] != machine.RoutingKey || config.Labels["com.ku.service"] != "workspace-verification" || config.User != "1000:1000" || !isImmutableLocalImageID(config.Image) || config.WorkingDir != "/workspace" || len(config.Volumes) != 0 {
+	if machine == nil || machine.WorkspaceVolumeName == nil || machine.DockerNetworkName == nil || config == nil || host == nil || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.strifira.workspace-id"] != machine.WorkspaceID.String() || config.Labels["com.strifira.routing-key"] != machine.RoutingKey || config.Labels["com.strifira.service"] != "workspace-verification" || config.User != "1000:1000" || !isImmutableLocalImageID(config.Image) || config.WorkingDir != "/workspace" || len(config.Volumes) != 0 {
 		return false
 	}
-	for _, key := range []string{"com.ku.repository-operation", "com.ku.agent-run-id"} {
+	for _, key := range []string{"com.strifira.repository-operation", "com.strifira.agent-run-id"} {
 		id, err := uuid.Parse(config.Labels[key])
 		if err != nil || id == uuid.Nil || id.String() != config.Labels[key] {
 			return false
@@ -175,7 +175,7 @@ func protectedWorkspaceVerificationMounts(inspection container.InspectResponse, 
 		if i == 1 {
 			target = "/tmp"
 		}
-		if mounted.Type != mount.TypeVolume || mounted.Source != *machine.WorkspaceVolumeName || mounted.Target != target || mounted.ReadOnly || mounted.VolumeOptions == nil || !mounted.VolumeOptions.NoCopy || mounted.VolumeOptions.Subpath != "repositories/filesystem-runs/"+config.Labels["com.ku.agent-run-id"]+"/"+path {
+		if mounted.Type != mount.TypeVolume || mounted.Source != *machine.WorkspaceVolumeName || mounted.Target != target || mounted.ReadOnly || mounted.VolumeOptions == nil || !mounted.VolumeOptions.NoCopy || mounted.VolumeOptions.Subpath != "repositories/filesystem-runs/"+config.Labels["com.strifira.agent-run-id"]+"/"+path {
 			return false
 		}
 	}
@@ -196,7 +196,7 @@ func (r *DockerRuntime) RunWorkspaceCommand(ctx context.Context, machine *domain
 	}
 	options.Config.Env = environment
 	runHelper := func(ctx context.Context, script, owner string, cleanup bool) error {
-		_, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(script, "ku-workspace-verify", "/repositories", runID.String(), "/workspace", owner), "", repositoryHelperInvocation{RunID: runID, Cleanup: cleanup})
+		_, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(script, "strifira-workspace-verify", "/repositories", runID.String(), "/workspace", owner), "", repositoryHelperInvocation{RunID: runID, Cleanup: cleanup})
 		return err
 	}
 	if err := runHelper(ctx, ensureWorkspaceVerificationDirectoryScript, "", false); err != nil {
@@ -213,7 +213,7 @@ func (r *DockerRuntime) RunWorkspaceCommand(ctx context.Context, machine *domain
 			if inspection.Container.ID != containerID {
 				return errors.New("workspace verification reservation container changed")
 			}
-			owner, err = verificationReservationOwner(inspection.Container, options.Config.Labels["com.ku.repository-operation"])
+			owner, err = verificationReservationOwner(inspection.Container, options.Config.Labels["com.strifira.repository-operation"])
 			return err
 		},
 		beforeStart: func(ctx context.Context) error {

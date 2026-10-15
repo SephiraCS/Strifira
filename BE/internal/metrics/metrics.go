@@ -35,19 +35,19 @@ var (
 	registry = prometheus.NewRegistry()
 
 	httpRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ku_http_requests_total",
+		Name: "strifira_http_requests_total",
 		Help: "HTTP requests handled by the API server, by route template and status.",
 	}, []string{"method", "route", "status"})
 
 	httpDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "ku_http_request_duration_seconds",
+		Name:    "strifira_http_request_duration_seconds",
 		Help:    "HTTP request latency by route template.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "route"})
 
 	// GitHubWebhooks counts GitHub webhook deliveries by event and result.
 	GitHubWebhooks = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ku_github_webhook_deliveries_total",
+		Name: "strifira_github_webhook_deliveries_total",
 		Help: "GitHub webhook deliveries by event type and processing result.",
 	}, []string{"event", "result"})
 
@@ -56,7 +56,7 @@ var (
 	// subscriber deliveries a fan-out could not reach before its deadline
 	// (fanout_deadline) or before a timed-out shutdown (shutdown).
 	WebhookEventsDropped = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "ku_webhook_events_dropped_total",
+		Name: "strifira_webhook_events_dropped_total",
 		Help: "Outgoing webhook events or subscriber deliveries dropped, by reason.",
 	}, []string{"reason"})
 )

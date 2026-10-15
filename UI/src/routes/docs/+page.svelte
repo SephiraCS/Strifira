@@ -21,7 +21,7 @@
 </script>
 
 <svelte:head>
-	<title>API Reference – Ku</title>
+	<title>API Reference – Strifira</title>
 </svelte:head>
 
 <div bind:this={container} class="h-screen w-screen overflow-hidden" data-testid="api-docs-page"></div>

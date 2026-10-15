@@ -1,6 +1,6 @@
 #include <tunables/global>
 
-profile ku-dev-machine flags=(attach_disconnected,mediate_deleted) {
+profile strifira-dev-machine flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
   #include <abstractions/nameservice>
 
@@ -17,7 +17,7 @@ profile ku-dev-machine flags=(attach_disconnected,mediate_deleted) {
   /workspace/** rwk,
   /tmp/** rwk,
   /run/** rwk,
-  /home/ku/** rwk,
+  /home/strifira/** rwk,
 
   deny /var/run/docker.sock rwklx,
   deny /proc/sys/** w,

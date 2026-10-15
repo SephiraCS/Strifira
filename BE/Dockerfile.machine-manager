@@ -7,8 +7,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /machine-man
 
 FROM docker.io/library/alpine:3.24
 RUN apk add --no-cache ca-certificates tzdata \
-    && addgroup -g 1000 ku \
-    && adduser -D -u 1000 -G ku ku
+    && addgroup -g 1000 strifira \
+    && adduser -D -u 1000 -G strifira strifira
 COPY --from=builder /machine-manager /usr/local/bin/machine-manager
 EXPOSE 8092
 USER 1000:1000

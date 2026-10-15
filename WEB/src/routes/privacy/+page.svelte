@@ -10,9 +10,9 @@
 
 	let resetOpen = $state(false);
 
-	const title = 'Privacy Policy — Ku';
+	const title = 'Privacy Policy — Strifira';
 	const description =
-		'Ku privacy policy: what we collect, the cookies we use, your GDPR rights, and how to contact us.';
+		'Strifira privacy policy: what we collect, the cookies we use, your GDPR rights, and how to contact us.';
 	const updated = 'July 11, 2026';
 	const canonical = url('/privacy');
 	const crumbs = breadcrumbsFrom('privacy', 'Privacy');
@@ -37,15 +37,15 @@
 			<section>
 				<h2>1. Who we are</h2>
 				<p>
-					Ku is an open source project maintained by
-					<strong class="text-foreground">Bakney srl</strong> (P. IVA 04921790236), with
+					Strifira is an open source project maintained by
+					<strong class="text-foreground">Sephira</strong> (P. IVA 04921790236), with
 					registered office at Q.re Aldo Moro 49, 37032 Monteforte d'Alpone (VR), Italy. We are the
 					data controller for any personal data processed through this website.
 				</p>
 				<p>
 				For data protection enquiries contact us at
-				<a href="mailto:support@bakney.com" class="text-brand-300 hover:underline"
-					>support@bakney.com</a
+				<a href="https://github.com/SephiraCS/Strifira/issues" class="text-brand-300 hover:underline"
+					>GitHub issues</a
 				>.
 				</p>
 			</section>
@@ -63,7 +63,7 @@
 						security logs.
 					</li>
 					<li>
-						<strong class="text-foreground">Self-hosted deployments:</strong> when you run Ku
+						<strong class="text-foreground">Self-hosted deployments:</strong> when you run Strifira
 						on your own infrastructure, <em>you</em> are the data controller for the data entered
 						into your instance. This policy does not cover self-hosted deployments.
 					</li>
@@ -75,7 +75,7 @@
 				<p>
 					The marketing site currently installs no analytics, advertising or campaign-measurement
 					scripts. Your consent selection is stored in browser local storage under
-					<code>ku_cookie_consent</code>; it is not sent to Ku by the site.
+					<code>strifira_cookie_consent</code>; it is not sent to Strifira by the site.
 				</p>
 				<table class="mt-4 w-full border-collapse text-left">
 					<thead>
@@ -162,8 +162,8 @@
 				</ul>
 				<p class="mt-2">
 				To exercise any of these rights, email
-				<a href="mailto:support@bakney.com" class="text-brand-300 hover:underline"
-					>support@bakney.com</a
+				<a href="https://github.com/SephiraCS/Strifira/issues" class="text-brand-300 hover:underline"
+					>GitHub issues</a
 				>.
 				</p>
 			</section>
@@ -171,7 +171,7 @@
 			<section>
 				<h2>7. International transfers</h2>
 				<p>
-					Bakney is based in Italy. If a service provider processes personal data outside the EEA,
+					Sephira is based in Italy. If a service provider processes personal data outside the EEA,
 					we use an applicable transfer mechanism, such as an adequacy decision or Standard
 					Contractual Clauses, where required.
 				</p>
@@ -179,7 +179,7 @@
 
 			<section>
 				<h2>8. Children</h2>
-				<p>Ku is not directed at children under 16, and we do not knowingly collect their data.</p>
+				<p>Strifira is not directed at children under 16, and we do not knowingly collect their data.</p>
 			</section>
 
 			<section>

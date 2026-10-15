@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 // Database terminal authority and the persistent Docker cancellation fence
@@ -28,7 +28,7 @@ func (r *DockerRuntime) CleanupAgentRun(ctx context.Context, machine *domain.Dev
 	}
 	if checkout == nil {
 		_, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(cleanupTerminalWorkspaceVerificationScript,
-			"ku-terminal-workspace-cleanup", "/repositories", run.ID.String(), "/workspace"), "", repositoryHelperInvocation{RunID: run.ID, Cleanup: true})
+			"strifira-terminal-workspace-cleanup", "/repositories", run.ID.String(), "/workspace"), "", repositoryHelperInvocation{RunID: run.ID, Cleanup: true})
 		return RepositorySourceSync{Status: "unchanged"}, err
 	}
 	repository, _, err := authorizedRunRepository(machine, checkout, run.ID)
@@ -36,7 +36,7 @@ func (r *DockerRuntime) CleanupAgentRun(ctx context.Context, machine *domain.Dev
 		return RepositorySourceSync{}, err
 	}
 	output, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(cleanupTerminalAgentRunScript,
-		"ku-terminal-cleanup", repository, run.ID.String()), "", repositoryHelperInvocation{RunID: run.ID, Cleanup: true})
+		"strifira-terminal-cleanup", repository, run.ID.String()), "", repositoryHelperInvocation{RunID: run.ID, Cleanup: true})
 	if err != nil {
 		return RepositorySourceSync{}, err
 	}
@@ -55,7 +55,7 @@ func (r *DockerRuntime) CleanupAgentRun(ctx context.Context, machine *domain.Dev
 		return RepositorySourceSync{}, err
 	}
 	output, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(synchronizeRepositoryCandidateScript,
-		"ku-recover-terminal-source", checkout.WorkspacePath, repository, run.ID.String(), stageKey, candidate.Branch, candidate.Commit, candidate.SourceCommit, candidate.SourceIndexHash, "true"), "", repositoryHelperInvocation{RunID: run.ID, Checkout: true, SourceSync: true, Cleanup: true, Recovery: true})
+		"strifira-recover-terminal-source", checkout.WorkspacePath, repository, run.ID.String(), stageKey, candidate.Branch, candidate.Commit, candidate.SourceCommit, candidate.SourceIndexHash, "true"), "", repositoryHelperInvocation{RunID: run.ID, Checkout: true, SourceSync: true, Cleanup: true, Recovery: true})
 	if err != nil {
 		return RepositorySourceSync{}, fmt.Errorf("terminal source synchronization recovery failed: %w", err)
 	}
@@ -102,9 +102,9 @@ case "$run_key" in ''|*[!a-f0-9-]*) exit 1 ;; esac
 [ ! -L "$repository_dir" ]
 if [ ! -e "$repository_dir" ]; then exit 0; fi
 [ -d "$repository_dir" ] && [ "$(realpath -e "$repository_dir")" = "$repository_dir" ]
-exec 9> "$repository_dir/ku.lock"
+exec 9> "$repository_dir/strifira.lock"
 flock -w 30 9
-run_parent="$repository_dir/ku-runs"
+run_parent="$repository_dir/strifira-runs"
 [ ! -L "$run_parent" ]
 if [ ! -e "$run_parent" ]; then mkdir -m 0700 "$run_parent"; fi
 [ -d "$run_parent" ] && [ "$(realpath -e "$run_parent")" = "$run_parent" ]

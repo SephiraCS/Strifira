@@ -1,16 +1,15 @@
 <div align="center">
-  <img src="assets/logo_primary.svg" alt="Ku" width="250">
-  <p><strong>快乐 (kuàilè) · happiness, joy</strong></p>
+  <img src="assets/logo_primary.svg" alt="Strifira" width="250">
 	<p><strong>The issue tracker with no paid tier.</strong></p>
 	<p>Keyboard-driven, self-hosted, and available in one public Apache 2.0 repository.</p>
 
-[Report Bug](https://github.com/carbogninalberto/kuayle/issues/new?labels=bug) · [Request Feature](https://github.com/carbogninalberto/kuayle/issues/new?labels=enhancement)
+[Report Bug](https://github.com/SephiraCS/Strifira/issues/new?labels=bug) · [Request Feature](https://github.com/SephiraCS/Strifira/issues/new?labels=enhancement)
 
 </div>
 
 <br />
 
-[![Ku Screenshot](assets/product-screenshot.png)](https://github.com/carbogninalberto/kuayle)
+[![Strifira Screenshot](assets/product-screenshot.png)](https://github.com/SephiraCS/Strifira)
 
 ## 🌍 Contributors
 
@@ -22,7 +21,7 @@
 
 ## 🚦 Current Implementation State
 
-Ku's published releases are runnable MVPs, not a mature enterprise platform. This development branch also contains unreleased work described below. The repository includes the Go API, SvelteKit frontend, database migrations, development tooling, and reference self-hosting configuration.
+Strifira's published releases are runnable MVPs, not a mature enterprise platform. This development branch also contains unreleased work described below. The repository includes the Go API, SvelteKit frontend, database migrations, development tooling, and reference self-hosting configuration.
 
 | Area             | State                                                                                                                                                                                                                                                     |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,9 +49,9 @@ and self-hosting prerequisites. They are not a completed zero-configuration
 production deployment. Authentication, customer consent, repository access,
 credential isolation, SSRF checks and recovery safeguards remain required.
 
-## Why Ku?
+## Why Strifira?
 
-Ku started with a narrow requirement: keep a fast, keyboard-oriented issue workflow while adding multiple assignees, self-hosting, and complete source access.
+Strifira started with a narrow requirement: keep a fast, keyboard-oriented issue workflow while adding multiple assignees, self-hosting, and complete source access.
 
 The distribution model is deliberately simple:
 
@@ -95,13 +94,13 @@ The product is intentionally smaller than broad project-management suites. It co
 
 Completed issues can be archived from an issue's actions and restored from **Archived issues** in the workspace sidebar. **Settings → General** enables automatic archiving 30 days after completion by default; workspace owners can turn it off. Restored issues are exempt from automatic archiving until their status changes.
 
-The production contract requires automatic provider discovery and retrieval of vendor keys stored once in OCI Vault. The current UI still requires workspace owners to save an OpenAI-compatible endpoint, model, and API key in **Settings → AI**; that manual setup is migration debt, not automatic Vault pickup. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Ku presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
+The production contract requires automatic provider discovery and retrieval of vendor keys stored once in OCI Vault. The current UI still requires workspace owners to save an OpenAI-compatible endpoint, model, and API key in **Settings → AI**; that manual setup is migration debt, not automatic Vault pickup. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Strifira presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
 
-**Actions** in the workspace sidebar shows workflows from linked GitHub repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Ku. For completed runs, **Rerun in GitHub** opens the native run page: sign in with your normal GitHub account and use its rerun controls. Your GitHub repository permissions apply. **View workflow steps in GitHub** opens that page for individual step details. Job logs of completed runs expire after GitHub's retention period.
+**Actions** in the workspace sidebar shows workflows from linked GitHub repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Strifira. For completed runs, **Rerun in GitHub** opens the native run page: sign in with your normal GitHub account and use its rerun controls. Your GitHub repository permissions apply. **View workflow steps in GitHub** opens that page for individual step details. Job logs of completed runs expire after GitHub's retention period.
 
 ## 🤖 Dev Machines (Agentic Coding)
 
-Dev Machines are an unreleased multi-container subsystem for self-hosted Ku. The production contract requires always-on availability; current deployment gates and manual provisioning remain migration debt. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.
+Dev Machines are an unreleased multi-container subsystem for self-hosted Strifira. The production contract requires always-on availability; current deployment gates and manual provisioning remain migration debt. Machines can be created generically, then attach issue worktrees when work starts. Every machine has collector and egress services; it may also include a shared code-server/native-terminal developer container and a browser, while agent containers are created on demand for runs. PostgreSQL-backed operations provide durable reconciliation and authenticated wildcard routing.
 
 > See [`TECHNICAL.md`](TECHNICAL.md) for the full specification, architecture diagrams, schema, and API reference.
 
@@ -110,18 +109,18 @@ Dev Machines are an unreleased multi-container subsystem for self-hosted Ku. The
 ```
 You (browser)
   │
-  ├─ 0123456789abcdef0123.ku-machines.example.net         → code-server
-  ├─ 0123456789abcdef0123-terminal.ku-machines.example.net → native xterm over ttyd.v1
-  └─ 0123456789abcdef0123-browser.ku-machines.example.net → Chrome via KasmVNC (in-browser web navigation)
+  ├─ 0123456789abcdef0123.strifira-machines.example.net         → code-server
+  ├─ 0123456789abcdef0123-terminal.strifira-machines.example.net → native xterm over ttyd.v1
+  └─ 0123456789abcdef0123-browser.strifira-machines.example.net → Chrome via KasmVNC (in-browser web navigation)
         │
         └── All routed through Machine Gateway auth — no public ports, no port management
 ```
 
 The implementation:
 
-1. **Orchestrate cooperating containers** per machine. Collector and egress services are always represented. The optional developer service runs code-server on `8080` and ttyd on `7681` in one container (`/workspace`, `HOME`, tools, processes, and tmux); browser and on-demand agent services run separately on the isolated bridge network. The Ku UI renders `@xterm/xterm` natively and speaks `ttyd.v1`; it does not expose ttyd's web page.
-2. **Support multiple agent providers** — Claude Code, OpenCode, Codex, or admin-configured generic CLIs. The shared developer image includes pinned OpenCode, Claude Code, and Codex CLIs for direct interactive terminal use. Ku's dashboard launches bounded autonomous runs in separately pinned provider images and normalizes their results.
-3. **Assign random subdomains** through a separate registrable wildcard domain (`*.ku-machines.example.net`) with launch-ticket auth and host-restricted machine session cookies. The machine domain must be a completely separate registrable domain to prevent cookie leakage between the main application and machine workloads.
+1. **Orchestrate cooperating containers** per machine. Collector and egress services are always represented. The optional developer service runs code-server on `8080` and ttyd on `7681` in one container (`/workspace`, `HOME`, tools, processes, and tmux); browser and on-demand agent services run separately on the isolated bridge network. The Strifira UI renders `@xterm/xterm` natively and speaks `ttyd.v1`; it does not expose ttyd's web page.
+2. **Support multiple agent providers** — Claude Code, OpenCode, Codex, or admin-configured generic CLIs. The shared developer image includes pinned OpenCode, Claude Code, and Codex CLIs for direct interactive terminal use. Strifira's dashboard launches bounded autonomous runs in separately pinned provider images and normalizes their results.
+3. **Assign random subdomains** through a separate registrable wildcard domain (`*.strifira-machines.example.net`) with launch-ticket auth and host-restricted machine session cookies. The machine domain must be a completely separate registrable domain to prevent cookie leakage between the main application and machine workloads.
 4. **Authenticate** through a dedicated unprivileged Machine Gateway; the privileged Machine Manager is the only Dev Machines runtime component with Docker socket access. The current system updater also mounts the socket and must retain the same host-administrator boundary.
 5. **Prepare issue worktrees** from issue, project, team, then workspace repository/environment defaults. One machine has affinity to one repository and can hold several independent issue worktrees from that repository; use a separate machine for another repository/environment or concurrent conflicting work.
 6. **Record best-effort activity** from filesystem, shell, root-checkout Git, browser, agent, gateway, and lifecycle telemetry and attach it to project work
@@ -131,7 +130,7 @@ The implementation:
 | Mode              | Who                             | What happens                                                              |
 | ----------------- | ------------------------------- | ------------------------------------------------------------------------- |
 | **Agent-only**    | A user starts a bounded run      | Agent works autonomously, records a normalized result, and optionally pushes a branch or opens a pull request with the workspace GitHub token |
-| **Human + Agent** | Developer opens an issue workspace | Uses code-server or the dedicated persistent terminal while launching and monitoring bounded agent runs from Ku |
+| **Human + Agent** | Developer opens an issue workspace | Uses code-server or the dedicated persistent terminal while launching and monitoring bounded agent runs from Strifira |
 
 ### Current machine inputs
 
@@ -154,7 +153,7 @@ Per-container PID limits are derived from the profile basis; 512 is not one aggr
 
 ## 🛠️ Tech Stack
 
-Here's what Ku runs on and what each piece does:
+Here's what Strifira runs on and what each piece does:
 
 | Layer             | Tech                                 | Role                                                                  |
 | ----------------- | ------------------------------------ | --------------------------------------------------------------------- |
@@ -197,13 +196,13 @@ for supporting services only during local development: Postgres, Redis, the Dev
 Machine gateway/manager, runtime image builds, and the Caddy wildcard TLS proxy
 for `https://*.machines.localhost`. The dev proxy binds `127.0.0.1:80` and
 `127.0.0.1:443`; stop the selfhosting stack first if it is using those ports.
-The root gateway container is named `ku-dev-machine-gateway` to avoid the
-selfhosting `ku-machine-gateway` name.
+The root gateway container is named `strifira-dev-machine-gateway` to avoid the
+selfhosting `strifira-machine-gateway` name.
 
-To run another local instance, set `PORT=8081`, `KU_DEV_API_URL=http://localhost:8081`,
-`KU_DEV_UI_PORT=5174`, and `FRONTEND_URL=http://localhost:5174` in its root `.env`
+To run another local instance, set `PORT=8081`, `STRIFIRA_DEV_API_URL=http://localhost:8081`,
+`STRIFIRA_DEV_UI_PORT=5174`, and `FRONTEND_URL=http://localhost:5174` in its root `.env`
 before `make dev`. Vite uses the same API target for HTTP, WebSockets, and uploads.
-The `KU_DEV_` settings can also be supplied through the process environment.
+The `STRIFIRA_DEV_` settings can also be supplied through the process environment.
 
 ### 📖 Commands
 
@@ -230,11 +229,11 @@ The `KU_DEV_` settings can also be supplied through the process environment.
 
 ## 🏠 Self-Hosting
 
-Ku is designed to be self-hosted. The reference stack in [`selfhosting/`](selfhosting/) includes Caddy, PostgreSQL, Redis, the backend, the frontend, and an update script. Review secrets, backups, monitoring, and host security before production use.
+Strifira is designed to be self-hosted. The reference stack in [`selfhosting/`](selfhosting/) includes Caddy, PostgreSQL, Redis, the backend, the frontend, and an update script. Review secrets, backups, monitoring, and host security before production use.
 
 ### Portable workspace transfer
 
-Workspace owners and admins can download a versioned `.ku.zip` archive from **Settings → General → Workspace transfer**. An authenticated user with no workspace can choose **Import workspace** during workspace setup; an owner or admin can also start an import from the transfer settings. Import always creates a separate workspace and never overwrites an existing one.
+Workspace owners and admins can download a versioned `.strifira.zip` archive from **Settings → General → Workspace transfer**. An authenticated user with no workspace can choose **Import workspace** during workspace setup; an owner or admin can also start an import from the transfer settings. Import always creates a separate workspace and never overwrites an existing one.
 
 The format 2 archive contains a logical `manifest.json`, `data.json`, and the workspace's uploaded asset bytes. It preserves teams, statuses, labels, projects, cycles, issues and their relationships/history, templates, views, favorites, shared links, workspace notifications, integration metadata, AI prompts, and safe Dev Machine workspace policy/scope settings. Historical issue identifiers retain their exact text and ownership so GitHub references continue to resolve after team renames and workspace transfer. Database and asset IDs are regenerated and references—including protected asset URLs—are remapped during import. Format 1 archives are no longer supported; export the workspace again with the current version before importing.
 
@@ -253,8 +252,8 @@ This feature transfers one logical workspace. It is not a replacement for an ope
 ### 1. Prepare the current reference stack
 
 ```sh
-git clone https://github.com/carbogninalberto/kuayle.git
-cd ku/selfhosting
+git clone https://github.com/SephiraCS/Strifira.git
+cd strifira/selfhosting
 cp .env.example .env
 ```
 
@@ -320,7 +319,7 @@ The manager process runs as UID/GID 1000 with only the Docker socket's host grou
 ### Updating
 
 ```sh
-cd ku
+cd strifira
 bash selfhosting/update.sh
 ```
 
@@ -346,7 +345,7 @@ behavior and signed downloads before accepting a storage deployment.
 
 ### GitHub integration
 
-Ku's current repository integration is GitHub (github.com and GitHub
+Strifira's current repository integration is GitHub (github.com and GitHub
 Enterprise Server) over personal access tokens. See the
 [GitHub integration contract](BE/docs/github-integration.md) for current APIs,
 permissions and signed webhook handling.
@@ -360,7 +359,7 @@ access to repositories or authorize pushes, pull requests or status changes.
 ## 📂 Project Structure
 
 ```
-ku/
+strifira/
 ├── BE/                     # Backend (Go)
 │   ├── cmd/server/         # Entrypoint (server, migrate, seed)
 │   └── internal/
@@ -405,7 +404,7 @@ Pull requests are welcome. Keep changes focused, explain the behavior being chan
 
 ### CI and deployment
 
-Every push to `main` runs CI: the zero-configuration guard, svelte-check for UI and WEB, the fast backend suite (PostgreSQL and Redis as service containers), and the fast browser suite in three shards. The build job pushes the commit's image to Harbor as `registry.mariogk.com/homelab/ku:<sha12>`. The homelab-deployer daemon on alpha (a separate repository) rolls the alpha instance itself once every check run on the commit is green, health-gates the new instance with rollback, and posts the `deploy/alpha` commit status. The Release job waits for that status, then bumps the version (`UI/package.json` and the OpenAPI `info.version`) in a `[skip ci]` commit, tags `vX.Y.Z`, creates the GitHub release, and publishes the release-commit image to Harbor as `homelab/ku:<release-sha12>` and `homelab/ku:vX.Y.Z` so the deployer rolls alpha to the release commit. Pull requests run the checks and tests only; versions are never edited by hand.
+Every push to `main` runs CI: the zero-configuration guard, svelte-check for UI and WEB, the fast backend suite (PostgreSQL and Redis as service containers), and the fast browser suite in three shards. In parallel, Coolify deploys the commit itself: it watches the repository webhook, builds the root Dockerfile (baking the commit into the binary, reported by `/health`), and health-gates the new instance with rollback. The Release job polls `/health` until alpha serves the pushed commit, then bumps the version (`UI/package.json` and the OpenAPI `info.version`) in a `[skip ci]` commit, tags `vX.Y.Z`, and creates the GitHub release; the release commit is rolled to alpha via the Coolify deployment API. Pull requests run the checks and tests only; versions are never edited by hand.
 
 Pull requests run only the CI jobs their changes touch (a `changes` job uses `dorny/paths-filter`): `BE/`, `devmachine/` and the `Makefile` run the backend suite; `UI/` and `WEB/` run svelte-check; `UI/` and the `Makefile` run the browser shards. The guard always runs. The `test` job aggregates them and is the check to wait for: it passes when every job passed or was skipped as unaffected, and fails when any failed or was cancelled. Pushes to `main` and manual runs always run everything. The security scan runs on pull requests that touch `BE/` or the UI npm dependencies; it also runs nightly.
 
@@ -421,17 +420,17 @@ Alberto Carbognin, [@carbogninalberto](https://github.com/carbogninalberto)
 
 ---
 
-> **Project note:** Ku has been developed with AI-assisted tooling under human direction and review. Published releases remain MVPs; evaluate and test them against your requirements before production use.
+> **Project note:** Strifira has been developed with AI-assisted tooling under human direction and review. Published releases remain MVPs; evaluate and test them against your requirements before production use.
 
 <!-- MARKDOWN LINKS & IMAGES -->
 
-[contributors-shield]: https://img.shields.io/github/contributors/carbogninalberto/kuayle.svg?style=for-the-badge
-[forks-shield]: https://img.shields.io/github/forks/carbogninalberto/kuayle.svg?style=for-the-badge
-[forks-url]: https://github.com/carbogninalberto/kuayle/network/members
-[stars-shield]: https://img.shields.io/github/stars/carbogninalberto/kuayle.svg?style=for-the-badge
-[stars-url]: https://github.com/carbogninalberto/kuayle/stargazers
-[issues-shield]: https://img.shields.io/github/issues/carbogninalberto/kuayle.svg?style=for-the-badge
-[issues-url]: https://github.com/carbogninalberto/kuayle/issues
-[license-shield]: https://img.shields.io/github/license/carbogninalberto/kuayle.svg?style=for-the-badge
-[license-url]: https://github.com/carbogninalberto/kuayle/blob/main/LICENSE
+[contributors-shield]: https://img.shields.io/github/contributors/SephiraCS/Strifira.svg?style=for-the-badge
+[forks-shield]: https://img.shields.io/github/forks/SephiraCS/Strifira.svg?style=for-the-badge
+[forks-url]: https://github.com/SephiraCS/Strifira/network/members
+[stars-shield]: https://img.shields.io/github/stars/SephiraCS/Strifira.svg?style=for-the-badge
+[stars-url]: https://github.com/SephiraCS/Strifira/stargazers
+[issues-shield]: https://img.shields.io/github/issues/SephiraCS/Strifira.svg?style=for-the-badge
+[issues-url]: https://github.com/SephiraCS/Strifira/issues
+[license-shield]: https://img.shields.io/github/license/SephiraCS/Strifira.svg?style=for-the-badge
+[license-url]: https://github.com/SephiraCS/Strifira/blob/main/LICENSE
 [product-screenshot]: assets/screenshot.png

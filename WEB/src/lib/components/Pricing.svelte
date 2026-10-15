@@ -25,7 +25,7 @@
 				<p class="text-sm font-semibold tracking-widest text-brand-300 uppercase">Pricing</p>
 				<h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">No software license fee</h2>
 				<p class="mt-5 text-lg leading-relaxed text-muted-foreground">
-					Ku does not charge per user and does not enforce paid feature tiers. The software is available under
+					Strifira does not charge per user and does not enforce paid feature tiers. The software is available under
 					Apache 2.0 and runs on infrastructure you operate.
 				</p>
 				<p class="mt-4 text-lg leading-relaxed text-muted-foreground">

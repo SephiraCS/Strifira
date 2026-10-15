@@ -12,7 +12,7 @@ import {
 } from '../../src/lib/security/github-url.ts';
 
 const INSTANCE = 'https://github.example.com';
-const REPO = 'TerraScale/ku';
+const REPO = 'TerraScale/strifira';
 
 test('githubOrigin extracts the origin', () => {
 	assert.equal(githubOrigin(INSTANCE), 'https://github.example.com');
@@ -51,7 +51,7 @@ test('safeGitHubPullRequestUrl validates pull paths', () => {
 	assert.equal(safeGitHubPullRequestUrl(`${INSTANCE}/${REPO}/pull/zero`, REPO, INSTANCE), null);
 	assert.equal(safeGitHubPullRequestUrl(`${INSTANCE}/${REPO}/issues/12`, REPO, INSTANCE), null);
 	assert.equal(safeGitHubPullRequestUrl(`${INSTANCE}/${REPO}/pull/12?x=1`, REPO, INSTANCE), null);
-	assert.equal(safeGitHubPullRequestUrl(`${INSTANCE}/attacker/ku/pull/12`, REPO, INSTANCE), null);
+	assert.equal(safeGitHubPullRequestUrl(`${INSTANCE}/attacker/strifira/pull/12`, REPO, INSTANCE), null);
 });
 
 test('safeGitHubBranchUrl validates tree paths', () => {

@@ -1,4 +1,4 @@
-// Package apidocs serves the OpenAPI description of ku's HTTP surface.
+// Package apidocs serves the OpenAPI description of strifira's HTTP surface.
 //
 // The document (openapi.yaml) is the single source of truth for the REST
 // API and is embedded in the binary. It is published same-origin at

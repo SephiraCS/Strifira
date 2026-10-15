@@ -1,11 +1,11 @@
 #!/bin/sh
 set -eu
 
-rm -f /workspace/.ku-ready
+rm -f /workspace/.strifira-ready
 mkdir -p "$HOME/.local/share/code-server" "$HOME/.config/code-server"
-if [ -d /opt/ku-home-template ] && [ ! -f "$HOME/.ku-template-seeded" ]; then
-  cp -a /opt/ku-home-template/. "$HOME/"
-  touch "$HOME/.ku-template-seeded"
+if [ -d /opt/strifira-home-template ] && [ ! -f "$HOME/.strifira-template-seeded" ]; then
+  cp -a /opt/strifira-home-template/. "$HOME/"
+  touch "$HOME/.strifira-template-seeded"
 fi
 user_settings_dir="$HOME/.local/share/code-server/User"
 if [ ! -e "$user_settings_dir/settings.json" ]; then
@@ -13,7 +13,7 @@ if [ ! -e "$user_settings_dir/settings.json" ]; then
   printf '%s\n' '{"workbench.colorTheme":"Default Dark Modern"}' > "$user_settings_dir/settings.json"
 fi
 
-unset GITHUB_TOKEN KU_GIT_CREDENTIAL_HELPER KU_GITHUB_HOST KU_GIT_REPOSITORY
+unset GITHUB_TOKEN STRIFIRA_GIT_CREDENTIAL_HELPER STRIFIRA_GITHUB_HOST STRIFIRA_GIT_REPOSITORY
 export GIT_TERMINAL_PROMPT=0
 mkdir -p /workspace/tasks
 
@@ -21,7 +21,7 @@ default_workspace=/workspace/tasks
 [ ! -d /workspace/repository/.git ] || default_workspace=/workspace/repository
 code-server --bind-addr 0.0.0.0:8080 --auth none --disable-telemetry "$default_workspace" &
 code_server_pid=$!
-ttyd --port 7681 --writable --url-arg --terminal-type xterm-256color /usr/local/bin/ku-terminal-session &
+ttyd --port 7681 --writable --url-arg --terminal-type xterm-256color /usr/local/bin/strifira-terminal-session &
 ttyd_pid=$!
 
 cleanup() {
@@ -39,7 +39,7 @@ while ! curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 || ! kill -0 "$t
   fi
   sleep 0.1
 done
-touch /workspace/.ku-ready
+touch /workspace/.strifira-ready
 
 while kill -0 "$code_server_pid" 2>/dev/null && kill -0 "$ttyd_pid" 2>/dev/null; do
   sleep 1

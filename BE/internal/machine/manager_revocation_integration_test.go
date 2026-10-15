@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 )
 
 // revocationEnv runs the manager against the real DevMachineRepository on a
@@ -46,7 +46,7 @@ func newRevocationEnv(t *testing.T, status domain.DevMachineStatus, expired bool
 	admin, err := sql.Open("pgx", baseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_machine_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_machine_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = admin.ExecContext(context.Background(), `DROP DATABASE "`+name+`" WITH (FORCE)`) })

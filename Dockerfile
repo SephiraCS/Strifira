@@ -22,20 +22,20 @@ WORKDIR /app
 COPY BE/go.mod BE/go.sum ./
 RUN go mod download
 COPY BE/ .
-# The commit is baked into the binary and reported by /health, so CI can
-# verify that the rolled instance runs the commit it deployed. CI passes
-# KU_VERSION directly; Coolify passes SOURCE_COMMIT (include_source_commit_in_build)
-# and local builds fall back to dev.
+# The commit is baked into the binary and reported by /health, so the
+# deployment can be verified against the commit it rolled. Coolify passes
+# SOURCE_COMMIT (include_source_commit_in_build); local builds fall back to
+# dev, and STRIFIRA_VERSION overrides both when set explicitly.
 ARG SOURCE_COMMIT=dev
-ARG KU_VERSION=${SOURCE_COMMIT}
+ARG STRIFIRA_VERSION=${SOURCE_COMMIT}
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags="-s -w -X github.com/ku/ku-backend/internal/handler.Version=${KU_VERSION}" \
+    -ldflags="-s -w -X github.com/SephiraCS/strifira-backend/internal/handler.Version=${STRIFIRA_VERSION}" \
     -o server ./cmd/server
 
 # Stage 4: Final image
 FROM docker.io/library/alpine:3.24
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates su-exec && \
-    addgroup -S ku && adduser -S -G ku -h /app/.home ku
+    addgroup -S strifira && adduser -S -G strifira -h /app/.home strifira
 WORKDIR /app
 COPY --from=caddy-builder /go/caddy /usr/bin/caddy
 COPY --from=be-builder /app/server .
@@ -43,7 +43,7 @@ COPY --from=be-builder /app/migrations ./migrations
 COPY --from=ui-builder /app/build /srv
 # Readable by the unprivileged user whatever the checkout's umask was.
 RUN chmod -R a+rX /app/server /app/migrations /srv && \
-    mkdir -p /app/uploads /app/.home && chown ku:ku /app/uploads /app/.home
+    mkdir -p /app/uploads /app/.home && chown strifira:strifira /app/uploads /app/.home
 
 COPY <<'EOF' /etc/caddy/Caddyfile
 {
@@ -147,27 +147,27 @@ EOF
 RUN caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
 # Runs as root only long enough to read the mounted env file (root-owned on
-# alpha) and hand the uploads volume to the ku user; migrations, the API and
+# alpha) and hand the uploads volume to the strifira user; migrations, the API and
 # Caddy then run unprivileged. The uploads tree predates the non-root image,
 # so it is re-owned on start; an older (root) image still writes it fine.
 #
 # The API and Caddy run side by side, and the container must not outlive
 # either: busybox sh has no `wait -n`, so the script polls both and stops the
 # container (non-zero) as soon as one exits, letting the runtime restart it
-# or ku-deploy roll back instead of serving 502s behind a live Caddy.
+# instead of serving 502s behind a live Caddy.
 COPY <<'EOF' /app/start.sh
 #!/bin/sh
 set -eu
 
-if [ -f /secrets/ku.env ]; then
+if [ -f /secrets/strifira.env ]; then
 	set -a
-	. /secrets/ku.env
+	. /secrets/strifira.env
 	set +a
 fi
 
 if [ "$(id -u)" = 0 ]; then
-	chown -R ku:ku /app/uploads
-	run_as="su-exec ku"
+	chown -R strifira:strifira /app/uploads
+	run_as="su-exec strifira"
 else
 	run_as=""
 fi
@@ -175,10 +175,10 @@ fi
 attempt=1
 until $run_as ./server migrate up; do
 	if [ "$attempt" -ge 20 ]; then
-		echo "[ku] migrations failed after $attempt attempts" >&2
+		echo "[strifira] migrations failed after $attempt attempts" >&2
 		exit 1
 	fi
-	echo "[ku] migration attempt $attempt failed; retrying in 3s" >&2
+	echo "[strifira] migration attempt $attempt failed; retrying in 3s" >&2
 	attempt=$((attempt + 1))
 	sleep 3
 done
@@ -208,9 +208,9 @@ while kill -0 "$server" 2>/dev/null && kill -0 "$caddy" 2>/dev/null; do
 	sleep 1
 done
 if kill -0 "$server" 2>/dev/null; then
-	echo "[ku] caddy exited; stopping the container" >&2
+	echo "[strifira] caddy exited; stopping the container" >&2
 else
-	echo "[ku] the API server exited; stopping the container" >&2
+	echo "[strifira] the API server exited; stopping the container" >&2
 fi
 stop
 exit 1
@@ -219,8 +219,8 @@ RUN chmod +x /app/start.sh
 
 ENV HOME=/app/.home XDG_CONFIG_HOME=/app/.home/config XDG_DATA_HOME=/app/.home/data
 EXPOSE 3000
-# Docker-format images only (CI builds with plain docker build); Incus on
-# alpha ignores the healthcheck and the homelab-deployer polls /health.
+# Docker-format images only (built with plain docker build); Coolify honors
+# the healthcheck when rolling the deployment.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
     CMD wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1
 ENTRYPOINT ["/app/start.sh"]

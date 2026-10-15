@@ -24,7 +24,7 @@ func TestIssueIdentifierHistoryMigrationRoundTrip(t *testing.T) {
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_identifier_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_identifier_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -62,7 +62,7 @@ func TestIssueIdentifierHistoryMigrationRoundTrip(t *testing.T) {
 	var count int
 	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM issue_identifier_history WHERE workspace_id=$1 AND identifier_text='DSH-1'`, workspaceID).Scan(&count))
 	require.Zero(t, count, "migration must not guess pre-upgrade team keys")
-	_, err = db.ExecContext(t.Context(), `UPDATE issues SET identifier_text='KU-1' WHERE id=$1`, issueID)
+	_, err = db.ExecContext(t.Context(), `UPDATE issues SET identifier_text='STRIFIRA-1' WHERE id=$1`, issueID)
 	require.NoError(t, err)
 	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM issue_identifier_history WHERE issue_id=$1`, issueID).Scan(&count))
 	require.Equal(t, 2, count)
@@ -75,7 +75,7 @@ func TestIssueIdentifierHistoryMigrationRoundTrip(t *testing.T) {
 	require.Zero(t, triggers)
 	var identifier string
 	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT identifier_text FROM issues WHERE id=$1`, issueID).Scan(&identifier))
-	require.Equal(t, "KU-1", identifier, "rollback preserves issue rows and current identifiers")
+	require.Equal(t, "STRIFIRA-1", identifier, "rollback preserves issue rows and current identifiers")
 	_, err = db.ExecContext(t.Context(), `UPDATE issues SET identifier_text='TS-1' WHERE id=$1`, issueID)
 	require.NoError(t, err, "rollback removes the trigger function dependency")
 	require.NoError(t, migrator.Steps(1))

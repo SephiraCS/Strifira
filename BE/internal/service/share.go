@@ -6,11 +6,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
 )
 
 var (

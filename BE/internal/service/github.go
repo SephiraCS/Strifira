@@ -17,14 +17,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
+	gh "github.com/SephiraCS/strifira-backend/pkg/github"
+	"github.com/SephiraCS/strifira-backend/pkg/safego"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/crypto"
-	gh "github.com/ku/ku-backend/pkg/github"
-	"github.com/ku/ku-backend/pkg/safego"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -773,7 +773,7 @@ type ghWebhookPR struct {
 	} `json:"pull_request"`
 }
 
-// prStateFromEvent maps a GitHub PR payload onto ku's PR state vocabulary.
+// prStateFromEvent maps a GitHub PR payload onto strifira's PR state vocabulary.
 func prStateFromEvent(payload ghWebhookPR) string {
 	switch {
 	case payload.PullRequest.Merged:
@@ -791,7 +791,7 @@ func prStateFromEvent(payload ghWebhookPR) string {
 // processPullRequestEvent handles opened, synchronize, reopened, closed,
 // ready_for_review and edited deliveries. Edited events refresh the issue
 // references a corrected body introduces; GitHub's other PR actions
-// (labeling, assigning, reviewing) never change ku's linked issue state.
+// (labeling, assigning, reviewing) never change strifira's linked issue state.
 func (s *GitHubService) processPullRequestEvent(ctx context.Context, payload []byte, repo *domain.GitHubRepoModel) error {
 	var event ghWebhookPR
 	if err := json.Unmarshal(payload, &event); err != nil {
@@ -1969,14 +1969,14 @@ func (s *GitHubService) UpdateUserMappings(ctx context.Context, workspaceID uuid
 		seen[login] = true
 		userID, err := uuid.Parse(entry.UserID)
 		if err != nil {
-			return fmt.Errorf("invalid Ku user ID for %q", login)
+			return fmt.Errorf("invalid Strifira user ID for %q", login)
 		}
 		member, err := s.fRepo.IsWorkspaceMember(ctx, workspaceID, userID)
 		if err != nil {
-			return fmt.Errorf("checking Ku member for %q: %w", login, err)
+			return fmt.Errorf("checking Strifira member for %q: %w", login, err)
 		}
 		if !member {
-			return fmt.Errorf("Ku user for %q is not a workspace member", login)
+			return fmt.Errorf("Strifira user for %q is not a workspace member", login)
 		}
 		mappings = append(mappings, domain.GitHubUserMapping{WorkspaceID: workspaceID, GitHubLogin: login, UserID: userID})
 	}

@@ -11,7 +11,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-	/* Ku brand palette */
+	/* Strifira brand palette */
 	--primary-50: #ededfc;
 	--primary-100: #d5d1fa;
 	--primary-200: #b0a6f5;

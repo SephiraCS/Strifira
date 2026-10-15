@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/ku/ku-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/moby/moby/client"
 )
 
@@ -41,9 +41,9 @@ func (r *DockerRuntime) provisionDefaultRepository(ctx context.Context, machine 
 		return err
 	}
 	needsMigration, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(`set -eu
-root=$1; journal="$2/ku-default-checkouts/$3"
+root=$1; journal="$2/strifira-default-checkouts/$3"
 if [ -e "$root/.git" ] || [ -L "$root/.git" ] || { [ -d "$journal" ] && [ ! -f "$journal/completed" ]; }; then printf 'relocate\n'; fi
-`, "ku-probe-default-checkout", "/workspace", repository, checkout.ID.String()), "", repositoryHelperInvocation{})
+`, "strifira-probe-default-checkout", "/workspace", repository, checkout.ID.String()), "", repositoryHelperInvocation{})
 	if err != nil {
 		return err
 	}
@@ -60,11 +60,11 @@ if [ -e "$root/.git" ] || [ -L "$root/.git" ] || { [ -d "$journal" ] && [ ! -f "
 	if err := r.PrepareCheckoutRepository(ctx, machine, services, checkout, provision.Token); err != nil {
 		return err
 	}
-	_, err = r.runImmutableGitHelper(ctx, machine, services, isolatedGitCommand(migrateLegacyRootCheckoutScript, "ku-migrate-default-checkout", "/workspace", checkout.WorkspacePath, repository, checkout.ID.String(), stageKey), "", repositoryHelperInvocation{Checkout: true, ProvisionID: checkout.ID})
+	_, err = r.runImmutableGitHelper(ctx, machine, services, isolatedGitCommand(migrateLegacyRootCheckoutScript, "strifira-migrate-default-checkout", "/workspace", checkout.WorkspacePath, repository, checkout.ID.String(), stageKey), "", repositoryHelperInvocation{Checkout: true, ProvisionID: checkout.ID})
 	if err != nil {
 		return err
 	}
-	_, err = r.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(installProtectedCheckoutScript, "ku-install-default-checkout", "/workspace", checkout.WorkspacePath, repository, checkout.RepositoryURL, checkout.WorkingBranch, "checkout-"+checkout.ID.String(), stageKey))
+	_, err = r.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(installProtectedCheckoutScript, "strifira-install-default-checkout", "/workspace", checkout.WorkspacePath, repository, checkout.RepositoryURL, checkout.WorkingBranch, "checkout-"+checkout.ID.String(), stageKey))
 	return err
 }
 
@@ -124,22 +124,22 @@ case "$checkout_id" in ''|*[!a-f0-9-]*) exit 1 ;; esac
 [ "${#checkout_id}" -eq 36 ]
 case "$stage_key" in *[!a-f0-9]*) exit 1 ;; esac
 [ "${#stage_key}" -eq 64 ]
-exec 9> "$repository/ku.lock"
+exec 9> "$repository/strifira.lock"
 flock -w 30 9
-journal_parent="$repository/ku-default-checkouts"
+journal_parent="$repository/strifira-default-checkouts"
 [ ! -L "$journal_parent" ]
 if [ ! -e "$journal_parent" ]; then mkdir -m 0700 "$journal_parent"; fi
 [ -d "$journal_parent" ]
 journal="$journal_parent/$checkout_id"
-stage="$root/.ku-root-$stage_key"
+stage="$root/.strifira-root-$stage_key"
 [ ! -L "$journal" ]
 read_raw() { value=$(cat "$1"; printf .); value=${value%.}; }
 inode() { stat -c '%d:%i' -- "$1"; }
 exists() { [ -e "$1" ] || [ -L "$1" ]; }
 entry_key() { digest=$(printf '%s' "$1" | sha256sum); printf '%s' "${digest%% *}"; }
 reserved() {
- case "$1" in tasks|repos|cache|.cache|.ku-ready|.ku-checkout-locks|.ku-root-"$stage_key") return 0 ;; esac
- case "$1" in .ku-checkout-*) suffix=${1#.ku-checkout-}; case "$suffix" in *[!a-f0-9]*) return 1 ;; esac; [ "${#suffix}" -eq 64 ] && return 0 ;; esac
+ case "$1" in tasks|repos|cache|.cache|.strifira-ready|.strifira-checkout-locks|.strifira-root-"$stage_key") return 0 ;; esac
+ case "$1" in .strifira-checkout-*) suffix=${1#.strifira-checkout-}; case "$suffix" in *[!a-f0-9]*) return 1 ;; esac; [ "${#suffix}" -eq 64 ] && return 0 ;; esac
  return 1
 }
 if ! exists "$journal"; then
@@ -149,8 +149,8 @@ if ! exists "$journal"; then
  source_git() { git --no-optional-locks -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$root" -C "$root" "$@"; }
  # Infrastructure names cannot be split automatically when they are tracked by
  # the root repository. Leave everything in place and explain the collision.
- source_git ls-files -z -- tasks repos cache .cache repository .ku-ready .ku-checkout-locks '.ku-root-*' '.ku-checkout-*' > /tmp/ku-reserved-paths
- [ ! -s /tmp/ku-reserved-paths ] || { echo 'root repository tracks reserved workspace paths' >&2; exit 1; }
+ source_git ls-files -z -- tasks repos cache .cache repository .strifira-ready .strifira-checkout-locks '.strifira-root-*' '.strifira-checkout-*' > /tmp/strifira-reserved-paths
+ [ ! -s /tmp/strifira-reserved-paths ] || { echo 'root repository tracks reserved workspace paths' >&2; exit 1; }
  git_dir=$(source_git rev-parse --absolute-git-dir); git_dir=$(realpath -e "$git_dir")
  if [ -d "$root/.git" ]; then
   [ "$git_dir" = "$root/.git" ]

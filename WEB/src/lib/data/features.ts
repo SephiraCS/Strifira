@@ -8,12 +8,12 @@ import { DEV_MACHINES_RELEASE_STATUS } from '$lib/config/releases';
 export const features: ContentRegistry = {
 	'issue-tracking': {
 		slug: 'issue-tracking',
-		title: 'Issue Tracking — Ku',
+		title: 'Issue Tracking — Strifira',
 		description:
 			'Self-hosted issue tracking with multiple assignees, sub-issues, relations, labels, comments, history, templates, and team-specific statuses.',
 		heading: 'Issue Tracking',
 		intro:
-			'Ku supports the core path from issue creation through triage, assignment, planning and completion. Multiple people can be assigned to the same issue, and each team can define its own statuses.',
+			'Strifira supports the core path from issue creation through triage, assignment, planning and completion. Multiple people can be assigned to the same issue, and each team can define its own statuses.',
 		sections: [
 			{
 				heading: 'Rich issue model',
@@ -46,7 +46,7 @@ export const features: ContentRegistry = {
 			},
 			{
 				heading: 'Public sharing',
-				body: 'Create token-based, read-only links scoped to a workspace, team, project or saved view. Recipients can browse the issues exposed by that scope without a Ku account.',
+				body: 'Create token-based, read-only links scoped to a workspace, team, project or saved view. Recipients can browse the issues exposed by that scope without a Strifira account.',
 				list: [
 					'Workspace, team, project and view scopes',
 					'Optional expiry and description visibility',
@@ -58,12 +58,12 @@ export const features: ContentRegistry = {
 
 	cycles: {
 		slug: 'cycles',
-		title: 'Cycles — Ku',
+		title: 'Cycles — Strifira',
 		description:
 			'Time-box work with cycle dates, progress statistics, burndown and velocity charts, retrospectives, and optional carry-over to the next cycle.',
 		heading: 'Cycles',
 		intro:
-			'Cycles group a team’s issues between a start and end date. Ku calculates progress, burndown and historical velocity from issue status data.',
+			'Cycles group a team’s issues between a start and end date. Strifira calculates progress, burndown and historical velocity from issue status data.',
 		sections: [
 			{
 				heading: 'Cycle planning',
@@ -97,7 +97,7 @@ export const features: ContentRegistry = {
 
 	projects: {
 		slug: 'projects',
-		title: 'Projects — Ku',
+		title: 'Projects — Strifira',
 		description:
 			'Group issues from multiple teams in a project, track completion, set project dates, and review issue due dates in a Gantt view.',
 		heading: 'Projects',
@@ -132,16 +132,16 @@ export const features: ContentRegistry = {
 
 	'github-integration': {
 		slug: 'github-integration',
-		title: 'GitHub Integration — Ku',
+		title: 'GitHub Integration — Strifira',
 		description:
 			'Connect repositories with a GitHub App, match issue identifiers in development activity, and configure status changes for branch and pull-request events.',
 		heading: 'GitHub Integration',
 		intro:
-			'Ku connects each workspace to GitHub through an App. Repository events are matched to Ku issue identifiers and recorded in the issue activity feed.',
+			'Strifira connects each workspace to GitHub through an App. Repository events are matched to Strifira issue identifiers and recorded in the issue activity feed.',
 		sections: [
 			{
 				heading: 'Auto-linking PRs, branches, and commits',
-				body: 'Include an identifier such as ENG-123 in a branch name, pull-request title or body, or commit message. Ku matches the identifier case-insensitively and records the GitHub activity on the issue.',
+				body: 'Include an identifier such as ENG-123 in a branch name, pull-request title or body, or commit message. Strifira matches the identifier case-insensitively and records the GitHub activity on the issue.',
 				list: [
 					'Works with branch names, PR titles, and commit messages',
 					'Case-insensitive issue key matching',
@@ -160,7 +160,7 @@ export const features: ContentRegistry = {
 			},
 			{
 				heading: 'Self-configuring GitHub App',
-				body: 'In self-hosted mode, workspace settings start GitHub’s App Manifest flow with the required permissions, callback and webhook URL. After GitHub returns the manifest code, Ku exchanges it for App credentials and stores them encrypted.',
+				body: 'In self-hosted mode, workspace settings start GitHub’s App Manifest flow with the required permissions, callback and webhook URL. After GitHub returns the manifest code, Strifira exchanges it for App credentials and stores them encrypted.',
 				list: [
 					'Per-workspace GitHub App in self-hosted mode',
 					'AES-256-GCM encryption for stored App credentials',
@@ -169,7 +169,7 @@ export const features: ContentRegistry = {
 			},
 			{
 				heading: 'Webhook and WebSocket flow',
-				body: 'Ku verifies GitHub webhook signatures, processes supported events and broadcasts refresh events to connected clients in the workspace. Open pages then reload the affected issue data.',
+				body: 'Strifira verifies GitHub webhook signatures, processes supported events and broadcasts refresh events to connected clients in the workspace. Open pages then reload the affected issue data.',
 				list: [
 					'HMAC-SHA256 verification of webhook payloads',
 					'Workspace WebSocket notification after processing',
@@ -181,12 +181,12 @@ export const features: ContentRegistry = {
 
 	'real-time-sync': {
 		slug: 'real-time-sync',
-		title: 'Real-Time Sync — Ku',
+		title: 'Real-Time Sync — Strifira',
 		description:
 			'Issue, comment, cycle, view and GitHub events are sent to connected workspace clients over WebSockets.',
 		heading: 'Real-Time Sync',
 		intro:
-			'Ku uses a workspace-scoped WebSocket connection to announce changes. The frontend updates local issue data or reloads the affected resource when it receives a supported event.',
+			'Strifira uses a workspace-scoped WebSocket connection to announce changes. The frontend updates local issue data or reloads the affected resource when it receives a supported event.',
 		sections: [
 			{
 				heading: 'How it works',
@@ -199,7 +199,7 @@ export const features: ContentRegistry = {
 			},
 			{
 				heading: 'Issue presence and updates',
-				body: 'When users open the same issue, the presence channel reports who is viewing it. Issue and comment events update the open issue view. Ku does not provide character-by-character collaborative text editing.',
+				body: 'When users open the same issue, the presence channel reports who is viewing it. Issue and comment events update the open issue view. Strifira does not provide character-by-character collaborative text editing.',
 				list: [
 					'Join, leave and presence-sync events',
 					'Issue and comment refresh events',
@@ -220,12 +220,12 @@ export const features: ContentRegistry = {
 
 	'keyboard-shortcuts': {
 		slug: 'keyboard-shortcuts',
-		title: 'Keyboard Shortcuts — Ku',
+		title: 'Keyboard Shortcuts — Strifira',
 		description:
 			'Use documented shortcuts for issue creation, workspace navigation, search, issue properties and triage decisions.',
 		heading: 'Keyboard Shortcuts',
 		intro:
-			'Ku provides global shortcuts and context-specific issue shortcuts. The command palette searches issues and opens common workspace destinations.',
+			'Strifira provides global shortcuts and context-specific issue shortcuts. The command palette searches issues and opens common workspace destinations.',
 		sections: [
 			{
 				heading: 'Single-key actions',
@@ -257,12 +257,12 @@ export const features: ContentRegistry = {
 
 	'views-and-triage': {
 		slug: 'views-and-triage',
-		title: 'Views & Triage — Ku',
+		title: 'Views & Triage — Strifira',
 		description:
 			'Saved filters as shareable views, a triage inbox for incoming work, hierarchical labels, and per-team custom workflows.',
 		heading: 'Views & Triage',
 		intro:
-			'Ku combines reusable issue filters, a team triage queue, hierarchical labels and team-specific statuses. These tools keep intake separate from planned work.',
+			'Strifira combines reusable issue filters, a team triage queue, hierarchical labels and team-specific statuses. These tools keep intake separate from planned work.',
 		sections: [
 			{
 				heading: 'Saved views',
@@ -299,12 +299,12 @@ export const features: ContentRegistry = {
 
 	'teams-and-access-control': {
 		slug: 'teams-and-access-control',
-		title: 'Teams & Access Control — Ku',
+		title: 'Teams & Access Control — Strifira',
 		description:
 			'Multiple teams per workspace, owner/admin/member/guest roles, and read-only public links for sharing outside the team.',
 		heading: 'Teams & Access Control',
 		intro:
-			'Ku applies four predefined roles at workspace level, then organizes members and issues into teams. Public links provide separate read-only access to selected issue sets.',
+			'Strifira applies four predefined roles at workspace level, then organizes members and issues into teams. Public links provide separate read-only access to selected issue sets.',
 		sections: [
 			{
 				heading: 'Workspace roles',
@@ -332,7 +332,7 @@ export const features: ContentRegistry = {
 				list: [
 					'Workspace, team, project or view scope',
 					'Optional expiry date',
-					'No Ku account required for recipients'
+					'No Strifira account required for recipients'
 				]
 			}
 		]
@@ -340,7 +340,7 @@ export const features: ContentRegistry = {
 
 	'analytics-insights': {
 		slug: 'analytics-insights',
-		title: 'Analytics & Insights — Ku',
+		title: 'Analytics & Insights — Strifira',
 		description:
 			'Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on issue data and lifecycle timestamps.',
 		heading: 'Analytics & Insights',
@@ -380,7 +380,7 @@ export const features: ContentRegistry = {
 
 	'dev-machines': {
 		slug: 'dev-machines',
-		title: 'Dev Machines — Ku',
+		title: 'Dev Machines — Strifira',
 		description:
 			'Unreleased opt-in multi-container development environments with code-server, a native terminal, agent providers, an in-browser Chrome, and issue worktrees.',
 		heading: 'Dev Machines',
@@ -388,7 +388,7 @@ export const features: ContentRegistry = {
 		sections: [
 			{
 				heading: 'A full environment per machine',
-				body: 'When configured, the developer container runs code-server and a tmux-backed terminal that the Ku UI renders natively with xterm. An optional separate browser container provides Chrome over KasmVNC. No host ports are published; access goes through the Machine Gateway with one-time launch tickets.',
+				body: 'When configured, the developer container runs code-server and a tmux-backed terminal that the Strifira UI renders natively with xterm. An optional separate browser container provides Chrome over KasmVNC. No host ports are published; access goes through the Machine Gateway with one-time launch tickets.',
 				list: [
 					'code-server IDE and native xterm terminal',
 					'In-browser Chrome via KasmVNC',

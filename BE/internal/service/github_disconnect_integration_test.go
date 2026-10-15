@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/pkg/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -9,7 +9,7 @@ on:
   # that also re-cuts the release: `gh workflow run ci.yml --ref main`.
   workflow_dispatch:
 
-# Main never cancels: every main run builds the image the deployer rolls.
+# Main never cancels: every main run cuts the release of its commit.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -20,22 +20,23 @@ permissions:
 # Go and Node.js come from the setup actions; PostgreSQL and Redis run as
 # service containers.
 #
-# Every push to main deploys to alpha: the build job pushes the image to
-# Harbor as homelab/ku:<sha12>, and the homelab-deployer daemon on alpha
-# (a separate repository) rolls the instance itself once every check run on
-# main is green, health-gates the new instance with rollback, and posts the
-# deploy/alpha commit status. CI never touches alpha over SSH.
+# Every push to main deploys to alpha: Coolify watches the repository
+# webhook, builds the root Dockerfile itself, and health-gates the new
+# instance with rollback (SOURCE_COMMIT is baked into the binary and
+# reported by /health). CI never touches the server. The Release job
+# verifies the rollout by polling /health until it serves the pushed
+# commit, then bumps the version and tags the release; the release commit
+# itself is rolled via the Coolify deployment API, since pushes made with
+# GITHUB_TOKEN trigger no webhook.
 #
 # Tests (AGENTS.md): integration tests only, in two suites. This workflow
-# runs the fast suite (`make test-fast`), which gates the deploy; the slow
-# suite (`make test-slow`) runs in slow.yml and never blocks it. Once
-# deploy/alpha is green the Release job bumps the version, tags and
-# publishes it; pull requests never edit versions (scripts/ci/release.sh).
-# All jobs run on GitHub-hosted runners.
+# runs the fast suite (`make test-fast`); the slow suite (`make test-slow`)
+# runs in slow.yml and never blocks anything. Pull requests never edit
+# versions (scripts/ci/release.sh). All jobs run on GitHub-hosted runners.
 jobs:
-  # Pull requests run only the jobs whose inputs they change; pushes to main
-  # and workflow_dispatch run everything, so the deployer always sees the
-  # full set of check runs. The `test` job at the end aggregates the result.
+  # Pull requests run only the jobs whose inputs they change; pushes to
+  # main and workflow_dispatch run everything. The `test` job at the end
+  # aggregates the result.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -176,13 +177,13 @@ jobs:
       postgres:
         image: docker.io/library/postgres:16-alpine
         env:
-          POSTGRES_USER: ku
-          POSTGRES_PASSWORD: ku
-          POSTGRES_DB: ku_test
+          POSTGRES_USER: strifira
+          POSTGRES_PASSWORD: strifira
+          POSTGRES_DB: strifira_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ku -d ku_test"
+          --health-cmd "pg_isready -U strifira -d strifira_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -196,8 +197,8 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
-      TEST_DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
+      DATABASE_URL: postgres://strifira:strifira@localhost:5432/strifira_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://strifira:strifira@localhost:5432/strifira_test?sslmode=disable
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: test-secret-that-is-at-least-32-characters-long
     steps:
@@ -237,8 +238,6 @@ jobs:
   # The fast browser suite (FAST_SPECS in UI/playwright.config.ts), split
   # across three runners. Each shard builds the app itself and hands the
   # build to Playwright (E2E_PREBUILT=1). Workers stay at two per shard.
-  # The job name is the check-run name homelab-deployer waits for
-  # (ops/deployer/apps.json in the Homelab repo): keep "e2e shard N" stable.
   e2e:
     name: e2e shard ${{ matrix.shard }}
     needs: [changes]
@@ -335,119 +334,59 @@ jobs:
             case "$r" in success | skipped) ;; *) exit 1 ;; esac
           done
 
-  # The image the homelab-deployer on alpha rolls to: it watches the check
-  # runs of this commit, and once they are all green it pulls
-  # registry.mariogk.com/homelab/ku:<sha12> from Harbor, rolls the Incus
-  # instance with a health gate and rollback, and posts the deploy/alpha
-  # commit status. The deploy itself is entirely the deployer's job.
-  build:
-    needs: [guard]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-
-      - name: Log in to Harbor
-        env:
-          HARBOR_USER: ${{ secrets.HARBOR_USER }}
-          HARBOR_TOKEN: ${{ secrets.HARBOR_TOKEN }}
-        run: printf '%s' "$HARBOR_TOKEN" | docker login registry.mariogk.com --username "$HARBOR_USER" --password-stdin
-
-      - name: Compute the short commit
-        id: sha
-        shell: bash
-        run: echo "sha12=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
-        with:
-          driver: docker-container
-
-      # Both tags, same manifest: homelab-deployer discovers the image by
-      # the full 40-hex sha tag and rebuilds the instance from sha12. The
-      # layer cache (gha) keeps the
-      # go and npm dependency layers between runs.
-      - name: Build and push the image
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
-        with:
-          context: .
-          push: true
-          provenance: false
-          build-args: KU_VERSION=${{ github.sha }}
-          tags: |
-            registry.mariogk.com/homelab/ku:${{ github.sha }}
-            registry.mariogk.com/homelab/ku:${{ steps.sha.outputs.sha12 }}
-          cache-from: type=gha,scope=ci-build
-          cache-to: type=gha,mode=max,scope=ci-build
-
-  # Cuts the next patch release of the deployed commit: waits for the
-  # homelab-deployer's deploy/alpha commit status on the pushed sha to turn
-  # green (replacing the old Deploy to Alpha job this workflow used to run),
-  # then bumps UI/package.json and the OpenAPI version in a "[skip ci]"
-  # commit on main, tags it, creates the GitHub release, and pushes the
-  # images built from it to Harbor (homelab/ku:<release-sha12> and
-  # homelab/ku:vX.Y.Z) so the deployer can roll alpha to the release commit
-  # (it treats a [skip ci] commit with an existing image as deployable).
-  # No loop: pushes made with GITHUB_TOKEN never trigger workflows, and
-  # "[skip ci]" also keeps CI off that commit (see scripts/ci/release.sh).
+  # Cuts the next patch release of the deployed commit: waits for alpha to
+  # serve the pushed commit (Coolify rolls the deployment itself off the
+  # repository webhook and bakes SOURCE_COMMIT into the binary), then bumps
+  # UI/package.json and the OpenAPI version in a "[skip ci]" commit on
+  # main, tags it, and creates the GitHub release. The release commit only
+  # moves version fields and the release manifest, so it skips the test
+  # suites; it is rolled to alpha via the Coolify deployment API, since
+  # pushes made with GITHUB_TOKEN never trigger webhooks. No loop: they
+  # also never start workflows, and "[skip ci]" keeps CI off that commit
+  # (see scripts/ci/release.sh).
   release:
-    needs: [guard, build]
+    needs: [guard]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: write
-      statuses: read
     env:
-      REGISTRY: registry.mariogk.com
-      IMAGE_PREFIX: registry.mariogk.com/homelab
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      HARBOR_USER: ${{ secrets.HARBOR_USER }}
-      HARBOR_TOKEN: ${{ secrets.HARBOR_TOKEN }}
+      ALPHA_BASE_URL: https://strifira.sephira.app.br
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      # The deployer rolls alpha only after every check run of this commit
-      # is green and the Harbor image exists, so this wait covers the rest
-      # of CI too: no deploy/alpha status means the tests are still running.
-      - name: Wait for the deployer to roll alpha
+      # The Coolify deployment of the pushed commit runs in parallel with
+      # the test suites (it starts on the repository webhook), so by the
+      # time it is healthy the checks have usually settled too; a commit
+      # that never rolls (broken build, failed health gate) times out here
+      # instead of being released.
+      - name: Wait for alpha to serve the pushed commit
         run: |
           set -euo pipefail
           deadline=$(( $(date +%s) + 25 * 60 ))
-          state=
+          version=
           while :; do
-            state=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status" \
-              | jq -r '.statuses[]? | select(.context == "deploy/alpha") | .state' | head -n 1)
-            case "$state" in
-            success)
-              echo "deploy/alpha is green on ${GITHUB_SHA}."
+            version=$(curl -fsS --max-time 10 "$ALPHA_BASE_URL/health" | jq -r '.version // empty') || version=
+            if [ "$version" = "$GITHUB_SHA" ]; then
+              echo "alpha is serving ${GITHUB_SHA}."
               break
-              ;;
-            failure | error)
-              echo "::error::The deployer reported deploy/alpha ${state} on ${GITHUB_SHA}; not releasing." >&2
-              exit 1
-              ;;
-            esac
+            fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::Timed out after 25m waiting for the deploy/alpha commit status on ${GITHUB_SHA} (last state: ${state:-none})." >&2
+              echo "::error::Timed out after 25m waiting for alpha to serve ${GITHUB_SHA} (last version: ${version:-unreachable})." >&2
               exit 1
             fi
-            echo "deploy/alpha is ${state:-not posted} on ${GITHUB_SHA}; waiting."
+            echo "alpha is at ${version:-unreachable}; waiting for ${GITHUB_SHA}."
             sleep 30
           done
 
       - name: Bump the version, tag and create the release
         id: release
         run: scripts/ci/release.sh "${{ github.sha }}"
-
-      - name: Build and push the release images
-        if: steps.release.outputs.version != ''
-        run: scripts/ci/publish-images.sh "${{ steps.release.outputs.version }}" --push
 
   # The Release job has never blocked anything a deploy needs, so its
   # failure must be seen and owned the same way slow-suite failures are:

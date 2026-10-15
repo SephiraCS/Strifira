@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 type GitHubRepository struct {
@@ -314,7 +314,7 @@ func (r *GitHubRepository) IsWorkspaceMember(ctx context.Context, workspaceID, u
 	return exists, err
 }
 
-// MatchWorkspaceMemberByName uses an explicit mapping first, then an exact Ku
+// MatchWorkspaceMemberByName uses an explicit mapping first, then an exact Strifira
 // username match. Ambiguity in the fallback leaves assignment alone.
 func (r *GitHubRepository) MatchWorkspaceMemberByName(ctx context.Context, workspaceID uuid.UUID, login string) (*uuid.UUID, error) {
 	var mapped uuid.UUID

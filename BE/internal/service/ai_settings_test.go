@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/aiegress"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/aiegress"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -116,23 +116,23 @@ func TestAISettingsHTMLCompletionUsesSavedProvider(t *testing.T) {
 	svc, _, workspace := newAISettingsTestService(t, server.URL+"/v1")
 
 	// An empty issue description can still be generated from its title.
-	html, err := svc.ExpandIssueDescription(t.Context(), workspace.ID, "KU-1", nil)
+	html, err := svc.ExpandIssueDescription(t.Context(), workspace.ID, "STRIFIRA-1", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "<p>Clear <strong>steps</strong></p>", html)
 	assert.Contains(t, (<-requests).Messages[1].Content, "Issue title:\nFix saving issue")
 
-	html, err = svc.ExpandIssueDescription(t.Context(), workspace.ID, "KU-1", new("selected passage"))
+	html, err = svc.ExpandIssueDescription(t.Context(), workspace.ID, "STRIFIRA-1", new("selected passage"))
 	require.NoError(t, err)
 	assert.Equal(t, "<p>Clear <strong>steps</strong></p>", html)
 	selectionRequest := <-requests
 	assert.Contains(t, selectionRequest.Messages[1].Content, "Selected text to rewrite")
 	assert.Contains(t, selectionRequest.Messages[1].Content, "selected passage")
 
-	html, err = svc.ReworkText(t.Context(), workspace.ID, " draft ", new(" comment on KU-1 "))
+	html, err = svc.ReworkText(t.Context(), workspace.ID, " draft ", new(" comment on STRIFIRA-1 "))
 	require.NoError(t, err)
 	assert.Equal(t, "<p>Clear <strong>steps</strong></p>", html)
 	reworkRequest := <-requests
-	assert.Contains(t, reworkRequest.Messages[1].Content, "Context:\ncomment on KU-1")
+	assert.Contains(t, reworkRequest.Messages[1].Content, "Context:\ncomment on STRIFIRA-1")
 	assert.Contains(t, reworkRequest.Messages[1].Content, "text:\ndraft")
 }
 
@@ -385,7 +385,7 @@ func TestAISettingsConnectionTestAuthorizationAndConfiguration(t *testing.T) {
 
 func TestAISettingsNoConfigurationAndBlankRework(t *testing.T) {
 	svc := NewAISettingsService(&aiSettingsTestRepo{}, nil, nil, nil, aiegress.Policy{})
-	_, err := svc.ExpandIssueDescription(t.Context(), uuid.New(), "KU-1", nil)
+	_, err := svc.ExpandIssueDescription(t.Context(), uuid.New(), "STRIFIRA-1", nil)
 	assert.ErrorIs(t, err, ErrAISettingsNotConfigured)
 	_, err = svc.ReworkText(t.Context(), uuid.New(), "draft", nil)
 	assert.ErrorIs(t, err, ErrAISettingsNotConfigured)

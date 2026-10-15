@@ -28,7 +28,7 @@ import {
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 
-// Register only what Ku renders. Importing the full bundle also ships unused
+// Register only what Strifira renders. Importing the full bundle also ships unused
 // chart types, coordinate systems, components, and the SVG renderer.
 use([
 	BarChart,

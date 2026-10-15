@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -105,7 +105,7 @@ func TestGitHubWebhookPRPayloadParsing(t *testing.T) {
 			"title": "Add feature (KUA-31)",
 			"state": "open",
 			"merged": false,
-			"html_url": "https://github.com/TerraScale/ku/pull/5",
+			"html_url": "https://github.com/TerraScale/strifira/pull/5",
 			"body": "Fixes KUA-31",
 			"additions": 12,
 			"deletions": 3,
@@ -113,13 +113,13 @@ func TestGitHubWebhookPRPayloadParsing(t *testing.T) {
 			"base": {"ref": "main"},
 			"user": {"login": "mariogk", "avatar_url": "https://avatars.githubusercontent.com/u/1"}
 		},
-		"repository": {"id": 7, "full_name": "TerraScale/ku", "html_url": "https://github.com/TerraScale/ku"}
+		"repository": {"id": 7, "full_name": "TerraScale/strifira", "html_url": "https://github.com/TerraScale/strifira"}
 	}`)
 
 	var envelope githubWebhookEnvelope
 	require.NoError(t, json.Unmarshal(payload, &envelope))
-	assert.Equal(t, "TerraScale/ku", envelope.Repository.FullName)
-	assert.Equal(t, "https://github.com/TerraScale/ku", envelope.Repository.HTMLURL)
+	assert.Equal(t, "TerraScale/strifira", envelope.Repository.FullName)
+	assert.Equal(t, "https://github.com/TerraScale/strifira", envelope.Repository.HTMLURL)
 	assert.Equal(t, "https://github.com", instanceOrigin(envelope.Repository.HTMLURL))
 
 	var event ghWebhookPR
@@ -133,8 +133,8 @@ func TestGitHubWebhookPRPayloadParsing(t *testing.T) {
 
 func TestGitHubWebhookStatusPayloadParsing(t *testing.T) {
 	variants := []string{
-		`{"state":"success","sha":"abc123","repository":{"full_name":"TerraScale/ku","html_url":"https://github.com/TerraScale/ku"}}`,
-		`{"state":"failure","commit":{"sha":"abc123"},"repository":{"full_name":"TerraScale/ku","html_url":"https://github.com/TerraScale/ku"}}`,
+		`{"state":"success","sha":"abc123","repository":{"full_name":"TerraScale/strifira","html_url":"https://github.com/TerraScale/strifira"}}`,
+		`{"state":"failure","commit":{"sha":"abc123"},"repository":{"full_name":"TerraScale/strifira","html_url":"https://github.com/TerraScale/strifira"}}`,
 	}
 	for _, raw := range variants {
 		var event ghWebhookStatus
@@ -180,12 +180,12 @@ func TestWorkflowRunEventHeadSHAParsing(t *testing.T) {
 }
 
 func TestWebhookTargetURLDerivation(t *testing.T) {
-	svc := &GitHubService{frontendURL: "https://ku.example.com"}
-	assert.Equal(t, "https://ku.example.com/api/github/webhook", svc.webhookTargetURL())
+	svc := &GitHubService{frontendURL: "https://strifira.example.com"}
+	assert.Equal(t, "https://strifira.example.com/api/github/webhook", svc.webhookTargetURL())
 
 	svc = &GitHubService{frontendURL: "http://localhost:5173"}
 	assert.Equal(t, "http://localhost:8080/api/github/webhook", svc.webhookTargetURL())
 
-	svc = &GitHubService{frontendURL: "https://ku.example.com", webhookURL: "https://tunnel.example.com/hook"}
+	svc = &GitHubService{frontendURL: "https://strifira.example.com", webhookURL: "https://tunnel.example.com/hook"}
 	assert.Equal(t, "https://tunnel.example.com/hook", svc.webhookTargetURL())
 }

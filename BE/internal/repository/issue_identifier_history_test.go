@@ -8,13 +8,13 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func identifierHistoryTestDatabase(t *testing.T) *sqlx.DB {
 	admin, err := sqlx.ConnectContext(t.Context(), "pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_identifier_history_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_identifier_history_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -102,12 +102,12 @@ func TestIssueIdentifierHistoryPostgres(t *testing.T) {
 		f.rename(t, "TS")
 		f.resolve(t, "DSH-1", "TS-1")
 		f.resolve(t, "TS-1", "TS-1")
-		f.rename(t, "KU")
-		for _, identifier := range []string{"DSH-1", "TS-1", "KU-1"} {
-			f.resolve(t, identifier, "KU-1")
+		f.rename(t, "STRIFIRA")
+		for _, identifier := range []string{"DSH-1", "TS-1", "STRIFIRA-1"} {
+			f.resolve(t, identifier, "STRIFIRA-1")
 		}
 		f.rename(t, "DSH")
-		for _, identifier := range []string{"DSH-1", "TS-1", "KU-1"} {
+		for _, identifier := range []string{"DSH-1", "TS-1", "STRIFIRA-1"} {
 			f.resolve(t, identifier, "DSH-1")
 		}
 		var count int

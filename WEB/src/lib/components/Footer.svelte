@@ -33,12 +33,12 @@
 	<div class="mx-auto max-w-6xl px-6 py-12">
 		<div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
 			<div class="flex flex-col gap-3 sm:col-span-2">
-				<img src="/logo_white.svg" alt="Ku" class="h-6 w-auto self-start" width={96} height={24} />
+				<img src="/logo_white.svg" alt="Strifira" class="h-6 w-auto self-start" width={96} height={24} />
 				<p class="text-xs text-muted-foreground">
-					The keyboard-driven, self-hosted issue tracker with no paid tier. Made by Bakney.
+					The keyboard-driven, self-hosted issue tracker with no paid tier. Made by Sephira.
 				</p>
 				<address class="mt-2 text-xs leading-relaxed text-muted-foreground not-italic">
-					<span class="font-medium text-foreground/80">Bakney srl</span><br />
+					<span class="font-medium text-foreground/80">Sephira</span><br />
 					P. IVA: 04921790236<br />
 					Sede Legale: Q.re Aldo Moro 49, 37032, Monteforte d'Alpone (VR), Italy<br />
 					N. REA: VR-456410 · Registro delle Imprese di Verona<br />
@@ -56,7 +56,7 @@
 			<div class="flex flex-col gap-3 text-sm">
 				<p class="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Company</p>
 				<a
-					href="https://github.com/carbogninalberto/kuayle"
+					href="https://github.com/SephiraCS/Strifira"
 					target="_blank"
 					rel="noopener"
 					class="text-muted-foreground transition-colors hover:text-foreground">GitHub</a
@@ -72,9 +72,9 @@
 				<a href="/about" class="text-muted-foreground transition-colors hover:text-foreground">About</a>
 				<a href="/roadmap" class="text-muted-foreground transition-colors hover:text-foreground">Roadmap</a>
 			<a
-				href="mailto:support@bakney.com"
+				href="https://github.com/SephiraCS/Strifira/issues"
 				class="text-muted-foreground transition-colors hover:text-foreground"
-				>support@bakney.com</a
+				>GitHub issues</a
 			>
 			</div>
 		</div>
@@ -83,7 +83,7 @@
 			class="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border pt-6 sm:flex-row"
 		>
 			<p class="text-xs text-muted-foreground">
-				© {year} Bakney srl. Ku is open source under the Apache 2.0 license.
+				© {year} Sephira. Strifira is open source under the Apache 2.0 license.
 			</p>
 			<p
 				class="flex items-center gap-1.5 text-xs text-muted-foreground"

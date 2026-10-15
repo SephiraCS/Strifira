@@ -47,13 +47,13 @@ jobs:
       postgres:
         image: docker.io/library/postgres:16-alpine
         env:
-          POSTGRES_USER: ku
-          POSTGRES_PASSWORD: ku
-          POSTGRES_DB: ku_test
+          POSTGRES_USER: strifira
+          POSTGRES_PASSWORD: strifira
+          POSTGRES_DB: strifira_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ku -d ku_test"
+          --health-cmd "pg_isready -U strifira -d strifira_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -67,8 +67,8 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
-      TEST_DATABASE_URL: postgres://ku:ku@localhost:5432/ku_test?sslmode=disable
+      DATABASE_URL: postgres://strifira:strifira@localhost:5432/strifira_test?sslmode=disable
+      TEST_DATABASE_URL: postgres://strifira:strifira@localhost:5432/strifira_test?sslmode=disable
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: test-secret-that-is-at-least-32-characters-long
     steps:
@@ -186,7 +186,7 @@ jobs:
           npx playwright install chromium ffmpeg
 
       # The screen-share check always runs. The AI provider check runs only
-      # when the KU_LIVE_PROVIDER_* secrets are set; without them it is
+      # when the STRIFIRA_LIVE_PROVIDER_* secrets are set; without them it is
       # skipped with a notice. check-dev-box-live.py needs an authenticated
       # coding CLI on a dev VM and stays a manual check. The live checks
       # start their own throwaway containers with the runner's podman,
@@ -194,9 +194,9 @@ jobs:
       # Forgejo runner.
       - name: Slow suite (live checks)
         env:
-          KU_LIVE_PROVIDER_KEY: ${{ secrets.KU_LIVE_PROVIDER_KEY }}
-          KU_LIVE_PROVIDER_URL: ${{ secrets.KU_LIVE_PROVIDER_URL }}
-          KU_LIVE_PROVIDER_MODEL: ${{ secrets.KU_LIVE_PROVIDER_MODEL }}
+          STRIFIRA_LIVE_PROVIDER_KEY: ${{ secrets.STRIFIRA_LIVE_PROVIDER_KEY }}
+          STRIFIRA_LIVE_PROVIDER_URL: ${{ secrets.STRIFIRA_LIVE_PROVIDER_URL }}
+          STRIFIRA_LIVE_PROVIDER_MODEL: ${{ secrets.STRIFIRA_LIVE_PROVIDER_MODEL }}
         run: make test-slow-live
 
   report:

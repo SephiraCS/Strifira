@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
- * Production wall verification against the deployed ku.mariogk.com.
+ * Production wall verification against the deployed strifira.mariogk.com.
  *
  * The synthetic capture replaces getDisplayMedia with an animated canvas
  * stream, so every engine exercises the real peer-to-peer WebRTC media and
@@ -11,7 +11,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
  * track.stop() deliberately does NOT fire it).
  */
 
-const BASE = 'https://ku.mariogk.com';
+const BASE = 'https://strifira.mariogk.com';
 const RUN = Date.now().toString(36);
 let userSeq = 0;
 

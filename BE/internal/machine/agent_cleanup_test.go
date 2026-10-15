@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +24,7 @@ func TestTerminalAgentCleanupRecoversAbandonedSourceTransaction(t *testing.T) {
 			interrupted := strings.Replace(synchronizeRepositoryCandidateScript, needle, "kill -KILL $$\n"+needle, 1)
 			_, err := synchronizeFixtureCandidate(t, f, candidate, interrupted)
 			require.Error(t, err)
-			runDir := filepath.Join(f.repository, "ku-runs", f.run)
+			runDir := filepath.Join(f.repository, "strifira-runs", f.run)
 			for _, directory := range []string{"verification", "verification-scratch", "verification-stage", "snapshot.abandoned"} {
 				require.NoError(t, os.MkdirAll(filepath.Join(runDir, directory), 0o700))
 				require.NoError(t, os.WriteFile(filepath.Join(runDir, directory, "private-file"), []byte("discarded output"), 0o400))
@@ -41,8 +41,8 @@ func TestTerminalAgentCleanupRecoversAbandonedSourceTransaction(t *testing.T) {
 				require.NoDirExists(t, filepath.Join(runDir, directory))
 			}
 			require.FileExists(t, ownerFile)
-			require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/ku/runs/"+f.run+"/candidate"))
-			require.Equal(t, candidate.BaseCommit, f.git(t, f.repository, "rev-parse", "refs/ku/runs/"+f.run+"/base"))
+			require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/strifira/runs/"+f.run+"/candidate"))
+			require.Equal(t, candidate.BaseCommit, f.git(t, f.repository, "rev-parse", "refs/strifira/runs/"+f.run+"/base"))
 			output, err = recoverTerminalFixture(t, f, candidate)
 			require.NoError(t, err, output)
 			require.Contains(t, []string{"updated\n", "unchanged\n"}, output)
@@ -149,7 +149,7 @@ func TestTerminalAgentCleanupRejectsSymlinkedPrivateDirectory(t *testing.T) {
 	f, _ := dirtySynchronizationFixture(t)
 	outside := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(outside, "keep"), []byte("owner data"), 0o600))
-	require.NoError(t, os.Symlink(outside, filepath.Join(f.repository, "ku-runs", f.run, "verification")))
+	require.NoError(t, os.Symlink(outside, filepath.Join(f.repository, "strifira-runs", f.run, "verification")))
 	_, err := f.script(t, cleanupTerminalAgentRunScript, false, f.repository, f.run)
 	require.Error(t, err)
 	require.FileExists(t, filepath.Join(outside, "keep"))
@@ -168,9 +168,9 @@ func TestTerminalAgentCleanupRejectsForgedDefaultAuthorityBeforeDocker(t *testin
 	for _, mode := range []string{"missing", "identity", "machine", "workspace", "path", "repository", "base", "branch", "credential-url"} {
 		t.Run(mode, func(t *testing.T) {
 			machine := fixtureHelperMachine()
-			machine.RepoOwner, machine.RepoName = "ku", "api"
-			machine.RepoURL = "https://git.example.com/ku/api"
-			machine.BaseBranch, machine.WorkingBranch = "main", "ku/task"
+			machine.RepoOwner, machine.RepoName = "strifira", "api"
+			machine.RepoURL = "https://git.example.com/strifira/api"
+			machine.BaseBranch, machine.WorkingBranch = "main", "strifira/task"
 			checkout, err := defaultRepositoryCheckout(machine, "https://git.example.com")
 			require.NoError(t, err)
 			selected := *checkout
@@ -186,13 +186,13 @@ func TestTerminalAgentCleanupRejectsForgedDefaultAuthorityBeforeDocker(t *testin
 			case "path":
 				checkout.WorkspacePath = "/workspace/tasks/foreign"
 			case "repository":
-				checkout.RepositoryFullName = "ku/foreign"
+				checkout.RepositoryFullName = "strifira/foreign"
 			case "base":
 				checkout.BaseBranch = "different"
 			case "branch":
 				checkout.WorkingBranch = "different"
 			case "credential-url":
-				checkout.RepositoryURL = "https://token@git.example.com/ku/api"
+				checkout.RepositoryURL = "https://token@git.example.com/strifira/api"
 			}
 			run := &domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Status: domain.DevMachineAgentRunStatusTimeout, RepositorySelection: &selected}
 			_, err = (&DockerRuntime{}).CleanupAgentRun(t.Context(), machine, nil, checkout, run)

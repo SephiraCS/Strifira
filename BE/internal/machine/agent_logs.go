@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
 )

@@ -7,10 +7,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/aiegress"
+	"github.com/SephiraCS/strifira-backend/pkg/storage"
 	"github.com/google/uuid"
 	"github.com/kelseyhightower/envconfig"
-	"github.com/ku/ku-backend/internal/aiegress"
-	"github.com/ku/ku-backend/pkg/storage"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -67,20 +67,20 @@ type DevMachineConfig struct {
 	EncryptionKey        string `envconfig:"DEV_MACHINE_ENCRYPTION_KEY"`
 	TicketTTLSeconds     int    `envconfig:"DEV_MACHINE_ACCESS_TICKET_TTL_SECONDS" default:"60"`
 	SessionTTLMinutes    int    `envconfig:"DEV_MACHINE_SESSION_TTL_MINUTES" default:"480"`
-	GatewayContainerName string `envconfig:"DEV_MACHINE_GATEWAY_CONTAINER" default:"ku-machine-gateway"`
+	GatewayContainerName string `envconfig:"DEV_MACHINE_GATEWAY_CONTAINER" default:"strifira-machine-gateway"`
 	IngestURL            string `envconfig:"DEV_MACHINE_INGEST_URL"`
 	EgressAllowlist      string `envconfig:"DEV_MACHINE_EGRESS_ALLOWLIST"`
 	EgressDenylist       string `envconfig:"DEV_MACHINE_EGRESS_DENYLIST"`
 	DockerHost           string `envconfig:"DEV_MACHINE_DOCKER_HOST" default:"unix:///var/run/docker.sock"`
 	SeccompProfile       string `envconfig:"DEV_MACHINE_SECCOMP_PROFILE" default:"default"`
 	AppArmorProfile      string `envconfig:"DEV_MACHINE_APPARMOR_PROFILE" default:"default"`
-	IDEImage             string `envconfig:"DEV_MACHINE_IDE_IMAGE" default:"ghcr.io/ku/dev-machine-ide:0.1.0"`
-	BrowserImage         string `envconfig:"DEV_MACHINE_BROWSER_IMAGE" default:"ghcr.io/ku/dev-machine-browser:0.1.0"`
-	CollectorImage       string `envconfig:"DEV_MACHINE_COLLECTOR_IMAGE" default:"ghcr.io/ku/dev-machine-collector:0.1.0"`
-	EgressImage          string `envconfig:"DEV_MACHINE_EGRESS_IMAGE" default:"ghcr.io/ku/dev-machine-egress:0.1.0"`
-	ClaudeCodeImage      string `envconfig:"DEV_MACHINE_CLAUDE_IMAGE" default:"ghcr.io/ku/dev-machine-agent-claude:0.1.0"`
-	OpenCodeImage        string `envconfig:"DEV_MACHINE_OPENCODE_IMAGE" default:"ghcr.io/ku/dev-machine-agent-opencode:0.1.0"`
-	CodexImage           string `envconfig:"DEV_MACHINE_CODEX_IMAGE" default:"ghcr.io/ku/dev-machine-agent-codex:0.1.0"`
+	IDEImage             string `envconfig:"DEV_MACHINE_IDE_IMAGE" default:"ghcr.io/strifira/dev-machine-ide:0.1.0"`
+	BrowserImage         string `envconfig:"DEV_MACHINE_BROWSER_IMAGE" default:"ghcr.io/strifira/dev-machine-browser:0.1.0"`
+	CollectorImage       string `envconfig:"DEV_MACHINE_COLLECTOR_IMAGE" default:"ghcr.io/strifira/dev-machine-collector:0.1.0"`
+	EgressImage          string `envconfig:"DEV_MACHINE_EGRESS_IMAGE" default:"ghcr.io/strifira/dev-machine-egress:0.1.0"`
+	ClaudeCodeImage      string `envconfig:"DEV_MACHINE_CLAUDE_IMAGE" default:"ghcr.io/strifira/dev-machine-agent-claude:0.1.0"`
+	OpenCodeImage        string `envconfig:"DEV_MACHINE_OPENCODE_IMAGE" default:"ghcr.io/strifira/dev-machine-agent-opencode:0.1.0"`
+	CodexImage           string `envconfig:"DEV_MACHINE_CODEX_IMAGE" default:"ghcr.io/strifira/dev-machine-agent-codex:0.1.0"`
 	CustomImage          string `envconfig:"DEV_MACHINE_CUSTOM_IMAGE"`
 }
 

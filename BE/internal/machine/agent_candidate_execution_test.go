@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -25,7 +25,7 @@ func TestCandidateExecutionDaemonBoundaries(t *testing.T) {
 	for _, mode := range []string{"success", "nonzero", "prepare-failed", "attest-failed", "stage-cleanup-failed", "attach-failed", "start-failed", "early-eof", "cancel", "externally-cancelled", "cancelled-inspection-missing", "create-response-lost", "foreign-create", "nil-cleanup-config", "cleanup-failed", "oversized", "inspect-failed"} {
 		t.Run(mode, func(t *testing.T) {
 			machine := fixtureHelperMachine()
-			checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/repository"}
+			checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/repository"}
 			candidate := RepositoryCandidate{GitState: GitState{Branch: checkout.WorkingBranch}, Commit: strings.Repeat("a", 40)}
 			options, err := candidateVerificationOptions(machine, fixtureHelperImageID, uuid.NewString(), checkout, uuid.New(), candidate, []string{"/custom/tool", "test", "argument with spaces"})
 			require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestCandidateExecutionDaemonBoundaries(t *testing.T) {
 				switch {
 				case strings.Contains(path, "-cancel-") && r.Method == http.MethodGet:
 					if externallyCancelled.Load() {
-						_ = json.NewEncoder(w).Encode(fixtureCancellationRecord(machine, uuid.MustParse(options.Config.Labels["com.ku.agent-run-id"])))
+						_ = json.NewEncoder(w).Encode(fixtureCancellationRecord(machine, uuid.MustParse(options.Config.Labels["com.strifira.agent-run-id"])))
 					} else {
 						http.NotFound(w, r)
 					}
@@ -67,7 +67,7 @@ func TestCandidateExecutionDaemonBoundaries(t *testing.T) {
 						return
 					}
 					if mode == "foreign-create" {
-						config.Labels["com.ku.repository-operation"] = uuid.NewString()
+						config.Labels["com.strifira.repository-operation"] = uuid.NewString()
 					}
 					_ = json.NewEncoder(w).Encode(map[string]any{"Id": "verification", "Config": config})
 				case path == "/containers/verification/attach":

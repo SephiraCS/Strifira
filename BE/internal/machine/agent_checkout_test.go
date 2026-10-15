@@ -13,16 +13,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProtectedCheckoutDescriptor(t *testing.T) {
-	valid := domain.DevMachineCheckout{ID: uuid.New(), RepositoryFullName: "TerraScale/ku",
-		RepositoryURL: "https://git.terrascale.tech/TerraScale/ku", BaseBranch: "main",
+	valid := domain.DevMachineCheckout{ID: uuid.New(), RepositoryFullName: "TerraScale/strifira",
+		RepositoryURL: "https://git.terrascale.tech/TerraScale/strifira", BaseBranch: "main",
 		WorkingBranch: "feat/TS-279", WorkspacePath: "/workspace/tasks/TS-279"}
 	repository, parsed, err := protectedCheckoutRepository(&valid)
 	require.NoError(t, err)
@@ -44,15 +44,15 @@ func TestProtectedCheckoutDescriptor(t *testing.T) {
 		mutate func(*domain.DevMachineCheckout)
 	}{
 		{"missing-identity", func(c *domain.DevMachineCheckout) { c.ID = uuid.Nil }},
-		{"http", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "http://git.terrascale.tech/TerraScale/ku" }},
+		{"http", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "http://git.terrascale.tech/TerraScale/strifira" }},
 		{"credentials", func(c *domain.DevMachineCheckout) {
-			c.RepositoryURL = "https://user:secret@git.terrascale.tech/TerraScale/ku"
+			c.RepositoryURL = "https://user:secret@git.terrascale.tech/TerraScale/strifira"
 		}},
 		{"other-repository", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "https://git.terrascale.tech/TerraScale/other" }},
 		{"encoded-path", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "https://git.terrascale.tech/TerraScale/%6bu" }},
 		{"query", func(c *domain.DevMachineCheckout) { c.RepositoryURL += "?token=secret" }},
 		{"fragment", func(c *domain.DevMachineCheckout) { c.RepositoryURL += "#secret" }},
-		{"traversal-repository", func(c *domain.DevMachineCheckout) { c.RepositoryFullName = "../ku" }},
+		{"traversal-repository", func(c *domain.DevMachineCheckout) { c.RepositoryFullName = "../strifira" }},
 		{"workspace-root", func(c *domain.DevMachineCheckout) { c.WorkspacePath = "/workspace" }},
 		{"workspace-traversal", func(c *domain.DevMachineCheckout) { c.WorkspacePath = "/workspace/tasks/../repository" }},
 		{"nested-task", func(c *domain.DevMachineCheckout) { c.WorkspacePath = "/workspace/tasks/TS-279/nested" }},
@@ -78,7 +78,7 @@ func TestProtectedCheckoutDescriptor(t *testing.T) {
 		})
 	}
 	otherHost := valid
-	otherHost.RepositoryURL = "https://another.example/TerraScale/ku"
+	otherHost.RepositoryURL = "https://another.example/TerraScale/strifira"
 	otherRepository, _, err := protectedCheckoutRepository(&otherHost)
 	require.NoError(t, err)
 	require.NotEqual(t, repository, otherRepository, "protected stores must be scoped to the authorized GitHub origin")
@@ -95,9 +95,9 @@ func TestProtectedCheckoutStageUsesDockerAuthority(t *testing.T) {
 			record := fixtureLayoutRecord(machine)
 			switch mode {
 			case "foreign-machine":
-				record.Config.Labels["com.ku.machine-id"] = uuid.NewString()
+				record.Config.Labels["com.strifira.machine-id"] = uuid.NewString()
 			case "foreign-volume":
-				record.Config.Labels["com.ku.layout-volume"] = "different-volume"
+				record.Config.Labels["com.strifira.layout-volume"] = "different-volume"
 			case "missing-config":
 				record.Config = nil
 			case "mounted-record":
@@ -257,7 +257,7 @@ func TestProtectedCheckoutConvertsDirtyLinkedWorktree(t *testing.T) {
 				crashed := strings.Replace(installProtectedCheckoutScript, needle, needle+"\nkill -KILL $$", 1)
 				output, err := runCheckoutFixture(t, f, crashed, root, workspace, f.repository, f.repositoryURL, f.branch, f.run)
 				require.Error(t, err, output)
-				require.DirExists(t, filepath.Join(root, ".ku-checkout-"+checkoutFixtureStageKey(f)), "SIGKILL must exercise a persisted stage, not EXIT cleanup")
+				require.DirExists(t, filepath.Join(root, ".strifira-checkout-"+checkoutFixtureStageKey(f)), "SIGKILL must exercise a persisted stage, not EXIT cleanup")
 			}
 			if interruption == "after-directory-install-later-work" {
 				f.git(t, workspace, "config", "user.name", "fixture")
@@ -280,7 +280,7 @@ func TestProtectedCheckoutConvertsDirtyLinkedWorktree(t *testing.T) {
 			require.Equal(t, stagedContent, f.git(t, workspace, "show", ":source.txt"))
 			f.git(t, workspace, "fsck", "--connectivity-only", "--no-dangling")
 			assertCheckoutStageRemoved(t, f, root)
-			require.NoFileExists(t, filepath.Join(workspace, ".git.ku-linked-backup"))
+			require.NoFileExists(t, filepath.Join(workspace, ".git.strifira-linked-backup"))
 			require.NoFileExists(t, indexPath+".lock")
 			require.Equal(t, workingContent, readCheckoutFixtureFile(t, filepath.Join(workspace, "source.txt")))
 			require.Equal(t, "local commit\n", readCheckoutFixtureFile(t, filepath.Join(workspace, "committed.txt")))
@@ -298,7 +298,7 @@ func TestProtectedCheckoutRecoversConfigAndNewInstallInterruptions(t *testing.T)
 			root := filepath.Join(f.root, "checkouts")
 			workspace := filepath.Join(root, "repository")
 			require.NoError(t, os.Mkdir(root, 0o700))
-			unrelated := filepath.Join(root, ".ku-checkout-user-notes")
+			unrelated := filepath.Join(root, ".strifira-checkout-user-notes")
 			require.NoError(t, os.Mkdir(unrelated, 0o700))
 			require.NoError(t, os.WriteFile(filepath.Join(unrelated, "keep.txt"), []byte("user work\n"), 0o600))
 			var index string
@@ -320,7 +320,7 @@ func TestProtectedCheckoutRecoversConfigAndNewInstallInterruptions(t *testing.T)
 			crashed := strings.Replace(installProtectedCheckoutScript, needle, "kill -KILL $$\n"+needle, 1)
 			output, err := runCheckoutFixture(t, f, crashed, root, workspace, f.repository, f.repositoryURL, f.branch, f.run)
 			require.Error(t, err, output)
-			require.DirExists(t, filepath.Join(root, ".ku-checkout-"+checkoutFixtureStageKey(f)))
+			require.DirExists(t, filepath.Join(root, ".strifira-checkout-"+checkoutFixtureStageKey(f)))
 			if mode != "new-before-install" {
 				require.NoError(t, os.WriteFile(filepath.Join(workspace, "source.txt"), []byte("later edit after interruption\n"), 0o600))
 				if index == "" {
@@ -424,7 +424,7 @@ func TestProtectedCheckoutRejectsConcurrentMetadataChanges(t *testing.T) {
 				require.Empty(t, f.git(t, workspace, "ls-files"), "the independent writer's empty index must not be rolled back")
 			}
 			require.NoFileExists(t, indexPath+".lock")
-			require.NoFileExists(t, filepath.Join(workspace, ".git.ku-linked-backup"))
+			require.NoFileExists(t, filepath.Join(workspace, ".git.strifira-linked-backup"))
 			assertCheckoutStageRemoved(t, f, root)
 		})
 	}
@@ -445,7 +445,7 @@ func TestProtectedCheckoutRejectsHostilePathsAndForeignLocks(t *testing.T) {
 			f.git(t, f.root, "clone", "--quiet", "--bare", f.workspace, cache)
 			f.git(t, f.root, "--git-dir="+cache, "worktree", "add", "--quiet", workspace, f.branch)
 			pointer := readCheckoutFixtureFile(t, filepath.Join(workspace, ".git"))
-			stagePath := filepath.Join(root, ".ku-checkout-"+checkoutFixtureStageKey(f))
+			stagePath := filepath.Join(root, ".strifira-checkout-"+checkoutFixtureStageKey(f))
 			if mode == "stage-symlink" {
 				require.NoError(t, os.Symlink(workspace, stagePath))
 			}
@@ -519,6 +519,6 @@ func assertCheckoutNoCredential(t *testing.T, workspace string) {
 
 func assertCheckoutStageRemoved(t *testing.T, f *protectedRepositoryFixture, root string) {
 	t.Helper()
-	_, err := os.Lstat(filepath.Join(root, ".ku-checkout-"+checkoutFixtureStageKey(f)))
+	_, err := os.Lstat(filepath.Join(root, ".strifira-checkout-"+checkoutFixtureStageKey(f)))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }

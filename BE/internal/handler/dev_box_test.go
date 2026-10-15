@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )
@@ -128,10 +128,10 @@ func TestDevBoxCompletionPreservesMaximumEscapedResult(t *testing.T) {
 			box.TokenHash = strings.Repeat("b", 64)
 			store := &devBoxCompletionStoreFake{job: &domain.DevBoxJob{
 				ID: jobID, BoxID: box.ID, Status: domain.DevBoxJobRunning,
-				WorkingBranch: "ku/ku-27-12345678", TestCommand: json.RawMessage(`[]`),
+				WorkingBranch: "strifira/strifira-27-12345678", TestCommand: json.RawMessage(`[]`),
 			}}
 			request := dto.DevBoxCompleteRequest{
-				LeaseToken: "kul_" + strings.Repeat("a", 64),
+				LeaseToken: "sfl_" + strings.Repeat("a", 64),
 				Result: domain.DevBoxJobResult{
 					Status: domain.DevBoxJobFailed, TestStatus: "not_run",
 					Summary: fill(8192), Patch: fill(service.DevBoxMaxPatchBytes),
@@ -173,7 +173,7 @@ func TestDevBoxLogHandlerAcceptsWorstCaseEscapingWithinDecodedLimit(t *testing.T
 	for _, size := range []int{16 << 10, service.DevBoxMaxLogEntryBytes} {
 		for _, character := range []string{"<", "\x01"} {
 			t.Run(fmt.Sprintf("%d bytes escaped %U", size, []rune(character)[0]), func(t *testing.T) {
-				request := dto.DevBoxAppendLogRequest{LeaseToken: "kul_" + strings.Repeat("a", 64), Sequence: 1, Stream: "stdout", Content: strings.Repeat(character, size)}
+				request := dto.DevBoxAppendLogRequest{LeaseToken: "sfl_" + strings.Repeat("a", 64), Sequence: 1, Stream: "stdout", Content: strings.Repeat(character, size)}
 				body, err := json.Marshal(request)
 				require.NoError(t, err)
 				require.Greater(t, len(body), 70<<10)
@@ -191,7 +191,7 @@ func TestDevBoxLogHandlerAcceptsWorstCaseEscapingWithinDecodedLimit(t *testing.T
 		}
 	}
 	t.Run("decoded overflow is still rejected", func(t *testing.T) {
-		request := dto.DevBoxAppendLogRequest{LeaseToken: "kul_" + strings.Repeat("a", 64), Sequence: 1, Stream: "stdout", Content: strings.Repeat("x", service.DevBoxMaxLogEntryBytes+1)}
+		request := dto.DevBoxAppendLogRequest{LeaseToken: "sfl_" + strings.Repeat("a", 64), Sequence: 1, Stream: "stdout", Content: strings.Repeat("x", service.DevBoxMaxLogEntryBytes+1)}
 		body, err := json.Marshal(request)
 		require.NoError(t, err)
 		store := &devBoxLogStoreFake{}
@@ -206,7 +206,7 @@ func TestDevBoxLogHandlerAcceptsWorstCaseEscapingWithinDecodedLimit(t *testing.T
 
 func TestDevBoxCompletionEncodedBodyBoundary(t *testing.T) {
 	request := dto.DevBoxCompleteRequest{
-		LeaseToken: "kul_" + strings.Repeat("a", 64),
+		LeaseToken: "sfl_" + strings.Repeat("a", 64),
 		Result:     domain.DevBoxJobResult{Status: domain.DevBoxJobFailed, TestStatus: "not_run"},
 	}
 	body, err := json.Marshal(request)
@@ -371,13 +371,13 @@ func TestDevBoxErrorsUseStatusCodesAndSanitizeMessages(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			c := devBoxHandlerContext(t, http.MethodPost, "/", "", recorder)
 
-			require.NoError(t, devBoxError(c, fmt.Errorf("%w: database password kub_private-token", test.err)))
+			require.NoError(t, devBoxError(c, fmt.Errorf("%w: database password strifira_private-token", test.err)))
 			require.Equal(t, test.status, recorder.Code)
 			var result dto.ErrorResponse
 			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &result))
 			require.Equal(t, test.code, result.Error.Code)
 			require.NotContains(t, result.Error.Message, "database password")
-			require.NotContains(t, result.Error.Message, "kub_")
+			require.NotContains(t, result.Error.Message, "strifira_")
 		})
 	}
 }
@@ -459,7 +459,7 @@ func devBoxHandlerContext(t *testing.T, method, target, body string, recorder *h
 	t.Helper()
 	req := httptest.NewRequest(method, target, strings.NewReader(body)).WithContext(t.Context())
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	req.Header.Set(echo.HeaderAuthorization, "Bearer kub_test-token")
+	req.Header.Set(echo.HeaderAuthorization, "Bearer strifira_test-token")
 	c := echo.New().NewContext(req, recorder)
 	c.Set("workspace", &domain.Workspace{ID: uuid.New()})
 	c.Set(string(middleware.UserIDKey), uuid.New())

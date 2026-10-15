@@ -79,7 +79,7 @@ func actionRepoPath(owner, name string) (string, error) {
 	return "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(name) + "/actions", nil
 }
 
-// actionRunQuery translates ku's filter vocabulary onto GitHub's query
+// actionRunQuery translates strifira's filter vocabulary onto GitHub's query
 // parameters. GitHub filters runs by status (queued, in_progress, completed);
 // branch names replace full refs.
 func actionRunQuery(opts ActionRunOptions) (url.Values, error) {

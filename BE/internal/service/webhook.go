@@ -15,14 +15,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/metrics"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
+	"github.com/SephiraCS/strifira-backend/pkg/validate"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/metrics"
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/crypto"
-	"github.com/ku/ku-backend/pkg/validate"
 	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 )
@@ -397,7 +397,7 @@ func (s *WebhookService) HubListener() func(uuid.UUID, realtime.Event) {
 // X-Webhook-Signature header. It never blocks: delivery happens on the
 // bounded worker pool, independent of ctx (a finished HTTP request must not
 // abort it). When the queue is full the event is dropped, logged and
-// counted in ku_webhook_events_dropped_total{reason="queue_full"}.
+// counted in strifira_webhook_events_dropped_total{reason="queue_full"}.
 func (s *WebhookService) Dispatch(_ context.Context, workspaceID uuid.UUID, event string, payload interface{}) {
 	body, err := json.Marshal(map[string]interface{}{
 		"event":     event,

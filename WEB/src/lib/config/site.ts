@@ -7,17 +7,17 @@ import contentModifiedDates from '$lib/data/content-modified.json';
  * that needs absolute URLs or shared defaults.
  */
 
-export const ORIGIN = 'https://kuayle.com';
+export const ORIGIN = 'https://strifira.sephira.app.br';
 
 export const SITE = {
-	name: 'Ku',
-	shortName: 'Ku',
+	name: 'Strifira',
+	shortName: 'Strifira',
 	description:
-		'Ku is the keyboard-driven, self-hosted issue tracker with no paid tier. One public Apache 2.0 repository, with nothing behind a license key.',
+		'Strifira is the keyboard-driven, self-hosted issue tracker with no paid tier. One public Apache 2.0 repository, with nothing behind a license key.',
 	tagline: 'The issue tracker with no paid tier',
 	origin: ORIGIN,
 	defaultImage: `${ORIGIN}/social-card.png`,
-	defaultImageAlt: 'Ku issue tracker board interface',
+	defaultImageAlt: 'Strifira issue tracker board interface',
 	ogImageWidth: 1200,
 	ogImageHeight: 630,
 	locale: 'en_US',

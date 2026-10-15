@@ -1,4 +1,4 @@
 User-agent: *
 Disallow:
 
-Sitemap: https://kuayle.com/sitemap.xml
+Sitemap: https://strifira.sephira.app.br/sitemap.xml

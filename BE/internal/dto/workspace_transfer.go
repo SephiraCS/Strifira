@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const WorkspaceExportFormat = "ku.workspace"
+const WorkspaceExportFormat = "strifira.workspace"
 const WorkspaceExportVersion = 2
 
 type WorkspaceExportManifest struct {

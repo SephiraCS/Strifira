@@ -1,4 +1,4 @@
-"""Shared isolated Ku backend/PostgreSQL fixture for opt-in live acceptance.
+"""Shared isolated Strifira backend/PostgreSQL fixture for opt-in live acceptance.
 
 Each context creates and removes its own resources. No application .env or
 production accounts/settings are loaded. API errors and subprocess failures
@@ -181,7 +181,7 @@ class LiveFixture:
                 "-U",
                 "postgres",
                 "-d",
-                "ku_live",
+                "strifira_live",
                 "-At",
             ],
             self.env,
@@ -214,18 +214,18 @@ def disposable_backend(server_bin, be_dir, *, extra_env=None, label="isolated-li
         raise LiveCheckError(
             "Extra environment must not override isolated fixture settings"
         )
-    container = "ku-live-" + uuid.uuid4().hex
+    container = "strifira-live-" + uuid.uuid4().hex
     backend = None
     api = None
     backend_url = None
     container_attempted = False
-    with tempfile.TemporaryDirectory(prefix="ku-live-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="strifira-live-") as temporary:
         temp_dir = pathlib.Path(temporary)
         with (temp_dir / "backend.log").open("wb") as backend_log:
             try:
                 binary = server_bin
                 if binary is None:
-                    binary = temp_dir / "ku-server"
+                    binary = temp_dir / "strifira-server"
                     run(
                         ["go", "build", "-p", "1", "-o", str(binary), "./cmd/server"],
                         {**env, "GOMAXPROCS": "2"},
@@ -235,7 +235,7 @@ def disposable_backend(server_bin, be_dir, *, extra_env=None, label="isolated-li
                 binary = pathlib.Path(binary).resolve()
                 if not binary.is_file() or not os.access(binary, os.X_OK):
                     raise LiveCheckError(
-                        "Reviewed Ku backend binary is missing or not executable"
+                        "Reviewed Strifira backend binary is missing or not executable"
                     )
                 with binary.open("rb") as server_file:
                     server_sha256 = hashlib.file_digest(
@@ -252,7 +252,7 @@ def disposable_backend(server_bin, be_dir, *, extra_env=None, label="isolated-li
                         "--name",
                         container,
                         "--label",
-                        "io.ku.test=" + label,
+                        "io.strifira.test=" + label,
                         "--publish",
                         "127.0.0.1::5432",
                         "--tmpfs",
@@ -260,7 +260,7 @@ def disposable_backend(server_bin, be_dir, *, extra_env=None, label="isolated-li
                         "--env",
                         "POSTGRES_HOST_AUTH_METHOD=trust",
                         "--env",
-                        "POSTGRES_DB=ku_live",
+                        "POSTGRES_DB=strifira_live",
                         "docker.io/library/postgres:17-alpine",
                     ],
                     env,
@@ -284,7 +284,7 @@ def disposable_backend(server_bin, be_dir, *, extra_env=None, label="isolated-li
                                 "-U",
                                 "postgres",
                                 "-d",
-                                "ku_live",
+                                "strifira_live",
                             ],
                             env,
                         )
@@ -292,7 +292,7 @@ def disposable_backend(server_bin, be_dir, *, extra_env=None, label="isolated-li
                     "Disposable database",
                 )
                 database_url = (
-                    f"postgres://postgres@127.0.0.1:{port}/ku_live?sslmode=disable"
+                    f"postgres://postgres@127.0.0.1:{port}/strifira_live?sslmode=disable"
                 )
                 run(
                     [str(binary), "migrate", "up"],

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/pkg/assettoken"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/pkg/assettoken"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

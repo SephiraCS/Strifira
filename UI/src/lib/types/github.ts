@@ -48,7 +48,7 @@ export interface GitHubPullRequest {
 	additions: number;
 	deletions: number;
 	repo_full_name: string;
-	/** ku repository UUID, used to query the repository's GitHub Actions. */
+	/** strifira repository UUID, used to query the repository's GitHub Actions. */
 	repo_id: string;
 	merged_at: string | null;
 	created_at: string;
@@ -60,7 +60,7 @@ export interface GitHubBranch {
 	name: string;
 	html_url: string;
 	repo_full_name: string;
-	/** ku repository UUID. */
+	/** strifira repository UUID. */
 	repo_id: string;
 	created_at: string;
 }

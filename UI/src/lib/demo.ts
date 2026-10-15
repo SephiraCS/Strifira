@@ -8,11 +8,11 @@ export type DemoUser = {
 
 const enabledValues = new Set(['1', 'true', 'yes', 'on']);
 const defaultDemoUsers: DemoUser[] = [
-	{ label: 'Owner', email: 'alice@ku.dev', password: 'Password123!' },
-	{ label: 'Admin', email: 'bob@ku.dev', password: 'Password123!' },
-	{ label: 'Member', email: 'carol@ku.dev', password: 'Password123!' },
-	{ label: 'Member', email: 'dave@ku.dev', password: 'Password123!' },
-	{ label: 'Guest', email: 'eve@ku.dev', password: 'Password123!' }
+	{ label: 'Owner', email: 'alice@strifira.dev', password: 'Password123!' },
+	{ label: 'Admin', email: 'bob@strifira.dev', password: 'Password123!' },
+	{ label: 'Member', email: 'carol@strifira.dev', password: 'Password123!' },
+	{ label: 'Member', email: 'dave@strifira.dev', password: 'Password123!' },
+	{ label: 'Guest', email: 'eve@strifira.dev', password: 'Password123!' }
 ];
 
 function parseDemoUsers(value: string | undefined): DemoUser[] {

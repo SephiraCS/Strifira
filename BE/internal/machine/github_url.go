@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ku/ku-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 )
 
 // safeGitHubPullRequestURL validates an agent- or API-reported pull request

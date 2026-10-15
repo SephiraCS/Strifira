@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ku/ku-backend/internal/devboxworker"
+	"github.com/SephiraCS/strifira-backend/internal/devboxworker"
 )
 
 func main() {

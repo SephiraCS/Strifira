@@ -7,7 +7,7 @@ import { buildTree, breadcrumbOf, type DocTreeEntry } from './tree';
 export { buildTree, breadcrumbOf };
 export type { DocTreeEntry };
 
-const RECENTS_KEY = 'ku:docs:recents';
+const RECENTS_KEY = 'strifira:docs:recents';
 const RECENTS_LIMIT = 12;
 
 function loadRecents(): string[] {

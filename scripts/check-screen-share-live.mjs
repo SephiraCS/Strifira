@@ -2,7 +2,7 @@
 /**
  * Opt-in real WebRTC test: disposable PostgreSQL, backend, built SPA and
  * browser tabs. Requires a container runtime (Podman, or Docker — with
- * passwordless sudo when the socket needs it; KU_LIVE_CONTAINER overrides
+ * passwordless sudo when the socket needs it; STRIFIRA_LIVE_CONTAINER overrides
  * the command), Go, installed UI dependencies and Chromium
  * (`cd UI && npx playwright install chromium`). No deployed services or
  * application .env files are read. Container registry rewrites/auth follow
@@ -37,7 +37,7 @@ if (
   );
 }
 
-// Keep toolchain/runtime settings, never inherit Ku/GitHub/cloud settings.
+// Keep toolchain/runtime settings, never inherit Strifira/GitHub/cloud settings.
 const toolEnv = Object.fromEntries(
   [
     "PATH",
@@ -63,15 +63,15 @@ const toolEnv = Object.fromEntries(
     .map((key) => [key, process.env[key]]),
 );
 const tempDir = isMain
-  ? await mkdtemp(path.join(os.tmpdir(), "ku-screen-share-live-"))
+  ? await mkdtemp(path.join(os.tmpdir(), "strifira-screen-share-live-"))
   : undefined;
-const containerName = `ku-screen-share-live-${randomUUID()}`;
+const containerName = `strifira-screen-share-live-${randomUUID()}`;
 
 // Podman first (rootless, no daemon); Docker next when the socket is usable
-// without escalation, then Docker through passwordless sudo. KU_LIVE_CONTAINER
+// without escalation, then Docker through passwordless sudo. STRIFIRA_LIVE_CONTAINER
 // (e.g. "sudo -n docker") overrides the detection entirely.
 async function resolveContainerCommand() {
-  const override = process.env.KU_LIVE_CONTAINER;
+  const override = process.env.STRIFIRA_LIVE_CONTAINER;
   if (override) return override.trim().split(/\s+/);
   for (const candidate of [["podman"], ["docker"], ["sudo", "-n", "docker"]]) {
     const usable = await new Promise((resolve) => {
@@ -85,7 +85,7 @@ async function resolveContainerCommand() {
     if (usable) return candidate;
   }
   throw new Error(
-    "No usable container runtime for disposable PostgreSQL: install Podman or Docker, or set KU_LIVE_CONTAINER.",
+    "No usable container runtime for disposable PostgreSQL: install Podman or Docker, or set STRIFIRA_LIVE_CONTAINER.",
   );
 }
 
@@ -319,7 +319,7 @@ if (isMain) {
 
   try {
     if (!skipBuild) {
-      // Vite normally reads ku/.env through envDir. Override it with an
+      // Vite normally reads strifira/.env through envDir. Override it with an
       // empty directory for this local build instead of loading secrets.
       const buildConfig = path.join(tempDir, "vite-live.config.mjs");
       await writeIsolatedViteConfig(
@@ -343,7 +343,7 @@ if (isMain) {
       "--name",
       containerName,
       "--label",
-      "io.ku.test=screen-share-live",
+      "io.strifira.test=screen-share-live",
       "--publish",
       "127.0.0.1::5432",
       "--tmpfs",
@@ -351,7 +351,7 @@ if (isMain) {
       "--env",
       "POSTGRES_HOST_AUTH_METHOD=trust",
       "--env",
-      "POSTGRES_DB=ku_live",
+      "POSTGRES_DB=strifira_live",
       "docker.io/library/postgres:17-alpine",
     ]);
     const dbMapping = (
@@ -363,7 +363,7 @@ if (isMain) {
     await waitUntil(async () => {
       try {
         await runContainer(
-          ["exec", containerName, "pg_isready", "-U", "postgres", "-d", "ku_live"],
+          ["exec", containerName, "pg_isready", "-U", "postgres", "-d", "strifira_live"],
           { stdio: "ignore" },
         );
         return true;
@@ -371,8 +371,8 @@ if (isMain) {
         return false;
       }
     }, "disposable PostgreSQL");
-    const databaseURL = `postgres://postgres@127.0.0.1:${dbPort}/ku_live?sslmode=disable`;
-    const binary = path.join(tempDir, "ku-server");
+    const databaseURL = `postgres://postgres@127.0.0.1:${dbPort}/strifira_live?sslmode=disable`;
+    const binary = path.join(tempDir, "strifira-server");
     await run("go", ["build", "-o", binary, "./cmd/server"], { cwd: beDir });
     await run(binary, ["migrate", "up"], {
       cwd: beDir,
@@ -414,7 +414,7 @@ if (isMain) {
         return false;
       }
     }, "isolated backend");
-    console.log(`Testing real WebRTC against disposable Ku at ${baseURL}`);
+    console.log(`Testing real WebRTC against disposable Strifira at ${baseURL}`);
     try {
       await run(
         process.execPath,
@@ -426,7 +426,7 @@ if (isMain) {
         ],
         {
           cwd: uiDir,
-          env: { ...toolEnv, KU_LIVE_ISOLATED: "1", KU_LIVE_BASE_URL: baseURL },
+          env: { ...toolEnv, STRIFIRA_LIVE_ISOLATED: "1", STRIFIRA_LIVE_BASE_URL: baseURL },
         },
       );
     } catch (error) {

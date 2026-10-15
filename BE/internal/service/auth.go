@@ -10,11 +10,11 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	jwtpkg "github.com/SephiraCS/strifira-backend/pkg/jwt"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 

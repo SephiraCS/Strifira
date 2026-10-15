@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/dto"
 )
 
 var ErrWorkspaceTransferIdentifierConflict = errors.New("issue identifier belongs to a different imported issue")

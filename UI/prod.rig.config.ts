@@ -8,5 +8,5 @@ export default defineConfig({
 	workers: 1,
 	reporter: 'list',
 	timeout: 330_000,
-	use: { baseURL: 'https://ku.mariogk.com' }
+	use: { baseURL: 'https://strifira.mariogk.com' }
 });

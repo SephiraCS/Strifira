@@ -15,7 +15,7 @@ test('loads more on scroll without duplicating the initial request', async ({ pa
 		releaseMetadata = resolve;
 	});
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {

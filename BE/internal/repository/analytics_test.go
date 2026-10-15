@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/dto"
 )
 
 func TestAnalyticsRepositoryPostgres(t *testing.T) {

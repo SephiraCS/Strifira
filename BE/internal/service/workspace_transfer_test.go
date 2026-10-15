@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/storage"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/storage"
 	"github.com/stretchr/testify/require"
 )
 
@@ -497,7 +497,7 @@ func mutateWorkspaceArchive(t *testing.T, sourcePath string, mutate func(*dto.Wo
 	require.NoError(t, err)
 	defer parsed.zip.Close()
 	mutate(&parsed.manifest, &parsed.data)
-	path := filepath.Join(t.TempDir(), "mutated.ku.zip")
+	path := filepath.Join(t.TempDir(), "mutated.strifira.zip")
 	file, err := os.Create(path)
 	require.NoError(t, err)
 	writer := zip.NewWriter(file)

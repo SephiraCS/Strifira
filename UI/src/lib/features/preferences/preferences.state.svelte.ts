@@ -30,7 +30,7 @@ interface PreferencesData {
 	localDirty?: boolean;
 }
 
-const STORAGE_KEY = 'ku-preferences';
+const STORAGE_KEY = 'strifira-preferences';
 
 // Percentage values applied to <html> font-size so all rem-based
 // Tailwind utilities (text-sm, text-xs, etc.) scale proportionally.

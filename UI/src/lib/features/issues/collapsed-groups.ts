@@ -1,6 +1,6 @@
 import type { GroupByField } from './issues.state.svelte';
 
-const STORAGE_PREFIX = 'ku-issues-collapsed-groups';
+const STORAGE_PREFIX = 'strifira-issues-collapsed-groups';
 
 function storageKey(workspaceSlug: string, teamId: string, groupBy: Exclude<GroupByField, null>) {
 	return `${STORAGE_PREFIX}:${encodeURIComponent(workspaceSlug)}:${encodeURIComponent(teamId)}:${groupBy}`;

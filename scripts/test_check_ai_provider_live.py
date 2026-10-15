@@ -11,7 +11,7 @@ import types
 import unittest
 from unittest import mock
 
-from ku_live_fixture import tool_environment
+from strifira_live_fixture import tool_environment
 
 
 spec = importlib.util.spec_from_file_location(

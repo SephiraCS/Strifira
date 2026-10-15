@@ -1,4 +1,4 @@
-module github.com/ku/ku-backend
+module github.com/SephiraCS/strifira-backend
 
 go 1.26.0
 

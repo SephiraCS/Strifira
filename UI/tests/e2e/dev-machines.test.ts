@@ -33,12 +33,12 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		status: 'running',
 		desired_status: 'running',
 		generation: 1,
-		repo_url: 'https://git.example.com/ku/ku',
+		repo_url: 'https://git.example.com/strifira/strifira',
 		repo_provider: 'github',
-		repo_owner: 'ku',
-		repo_name: 'ku',
+		repo_owner: 'strifira',
+		repo_name: 'strifira',
 		base_branch: 'main',
-		working_branch: 'ku/runtime-smoke',
+		working_branch: 'strifira/runtime-smoke',
 		machine_size: 'medium',
 		cpu_millis: 4000,
 		memory_mb: 8192,
@@ -57,7 +57,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		id: secondMachineId,
 		routing_key: 'fedcba98765432100123',
 		name: 'Second route machine',
-		working_branch: 'ku/second-route'
+		working_branch: 'strifira/second-route'
 	};
 	const firstRunId = '00000000-0000-0000-0000-000000000052';
 	const secondRunId = '00000000-0000-0000-0000-000000000058';
@@ -67,16 +67,16 @@ test('handles machine actions without applying stale poll, route, or trace respo
 		machine_id: machineId,
 		issue_id: '00000000-0000-0000-0000-000000000054',
 		github_repo_id: '00000000-0000-0000-0000-000000000055',
-		repository_full_name: 'ku/ku',
+		repository_full_name: 'strifira/strifira',
 		base_branch: 'main',
-		working_branch: 'ku/runtime-smoke',
+		working_branch: 'strifira/runtime-smoke',
 		workspace_path: '/workspace/tasks/runtime-smoke',
 		status: 'ready',
 		created_at: '2026-07-13T00:00:00Z',
 		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -166,8 +166,8 @@ test('handles machine actions without applying stale poll, route, or trace respo
 						machine_id: machineId,
 						service_type: 'ide',
 						service_key: 'ide',
-						container_name: 'ku-test-ide',
-						image_ref: 'ku/dev-machine-ide:0.1.0',
+						container_name: 'strifira-test-ide',
+						image_ref: 'strifira/dev-machine-ide:0.1.0',
 						status: 'running',
 						health_status: 'healthy'
 					}
@@ -180,7 +180,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 					{
 						id: 'opencode',
 						display_name: 'OpenCode',
-						default_image: 'ku/dev-machine-agent-opencode:0.1.0',
+						default_image: 'strifira/dev-machine-agent-opencode:0.1.0',
 						required_secrets: [],
 						supported_modes: ['autonomous'],
 						custom: false
@@ -484,7 +484,7 @@ test('handles machine actions without applying stale poll, route, or trace respo
 	await expect(page.getByText('machine a event', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('[system] machine A log', { exact: true })).toHaveCount(0);
 	await expect(page.getByText('Test run', { exact: true })).toHaveCount(0);
-	await expect(page.getByText('ku/runtime-smoke', { exact: true })).toHaveCount(0);
+	await expect(page.getByText('strifira/runtime-smoke', { exact: true })).toHaveCount(0);
 	expect(unhandledPaths).toEqual([]);
 });
 
@@ -495,7 +495,7 @@ test('creates a generic machine with an accessible size and inactivity controls'
 	let suggestionDelay: ReturnType<typeof createRequestDelay> | null = null;
 	const workspaceId = '00000000-0000-0000-0000-000000000002';
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -581,7 +581,7 @@ test('creates a generic machine with an accessible size and inactivity controls'
 					{
 						id: 'opencode',
 						display_name: 'OpenCode',
-						default_image: 'ku/opencode:1',
+						default_image: 'strifira/opencode:1',
 						required_secrets: [],
 						supported_modes: ['autonomous'],
 						custom: false
@@ -676,7 +676,7 @@ test('selects a policy-compatible size for environment builders', async ({ page 
 	let maxDiskGb = 10;
 	let createPayload: Record<string, unknown> | undefined;
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -826,7 +826,7 @@ test('retries a code-server launch while a paused machine resumes', async ({ pag
 	};
 	const unhandledPaths: string[] = [];
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -1043,7 +1043,7 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 		(window as any).WebSocket = MockWebSocket;
 	});
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -1057,8 +1057,8 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 			status: 'running',
 			desired_status: 'running',
 			generation: 1,
-			repo_owner: 'ku',
-			repo_name: 'ku',
+			repo_owner: 'strifira',
+			repo_name: 'strifira',
 			base_branch: 'main',
 			working_branch: 'work',
 			machine_size: 'medium',
@@ -1079,7 +1079,7 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 			machine_id: machineId,
 			issue_id: '00000000-0000-0000-0000-000000000082',
 			github_repo_id: '00000000-0000-0000-0000-000000000083',
-			repository_full_name: 'ku/ku',
+			repository_full_name: 'strifira/strifira',
 			base_branch: 'main',
 			working_branch: 'user/TST-1-terminal',
 			workspace_path: '/workspace/tasks/TST-1-terminal',
@@ -1368,7 +1368,7 @@ test('keeps multiple docked terminals alive across collapse and navigation', asy
 test('uses guarded permanent-delete routes for old-machine cleanup', async ({ page }) => {
 	const workspaceId = '00000000-0000-0000-0000-000000000002';
 	let bulkPayload: Record<string, unknown> | undefined;
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -1471,10 +1471,10 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 		status: 'paused',
 		desired_status: 'paused',
 		generation: 1,
-		repo_owner: 'ku',
-		repo_name: 'ku',
+		repo_owner: 'strifira',
+		repo_name: 'strifira',
 		base_branch: 'main',
-		working_branch: 'ku/picker',
+		working_branch: 'strifira/picker',
 		machine_size: 'medium',
 		cpu_millis: 4000,
 		memory_mb: 8192,
@@ -1493,16 +1493,16 @@ test('cancels Issue Machine Picker work when the dialog is dismissed', async ({ 
 		machine_id: machineId,
 		issue_id: issueId,
 		github_repo_id: '00000000-0000-0000-0000-000000000112',
-		repository_full_name: 'ku/ku',
+		repository_full_name: 'strifira/strifira',
 		base_branch: 'main',
-		working_branch: 'ku/TST-43-picker',
+		working_branch: 'strifira/TST-43-picker',
 		workspace_path: '/workspace/tasks/TST-43-picker',
 		status: 'ready',
 		created_at: '2026-07-13T00:00:00Z',
 		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -1701,7 +1701,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 		{
 			id: 'repo-1',
 			github_repo_id: 1001,
-			full_name: 'ku/ku',
+			full_name: 'strifira/strifira',
 			instance_url: 'https://git.example.com',
 			default_branch: 'main',
 			is_active: true
@@ -1709,7 +1709,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 		{
 			id: 'repo-2',
 			github_repo_id: 1002,
-			full_name: 'ku/backend',
+			full_name: 'strifira/backend',
 			instance_url: 'https://git.example.com',
 			default_branch: 'develop',
 			is_active: true
@@ -1734,7 +1734,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -1852,7 +1852,7 @@ test('searches linked repositories in IssueRepositoryDialog and saves selection'
 	await repoButton.click();
 
 	await page.getByPlaceholder('Search repositories...').fill('backend');
-	await page.getByRole('option', { name: 'ku/backend' }).click();
+	await page.getByRole('option', { name: 'strifira/backend' }).click();
 
 	await dialog.getByRole('button', { name: 'Save defaults' }).click();
 
@@ -1870,8 +1870,8 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 	const runId = '00000000-0000-0000-0000-000000000061';
 	const runId2 = '00000000-0000-0000-0000-000000000062';
 	const checkoutId = '00000000-0000-0000-0000-000000000063';
-	const pullRequestUrl = 'https://git.example.com/ku/ku/pull/46';
-	const untrustedPullRequestUrl = 'https://git.example.com/attacker/ku/pull/46';
+	const pullRequestUrl = 'https://git.example.com/strifira/strifira/pull/46';
+	const untrustedPullRequestUrl = 'https://git.example.com/attacker/strifira/pull/46';
 	let traceRequests = 0;
 	let lastTraceEventsAfterId = 0;
 	let lastTraceLogsAfterId = 0;
@@ -1889,7 +1889,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		repo_owner: 'machine-owner',
 		repo_name: 'machine-repo',
 		base_branch: 'main',
-		working_branch: 'ku/trace',
+		working_branch: 'strifira/trace',
 		machine_size: 'medium',
 		cpu_millis: 4000,
 		memory_mb: 8192,
@@ -1908,16 +1908,16 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 		machine_id: machineId,
 		issue_id: '00000000-0000-0000-0000-000000000064',
 		github_repo_id: '00000000-0000-0000-0000-000000000065',
-		repository_full_name: 'ku/ku',
+		repository_full_name: 'strifira/strifira',
 		base_branch: 'main',
-		working_branch: 'ku/trace',
+		working_branch: 'strifira/trace',
 		workspace_path: '/workspace/tasks/trace',
 		status: 'ready',
 		created_at: '2026-07-13T00:00:00Z',
 		updated_at: '2026-07-13T00:00:00Z'
 	};
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -2009,7 +2009,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 							summary: 'Fixed bug in login',
 							changed_files: ['src/login.ts'],
 							commits: ['abc1234'],
-							branch: 'ku/trace',
+							branch: 'strifira/trace',
 							pull_request_url: pullRequestUrl,
 							tests_run: ['TestLogin'],
 							test_status: 'passed',
@@ -2132,7 +2132,7 @@ test('opens agent-run trace sheet from card click, activity click, deep link, an
 						summary: 'Fixed bug in login',
 						changed_files: ['src/login.ts'],
 						commits: ['abc1234'],
-						branch: 'ku/trace',
+						branch: 'strifira/trace',
 						pull_request_url: pullRequestUrl,
 						tests_run: ['TestLogin'],
 						test_status: 'passed',
@@ -2353,7 +2353,7 @@ test('bounds machine and agent trace telemetry during long-running sessions', as
 	}));
 
 	await page.clock.install();
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {

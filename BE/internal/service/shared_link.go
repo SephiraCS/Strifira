@@ -11,12 +11,12 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/assettoken"
+	"github.com/SephiraCS/strifira-backend/pkg/sanitize"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/assettoken"
-	"github.com/ku/ku-backend/pkg/sanitize"
 )
 
 var protectedPublicAssetPattern = regexp.MustCompile(`(?i)(\b(?:src|href)=["'])(/api/workspaces/[^/"']+/assets/([0-9a-fA-F-]{36}))(\?download=1)?(["'])`)

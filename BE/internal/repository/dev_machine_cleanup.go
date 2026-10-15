@@ -6,8 +6,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 // Claim one terminal cleanup at a time. SKIP LOCKED permits multiple managers;

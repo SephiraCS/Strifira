@@ -42,7 +42,7 @@ run_case() {
 	set +e
 	output=$(PATH="$fake_bin:$PATH" PSQL_LOG="$psql_log" DEV_MACHINES_ENABLED="$enabled" \
 		ENVIRONMENT="$environment" DEV_MACHINE_DOMAIN="$domain" CADDYFILE_PATH="$caddyfile" \
-		GATEWAY_DB_PASSWORD=gateway-password POSTGRES_USER=ku POSTGRES_DB=ku \
+		GATEWAY_DB_PASSWORD=gateway-password POSTGRES_USER=strifira POSTGRES_DB=strifira \
 		sh -ec "$preflight" 2>&1)
 	status=$?
 	set -e

@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/aiegress"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
+	"github.com/SephiraCS/strifira-backend/pkg/sanitize"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/aiegress"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/crypto"
-	"github.com/ku/ku-backend/pkg/sanitize"
 )
 
 const DefaultDescriptionExpandPrompt = "Write TipTap-compatible HTML for a Linear-style issue description. Use only an HTML fragment that TipTap StarterKit can parse, such as <p>, <strong>, <em>, <code>, <ul>, <ol>, <li>, <blockquote>, <h2>, and <h3>. Do not return Markdown, code fences, <html>, <body>, scripts, styles, or explanations. Expand or rewrite the given text into clear, actionable issue content with context, expected behavior, acceptance criteria, and relevant edge cases. Keep it concise and practical. Preserve existing meaning and avoid inventing facts."

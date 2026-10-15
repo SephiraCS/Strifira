@@ -8,7 +8,7 @@ test('keeps dirty local theme when remote preferences are stale', async ({ page 
 
 	await page.addInitScript((order) => {
 		localStorage.setItem(
-			'ku-preferences',
+			'strifira-preferences',
 			JSON.stringify({
 				fontSize: 'default',
 				pointerCursors: true,
@@ -23,7 +23,7 @@ test('keeps dirty local theme when remote preferences are stale', async ({ page 
 		);
 	}, workflowSortOrder);
 
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -103,7 +103,7 @@ test('keeps dirty local theme when remote preferences are stale', async ({ page 
 	await expect.poll(() => patchPayload?.dark_theme).toBe('cyber-77');
 	await expect
 		.poll(() =>
-			page.evaluate(() => JSON.parse(localStorage.getItem('ku-preferences') ?? '{}').localDirty)
+			page.evaluate(() => JSON.parse(localStorage.getItem('strifira-preferences') ?? '{}').localDirty)
 		)
 		.toBe(false);
 	await expect(page.locator('html')).toHaveClass(/cyber-77/);

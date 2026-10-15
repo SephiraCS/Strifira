@@ -13,7 +13,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	mw "github.com/ku/ku-backend/internal/middleware"
+	mw "github.com/SephiraCS/strifira-backend/internal/middleware"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

@@ -154,10 +154,10 @@ func ReadToken(path string) (string, error) {
 		return "", fmt.Errorf("read worker token: %w", err)
 	}
 	token := strings.TrimSpace(string(data[:n]))
-	if !strings.HasPrefix(token, "kub_") || len(token) != 68 {
+	if !strings.HasPrefix(token, "strifira_") || len(token) != len("strifira_")+64 {
 		return "", errors.New("invalid worker token format")
 	}
-	for _, character := range token[4:] {
+	for _, character := range token[len("strifira_"):] {
 		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
 			return "", errors.New("invalid worker token format")
 		}

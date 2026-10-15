@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -76,9 +76,9 @@ func newAPIKeyTestUser(id uuid.UUID) *domain.User {
 func TestGenerateAPIKeyFormat(t *testing.T) {
 	raw, err := GenerateAPIKey()
 	require.NoError(t, err)
-	// ku_ prefix + 48 hex chars
+	// strifira_ prefix + 48 hex chars
 	assert.Len(t, raw, 3+48)
-	assert.Regexp(t, `^ku_[0-9a-f]{48}$`, raw)
+	assert.Regexp(t, `^strifira_[0-9a-f]{48}$`, raw)
 
 	second, err := GenerateAPIKey()
 	require.NoError(t, err)
@@ -131,12 +131,12 @@ func TestAPIKeyServiceAuthenticate(t *testing.T) {
 	assert.Equal(t, key.ID, authKey.ID)
 	assert.ElementsMatch(t, []string{"read", "write"}, authKey.Scopes)
 
-	// Wrong shape: not a ku_ token
-	_, _, err = svc.Authenticate(ctx, "not_a_ku_token")
+	// Wrong shape: not a strifira_ token
+	_, _, err = svc.Authenticate(ctx, "not_a_strifira_token")
 	assert.ErrorIs(t, err, ErrAPIKeyAuthentication)
 
 	// Unknown token: hash lookup misses
-	unknown := "ku_" + strings.Repeat("ab", 24)
+	unknown := "strifira_" + strings.Repeat("ab", 24)
 	store.On("GetByHash", ctx, hashAPIKey(unknown)).Return(nil, nil)
 	_, _, err = svc.Authenticate(ctx, unknown)
 	assert.ErrorIs(t, err, ErrAPIKeyAuthentication)
@@ -158,26 +158,26 @@ func TestAPIKeyServiceAuthenticateRevokedAndExpired(t *testing.T) {
 	users.On("GetByID", mock.Anything, userID).Return(newAPIKeyTestUser(userID), nil).Maybe()
 	svc := authenticateAPIKey(t, store, users)
 
-	store.On("GetByHash", ctx, hashAPIKey("ku_revoked")).Return(revoked, nil)
-	_, _, err := svc.Authenticate(ctx, "ku_revoked")
+	store.On("GetByHash", ctx, hashAPIKey("strifira_revoked")).Return(revoked, nil)
+	_, _, err := svc.Authenticate(ctx, "strifira_revoked")
 	assert.ErrorIs(t, err, ErrAPIKeyAuthentication, "revoked keys must not authenticate")
 
-	store.On("GetByHash", ctx, hashAPIKey("ku_expired")).Return(expired, nil)
-	_, _, err = svc.Authenticate(ctx, "ku_expired")
+	store.On("GetByHash", ctx, hashAPIKey("strifira_expired")).Return(expired, nil)
+	_, _, err = svc.Authenticate(ctx, "strifira_expired")
 	assert.ErrorIs(t, err, ErrAPIKeyAuthentication, "expired keys must not authenticate")
 }
 
 func TestAPIKeyServiceAuthenticateMissingUser(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
-	key := &domain.APIKey{ID: uuid.New(), UserID: userID, TokenHash: hashAPIKey("ku_orphan"), Scopes: []string{"read"}}
+	key := &domain.APIKey{ID: uuid.New(), UserID: userID, TokenHash: hashAPIKey("strifira_orphan"), Scopes: []string{"read"}}
 
 	store := &mockAPIKeyRepo{}
-	store.On("GetByHash", ctx, hashAPIKey("ku_orphan")).Return(key, nil)
+	store.On("GetByHash", ctx, hashAPIKey("strifira_orphan")).Return(key, nil)
 	users := &mockUserRepo{}
 	users.On("GetByID", ctx, userID).Return(nil, nil)
 
 	svc := authenticateAPIKey(t, store, users)
-	_, _, err := svc.Authenticate(ctx, "ku_orphan")
+	_, _, err := svc.Authenticate(ctx, "strifira_orphan")
 	assert.ErrorIs(t, err, ErrAPIKeyAuthentication, "keys whose owner was deleted must not authenticate")
 }

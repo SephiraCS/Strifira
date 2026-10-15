@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
@@ -22,9 +22,9 @@ import (
 // Its externally routed test bridge permits a private development provider;
 // machine egress-policy qualification remains a separate lifecycle test.
 func TestDockerRuntimeAgentQualification(t *testing.T) {
-	image := os.Getenv("KU_DOCKER_AGENT_IMAGE")
+	image := os.Getenv("STRIFIRA_DOCKER_AGENT_IMAGE")
 	if image == "" {
-		t.Skip("set KU_DOCKER_AGENT_IMAGE to an already built Claude agent image")
+		t.Skip("set STRIFIRA_DOCKER_AGENT_IMAGE to an already built Claude agent image")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
 	defer cancel()
@@ -34,11 +34,11 @@ func TestDockerRuntimeAgentQualification(t *testing.T) {
 	require.NoError(t, runtime.Ping(ctx))
 
 	routingKey := "agent-test-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-	volumeName, networkName := "ku-workspace-"+routingKey, "ku-machine-"+routingKey
+	volumeName, networkName := "strifira-workspace-"+routingKey, "strifira-machine-"+routingKey
 	machine := &domain.DevMachine{
 		ID: uuid.New(), WorkspaceID: uuid.New(), RoutingKey: routingKey,
 		CPUMillis: 2000, MemoryMB: 3072, PidsLimit: 512, DiskGB: 1,
-		BaseBranch: "main", WorkingBranch: "ku/docker-smoke",
+		BaseBranch: "main", WorkingBranch: "strifira/docker-smoke",
 		DockerNetworkName: &networkName, WorkspaceVolumeName: &volumeName,
 	}
 	labels := machineLabels(machine)
@@ -51,7 +51,7 @@ func TestDockerRuntimeAgentQualification(t *testing.T) {
 		containers, listErr := runtime.client.ContainerList(cleanupCtx, client.ContainerListOptions{All: true})
 		if listErr == nil {
 			for _, item := range containers.Items {
-				if item.Labels["com.ku.machine-id"] == machine.ID.String() {
+				if item.Labels["com.strifira.machine-id"] == machine.ID.String() {
 					_, removeErr := runtime.client.ContainerRemove(cleanupCtx, item.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 					require.NoError(t, removeErr)
 				}
@@ -66,7 +66,7 @@ func TestDockerRuntimeAgentQualification(t *testing.T) {
 	created, err = runtime.ensureVolume(ctx, volumeName, labels, machine.DiskGB)
 	require.NoError(t, err)
 	require.True(t, created)
-	collectorImage := os.Getenv("KU_DOCKER_COLLECTOR_IMAGE")
+	collectorImage := os.Getenv("STRIFIRA_DOCKER_COLLECTOR_IMAGE")
 	require.NotEmpty(t, collectorImage, "workspace preparation requires the shipped collector Git/util-linux tooling")
 	require.NoError(t, runtime.prepareProtectedWorkspaceVolume(ctx, machine, volumeName, collectorImage))
 
@@ -74,10 +74,10 @@ func TestDockerRuntimeAgentQualification(t *testing.T) {
 		Config: &container.Config{
 			Image: image, User: "1000:1000", WorkingDir: "/workspace",
 			Entrypoint: []string{"/bin/sleep"}, Cmd: []string{"180"},
-			Env: []string{"HOME=/home/ku"}, Labels: labels,
+			Env: []string{"HOME=/home/strifira"}, Labels: labels,
 		},
 		HostConfig: runtime.secureHostConfig(machine, "agent", networkName, volumeName),
-		Name:       "ku-" + routingKey + "-developer",
+		Name:       "strifira-" + routingKey + "-developer",
 	})
 	require.NoError(t, err)
 	_, err = runtime.client.ContainerStart(ctx, developer.ID, client.ContainerStartOptions{})
@@ -92,19 +92,19 @@ mkdir -p /workspace/repository
 cd /workspace/repository
 git init --quiet -b main
 git config user.name KuSmoke
-git config user.email ku-smoke@localhost
+git config user.email strifira-smoke@localhost
 printf '%s\n' '#!/bin/sh' 'printf "%s\n" old-value' > greeting.sh
-printf '%s\n' '#!/bin/sh' 'set -eu' '[ "$(sh greeting.sh)" = ku-docker-agent-ok ]' > test.sh
+printf '%s\n' '#!/bin/sh' 'set -eu' '[ "$(sh greeting.sh)" = strifira-docker-agent-ok ]' > test.sh
 git add greeting.sh test.sh
 git commit --quiet -m 'Initialize disposable Docker fixture'
 git update-ref refs/remotes/origin/main HEAD
-git switch --quiet -c ku/docker-smoke
+git switch --quiet -c strifira/docker-smoke
 `})
 	require.NoError(t, err)
 	_, err = runtime.execOutput(ctx, developer.ID, []string{"sh", "-c", `set -eu
-printf '%s\n' 'package main' 'import "fmt"' 'func main() { fmt.Println("ku-docker-toolchain-ok") }' > /tmp/ku-toolchain.go
-go build -o /tmp/ku-toolchain /tmp/ku-toolchain.go
-[ "$(/tmp/ku-toolchain)" = ku-docker-toolchain-ok ]
+printf '%s\n' 'package main' 'import "fmt"' 'func main() { fmt.Println("strifira-docker-toolchain-ok") }' > /tmp/strifira-toolchain.go
+go build -o /tmp/strifira-toolchain /tmp/strifira-toolchain.go
+[ "$(/tmp/strifira-toolchain)" = strifira-docker-toolchain-ok ]
 `})
 	require.NoError(t, err)
 	t.Log("container Go compiler and temporary binary execution passed")
@@ -120,29 +120,29 @@ repository_url=$4
 git -c protocol.file.allow=always clone --quiet --bare --local --no-hardlinks --template= -- "$workspace" "$repository"
 cat > "$repository/config" <<'CONFIG'
 `+protectedRepositoryConfig+`CONFIG
-printf '%s\n' "$repository_url" > "$repository/ku.repository-url"
+printf '%s\n' "$repository_url" > "$repository/strifira.repository-url"
 base=$(git --git-dir="$repository" rev-parse HEAD)
-git --git-dir="$repository" update-ref "refs/ku/runs/$run_key/base" "$base"
-git --git-dir="$repository" update-ref "refs/ku/runs/$run_key/parent" "$base"
+git --git-dir="$repository" update-ref "refs/strifira/runs/$run_key/base" "$base"
+git --git-dir="$repository" update-ref "refs/strifira/runs/$run_key/parent" "$base"
 `, "seed-fixture-pins", checkout.WorkspacePath, repository, verificationRunID.String(), checkout.RepositoryURL), "", repositoryHelperInvocation{})
 	require.NoError(t, err)
 
-	if os.Getenv("KU_DOCKER_AGENT_LIVE") == "1" {
-		key := os.Getenv("KU_DOCKER_AGENT_API_KEY")
+	if os.Getenv("STRIFIRA_DOCKER_AGENT_LIVE") == "1" {
+		key := os.Getenv("STRIFIRA_DOCKER_AGENT_API_KEY")
 		require.NotEmpty(t, key, "provide a dedicated key in the test process environment")
 		provider := agent.NewClaudeCodeProvider(image)
 		extraArgs := []string{"--setting-sources", "", "--strict-mcp-config", "--no-session-persistence", "--max-budget-usd", "0.50"}
-		if model := os.Getenv("KU_DOCKER_AGENT_MODEL"); model != "" {
+		if model := os.Getenv("STRIFIRA_DOCKER_AGENT_MODEL"); model != "" {
 			extraArgs = append(extraArgs, "--model", model)
 		}
 		invocation, invocationErr := provider.BuildInvocation(agent.RunInput{
 			Mode:      agent.ModeAutonomous,
-			Prompt:    "Edit only greeting.sh to print exactly ku-docker-agent-ok on one line, then run sh test.sh. Do not inspect credentials or other directories, use the network, commit or push. Finish with a brief summary.",
+			Prompt:    "Edit only greeting.sh to print exactly strifira-docker-agent-ok on one line, then run sh test.sh. Do not inspect credentials or other directories, use the network, commit or push. Finish with a brief summary.",
 			ExtraArgs: extraArgs,
 		})
 		require.NoError(t, invocationErr)
 		secrets := map[string]string{"ANTHROPIC_API_KEY": key, "DISABLE_AUTOUPDATER": "1"}
-		if baseURL := os.Getenv("KU_DOCKER_AGENT_BASE_URL"); baseURL != "" {
+		if baseURL := os.Getenv("STRIFIRA_DOCKER_AGENT_BASE_URL"); baseURL != "" {
 			secrets["ANTHROPIC_BASE_URL"] = baseURL
 			secrets["HTTP_PROXY"], secrets["HTTPS_PROXY"] = "", ""
 		}
@@ -178,13 +178,13 @@ git --git-dir="$repository" update-ref "refs/ku/runs/$run_key/parent" "$base"
 		}
 		t.Log("live coding, active JSONL streaming, terminal normalization and container resource/security limits passed")
 	} else {
-		_, err = runtime.execOutput(ctx, developer.ID, []string{"/bin/sh", "-c", `cd /workspace/repository; printf '%s\n' '#!/bin/sh' 'printf "%s\n" ku-docker-agent-ok' > greeting.sh`})
+		_, err = runtime.execOutput(ctx, developer.ID, []string{"/bin/sh", "-c", `cd /workspace/repository; printf '%s\n' '#!/bin/sh' 'printf "%s\n" strifira-docker-agent-ok' > greeting.sh`})
 		require.NoError(t, err)
 	}
 
 	candidate, err := runtime.RetainAgentCandidate(ctx, machine, services, checkout, verificationRunID)
 	require.NoError(t, err)
-	require.Equal(t, "ku/docker-smoke", candidate.Branch)
+	require.Equal(t, "strifira/docker-smoke", candidate.Branch)
 	require.Equal(t, []string{"greeting.sh"}, candidate.ChangedFiles)
 	independent, err := runtime.RunCandidateCommand(ctx, machine, services, checkout, verificationRunID, candidate, []string{"sh", "test.sh"})
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ git --git-dir="$repository" update-ref "refs/ku/runs/$run_key/parent" "$base"
 	case <-time.After(15 * time.Second):
 		t.Fatal("cancelled agent wait did not finish")
 	}
-	_, err = runtime.client.ContainerInspect(ctx, "ku-"+routingKey+"-agent-"+run.ID.String(), client.ContainerInspectOptions{})
+	_, err = runtime.client.ContainerInspect(ctx, "strifira-"+routingKey+"-agent-"+run.ID.String(), client.ContainerInspectOptions{})
 	require.True(t, errdefs.IsNotFound(err))
 	_, err = runtime.execOutput(ctx, developer.ID, []string{"true"})
 	require.NoError(t, err, "developer container must remain usable after cancellation")

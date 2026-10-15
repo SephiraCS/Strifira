@@ -14,7 +14,7 @@ interface SignalEvent {
 
 declare global {
 	interface Window {
-		__kuLive: {
+		__strifiraLive: {
 			peers: RTCPeerConnection[];
 			sockets: WebSocket[];
 			messages: SignalEvent[];
@@ -46,7 +46,7 @@ async function newUser(browser: Browser, baseURL: string, role: string): Promise
 	await checkedJSON(
 		await context.request.post('/api/auth/register', {
 			data: {
-				email: `${role}-${suffix}@ku-live.invalid`,
+				email: `${role}-${suffix}@strifira-live.invalid`,
 				password: `KuLive-${randomUUID()}-aA9!`,
 				name: `${role} ${suffix}`
 			}
@@ -55,7 +55,7 @@ async function newUser(browser: Browser, baseURL: string, role: string): Promise
 	);
 	await context.addInitScript(() => {
 		localStorage.setItem('PARAGLIDE_LOCALE', 'en');
-		window.__kuLive = { peers: [], sockets: [], messages: [], captures: [], captureCalls: 0, audioSources: [] };
+		window.__strifiraLive = { peers: [], sockets: [], messages: [], captures: [], captureCalls: 0, audioSources: [] };
 
 		// Observe native constructors without replacing any transport behavior.
 		// The suite uses real offers/answers, ICE, RTP encoding and decoding.
@@ -63,17 +63,17 @@ async function newUser(browser: Browser, baseURL: string, role: string): Promise
 		window.RTCPeerConnection = class extends PeerConnection {
 			constructor(configuration?: RTCConfiguration) {
 				super(configuration);
-				window.__kuLive.peers.push(this);
+				window.__strifiraLive.peers.push(this);
 			}
 		};
 		const Socket = window.WebSocket;
 		window.WebSocket = class extends Socket {
 			constructor(url: string | URL, protocols?: string | string[]) {
 				super(url, protocols);
-				window.__kuLive.sockets.push(this);
+				window.__strifiraLive.sockets.push(this);
 				this.addEventListener('message', (event) => {
 					try {
-						window.__kuLive.messages.push(JSON.parse(event.data));
+						window.__strifiraLive.messages.push(JSON.parse(event.data));
 					} catch {
 						/* Ignore non-JSON traffic. */
 					}
@@ -107,7 +107,7 @@ async function openWall(context: BrowserContext, slug: string): Promise<Page> {
 	await expect
 		.poll(() =>
 			page.evaluate(() =>
-				window.__kuLive.sockets.some((socket) => socket.url.includes('/ws') && socket.readyState === WebSocket.OPEN)
+				window.__strifiraLive.sockets.some((socket) => socket.url.includes('/ws') && socket.readyState === WebSocket.OPEN)
 			)
 		)
 		.toBe(true);
@@ -120,13 +120,13 @@ async function installCanvasCapture(page: Page, label: string, audioOnSwitch = f
 			// Headless browsers have no screen picker. Only capture is synthetic;
 			// canvas.captureStream produces real video tracks for native WebRTC.
 			navigator.mediaDevices.getDisplayMedia = async () => {
-				window.__kuLive.captureCalls++;
+				window.__strifiraLive.captureCalls++;
 				const canvas = document.createElement('canvas');
 				canvas.width = 640;
 				canvas.height = 360;
 				const ctx = canvas.getContext('2d')!;
 				let frame = 0;
-				const capture = window.__kuLive.captureCalls;
+				const capture = window.__strifiraLive.captureCalls;
 				const draw = () => {
 					// Stable distinct colors prove replaceTrack changed decoded
 					// source, rather than leaving the receiver on old frames.
@@ -155,7 +155,7 @@ async function installCanvasCapture(page: Page, label: string, audioOnSwitch = f
 					oscillator.connect(gain).connect(analyser).connect(destination);
 					oscillator.start();
 					stream.addTrack(destination.stream.getAudioTracks()[0]);
-					window.__kuLive.audioSources.push({ capture, context: audioContext, analyser, oscillator });
+					window.__strifiraLive.audioSources.push({ capture, context: audioContext, analyser, oscillator });
 				}
 				for (const track of stream.getTracks()) {
 					const stop = track.stop.bind(track);
@@ -166,7 +166,7 @@ async function installCanvasCapture(page: Page, label: string, audioOnSwitch = f
 					};
 				}
 				stream.getVideoTracks()[0].addEventListener('ended', () => clearInterval(timer));
-				window.__kuLive.captures.push(stream);
+				window.__strifiraLive.captures.push(stream);
 				return stream;
 			};
 		},
@@ -187,7 +187,7 @@ async function receivedVideo(page: Page): Promise<{ frames: number; bytes: numbe
 		let frames = 0;
 		let bytes = 0;
 		let connected = 0;
-		for (const peer of window.__kuLive.peers) {
+		for (const peer of window.__strifiraLive.peers) {
 			if (peer.connectionState !== 'connected') continue;
 			connected++;
 			const stats = await peer.getStats();
@@ -207,7 +207,7 @@ async function receivedAudio(page: Page): Promise<{ bytes: number; samples: numb
 		let bytes = 0;
 		let samples = 0;
 		let energy = 0;
-		for (const peer of window.__kuLive.peers) {
+		for (const peer of window.__strifiraLive.peers) {
 			if (peer.connectionState !== 'connected') continue;
 			for (const report of (await peer.getStats()).values()) {
 				if (report.type === 'inbound-rtp' && report.kind === 'audio') {
@@ -228,12 +228,12 @@ async function capturedAudio(page: Page): Promise<{
 	trackState: MediaStreamTrackState | null;
 }> {
 	return page.evaluate(() => {
-		const source = window.__kuLive.audioSources.at(-1);
+		const source = window.__strifiraLive.audioSources.at(-1);
 		if (!source) return { state: null, time: 0, rms: 0, trackState: null };
 		const samples = new Float32Array(source.analyser.fftSize);
 		source.analyser.getFloatTimeDomainData(samples);
 		const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
-		const track = window.__kuLive.captures[source.capture - 1]?.getAudioTracks()[0];
+		const track = window.__strifiraLive.captures[source.capture - 1]?.getAudioTracks()[0];
 		return {
 			state: source.context.state,
 			time: source.context.currentTime,
@@ -262,7 +262,7 @@ async function expectVideoContinues(page: Page, shareId: string): Promise<void> 
 
 async function closeWorkspaceSocket(page: Page): Promise<void> {
 	await page.evaluate(() => {
-		const socket = window.__kuLive.sockets.findLast(
+		const socket = window.__strifiraLive.sockets.findLast(
 			(candidate) => candidate.url.includes('/ws') && candidate.readyState === WebSocket.OPEN
 		);
 		if (!socket) throw new Error('No real workspace socket to disconnect');
@@ -307,7 +307,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 		await expect.poll(async () => (await activeShares(presenter, slug)).length).toBe(1);
 		const shareId = (await activeShares(presenter, slug))[0].id;
 		await expect.poll(() => frameCount(source, shareId)).toBeGreaterThan(10);
-		expect(await source.evaluate(() => window.__kuLive.captures[0].getAudioTracks().length)).toBe(0);
+		expect(await source.evaluate(() => window.__strifiraLive.captures[0].getAudioTracks().length)).toBe(0);
 
 		// Identical account cookies must produce independent socket/peer IDs.
 		const ownViewerA = await openWall(presenter, slug);
@@ -324,7 +324,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 			.poll(() =>
 				source.evaluate(
 					(id) =>
-						window.__kuLive.messages.findLast(
+						window.__strifiraLive.messages.findLast(
 							(message) => message.type === 'share.presence' && message.payload?.share_id === id
 						)?.payload?.viewer_peers?.length,
 					shareId
@@ -336,7 +336,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 				source.evaluate(
 					(id) =>
 						new Set(
-							window.__kuLive.messages
+							window.__strifiraLive.messages
 								.filter(
 									(message) =>
 										message.type === 'share.signal' &&
@@ -375,7 +375,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 		await expect
 			.poll(() =>
 				ownViewerA.evaluate(() =>
-					window.__kuLive.captures.every((capture) =>
+					window.__strifiraLive.captures.every((capture) =>
 						capture.getTracks().every((track) => track.readyState === 'ended')
 					)
 				)
@@ -391,7 +391,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 			.poll(() =>
 				source.evaluate(
 					(id) =>
-						window.__kuLive.messages.findLast(
+						window.__strifiraLive.messages.findLast(
 							(message) => message.type === 'share.presence' && message.payload?.share_id === id
 						)?.payload?.viewer_peers?.length,
 					shareId
@@ -415,13 +415,13 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 		expect(prompts).toBe(0);
 		await source.locator(`a[href="/${slug}/shares"]`).first().click();
 		await expect(source.locator(`[data-share-id="${shareId}"]`)).toBeVisible();
-		expect(await source.evaluate(() => window.__kuLive.captureCalls)).toBe(1);
+		expect(await source.evaluate(() => window.__strifiraLive.captureCalls)).toBe(1);
 
 		// Replacing the video track keeps the same share and remote streams.
 		await source.getByRole('button', { name: 'Change what you share', exact: true }).click();
-		await expect.poll(() => source.evaluate(() => window.__kuLive.captureCalls)).toBe(2);
+		await expect.poll(() => source.evaluate(() => window.__strifiraLive.captureCalls)).toBe(2);
 		await expect
-			.poll(() => source.evaluate(() => window.__kuLive.captures[0].getVideoTracks()[0].readyState))
+			.poll(() => source.evaluate(() => window.__strifiraLive.captures[0].getVideoTracks()[0].readyState))
 			.toBe('ended');
 		expect((await activeShares(presenter, slug))[0].id).toBe(shareId);
 		await expect.poll(async () => (await capturedAudio(source)).state).toBe('running');
@@ -466,14 +466,14 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 
 		// Drop actual signaling sockets. Automatic layout reconnect and share
 		// re-announcement must recover; no synthetic reconnect event is fired.
-		const viewerSockets = await otherViewerA.evaluate(() => window.__kuLive.sockets.length);
+		const viewerSockets = await otherViewerA.evaluate(() => window.__strifiraLive.sockets.length);
 		await closeWorkspaceSocket(otherViewerA);
-		await expect.poll(() => otherViewerA.evaluate(() => window.__kuLive.sockets.length)).toBeGreaterThan(viewerSockets);
+		await expect.poll(() => otherViewerA.evaluate(() => window.__strifiraLive.sockets.length)).toBeGreaterThan(viewerSockets);
 		await expectDecodedVideo(otherViewerA, shareId);
 		await expectVideoContinues(otherViewerA, shareId);
-		const sourceSockets = await source.evaluate(() => window.__kuLive.sockets.length);
+		const sourceSockets = await source.evaluate(() => window.__strifiraLive.sockets.length);
 		await closeWorkspaceSocket(source);
-		await expect.poll(() => source.evaluate(() => window.__kuLive.sockets.length)).toBeGreaterThan(sourceSockets);
+		await expect.poll(() => source.evaluate(() => window.__strifiraLive.sockets.length)).toBeGreaterThan(sourceSockets);
 		for (const page of [ownViewerB, otherViewerA, otherViewerB]) await expectVideoContinues(page, shareId);
 		await expect.poll(async () => (await activeShares(presenter, slug))[0]?.viewer_count).toBe(2);
 
@@ -488,7 +488,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 		await expect
 			.poll(() =>
 				source.evaluate(() =>
-					window.__kuLive.captures.every((capture) =>
+					window.__strifiraLive.captures.every((capture) =>
 						capture.getTracks().every((track) => track.readyState === 'ended')
 					)
 				)
@@ -516,7 +516,7 @@ test('real media supports same-user tabs, navigation, surface changes, reconnect
 					sourceAudio: await capturedAudio(page).catch(() => null),
 					signals: await page
 						.evaluate(() =>
-							window.__kuLive.messages
+							window.__strifiraLive.messages
 								.filter((message) => message.type === 'share.signal' || message.type === 'share.presence')
 								.map((message) => ({
 									type: message.type,
@@ -566,7 +566,7 @@ test('switching workspaces ends the old capture and its remote viewer', async ({
 		await expect
 			.poll(() =>
 				source.evaluate(() =>
-					window.__kuLive.captures.every((capture) =>
+					window.__strifiraLive.captures.every((capture) =>
 						capture.getTracks().every((track) => track.readyState === 'ended')
 					)
 				)

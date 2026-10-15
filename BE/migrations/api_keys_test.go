@@ -37,7 +37,7 @@ func TestAPIKeysMigrationRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, admin.PingContext(ctx))
 
-	databaseName := "ku_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "strifira_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+databaseName+`"`)
 	if err != nil && strings.Contains(err.Error(), "42501") {
 		_ = admin.Close()
@@ -77,24 +77,24 @@ func TestAPIKeysMigrationRoundTrip(t *testing.T) {
 
 	// Insert one key per scope shape and prove the CHECK constraint holds.
 	_, err = db.Exec(`INSERT INTO api_keys (id,user_id,name,token_hash,key_prefix,scopes) VALUES ($1,$2,'full','a',$3,$4)`,
-		uuid.New(), userID, "ku_aaaaaaaa", pq.Array([]string{"read", "write"}))
+		uuid.New(), userID, "strifira_aaaaaaaa", pq.Array([]string{"read", "write"}))
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO api_keys (id,user_id,name,token_hash,key_prefix,scopes,expires_at) VALUES ($1,$2,'ro','b',$3,$4,NOW() + INTERVAL '30 days')`,
-		uuid.New(), userID, "ku_bbbbbbbb", pq.Array([]string{"read"}))
+		uuid.New(), userID, "strifira_bbbbbbbb", pq.Array([]string{"read"}))
 	require.NoError(t, err)
 
 	// A key without the read scope violates the CHECK (read is mandatory).
 	_, err = db.Exec(`INSERT INTO api_keys (id,user_id,name,token_hash,key_prefix,scopes) VALUES ($1,$2,'bad','c',$3,$4)`,
-		uuid.New(), userID, "ku_cccccccc", pq.Array([]string{"write"}))
+		uuid.New(), userID, "strifira_cccccccc", pq.Array([]string{"write"}))
 	require.Error(t, err, "write-only scopes must be rejected")
 	// Unknown scopes are rejected too.
 	_, err = db.Exec(`INSERT INTO api_keys (id,user_id,name,token_hash,key_prefix,scopes) VALUES ($1,$2,'bad','d',$3,$4)`,
-		uuid.New(), userID, "ku_dddddddd", pq.Array([]string{"read", "admin"}))
+		uuid.New(), userID, "strifira_dddddddd", pq.Array([]string{"read", "admin"}))
 	require.Error(t, err)
 
 	// Duplicate hashes are rejected.
 	_, err = db.Exec(`INSERT INTO api_keys (id,user_id,name,token_hash,key_prefix,scopes) VALUES ($1,$2,'dupe','a',$3,$4)`,
-		uuid.New(), userID, "ku_aaaaaaaa", pq.Array([]string{"read"}))
+		uuid.New(), userID, "strifira_aaaaaaaa", pq.Array([]string{"read"}))
 	require.Error(t, err)
 
 	// Revocation and last_used updates work.

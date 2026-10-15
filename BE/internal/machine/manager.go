@@ -13,12 +13,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	cryptoutil "github.com/SephiraCS/strifira-backend/pkg/crypto"
+	githubclient "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/repository"
-	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	githubclient "github.com/ku/ku-backend/pkg/github"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -730,7 +730,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 		allowedSecretSet[name] = true
 	}
 	for _, envVar := range envVars {
-		if envVar.Name == "GITHUB_TOKEN" || strings.HasPrefix(envVar.Name, "KU_") {
+		if envVar.Name == "GITHUB_TOKEN" || strings.HasPrefix(envVar.Name, "STRIFIRA_") {
 			continue
 		}
 		if !allowedSecretSet[envVar.Name] {
@@ -744,7 +744,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 	}
 	service := &domain.DevMachineService{
 		ID: uuid.New(), WorkspaceID: machine.WorkspaceID, MachineID: machine.ID, AgentRunID: &run.ID, ServiceType: "agent",
-		ServiceKey: "agent-" + run.ID.String(), ContainerName: "ku-" + machine.RoutingKey + "-agent-" + run.ID.String(),
+		ServiceKey: "agent-" + run.ID.String(), ContainerName: "strifira-" + machine.RoutingKey + "-agent-" + run.ID.String(),
 		ImageRef: providerRecord.ImageRef, InternalHost: "agent-" + run.ID.String(), InternalPort: 8080,
 		Status: "pending", HealthStatus: "unknown",
 	}
@@ -865,7 +865,7 @@ func (m *Manager) runAgent(ctx context.Context, machine *domain.DevMachine, oper
 				baseBranch, workingBranch = checkout.BaseBranch, checkout.WorkingBranch
 			}
 			pullRequest, prErr = m.github.CreatePullRequest(instanceURL, freshToken, repoOwner, repoName,
-				fmt.Sprintf("Ku agent run for %s", workingBranch), result.Branch, baseBranch, result.Summary)
+				fmt.Sprintf("Strifira agent run for %s", workingBranch), result.Branch, baseBranch, result.Summary)
 		}
 		if prErr != nil {
 			message := "Pull request creation failed: " + redact(safeError(prErr), secrets)

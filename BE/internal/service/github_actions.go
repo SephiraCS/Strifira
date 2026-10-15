@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	gh "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/dto"
-	gh "github.com/ku/ku-backend/pkg/github"
 )
 
 var (

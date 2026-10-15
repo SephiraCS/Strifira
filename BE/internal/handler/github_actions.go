@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	gh "github.com/SephiraCS/strifira-backend/pkg/github"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/service"
-	gh "github.com/ku/ku-backend/pkg/github"
-	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 
@@ -36,7 +36,7 @@ func NewGitHubActionsHandler(svc githubActionsService) *GitHubActionsHandler {
 }
 
 // actionScope passes the authenticated workspace's ID to every service call;
-// repoId is the UUID of a Ku link, never a caller-selected upstream repository.
+// repoId is the UUID of a Strifira link, never a caller-selected upstream repository.
 func actionScope(c echo.Context) (uuid.UUID, uuid.UUID, error) {
 	ws := middleware.GetWorkspace(c)
 	if ws == nil || ws.ID == uuid.Nil {
@@ -235,7 +235,7 @@ func githubActionError(c echo.Context, err error, logs bool) error {
 	case errors.Is(err, context.Canceled), errors.Is(err, gh.ErrUnavailable):
 		return response.Error(c, http.StatusBadGateway, "GITHUB_UNAVAILABLE", "GitHub is unavailable; try again later")
 	case errors.Is(err, gh.ErrRateLimited):
-		return response.Error(c, http.StatusServiceUnavailable, "GITHUB_RATE_LIMITED", "GitHub API rate limit is exhausted; ku backs off and retries automatically; try again later")
+		return response.Error(c, http.StatusServiceUnavailable, "GITHUB_RATE_LIMITED", "GitHub API rate limit is exhausted; strifira backs off and retries automatically; try again later")
 	}
 	if upstream, ok := errors.AsType[*gh.APIError](err); ok {
 		switch upstream.StatusCode {

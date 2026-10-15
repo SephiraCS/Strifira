@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +28,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 		VALUES ($1,$2,'Todo','todo','unstarted',TRUE)`, statusID, teamID)
 	require.NoError(t, err)
 	repoIDs := []uuid.UUID{uuid.New(), uuid.New()}
-	for index, fullName := range []string{"ku/default", "ku/other"} {
+	for index, fullName := range []string{"strifira/default", "strifira/other"} {
 		_, err = db.Exec(`INSERT INTO github_repos (id,workspace_id,github_repo_id,full_name,instance_url,default_branch)
 			VALUES ($1,$2,$3,$4,'https://git.example.com','main')`, repoIDs[index], f.workspaceID, time.Now().UnixNano(), fullName)
 		require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 		checkoutID := uuid.New()
 		checkout := &domain.DevMachineCheckout{ID: checkoutID, WorkspaceID: f.workspaceID, MachineID: machineID,
 			IssueID: issueID, GitHubRepoID: repoID, RepositoryFullName: fullName, RepositoryURL: "https://git.example.com/" + fullName,
-			BaseBranch: "release", WorkingBranch: "ku/issue-" + checkoutID.String(), WorkspacePath: "/workspace/tasks/" + checkoutID.String(), Status: "queued"}
+			BaseBranch: "release", WorkingBranch: "strifira/issue-" + checkoutID.String(), WorkspacePath: "/workspace/tasks/" + checkoutID.String(), Status: "queued"}
 		operation := &domain.DevMachineOperation{ID: uuid.New(), WorkspaceID: f.workspaceID, MachineID: machineID,
 			Action: domain.DevMachineOpCheckoutIssue, Status: domain.DevMachineOpStatusPending, Generation: 1,
 			IdempotencyKey: "checkout:" + checkoutID.String(), RequestedByUserID: &f.userID, MaxAttempts: 3}
@@ -72,7 +72,7 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 			if mode == "configured-default" || mode == "disconnected-default" {
 				primaryIssueID := createIssue()
 				_, err = db.Exec(`UPDATE dev_machines SET repository_affinity_id=$2,issue_id=$3,
-					repo_url='https://git.example.com/ku/default',repo_owner='ku',repo_name='default',
+					repo_url='https://git.example.com/strifira/default',repo_owner='strifira',repo_name='default',
 					base_branch='main',working_branch='owner/default' WHERE id=$1`, machineID, repoIDs[0], primaryIssueID)
 				require.NoError(t, err)
 				if mode == "disconnected-default" {
@@ -84,8 +84,8 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 			require.NoError(t, err)
 			require.NotNil(t, before)
 			if mode == "concurrent-affinity" {
-				first, firstOperation := createCheckout(machineID, repoIDs[0], "ku/default")
-				second, secondOperation := createCheckout(machineID, repoIDs[1], "ku/other")
+				first, firstOperation := createCheckout(machineID, repoIDs[0], "strifira/default")
+				second, secondOperation := createCheckout(machineID, repoIDs[1], "strifira/other")
 				firstErr, secondErr := runEnvironmentRace(
 					func() error { return f.repository.CreateCheckout(t.Context(), first, firstOperation) },
 					func() error { return f.repository.CreateCheckout(t.Context(), second, secondOperation) },
@@ -109,14 +109,14 @@ func TestCreateCheckoutDatabasePreservesDefaultRepositoryAndPrimaryIssue(t *test
 				return
 			}
 			if mode == "disconnected-default" {
-				checkout, operation := createCheckout(machineID, repoIDs[1], "ku/other")
+				checkout, operation := createCheckout(machineID, repoIDs[1], "strifira/other")
 				require.ErrorIs(t, f.repository.CreateCheckout(t.Context(), checkout, operation), ErrCheckoutMachineConflict)
 				checkouts, err := f.repository.ListCheckouts(t.Context(), f.workspaceID, machineID)
 				require.NoError(t, err)
 				require.Empty(t, checkouts)
 			} else {
 				for range 2 {
-					checkout, operation := createCheckout(machineID, repoIDs[0], "ku/default")
+					checkout, operation := createCheckout(machineID, repoIDs[0], "strifira/default")
 					require.NoError(t, f.repository.CreateCheckout(t.Context(), checkout, operation))
 					require.Equal(t, checkout.ID, *operation.CheckoutID)
 					persisted, err := f.repository.GetCheckout(t.Context(), f.workspaceID, machineID, checkout.ID)

@@ -16,12 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/audit"
+	"github.com/SephiraCS/strifira-backend/pkg/storage"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/audit"
-	"github.com/ku/ku-backend/pkg/storage"
 )
 
 const (
@@ -159,7 +159,7 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 		RequiresReconfiguration: []string{"webhooks", "GitHub", "AI provider credentials", "Dev Machine environments"},
 	}
 
-	temp, err := os.CreateTemp("", "ku-workspace-export-*.zip")
+	temp, err := os.CreateTemp("", "strifira-workspace-export-*.zip")
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 	}
 	cleanup = false
 	audit.Log("workspace.exported", actorID, map[string]interface{}{"workspace_id": workspace.ID})
-	return &ExportedWorkspaceArchive{Path: path, Filename: safeTransferFilename(workspace.Slug) + ".ku.zip"}, nil
+	return &ExportedWorkspaceArchive{Path: path, Filename: safeTransferFilename(workspace.Slug) + ".strifira.zip"}, nil
 }
 
 // omitInvalidSharedLinks removes links whose polymorphic target is absent from

@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 
@@ -22,7 +22,7 @@ const (
 )
 
 // APIKeyAuth authenticates the /mcp endpoint with a personal API key
-// passed as `Authorization: Bearer ku_...`. On success the request runs
+// passed as `Authorization: Bearer strifira_...`. On success the request runs
 // with the key owner's identity — the same authority as their web session.
 func APIKeyAuth(apiKeySvc *service.APIKeyService) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {

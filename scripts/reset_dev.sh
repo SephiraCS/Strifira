@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
-echo "=== Ku - Reset Dev Environment ==="
+echo "=== Strifira - Reset Dev Environment ==="
 
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 
@@ -43,8 +43,8 @@ refuse_production() {
 refuse_production "$ENVIRONMENT_FROM_CALLER"
 refuse_production "${ENVIRONMENT:-development}"
 
-POSTGRES_USER="${POSTGRES_USER:-ku}"
-POSTGRES_DB="${POSTGRES_DB:-ku}"
+POSTGRES_USER="${POSTGRES_USER:-strifira}"
+POSTGRES_DB="${POSTGRES_DB:-strifira}"
 PSQL=(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q -v ON_ERROR_STOP=1)
 
 echo "Starting postgres and redis for safety checks..."

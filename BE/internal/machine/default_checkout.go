@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 // The implicit repository has one identity shared by provisioning, agent runs

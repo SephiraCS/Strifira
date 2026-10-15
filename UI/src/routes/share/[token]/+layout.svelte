@@ -17,6 +17,6 @@
 		{@render children()}
 	</div>
 	<footer class="px-4 py-3 text-center text-xs text-[var(--color-text-tertiary)]">
-		Shared via <a href="https://kuayle.com" target="_blank" rel="noopener noreferrer" class="hover:text-[var(--color-text-secondary)] underline decoration-[var(--color-text-tertiary)]/30 hover:decoration-[var(--color-text-secondary)]/50 transition-colors">Ku</a>
+		Shared via <a href="https://strifira.sephira.app.br" target="_blank" rel="noopener noreferrer" class="hover:text-[var(--color-text-secondary)] underline decoration-[var(--color-text-tertiary)]/30 hover:decoration-[var(--color-text-secondary)]/50 transition-colors">Strifira</a>
 	</footer>
 </div>

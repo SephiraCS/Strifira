@@ -297,7 +297,7 @@ func (p *CustomCLIProvider) BuildInvocation(input RunInput) (Invocation, error) 
 		return Invocation{}, fmt.Errorf("custom provider declares too many secrets")
 	}
 	for _, name := range config.SecretNames {
-		if !validSecretName(name) || name == "GITHUB_TOKEN" || strings.HasPrefix(name, "KU_") {
+		if !validSecretName(name) || name == "GITHUB_TOKEN" || strings.HasPrefix(name, "STRIFIRA_") {
 			return Invocation{}, fmt.Errorf("custom provider has invalid required secret %q", name)
 		}
 	}

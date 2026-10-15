@@ -46,7 +46,7 @@ func (f *protectedRepositoryFixture) git(t *testing.T, dir string, args ...strin
 
 func (f *protectedRepositoryFixture) script(t *testing.T, source string, token bool, args ...string) (string, error) {
 	t.Helper()
-	command := exec.CommandContext(t.Context(), "/bin/sh", append([]string{"-c", source, "ku-protected-fixture"}, args...)...)
+	command := exec.CommandContext(t.Context(), "/bin/sh", append([]string{"-c", source, "strifira-protected-fixture"}, args...)...)
 	command.Dir = f.scriptDir
 	command.Env = []string{"PATH=" + f.toolPath, "HOME=" + f.root,
 		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=/bin/false", "GIT_SSL_CAINFO=" + f.certificate}
@@ -66,7 +66,7 @@ func newProtectedRepositoryFixture(t *testing.T) *protectedRepositoryFixture {
 	require.NoError(t, err)
 	gitPath, err = filepath.EvalSymlinks(gitPath)
 	require.NoError(t, err)
-	f := &protectedRepositoryFixture{root: t.TempDir(), branch: "ku/task", run: uuid.NewString(), gitPath: gitPath}
+	f := &protectedRepositoryFixture{root: t.TempDir(), branch: "strifira/task", run: uuid.NewString(), gitPath: gitPath}
 	// Resolve fixture tools explicitly on NixOS too. Product helpers use the
 	// image's immutable /usr/bin:/bin instead of a host or IDE tool directory.
 	for _, name := range []string{"git", "mkdir", "realpath", "sha256sum", "mktemp", "cat", "awk", "rm", "mv", "flock", "sync"} {
@@ -187,7 +187,7 @@ func TestRetainedRepositoryPublishesExactlyVerifiedCandidateAndKeepsItsObjects(t
 	f.publish(t, candidate)
 	require.Equal(t, candidate.Commit, f.git(t, f.remote, "rev-parse", "refs/heads/"+f.branch))
 	require.Equal(t, "verified", f.git(t, f.remote, "show", candidate.Commit+":source.txt"))
-	require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/ku/runs/"+f.run+"/candidate"))
+	require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/strifira/runs/"+f.run+"/candidate"))
 	require.NoFileExists(t, filepath.Join(f.repository, "objects", "info", "alternates"))
 	require.NoFileExists(t, marker)
 	require.Positive(t, f.authenticated.Load())
@@ -243,7 +243,7 @@ func TestRetainedRepositoryRejectsRedirectBeforeConnectingToForeignOrigin(t *tes
 	output, err := f.script(t, publishRetainedRepositoryCandidateScript, true, f.repository, f.repositoryURL, f.branch, f.host, "selected", "", f.run, candidate.Commit)
 	require.Error(t, err, output)
 	require.Zero(t, foreignConnections.Load())
-	require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/ku/runs/"+f.run+"/candidate"))
+	require.Equal(t, candidate.Commit, f.git(t, f.repository, "rev-parse", "refs/strifira/runs/"+f.run+"/candidate"))
 	lookup := exec.CommandContext(t.Context(), f.gitPath, "--git-dir="+f.remote, "show-ref", "--verify", "refs/heads/"+f.branch)
 	require.Error(t, lookup.Run(), "failed publication must leave upstream unchanged")
 }
@@ -315,13 +315,13 @@ func TestRetainedRepositoryRejectsGitMetadataOutsideStandaloneCheckout(t *testin
 			output, err := f.script(t, retainRepositoryCandidateScript, false, f.workspace, f.repository, f.run)
 			require.Error(t, err, output)
 			require.Contains(t, output, "outside")
-			require.NoFileExists(t, filepath.Join(f.repository, "ku-runs", f.run, "candidate.info"))
+			require.NoFileExists(t, filepath.Join(f.repository, "strifira-runs", f.run, "candidate.info"))
 		})
 	}
 }
 
 func TestRetainedRepositoryLargeHistoryUsesDiskAndImportsOnlyNewObjects(t *testing.T) {
-	if os.Getenv("KU_GIT_LARGE_FIXTURE") != "1" {
+	if os.Getenv("STRIFIRA_GIT_LARGE_FIXTURE") != "1" {
 		t.Skip("opt-in disk/resource qualification for a repository larger than helper tmpfs")
 	}
 	f := newProtectedRepositoryFixture(t)
@@ -336,7 +336,7 @@ func TestRetainedRepositoryLargeHistoryUsesDiskAndImportsOnlyNewObjects(t *testi
 	f.git(t, seed, "push", "--quiet", f.remote, "HEAD:main")
 	f.run = uuid.NewString()
 	f.prepare(t)
-	base := f.git(t, f.repository, "rev-parse", "refs/ku/runs/"+f.run+"/base")
+	base := f.git(t, f.repository, "rev-parse", "refs/strifira/runs/"+f.run+"/base")
 	f.git(t, f.workspace, "reset", "--hard", base)
 	require.NoError(t, os.WriteFile(filepath.Join(f.workspace, "source.txt"), []byte("small task in large repo\n"), 0o600))
 	objectBytes := func() int64 {
@@ -367,7 +367,7 @@ func TestRetainedRepositoryLargeHistoryUsesDiskAndImportsOnlyNewObjects(t *testi
 	t.Logf("retained base objects=%d bytes; candidate adds=%d bytes", before, added)
 	require.Equal(t, base, candidate.BaseCommit)
 	require.Equal(t, []string{"source.txt"}, candidate.ChangedFiles)
-	entries, err := os.ReadDir(filepath.Join(f.repository, "ku-runs", f.run))
+	entries, err := os.ReadDir(filepath.Join(f.repository, "strifira-runs", f.run))
 	require.NoError(t, err)
 	require.Len(t, entries, 1, "staging pack and alternate snapshot must be removed")
 	require.Equal(t, "candidate.info", entries[0].Name())

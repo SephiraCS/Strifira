@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in real development box acceptance in a dedicated development VM.
 
-Uses a reviewed Ku backend and worker binary, a disposable PostgreSQL/backend/
+Uses a reviewed Strifira backend and worker binary, a disposable PostgreSQL/backend/
 account/workspace, and an installed authenticated coding CLI. All Git work stays
 in a tiny local fixture repository. No deployed service, application .env,
 personal API key, Forgejo credentials, push, or pull request is used.
@@ -23,7 +23,7 @@ import tempfile
 import time
 import uuid
 
-from ku_live_fixture import (
+from strifira_live_fixture import (
     LiveCheckError,
     disposable_backend,
     request_json,
@@ -69,8 +69,8 @@ def process_terminated(pid):
 
 
 def acceptance(args):
-    ku_dir = pathlib.Path(__file__).resolve().parent.parent
-    be_dir = ku_dir / "BE"
+    strifira_dir = pathlib.Path(__file__).resolve().parent.parent
+    be_dir = strifira_dir / "BE"
     env = tool_environment()
     worker_bin = args.worker_bin.resolve()
     provider_path = args.provider_path.resolve()
@@ -88,7 +88,7 @@ def acceptance(args):
         "publishing": "disabled",
         "worker_sha256": hashlib.sha256(worker_bin.read_bytes()).hexdigest(),
     }
-    with tempfile.TemporaryDirectory(prefix="ku-dev-box-live-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="strifira-dev-box-live-") as temporary:
         root = pathlib.Path(temporary)
         repository = root / "repository"
         repository.mkdir()
@@ -98,8 +98,8 @@ def acceptance(args):
         repository_url = "https://forgejo.fixture.invalid/" + full_name
         for argv in (
             ["init", "-b", "main"],
-            ["config", "user.name", "Disposable Ku acceptance"],
-            ["config", "user.email", "ku@example.invalid"],
+            ["config", "user.name", "Disposable Strifira acceptance"],
+            ["config", "user.email", "strifira@example.invalid"],
             ["remote", "add", "origin", repository_url],
         ):
             run(["git", *argv], env, cwd=repository)
@@ -131,7 +131,7 @@ def acceptance(args):
                 expected=201,
                 data={
                     "name": "Disposable development box acceptance",
-                    "email": f"ku-dev-box-{nonce}@example.invalid",
+                    "email": f"strifira-dev-box-{nonce}@example.invalid",
                     "password": secrets.token_hex(24) + "Aa9!",
                 },
             )
@@ -192,7 +192,7 @@ def acceptance(args):
             )
             box_id, worker_token = registration["box"]["id"], registration["token"]
             require(
-                worker_token.startswith("kub_") and len(worker_token) == 68,
+                worker_token.startswith("strifira_") and len(worker_token) == 68,
                 "Registration did not return a dedicated worker token",
             )
             token_file = root / "worker.token"
@@ -455,7 +455,7 @@ def main():
         "--server-bin",
         type=pathlib.Path,
         required=True,
-        help="Reviewed Ku backend binary",
+        help="Reviewed Strifira backend binary",
     )
     parser.add_argument(
         "--worker-bin",
@@ -486,7 +486,7 @@ def main():
     args = parser.parse_args()
     if args.dry_run:
         print(
-            "Would create disposable Ku/PostgreSQL/account/workspace/repository, register a dedicated protected-file worker token, run real provider success/independent failure/cancellation jobs with no publishing, and delete the fixture."
+            "Would create disposable Strifira/PostgreSQL/account/workspace/repository, register a dedicated protected-file worker token, run real provider success/independent failure/cancellation jobs with no publishing, and delete the fixture."
         )
         return 0
     require(30 <= args.timeout <= 86400, "Job timeout must be 30..86400 seconds")

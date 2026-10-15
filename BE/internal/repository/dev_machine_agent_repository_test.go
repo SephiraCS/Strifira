@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func TestAgentRunRepositorySelectionDatabaseIsImmutableAcrossRestartAndMachineCh
 			machineID := fixture.insertMachine(t, domain.DevMachineStatusRunning, domain.DevMachineStatusRunning, false)
 			runID := uuid.New()
 			checkout := &domain.DevMachineCheckout{ID: machineID, MachineID: machineID, WorkspaceID: fixture.workspaceID,
-				RepositoryFullName: "ku/api", RepositoryURL: "https://git.example.com/ku/api", BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/repository"}
+				RepositoryFullName: "strifira/api", RepositoryURL: "https://git.example.com/strifira/api", BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/repository"}
 			_, err := db.ExecContext(t.Context(), `INSERT INTO dev_machine_agent_runs
                 (id,machine_id,workspace_id,requested_by_user_id,provider_id,mode,status,prompt,command_argv,max_runtime_seconds)
                 VALUES ($1,$2,$3,$4,'opencode','autonomous','running','repository selection','["true"]',120)`, runID, machineID, fixture.workspaceID, fixture.userID)
@@ -43,9 +43,9 @@ func TestAgentRunRepositorySelectionDatabaseIsImmutableAcrossRestartAndMachineCh
 				require.NoError(t, err)
 				_, err = db.ExecContext(t.Context(), `INSERT INTO issues (id,workspace_id,team_id,number,identifier_text,title,creator_id,status_id) VALUES ($1,$2,$3,1,'PIN-1','Repository selection',$4,$5)`, issueID, fixture.workspaceID, teamID, fixture.userID, statusID)
 				require.NoError(t, err)
-				_, err = db.ExecContext(t.Context(), `INSERT INTO github_repos (id,workspace_id,github_repo_id,full_name,instance_url,default_branch) VALUES ($1,$2,$3,'ku/api','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
+				_, err = db.ExecContext(t.Context(), `INSERT INTO github_repos (id,workspace_id,github_repo_id,full_name,instance_url,default_branch) VALUES ($1,$2,$3,'strifira/api','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
 				require.NoError(t, err)
-				_, err = db.ExecContext(t.Context(), `INSERT INTO dev_machine_checkouts (id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status) VALUES ($1,$2,$3,$4,$5,'ku/api','main','ku/task','/workspace/tasks/issue','ready')`, checkout.ID, fixture.workspaceID, machineID, issueID, repositoryID)
+				_, err = db.ExecContext(t.Context(), `INSERT INTO dev_machine_checkouts (id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status) VALUES ($1,$2,$3,$4,$5,'strifira/api','main','strifira/task','/workspace/tasks/issue','ready')`, checkout.ID, fixture.workspaceID, machineID, issueID, repositoryID)
 				require.NoError(t, err)
 				checkout.WorkspacePath = "/workspace/tasks/issue"
 				_, err = db.ExecContext(t.Context(), `UPDATE dev_machine_agent_runs SET checkout_id=$2 WHERE id=$1`, runID, checkout.ID)
@@ -81,7 +81,7 @@ func TestAgentRunRepositorySelectionDatabaseIsImmutableAcrossRestartAndMachineCh
 				require.Equal(t, 1, successful, "only the first immutable selection can win")
 				selected, err := repo.GetAgentRunRepository(t.Context(), runID)
 				require.NoError(t, err)
-				require.Contains(t, []string{"ku/task", "other-task"}, selected.WorkingBranch)
+				require.Contains(t, []string{"strifira/task", "other-task"}, selected.WorkingBranch)
 				return
 			}
 			err = repo.PinAgentRunRepository(t.Context(), runID, checkout)

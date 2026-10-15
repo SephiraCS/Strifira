@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,7 +50,7 @@ func TestWorkspaceDeleteWaitsForEnvironmentImageCleanup(t *testing.T) {
 		_, insertErr := db.Exec(`INSERT INTO dev_machine_environments
 			(id,workspace_id,name,image_ref,status,source_machine_id,created_by_user_id)
 			VALUES ($1,$2,$3,$4,$5,$6,$7)`, environmentID, fixture.workspaceID,
-			"workspace-cleanup-"+environmentID.String(), "ku/dev-environment-"+environmentID.String()+":snapshot",
+			"workspace-cleanup-"+environmentID.String(), "strifira/dev-environment-"+environmentID.String()+":snapshot",
 			status, machineID, fixture.userID)
 		require.NoError(t, insertErr)
 		return environmentID

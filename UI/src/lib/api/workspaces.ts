@@ -83,7 +83,7 @@ export async function downloadWorkspaceExport(slug: string): Promise<void> {
 	try {
 		const link = document.createElement('a');
 		link.href = url;
-		link.download = filename ?? `${slug}.ku.zip`;
+		link.download = filename ?? `${slug}.strifira.zip`;
 		link.click();
 	} finally {
 		URL.revokeObjectURL(url);

@@ -41,7 +41,7 @@ done
 
 set -- $(hostname -i)
 container_ip=$1
-KU_BROWSER_CDP_LISTEN="$container_ip:9222" ku-browser-cdp-proxy &
+STRIFIRA_BROWSER_CDP_LISTEN="$container_ip:9222" strifira-browser-cdp-proxy &
 cdp_proxy_pid=$!
 
 cleanup() {

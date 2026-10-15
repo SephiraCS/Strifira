@@ -7,11 +7,11 @@ export const currentVersionLabel = `v${currentVersion}`;
 // the fork's own UI/static/releases.json served same-origin from the
 // deployed build: the Git instance is private and sends no CORS
 // headers, so browsers cannot fetch it cross-origin. The repository moved
-// from TerraScale/ku to Tools/ku; manifests baked before the move carry
+// from TerraScale/strifira to Tools/strifira; manifests baked before the move carry
 // the legacy owner, so both are trusted for entry URLs.
 export const releaseRepositoryHost = 'git.terrascale.tech';
-export const releaseRepositoryFullName = 'Tools/ku';
-const trustedReleaseRepositoryNames = [releaseRepositoryFullName, 'TerraScale/ku'];
+export const releaseRepositoryFullName = 'Tools/strifira';
+const trustedReleaseRepositoryNames = [releaseRepositoryFullName, 'TerraScale/strifira'];
 export const releasesPageUrl = `https://${releaseRepositoryHost}/${releaseRepositoryFullName}/releases`;
 export const currentReleaseUrl = `${releasesPageUrl}/tag/${currentVersionLabel}`;
 export const releasesManifestUrl = '/releases.json';

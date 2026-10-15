@@ -60,7 +60,7 @@
 	<div class="w-full max-w-sm space-y-6 p-8">
 		<div class="text-center">
 			<img src="/favicon.svg" alt={m['login.logo_alt']()} class="mx-auto mb-4 h-14 w-14" />
-			<h1 class="text-2xl font-bold text-[var(--color-text-primary)]">Ku</h1>
+			<h1 class="text-2xl font-bold text-[var(--color-text-primary)]">Strifira</h1>
 			<p class="mt-1 text-sm text-[var(--color-text-secondary)]">
 				{mode === 'login' ? m['login.subtitle.signin']() : m['login.subtitle.register']()}
 			</p>

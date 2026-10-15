@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 var ErrWorkspaceSlugTaken = errors.New("workspace slug already taken")

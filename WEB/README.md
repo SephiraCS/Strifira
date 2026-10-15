@@ -1,10 +1,10 @@
-# Ku Marketing Site (WEB)
+# Strifira Marketing Site (WEB)
 
-Static marketing/landing site for [Ku](https://kuayle.com), built with SvelteKit and the static adapter.
+Static marketing/landing site for [Strifira](https://strifira.sephira.app.br), built with SvelteKit and the static adapter.
 
 ## Canonical origin
 
-`https://kuayle.com` — configured centrally in `src/lib/config/site.ts`.
+`https://strifira.sephira.app.br` — configured centrally in `src/lib/config/site.ts`.
 
 ## Stack
 
@@ -62,7 +62,7 @@ Static marketing/landing site for [Ku](https://kuayle.com), built with SvelteKit
 /open-source                                   Open source philosophy
 /license                                       Apache 2.0 license details
 /security                                      Security practices
-/about                                         About Ku / Bakney
+/about                                         About Strifira / Sephira
 /roadmap                                       Development roadmap
 /privacy                                       Privacy policy
 /sitemap.xml                                   XML sitemap

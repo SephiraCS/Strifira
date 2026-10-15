@@ -12,18 +12,18 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/crypto"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -50,7 +50,7 @@ func newGitHubToolsEnv(t *testing.T) *githubToolsEnv {
 	t.Cleanup(func() { _ = admin.Close() })
 	require.NoError(t, admin.PingContext(ctx))
 
-	databaseName := "ku_mcp_github_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "strifira_mcp_github_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+databaseName+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {

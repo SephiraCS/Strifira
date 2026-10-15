@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
 	"github.com/lib/pq"
 )
 
@@ -22,8 +22,8 @@ var (
 )
 
 const (
-	apiKeyPrefix      = "ku_"
-	apiKeySecretBytes = 24 // 48 hex chars of entropy after the ku_ prefix
+	apiKeyPrefix      = "strifira_"
+	apiKeySecretBytes = 24 // 48 hex chars of entropy after the strifira_ prefix
 	apiKeyPrefixLen   = 10 // display length of the raw token head
 )
 

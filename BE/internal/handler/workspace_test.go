@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/require"
 )

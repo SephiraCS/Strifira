@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -109,7 +109,7 @@ func testGitHelperDaemonBoundaries(t *testing.T, checkout bool) {
 					}
 					record := fixtureLayoutRecord(machine)
 					if mode == "foreign-layout" {
-						record.Config.Labels["com.ku.machine-id"] = uuid.NewString()
+						record.Config.Labels["com.strifira.machine-id"] = uuid.NewString()
 					}
 					_ = json.NewEncoder(w).Encode(record)
 				case path == "/containers/create":
@@ -121,7 +121,7 @@ func testGitHelperDaemonBoundaries(t *testing.T, checkout bool) {
 						t.Error(err)
 						return
 					}
-					if body.Labels["com.ku.service"] == "volume-init" {
+					if body.Labels["com.strifira.service"] == "volume-init" {
 						require.True(t, body.HostConfig.Mounts[0].ReadOnly)
 						require.Empty(t, body.HostConfig.CapAdd)
 						w.WriteHeader(http.StatusCreated)
@@ -139,7 +139,7 @@ func testGitHelperDaemonBoundaries(t *testing.T, checkout bool) {
 						w.WriteHeader(http.StatusCreated)
 						_, _ = io.WriteString(w, `{"Id":"helper"}`)
 					}
-				case strings.HasSuffix(path, "/json") && strings.HasPrefix(path, "/containers/ku-helper-fixture-git-"):
+				case strings.HasSuffix(path, "/json") && strings.HasPrefix(path, "/containers/strifira-helper-fixture-git-"):
 					mu.Lock()
 					copiedConfig := config
 					mu.Unlock()
@@ -148,7 +148,7 @@ func testGitHelperDaemonBoundaries(t *testing.T, checkout bool) {
 						return
 					}
 					if mode == "foreign-create" {
-						copiedConfig.Labels = map[string]string{"com.ku.managed": "true", "com.ku.machine-id": uuid.NewString()}
+						copiedConfig.Labels = map[string]string{"com.strifira.managed": "true", "com.strifira.machine-id": uuid.NewString()}
 					}
 					_ = json.NewEncoder(w).Encode(map[string]any{"Id": "helper", "Config": copiedConfig})
 				case path == "/containers/helper/attach":
@@ -289,7 +289,7 @@ func testGitHelperDaemonBoundaries(t *testing.T, checkout bool) {
 			require.Equal(t, checkout, hostConfig.Mounts[1].ReadOnly)
 			require.Equal(t, "repositories", hostConfig.Mounts[1].VolumeOptions.Subpath)
 			if checkout {
-				require.Equal(t, "git-checkout", config.Labels["com.ku.service"])
+				require.Equal(t, "git-checkout", config.Labels["com.strifira.service"])
 				require.Equal(t, container.NetworkMode("none"), hostConfig.NetworkMode)
 				require.Empty(t, received, "checkout installer must never receive a credential")
 			} else if mode == "success" {

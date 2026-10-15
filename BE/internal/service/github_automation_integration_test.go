@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +48,7 @@ func setupGitHubAutomation(t *testing.T) *githubAutomationEnv {
 	t.Cleanup(func() { _ = admin.Close() })
 	require.NoError(t, admin.PingContext(ctx))
 
-	databaseName := "ku_github_auto_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "strifira_github_auto_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+databaseName+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {

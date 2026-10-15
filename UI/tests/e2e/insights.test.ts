@@ -70,7 +70,7 @@ async function mockInsights(page: Page, teamsHandler?: (route: Route, defaults: 
 			chartErrors.push(message.text());
 		}
 	});
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {

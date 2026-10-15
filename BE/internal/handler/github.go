@@ -6,13 +6,13 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/metrics"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	gh "github.com/SephiraCS/strifira-backend/pkg/github"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/metrics"
-	"github.com/ku/ku-backend/internal/service"
-	gh "github.com/ku/ku-backend/pkg/github"
-	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 )
@@ -86,7 +86,7 @@ func githubConnectionError(c echo.Context, err error) error {
 		return response.Error(c, http.StatusConflict, "GITHUB_DISABLED", "GitHub is disabled for this workspace")
 	}
 	if errors.Is(err, gh.ErrRateLimited) {
-		return response.Error(c, http.StatusServiceUnavailable, "GITHUB_RATE_LIMITED", "GitHub API rate limit is exhausted; ku backs off and retries automatically; try again later")
+		return response.Error(c, http.StatusServiceUnavailable, "GITHUB_RATE_LIMITED", "GitHub API rate limit is exhausted; strifira backs off and retries automatically; try again later")
 	}
 	return response.ServiceError(c, err)
 }

@@ -14,11 +14,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	githubclient "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
-	githubclient "github.com/ku/ku-backend/pkg/github"
 )
 
 var (
@@ -118,7 +118,7 @@ func (s *DevBoxService) Create(ctx context.Context, workspaceID, userID uuid.UUI
 	if name == "" || !validDevBoxText(name, 100) {
 		return nil, ErrInvalidDevBoxInput
 	}
-	raw, hash, err := newDevBoxToken("kub_")
+	raw, hash, err := newDevBoxToken("strifira_")
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (s *DevBoxService) RotateToken(ctx context.Context, workspaceID, boxID, use
 	if err := s.authorize(ctx, workspaceID, userID, domain.PermDevMachineManage); err != nil {
 		return nil, err
 	}
-	raw, hash, err := newDevBoxToken("kub_")
+	raw, hash, err := newDevBoxToken("strifira_")
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +288,7 @@ func (s *DevBoxService) CreateJob(ctx context.Context, workspaceID, boxID, userI
 		return nil, fmt.Errorf("%w: job exceeds the workspace development policy", ErrDevBoxConflict)
 	}
 	jobID := uuid.New()
-	branch := "ku/" + strings.ToLower(issue.Identifier) + "-" + jobID.String()[:8]
+	branch := "strifira/" + strings.ToLower(issue.Identifier) + "-" + jobID.String()[:8]
 	if !validGitRef(branch) {
 		return nil, ErrInvalidDevBoxInput
 	}
@@ -388,7 +388,7 @@ func (s *DevBoxService) JobLogs(ctx context.Context, workspaceID, jobID, userID 
 }
 
 func (s *DevBoxService) AuthenticateWorker(ctx context.Context, raw string) (*domain.DevBox, error) {
-	if !validDevBoxToken(raw, "kub_") {
+	if !validDevBoxToken(raw, "strifira_") {
 		return nil, ErrDevBoxAuthentication
 	}
 	box, err := s.store.GetBoxByTokenHash(ctx, hashDevBoxToken(raw))
@@ -432,7 +432,7 @@ func (s *DevBoxService) Heartbeat(ctx context.Context, box *domain.DevBox, req d
 }
 
 func (s *DevBoxService) Claim(ctx context.Context, box *domain.DevBox) (*dto.DevBoxClaimResponse, error) {
-	raw, hash, err := newDevBoxToken("kul_")
+	raw, hash, err := newDevBoxToken("sfl_")
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +447,7 @@ func (s *DevBoxService) Claim(ctx context.Context, box *domain.DevBox) (*dto.Dev
 }
 
 func devBoxLeaseHash(raw string) (string, error) {
-	if !validDevBoxToken(raw, "kul_") {
+	if !validDevBoxToken(raw, "sfl_") {
 		return "", ErrDevBoxLeaseLost
 	}
 	return hashDevBoxToken(raw), nil

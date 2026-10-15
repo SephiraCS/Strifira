@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ku/ku-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -93,7 +93,7 @@ func TestSourceSynchronizationRecoversActualHardKills(t *testing.T) {
 			for _, file := range []string{"HEAD.lock", "index.lock", "refs/heads/" + f.branch + ".lock"} {
 				require.NoFileExists(t, filepath.Join(f.workspace, ".git", file))
 			}
-			require.NoDirExists(t, filepath.Join(f.repository, "ku-runs", f.run, "source-sync-"+strings.Repeat("a", 64)))
+			require.NoDirExists(t, filepath.Join(f.repository, "strifira-runs", f.run, "source-sync-"+strings.Repeat("a", 64)))
 		})
 	}
 }
@@ -123,7 +123,7 @@ func TestSourceSynchronizationRecoveryPreservesNewerUserCommit(t *testing.T) {
 
 func TestSourceSynchronizationRejectsSymlinkedRefParent(t *testing.T) {
 	f, candidate := dirtySynchronizationFixture(t)
-	parent := filepath.Join(f.workspace, ".git", "refs", "heads", "ku")
+	parent := filepath.Join(f.workspace, ".git", "refs", "heads", "strifira")
 	require.NoError(t, os.Rename(parent, parent+".saved"))
 	external := t.TempDir()
 	require.NoError(t, os.Symlink(external, parent))

@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1439,7 +1439,7 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO github_repos
 		(id,workspace_id,github_repo_id,full_name,instance_url,default_branch)
-		VALUES ($1,$2,$3,'ku/checkout-test','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
+		VALUES ($1,$2,$3,'strifira/checkout-test','https://git.example.com','main')`, repositoryID, fixture.workspaceID, time.Now().UnixNano())
 	require.NoError(t, err)
 
 	issueNumber := 0
@@ -1454,9 +1454,9 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 		require.NoError(t, insertErr)
 		_, insertErr = db.Exec(`INSERT INTO dev_machine_checkouts
 			(id,workspace_id,machine_id,issue_id,github_repo_id,repository_full_name,base_branch,working_branch,workspace_path,status)
-			VALUES ($1,$2,$3,$4,$5,'ku/checkout-test','main',$6,$7,$8)`,
+			VALUES ($1,$2,$3,$4,$5,'strifira/checkout-test','main',$6,$7,$8)`,
 			checkoutID, fixture.workspaceID, machineID, issueID, repositoryID,
-			"ku/"+strings.ToLower(identifier), "/workspace/tasks/"+strings.ToLower(identifier), status)
+			"strifira/"+strings.ToLower(identifier), "/workspace/tasks/"+strings.ToLower(identifier), status)
 		require.NoError(t, insertErr)
 		return checkoutID, issueID
 	}
@@ -1519,8 +1519,8 @@ func TestReconcileOrphanedCheckouts(t *testing.T) {
 
 	retryCheckout := &domain.DevMachineCheckout{
 		ID: uuid.New(), WorkspaceID: fixture.workspaceID, MachineID: machineID, IssueID: missingIssueID,
-		GitHubRepoID: repositoryID, RepositoryFullName: "ku/checkout-test", BaseBranch: "main",
-		WorkingBranch: "ku/chk-1", WorkspacePath: "/workspace/tasks/chk-1", Status: "queued",
+		GitHubRepoID: repositoryID, RepositoryFullName: "strifira/checkout-test", BaseBranch: "main",
+		WorkingBranch: "strifira/chk-1", WorkspacePath: "/workspace/tasks/chk-1", Status: "queued",
 	}
 	retryOperation := &domain.DevMachineOperation{
 		ID: uuid.New(), MachineID: machineID, WorkspaceID: fixture.workspaceID, Action: domain.DevMachineOpCheckoutIssue,

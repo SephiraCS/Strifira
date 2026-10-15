@@ -10,11 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/config"
+	"github.com/SephiraCS/strifira-backend/internal/machine"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/config"
-	"github.com/ku/ku-backend/internal/machine"
-	"github.com/ku/ku-backend/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 

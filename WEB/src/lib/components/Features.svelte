@@ -94,7 +94,7 @@
 	<div class="mx-auto max-w-6xl px-6">
 		<div class="max-w-2xl" use:reveal>
 			<p class="text-sm font-semibold tracking-widest text-brand-300 uppercase">Features</p>
-			<h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Implemented in Ku today</h2>
+			<h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Implemented in Strifira today</h2>
 			<p class="mt-4 text-lg text-muted-foreground">
 				The current {release.version} release covers the core issue-tracking workflow and analytics. Dev Machines are {DEV_MACHINES_RELEASE_STATUS.toLowerCase()}
 				development-branch functionality. The source for each feature is available in the public repository.

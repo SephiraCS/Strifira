@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/client"
 )
 
@@ -77,7 +77,7 @@ func (r *DockerRuntime) PrepareCheckout(ctx context.Context, machine *domain.Dev
 		return err
 	}
 	_, err = r.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(installProtectedCheckoutScript,
-		"ku-install-checkout", "/workspace", checkout.WorkspacePath, repository, repositoryURL, checkout.WorkingBranch, runKey, stageKey))
+		"strifira-install-checkout", "/workspace", checkout.WorkspacePath, repository, repositoryURL, checkout.WorkingBranch, runKey, stageKey))
 	return err
 }
 
@@ -94,7 +94,7 @@ func (r *DockerRuntime) PrepareCheckoutRepository(ctx context.Context, machine *
 	proxy := "http://" + machine.RoutingKey + "-egress:3128"
 	repositoryURL := strings.TrimSuffix(checkout.RepositoryURL, ".git")
 	_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(prepareProtectedRepositoryScript,
-		"ku-prepare-checkout", repository, repositoryURL, checkout.BaseBranch, checkout.WorkingBranch, parsed.Host, checkout.RepositoryFullName, proxy, runKey), token, repositoryHelperInvocation{})
+		"strifira-prepare-checkout", repository, repositoryURL, checkout.BaseBranch, checkout.WorkingBranch, parsed.Host, checkout.RepositoryFullName, proxy, runKey), token, repositoryHelperInvocation{})
 	return err
 }
 
@@ -114,7 +114,7 @@ func (r *DockerRuntime) checkoutStageKey(ctx context.Context, machine *domain.De
 	if err != nil {
 		return "", err
 	}
-	stageKey := sha256.Sum256([]byte("ku-checkout-stage-v1\x00" + key + "\x00" + checkoutID.String()))
+	stageKey := sha256.Sum256([]byte("strifira-checkout-stage-v1\x00" + key + "\x00" + checkoutID.String()))
 	return hex.EncodeToString(stageKey[:]), nil
 }
 
@@ -144,14 +144,14 @@ git check-ref-format "refs/heads/$working_branch"
 case "$working_branch" in *[!A-Za-z0-9/._-]*) exit 1 ;; esac
 case "$repository_url" in https://*) ;; *) exit 1 ;; esac
 case "$repository_url" in *[!A-Za-z0-9/.:_-]*) exit 1 ;; esac
-[ "$(cat "$repository_dir/ku.repository-url")" = "$repository_url" ]
-base=$(git --git-dir="$repository_dir" rev-parse --verify "refs/ku/runs/$run_key/base^{commit}")
-parent=$(git --git-dir="$repository_dir" rev-parse --verify "refs/ku/runs/$run_key/parent^{commit}")
+[ "$(cat "$repository_dir/strifira.repository-url")" = "$repository_url" ]
+base=$(git --git-dir="$repository_dir" rev-parse --verify "refs/strifira/runs/$run_key/base^{commit}")
+parent=$(git --git-dir="$repository_dir" rev-parse --verify "refs/strifira/runs/$run_key/parent^{commit}")
 parent_directory=${workspace_path%/*}
 if [ ! -e "$parent_directory" ] && [ ! -L "$parent_directory" ]; then mkdir -p "$parent_directory"; fi
 [ "$(realpath -e "$parent_directory")" = "$parent_directory" ]
 [ ! -L "$workspace_path" ]
-locks="$workspace_root/.ku-checkout-locks"
+locks="$workspace_root/.strifira-checkout-locks"
 if [ ! -e "$locks" ] && [ ! -L "$locks" ]; then mkdir -m 0700 "$locks"; fi
 [ -d "$locks" ] && [ ! -L "$locks" ] || exit 1
 [ ! -L "$locks/$run_key" ]
@@ -160,7 +160,7 @@ flock -w 30 8
 # Only this checkout's exact backend-authorized name can be reclaimed. A killed
 # installer can leave its stage, but an unrelated agent-writable glob is never
 # removed. Keeping the stage on this volume also keeps final Git renames atomic.
-stage="$workspace_root/.ku-checkout-$stage_key"
+stage="$workspace_root/.strifira-checkout-$stage_key"
 if [ -e "$stage" ] || [ -L "$stage" ]; then
   [ -d "$stage" ] && [ ! -L "$stage" ] || exit 1
   [ "$(realpath -e "$stage")" = "$stage" ]
@@ -214,10 +214,10 @@ CONFIG
 acquire_git_lock() {
   candidate_lock=$1
   [ ! -L "$candidate_lock" ]
-  if [ -f "$candidate_lock" ] && [ "$(cat "$candidate_lock")" = "ku-checkout:$run_key:$stage_key" ]; then
+  if [ -f "$candidate_lock" ] && [ "$(cat "$candidate_lock")" = "strifira-checkout:$run_key:$stage_key" ]; then
     rm -f -- "$candidate_lock"
   fi
-  (set -C; printf '%s\n' "ku-checkout:$run_key:$stage_key" > "$candidate_lock")
+  (set -C; printf '%s\n' "strifira-checkout:$run_key:$stage_key" > "$candidate_lock")
 }
 source_git() {
   git --no-optional-locks -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$workspace_path" -C "$workspace_path" "$@"
@@ -237,7 +237,7 @@ else
   # A killed linked-worktree conversion may have parked its pointer immediately
   # before installing the replacement directory. Restore that original pointer
   # before retrying. It never contains credentials or grants repository authority.
-  backup="$workspace_path/.git.ku-linked-backup"
+  backup="$workspace_path/.git.strifira-linked-backup"
   if [ ! -e "$workspace_path/.git" ] && [ ! -L "$workspace_path/.git" ]; then
     [ -f "$backup" ] && [ ! -L "$backup" ] || exit 1
     mv -T -n -- "$backup" "$workspace_path/.git"
@@ -350,7 +350,7 @@ else
     git check-ref-format "refs/heads/$old_branch"
     for old_lock in "$old_git_directory/index.lock" "$old_git_directory/HEAD.lock" "$old_common_directory/refs/heads/$old_branch.lock"; do
       [ ! -L "$old_lock" ]
-      if [ -f "$old_lock" ] && [ "$(cat "$old_lock")" = "ku-checkout:$run_key:$stage_key" ]; then rm -f -- "$old_lock"; fi
+      if [ -f "$old_lock" ] && [ "$(cat "$old_lock")" = "strifira-checkout:$run_key:$stage_key" ]; then rm -f -- "$old_lock"; fi
     done
     rm -f -- "$backup"
   fi

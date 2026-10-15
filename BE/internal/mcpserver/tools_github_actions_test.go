@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	gh "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	gh "github.com/ku/ku-backend/pkg/github"
 	"github.com/labstack/echo/v4"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -462,7 +462,7 @@ func TestGitHubActionsMCPHTTPRejectsMissingInvalidRevokedAndExpiredKeys(t *testi
 			case "missing":
 				token = ""
 			case "invalid":
-				token = "ku_invalid"
+				token = "strifira_invalid"
 			case "jwt":
 				token = "eyJhbGciOiJIUzI1NiJ9.fake.jwt"
 			case "revoked", "expired":

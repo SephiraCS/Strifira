@@ -41,8 +41,8 @@
 		: 'border-b border-transparent bg-transparent'}"
 >
 	<nav class="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-		<a href="/" class="flex items-center gap-2" aria-label="Ku home">
-			<img src="/logo_white.svg" alt="Ku" class="h-7 w-auto" width={112} height={28} />
+		<a href="/" class="flex items-center gap-2" aria-label="Strifira home">
+			<img src="/logo_white.svg" alt="Strifira" class="h-7 w-auto" width={112} height={28} />
 		</a>
 
 		<!-- Desktop nav links -->
@@ -50,14 +50,14 @@
 			{#each links as link}
 				<a href={linkHref(link)} class="transition-colors hover:text-foreground">{link.label}</a>
 			{/each}
-			<a href="https://demo.kuayle.com" target="_blank" rel="noopener" class="transition-colors hover:text-foreground">Demo</a>
+			<a href="https://strifira.sephira.app.br" target="_blank" rel="noopener" class="transition-colors hover:text-foreground">Demo</a>
 		</div>
 
 		<!-- Desktop right actions -->
 		<div class="hidden items-center gap-2 md:flex">
 			<Button
 				variant="ghost"
-				href="https://github.com/carbogninalberto/kuayle"
+				href="https://github.com/SephiraCS/Strifira"
 				target="_blank"
 				rel="noopener"
 			>
@@ -88,11 +88,11 @@
 				{#each links as link}
 					<a href={linkHref(link)} class="block rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={closeMenu}>{link.label}</a>
 				{/each}
-				<a href="https://demo.kuayle.com" target="_blank" rel="noopener" class="flex items-center gap-1 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={closeMenu}>
+				<a href="https://strifira.sephira.app.br" target="_blank" rel="noopener" class="flex items-center gap-1 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={closeMenu}>
 					Demo
 					<ArrowRight class="size-3" />
 				</a>
-				<a href="https://github.com/carbogninalberto/kuayle" target="_blank" rel="noopener" class="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={closeMenu}>
+				<a href="https://github.com/SephiraCS/Strifira" target="_blank" rel="noopener" class="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" onclick={closeMenu}>
 					<Github />
 					GitHub
 				</a>

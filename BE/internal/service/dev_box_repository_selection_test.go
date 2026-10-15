@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -63,7 +63,7 @@ func newDevBoxRepositorySelectionFixture() *devBoxRepositorySelectionFixture {
 	jobs := &devBoxStoreFake{box: &domain.DevBox{ID: boxID, WorkspaceID: workspaceID, CreatedByUserID: userID, Enabled: true, Providers: json.RawMessage(`[{"id":"codex","version":"1"}]`)}}
 	development := &devBoxRepositorySelectionStore{
 		devBoxDevelopmentFake: &devBoxDevelopmentFake{
-			issue:        &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: uuid.New(), Identifier: "KU-42", Title: "Implement the issue"},
+			issue:        &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: uuid.New(), Identifier: "STRIFIRA-42", Title: "Implement the issue"},
 			repo:         &domain.GitHubRepoModel{ID: defaultRepoID, WorkspaceID: workspaceID, FullName: "team/saved", InstanceURL: "https://git.example.test", DefaultBranch: "main", IsActive: true},
 			issueSetting: &domain.DevMachineScopeSetting{GitHubRepoID: new(defaultRepoID), BaseBranch: new("develop")},
 		},

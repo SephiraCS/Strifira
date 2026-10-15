@@ -12,7 +12,7 @@
 	import { url, SITE } from '$lib/config/site';
 	import { ORGANIZATION_LD, WEBSITE_LD, SOFTWARE_APP_LD, webPageLd } from '$lib/data/routes';
 
-	const title = 'Ku — The Issue Tracker With No Paid Tier';
+	const title = 'Strifira — The Issue Tracker With No Paid Tier';
 	const description = SITE.description;
 	const canonical = url('/');
 

@@ -13,8 +13,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
 )
 
 type Executor interface {
@@ -299,7 +299,7 @@ func (e *LocalExecutor) Execute(ctx context.Context, job Job, log func(string, s
 }
 
 func collectPatch(ctx context.Context, worktree, base string) (string, []string, error) {
-	index, err := os.CreateTemp("", "ku-dev-box-index-*")
+	index, err := os.CreateTemp("", "strifira-dev-box-index-*")
 	if err != nil {
 		return "", nil, err
 	}

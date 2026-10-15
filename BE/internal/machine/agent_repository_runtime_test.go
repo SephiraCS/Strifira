@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,7 +15,7 @@ func TestAgentRepositoryAPIsRejectForeignAuthorityBeforeCallingDocker(t *testing
 	machine := fixtureHelperMachine()
 	checkout := domain.DevMachineCheckout{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID,
 		RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo",
-		BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/repository"}
+		BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/repository"}
 	runID := uuid.New()
 	for _, test := range []struct {
 		name   string
@@ -49,7 +49,7 @@ func TestAgentRepositoryAPIsRejectForeignAuthorityBeforeCallingDocker(t *testing
 func TestAgentRepositoryPreparationCannotUseMissingAuthority(t *testing.T) {
 	machine := fixtureHelperMachine()
 	checkout := &domain.DevMachineCheckout{ID: uuid.New(), RepositoryURL: "https://git.example.test/owner/repo", RepositoryFullName: "owner/repo",
-		BaseBranch: "main", WorkingBranch: "ku/task", WorkspacePath: "/workspace/repository"}
+		BaseBranch: "main", WorkingBranch: "strifira/task", WorkspacePath: "/workspace/repository"}
 	runtime := &DockerRuntime{}
 	require.Error(t, runtime.PrepareAgentRepository(t.Context(), nil, nil, checkout, uuid.New(), "fixture-token"))
 	require.Error(t, runtime.PrepareAgentRepository(t.Context(), machine, nil, checkout, uuid.Nil, "fixture-token"))

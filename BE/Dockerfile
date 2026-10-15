@@ -4,9 +4,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 # Reported by /health; see the root Dockerfile.
-ARG KU_VERSION=dev
+ARG STRIFIRA_VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath \
-    -ldflags="-s -w -X github.com/ku/ku-backend/internal/handler.Version=${KU_VERSION}" \
+    -ldflags="-s -w -X github.com/SephiraCS/strifira-backend/internal/handler.Version=${STRIFIRA_VERSION}" \
     -o server ./cmd/server
 
 FROM docker.io/library/alpine:3.24

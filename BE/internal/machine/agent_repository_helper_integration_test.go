@@ -25,9 +25,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -36,9 +36,9 @@ import (
 )
 
 func TestRepositoryHelperActualDocker(t *testing.T) {
-	image := os.Getenv("KU_GIT_HELPER_IMAGE")
+	image := os.Getenv("STRIFIRA_GIT_HELPER_IMAGE")
 	if image == "" {
-		t.Skip("set KU_GIT_HELPER_IMAGE to the freshly built shipped collector image")
+		t.Skip("set STRIFIRA_GIT_HELPER_IMAGE to the freshly built shipped collector image")
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 6*time.Minute)
 	defer cancel()
@@ -47,13 +47,13 @@ func TestRepositoryHelperActualDocker(t *testing.T) {
 	t.Cleanup(func() { _ = runtime.client.Close() })
 	machine := fixtureHelperMachine()
 	machine.RoutingKey = "helper-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-	machine.WorkspaceVolumeName = new("ku-workspace-" + machine.RoutingKey)
-	machine.DockerNetworkName = new("ku-machine-" + machine.RoutingKey)
+	machine.WorkspaceVolumeName = new("strifira-workspace-" + machine.RoutingKey)
+	machine.DockerNetworkName = new("strifira-machine-" + machine.RoutingKey)
 	services := []domain.DevMachineService{{ServiceType: "collector", ImageRef: image}}
 	inspection, err := runtime.client.ImageInspect(ctx, image)
 	require.NoError(t, err)
 	t.Logf("immutable helper image: %s", inspection.ID)
-	serverImage := os.Getenv("KU_GIT_SERVER_FIXTURE_IMAGE")
+	serverImage := os.Getenv("STRIFIRA_GIT_SERVER_FIXTURE_IMAGE")
 	require.NotEmpty(t, serverImage, "a separate disposable server fixture image with git-daemon is required; the shipped helper needs only Git client tools")
 	serverInspection, err := runtime.client.ImageInspect(ctx, serverImage)
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func TestRepositoryHelperActualDocker(t *testing.T) {
 	gitServer, err := runtime.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{Image: serverInspection.ID, User: "1000:1000", WorkingDir: "/fixture", Labels: machineLabels(machine),
 			Entrypoint: []string{"/fixture-test"}, Cmd: []string{"-test.run", "TestRepositoryHelperFixtureServer", "-test.timeout", "300s"},
-			Env: []string{"KU_GIT_FIXTURE_SERVER=1", "PATH=/usr/bin:/bin"}},
+			Env: []string{"STRIFIRA_GIT_FIXTURE_SERVER=1", "PATH=/usr/bin:/bin"}},
 		HostConfig: &container.HostConfig{NetworkMode: container.NetworkMode(*machine.DockerNetworkName), ReadonlyRootfs: true,
 			CapDrop: []string{"ALL"}, SecurityOpt: []string{"no-new-privileges=true"},
 			Mounts:    []mount.Mount{{Type: mount.TypeBind, Source: f.root, Target: "/fixture"}, {Type: mount.TypeBind, Source: testExecutable, Target: "/fixture-test", ReadOnly: true}},
@@ -187,7 +187,7 @@ sha256sum /workspace/repository/.git/index`, "checkout-policy"))
 		require.NoError(t, err, output)
 		output, err = runtime.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(`set -eu
 test "$(cat /workspace/repository/source.txt)" = 'later checkout edit'
-test ! -e /workspace/repository/.git.ku-linked-backup
+test ! -e /workspace/repository/.git.strifira-linked-backup
 if grep -q 'GITHUB_TOKEN\|helper-disposable-secret' /workspace/repository/.git/config; then echo "unexpected successful forbidden operation" >&2; exit 1; fi
 sha256sum /workspace/repository/.git/index`, "checkout-preservation"))
 		require.NoError(t, err, output)
@@ -227,7 +227,7 @@ printf 'legacy unstaged content\n' > "$path/source.txt"
 		killDriver := `set -eu
 script=$1
 shift
-/bin/sh -c "$script" ku-interrupted-installer "$@" &
+/bin/sh -c "$script" strifira-interrupted-installer "$@" &
 installer_pid=$!
 wait "$installer_pid"`
 		output, err = runtime.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(killDriver, "interrupt-linked-checkout", crashed, "/workspace", path, repository, repositoryURL, f.branch, runKey, stageKey))
@@ -235,8 +235,8 @@ wait "$installer_pid"`
 		require.ErrorContains(t, err, "exited 137", "only reaching the intended SIGKILL qualifies crash recovery")
 		output, err = runtime.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(`set -eu
 path=$1
-test -d "/workspace/.ku-checkout-$2"
-test -f "$path/.git.ku-linked-backup"
+test -d "/workspace/.strifira-checkout-$2"
+test -f "$path/.git.strifira-linked-backup"
 test "$(git -C "$path" show :source.txt)" = 'legacy staged content'
 test "$(git -C "$path" show ':staged
 name.txt')" = 'staged unusual filename'
@@ -255,8 +255,8 @@ sha256sum "$path/.git/index" | awk '{print $1}'
 		require.NoError(t, err, output)
 		output, err = runtime.runCheckoutHelper(ctx, machine, services, isolatedGitCommand(`set -eu
 path=$1
-test ! -e "/workspace/.ku-checkout-$2"
-test ! -e "$path/.git.ku-linked-backup"
+test ! -e "/workspace/.strifira-checkout-$2"
+test ! -e "$path/.git.strifira-linked-backup"
 test ! -e "/workspace/repos/legacy-$3.git/worktrees/${path##*/}/index.lock"
 test "$(git -C "$path" show :source.txt)" = 'new staged after kill'
 test "$(cat "$path/source.txt")" = 'even later worktree edit'
@@ -276,7 +276,7 @@ if touch /repositories/cannot-write; then echo "unexpected successful forbidden 
 if touch /repositories/selected.git/cannot-write; then echo "unexpected successful forbidden operation" >&2; exit 1; fi
 exec sleep 420`})
 	require.NoError(t, err)
-	ideOptions.Config.Labels["com.ku.service"] = "ide"
+	ideOptions.Config.Labels["com.strifira.service"] = "ide"
 	ideOptions.Config.WorkingDir = workspace
 	ideOptions.HostConfig.Mounts[0].ReadOnly = false
 	ideOptions.HostConfig.Mounts[1].ReadOnly = true
@@ -318,7 +318,7 @@ test -z "${GITHUB_TOKEN:-}"
 test -z "${GITHUB_TOKEN:-}"
 test -z "${ANTHROPIC_API_KEY:-}"
 test -z "${BASH_ENV:-}"
-test "$(ku-fixture-tool)" = fixture-tool-ok
+test "$(strifira-fixture-tool)" = fixture-tool-ok
 test "$(stat -f -c %T /tmp)" = xfs
 if ln "$2/HEAD" /tmp/protected-hardlink; then echo "unexpected successful forbidden operation" >&2; exit 1; fi
 dd if=/dev/zero of=/tmp/compiler-cache bs=1M count=2 status=none
@@ -334,7 +334,7 @@ mkdir .git
 printf '[core]\n fsmonitor = touch /tmp/untrusted-hook\n' > .git/config
 printf 'candidate-tests-ok\n'
 printf 'candidate-test-diagnostic\n' >&2
-`, "ku-test", candidate.Commit, privateRepository}
+`, "strifira-test", candidate.Commit, privateRepository}
 			if mode == "tracked-mutation" {
 				argv[2] += "printf 'mutated by test\\n' > source.txt\n"
 			} else if mode == "attribute-masking" {
@@ -359,7 +359,7 @@ printf 'v\000e\000r\000i\000f\000i\000e\000d\000\n\000' > source.txt
 			} else {
 				require.Zero(t, execution.ExitCode)
 			}
-			output, err := run(ctx, `set -eu; test ! -e "$1/ku-runs/$2/verification"; test ! -e "$1/ku-runs/$2/verification-scratch"; test ! -e "$1/ku-runs/$2/verification-stage"`, "", privateRepository, f.run)
+			output, err := run(ctx, `set -eu; test ! -e "$1/strifira-runs/$2/verification"; test ! -e "$1/strifira-runs/$2/verification-scratch"; test ! -e "$1/strifira-runs/$2/verification-stage"`, "", privateRepository, f.run)
 			require.NoError(t, err, output)
 			t.Logf("runtime candidate mode=%s exit=%d; output retained and private directories removed", mode, execution.ExitCode)
 		}
@@ -384,7 +384,7 @@ printf 'v\000e\000r\000i\000f\000i\000e\000d\000\n\000' > source.txt
 				}()
 				oldInspection, err := runtime.client.ContainerInspect(ctx, abandoned.ID, client.ContainerInspectOptions{})
 				require.NoError(t, err)
-				oldOwner, err := verificationReservationOwner(oldInspection.Container, oldOptions.Config.Labels["com.ku.repository-operation"])
+				oldOwner, err := verificationReservationOwner(oldInspection.Container, oldOptions.Config.Labels["com.strifira.repository-operation"])
 				require.NoError(t, err)
 				output, err = run(ctx, claimCandidateVerificationScript, "", privateRepository, f.run, candidate.Commit, oldOwner)
 				require.NoError(t, err, output)
@@ -424,7 +424,7 @@ printf 'v\000e\000r\000i\000f\000i\000e\000d\000\n\000' > source.txt
 					output, err := run(ctx, script, "", privateRepository, f.run, candidate.Commit, oldOwner, checkout.WorkingBranch)
 					require.Error(t, err, "old helper must remain fenced after new cleanup: %s", output)
 				}
-				output, err = run(ctx, `set -eu; test ! -e "$1/ku-runs/$2/verification"; test ! -e "$1/ku-runs/$2/verification-scratch"`, "", privateRepository, f.run)
+				output, err = run(ctx, `set -eu; test ! -e "$1/strifira-runs/$2/verification"; test ! -e "$1/strifira-runs/$2/verification-scratch"`, "", privateRepository, f.run)
 				require.NoError(t, err, output)
 				t.Logf("fresh runtime recovered expired %s verification and fenced the abandoned owner", mode)
 			})
@@ -433,8 +433,8 @@ printf 'v\000e\000r\000i\000f\000i\000e\000d\000\n\000' > source.txt
 			t.Run("restart-source-sync-"+mode, func(t *testing.T) {
 				options, err := repositoryHelperOptions(machine, inspection.ID, uuid.NewString(), []string{"true"})
 				require.NoError(t, err)
-				options.Name = "ku-" + machine.RoutingKey + "-source-sync-" + f.run
-				options.Config.Labels["com.ku.source-sync-run"] = f.run
+				options.Name = "strifira-" + machine.RoutingKey + "-source-sync-" + f.run
+				options.Config.Labels["com.strifira.source-sync-run"] = f.run
 				options.Config.Labels[repositoryReservationVersionLabel] = "1"
 				options.Config.Labels[repositoryReservationDeadlineLabel] = strconv.FormatInt(time.Now().Add(-time.Minute).UnixNano(), 10)
 				options.HostConfig.Mounts[0].ReadOnly = false
@@ -497,11 +497,11 @@ fi
 printf 'started\n' > /tmp/started
 while [ ! -f /tmp/release ]; do sleep 0.1; done
 printf 'held-candidate-ok\n'
-`, "ku-held-test", mode})
+`, "strifira-held-test", mode})
 					results <- outcome{execution, err}
 				}()
-				name := "ku-" + machine.RoutingKey + "-verification-" + f.run
-				marker := privateRepository + "/ku-runs/" + f.run + "/verification-scratch/started"
+				name := "strifira-" + machine.RoutingKey + "-verification-" + f.run
+				marker := privateRepository + "/strifira-runs/" + f.run + "/verification-scratch/started"
 				require.Eventually(t, func() bool {
 					_, err := runtime.execOutput(ctx, ide.ID, []string{"test", "-f", marker})
 					return err == nil
@@ -535,7 +535,7 @@ printf 'held-candidate-ok\n'
 				}
 				_, err := runtime.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 				require.True(t, errdefs.IsNotFound(err), "test container must be removed")
-				output, err := run(ctx, `set -eu; test ! -e "$1/ku-runs/$2/verification"; test ! -e "$1/ku-runs/$2/verification-scratch"`, "", privateRepository, f.run)
+				output, err := run(ctx, `set -eu; test ! -e "$1/strifira-runs/$2/verification"; test ! -e "$1/strifira-runs/$2/verification-scratch"`, "", privateRepository, f.run)
 				require.NoError(t, err, output)
 				t.Logf("runtime candidate %s: reservation preserved, terminal container and private files absent", mode)
 			}()
@@ -552,7 +552,7 @@ printf 'held-candidate-ok\n'
 		killDriver := `set -eu
 program=$1
 shift
-/bin/sh -c "$program" ku-source-sync-child "$@" &
+/bin/sh -c "$program" strifira-source-sync-child "$@" &
 child=$!
 wait "$child"
 `
@@ -625,7 +625,7 @@ printf 'hard-quota-enforced bytes=%s backing-kib-before=%s backing-kib-after=%s\
 	require.NoError(t, err)
 	for _, item := range listed.Items {
 		if ownedByMachine(item.Labels, machine.ID) {
-			require.NotEqual(t, "git-helper", item.Labels["com.ku.service"], "one-shot helper and all descendants must be removed")
+			require.NotEqual(t, "git-helper", item.Labels["com.strifira.service"], "one-shot helper and all descendants must be removed")
 		}
 	}
 	ideInspection, err := runtime.client.ContainerInspect(ctx, ide.ID, client.ContainerInspectOptions{})
@@ -641,9 +641,9 @@ func testCredentialFreeAgentBootstrapsActualDocker(t *testing.T, ctx context.Con
 			argv, err := json.Marshal([]string{"/bin/sh", "-c", `set -eu
 test -z "${GITHUB_TOKEN:-}"
 test -z "${GITHUB_TOKEN:-}"
-test ! -e /run/ku-secrets/GITHUB_TOKEN
-test ! -e /run/ku-secrets/GITHUB_TOKEN
-test ! -e "$HOME/.ku-git-credential"
+test ! -e /run/strifira-secrets/GITHUB_TOKEN
+test ! -e /run/strifira-secrets/GITHUB_TOKEN
+test ! -e "$HOME/.strifira-git-credential"
 if git config --global --get credential.helper; then exit 1; fi
 test "$ANTHROPIC_API_KEY" = scoped-provider-fixture
 printf credential-free-provider-ok
@@ -651,14 +651,14 @@ printf credential-free-provider-ok
 			require.NoError(t, err)
 			run := &domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Mode: "task", CommandArgv: argv}
 			provider := &domain.DevMachineAgentProvider{ImageRef: image, IsCustom: custom}
-			name := "ku-" + machine.RoutingKey + "-agent-" + run.ID.String()
+			name := "strifira-" + machine.RoutingKey + "-agent-" + run.ID.String()
 			t.Cleanup(func() {
 				inspection, err := runtime.client.ContainerInspect(context.Background(), name, client.ContainerInspectOptions{})
 				if errdefs.IsNotFound(err) {
 					return
 				}
 				require.NoError(t, err)
-				require.Equal(t, run.ID.String(), inspection.Container.Config.Labels["com.ku.agent-run-id"])
+				require.Equal(t, run.ID.String(), inspection.Container.Config.Labels["com.strifira.agent-run-id"])
 				_, err = runtime.client.ContainerRemove(context.Background(), inspection.Container.ID, client.ContainerRemoveOptions{Force: true})
 				require.NoError(t, err)
 			})
@@ -729,7 +729,7 @@ func helperFixtureCertificate(t *testing.T) ([]byte, []byte) {
 // This subprocess fixture serves only its disposable bare repository over the
 // isolated test network. It is never invoked by a production helper.
 func TestRepositoryHelperFixtureServer(t *testing.T) {
-	if os.Getenv("KU_GIT_FIXTURE_SERVER") != "1" {
+	if os.Getenv("STRIFIRA_GIT_FIXTURE_SERVER") != "1" {
 		return
 	}
 	output, err := exec.CommandContext(t.Context(), "/usr/bin/git", "--exec-path").Output()
@@ -759,7 +759,7 @@ func testAgentRunCancellationActualDocker(t *testing.T, ctx context.Context, run
 	t.Helper()
 	t.Run("fresh-runtime-run-cancellation", func(t *testing.T) {
 		runID := uuid.New()
-		setup := isolatedGitCommand(`set -eu; git --git-dir="$1" update-ref "refs/ku/runs/$2/candidate" "$3"; mkdir -m 0700 "$1/ku-runs/$2"`, "cancel-run-setup", repository, runID.String(), candidate.Commit)
+		setup := isolatedGitCommand(`set -eu; git --git-dir="$1" update-ref "refs/strifira/runs/$2/candidate" "$3"; mkdir -m 0700 "$1/strifira-runs/$2"`, "cancel-run-setup", repository, runID.String(), candidate.Commit)
 		output, err := runtime.runRepositoryHelper(ctx, machine, services, setup, "", repositoryHelperInvocation{})
 		require.NoError(t, err, output)
 		heldCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -811,7 +811,7 @@ wait`})
 				helperResults <- err
 			}()
 		}
-		verificationName := "ku-" + machine.RoutingKey + "-verification-" + runID.String()
+		verificationName := "strifira-" + machine.RoutingKey + "-verification-" + runID.String()
 		require.Eventually(t, func() bool {
 			_, err := runtime.execOutput(heldCtx, verificationName, []string{"test", "-f", "/tmp/cancellation-verification-started"})
 			return err == nil
@@ -825,8 +825,8 @@ wait`})
 		createAgent := func(agentRun uuid.UUID) string {
 			options, err := repositoryHelperOptions(machine, imageID, uuid.NewString(), []string{"/bin/sh", "-c", "sleep 45"})
 			require.NoError(t, err)
-			options.Name = "ku-" + machine.RoutingKey + "-agent-" + agentRun.String()
-			options.Config.Labels["com.ku.service"], options.Config.Labels["com.ku.agent-run-id"] = "agent", agentRun.String()
+			options.Name = "strifira-" + machine.RoutingKey + "-agent-" + agentRun.String()
+			options.Config.Labels["com.strifira.service"], options.Config.Labels["com.strifira.agent-run-id"] = "agent", agentRun.String()
 			options.HostConfig.Mounts[0].ReadOnly = false
 			options.HostConfig.Mounts[1].ReadOnly = true
 			created, err := runtime.client.ContainerCreate(ctx, options)
@@ -876,7 +876,7 @@ wait`})
 				t.Fatal("cancelled Git helper caller did not terminate")
 			}
 		}
-		for _, id := range []string{ownedAgent, verificationName, "ku-" + machine.RoutingKey + "-source-sync-" + runID.String()} {
+		for _, id := range []string{ownedAgent, verificationName, "strifira-" + machine.RoutingKey + "-source-sync-" + runID.String()} {
 			_, err := runtime.client.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 			require.True(t, errdefs.IsNotFound(err), "cancelled container and descendants must be gone: %s", id)
 		}
@@ -887,12 +887,12 @@ wait`})
 		late, err := restarted.RunCandidateCommand(ctx, machine, verificationServices, checkout, runID, candidate, []string{"true"})
 		require.ErrorIs(t, err, context.Canceled)
 		require.Nil(t, late)
-		output, err = runtime.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(`set -eu; find "$1/ku-runs/$2" -maxdepth 2 -type d; test ! -e "$1/ku-runs/$2/verification"; test ! -e "$1/ku-runs/$2/verification-scratch"`, "check-cancel-cleanup", repository, runID.String()), "", repositoryHelperInvocation{})
+		output, err = runtime.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(`set -eu; find "$1/strifira-runs/$2" -maxdepth 2 -type d; test ! -e "$1/strifira-runs/$2/verification"; test ! -e "$1/strifira-runs/$2/verification-scratch"`, "check-cancel-cleanup", repository, runID.String()), "", repositoryHelperInvocation{})
 		require.NoError(t, err, output)
-		remaining, err := runtime.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: make(client.Filters).Add("label", "com.ku.agent-run-id="+runID.String())})
+		remaining, err := runtime.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: make(client.Filters).Add("label", "com.strifira.agent-run-id="+runID.String())})
 		require.NoError(t, err)
 		require.Len(t, remaining.Items, 1)
-		require.Equal(t, "agent-cancellation", remaining.Items[0].Labels["com.ku.service"])
+		require.Equal(t, "agent-cancellation", remaining.Items[0].Labels["com.strifira.service"])
 		t.Log("fresh runtime cancelled agent, verification child, repository helper and source-sync helper; another run survived, private test directories were cleaned, repeated/late calls stayed fenced")
 	})
 }
@@ -919,8 +919,8 @@ func testTerminalRunCleanupActualDocker(t *testing.T, ctx context.Context, runti
 				require.NoError(t, err)
 			}
 			setup := isolatedGitCommand(`set -eu
-git --git-dir="$1" update-ref "refs/ku/runs/$2/base" "$3"
-git --git-dir="$1" update-ref "refs/ku/runs/$2/parent" "$4"
+git --git-dir="$1" update-ref "refs/strifira/runs/$2/base" "$3"
+git --git-dir="$1" update-ref "refs/strifira/runs/$2/parent" "$4"
 `, "terminal-run-setup", repository, runID.String(), previous.BaseCommit, previous.Commit)
 			output, err := runtime.runRepositoryHelper(ctx, machine, services, setup, "", repositoryHelperInvocation{})
 			require.NoError(t, err, output)
@@ -943,8 +943,8 @@ git --git-dir="$1" update-ref "refs/ku/runs/$2/parent" "$4"
 			// Private artifacts have no live caller or test container to reclaim them.
 			output, err = runtime.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(`set -eu
 for name in verification verification-scratch verification-stage snapshot.abandoned; do
-  mkdir -m 0700 "$1/ku-runs/$2/$name"
-  printf abandoned > "$1/ku-runs/$2/$name/private-file"
+  mkdir -m 0700 "$1/strifira-runs/$2/$name"
+  printf abandoned > "$1/strifira-runs/$2/$name/private-file"
 done
 `, "abandoned-run-artifacts", repository, runID.String()), "", repositoryHelperInvocation{})
 			require.NoError(t, err, output)
@@ -964,11 +964,11 @@ done
 			_, err = restarted.SynchronizeAgentCandidate(ctx, machine, services, &checkout, runID, candidate)
 			require.ErrorIs(t, err, context.Canceled, "ordinary synchronization cannot resurrect a terminal run")
 			output, err = runtime.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(`set -eu
-for name in verification verification-scratch verification-stage snapshot.abandoned; do test ! -e "$1/ku-runs/$2/$name"; done
-test ! -e "$1/ku-runs/$2/source-sync-$3"
-test -f "$1/ku-runs/$2/candidate.info"
-test -f "$1/ku-runs/$2/terminal-cleanup"
-test "$(git --git-dir="$1" rev-parse "refs/ku/runs/$2/candidate")" = "$4"
+for name in verification verification-scratch verification-stage snapshot.abandoned; do test ! -e "$1/strifira-runs/$2/$name"; done
+test ! -e "$1/strifira-runs/$2/source-sync-$3"
+test -f "$1/strifira-runs/$2/candidate.info"
+test -f "$1/strifira-runs/$2/terminal-cleanup"
+test "$(git --git-dir="$1" rev-parse "refs/strifira/runs/$2/candidate")" = "$4"
 `, "terminal-run-artifacts-reclaimed", repository, runID.String(), stageKey, candidate.Commit), "", repositoryHelperInvocation{})
 			require.NoError(t, err, output)
 			head, err := runtime.execOutput(ctx, ideID, []string{"git", "-C", checkout.WorkspacePath, "rev-parse", "HEAD"})

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -19,9 +19,9 @@ import (
 // It exercises the shipped script with real root/UID1000 permissions, rather
 // than replacing chown/stat or treating a mocked daemon as preservation proof.
 func TestWorkspaceLayoutActualDocker(t *testing.T) {
-	image := os.Getenv("KU_LAYOUT_IMAGE")
+	image := os.Getenv("STRIFIRA_LAYOUT_IMAGE")
 	if image == "" {
-		t.Skip("set KU_LAYOUT_IMAGE to the freshly built shipped collector image")
+		t.Skip("set STRIFIRA_LAYOUT_IMAGE to the freshly built shipped collector image")
 	}
 	runtime, err := NewDockerRuntime(DockerConfig{})
 	require.NoError(t, err)
@@ -34,7 +34,7 @@ func TestWorkspaceLayoutActualDocker(t *testing.T) {
 		t.Helper()
 		machine := fixtureHelperMachine()
 		machine.RoutingKey = "layout-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-		machine.WorkspaceVolumeName = new("ku-workspace-" + machine.RoutingKey)
+		machine.WorkspaceVolumeName = new("strifira-workspace-" + machine.RoutingKey)
 		created, err := runtime.ensureVolume(t.Context(), *machine.WorkspaceVolumeName, machineLabels(machine), 1)
 		require.NoError(t, err)
 		require.True(t, created)
@@ -145,7 +145,7 @@ git --no-optional-locks -c safe.directory="$PWD/tasks/TS-279" -C tasks/TS-279 re
 		require.NoError(t, err)
 		_, err = runtime.client.ContainerStart(t.Context(), created.ID, client.ContainerStartOptions{})
 		require.NoError(t, err)
-		_, err = runtime.execOutputAs(t.Context(), created.ID, []string{"/bin/sh", "-c", "set -eu; echo writable > /workspace/ide-proof; if echo forbidden > /repositories/ide-proof; then exit 91; fi; test ! -e /workspace/.ku-layout-*/ready"}, "1000:1000")
+		_, err = runtime.execOutputAs(t.Context(), created.ID, []string{"/bin/sh", "-c", "set -eu; echo writable > /workspace/ide-proof; if echo forbidden > /repositories/ide-proof; then exit 91; fi; test ! -e /workspace/.strifira-layout-*/ready"}, "1000:1000")
 		require.NoError(t, err)
 		require.NoError(t, runtime.prepareProtectedWorkspaceVolume(t.Context(), machine, *machine.WorkspaceVolumeName, image), "running modern IDE permits read-only verification")
 		t.Log("145 MiB incompressible history, dirty index/worktree, colliding names, hardlink/symlink and metadata preserved; real IDE mount policy passed")
@@ -172,7 +172,7 @@ git --no-optional-locks -c safe.directory="$PWD/tasks/TS-279" -C tasks/TS-279 re
 			key := uuid.NewString()
 			if mode == "collect-collision" {
 				code, _ := run(t, machine, isolatedGitCommand(`set -eu
-state="/volume/.ku-layout-$1"
+state="/volume/.strifira-layout-$1"
 mkdir -m 0700 "$state" "$state/contents"
 printf 'collecting\n' > "$state/phase"
 printf original > /volume/keep
@@ -183,7 +183,7 @@ printf previously-collected > "$state/contents/keep"
 				require.NotZero(t, code)
 				code, _ = run(t, machine, isolatedGitCommand(`set -eu
 test "$(cat /volume/keep)" = original
-test "$(cat "/volume/.ku-layout-$1/contents/keep")" = previously-collected
+test "$(cat "/volume/.strifira-layout-$1/contents/keep")" = previously-collected
 `, "collision-preserved", key))
 				require.Zero(t, code, "a collection collision must never overwrite either copy")
 				return

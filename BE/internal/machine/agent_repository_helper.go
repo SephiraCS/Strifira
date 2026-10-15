@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -40,11 +40,11 @@ func repositoryHelperOptions(machine *domain.DevMachine, imageID, operationID st
 		return client.ContainerCreateOptions{}, errors.New("repository helper requires an immutable image, command and resource budget")
 	}
 	labels := machineLabels(machine)
-	labels["com.ku.service"] = "git-helper"
-	labels["com.ku.repository-operation"] = operationID
+	labels["com.strifira.service"] = "git-helper"
+	labels["com.strifira.repository-operation"] = operationID
 	memory := min(int64(512), max(int64(128), int64(machine.MemoryMB)*15/100)) * 1024 * 1024
 	return client.ContainerCreateOptions{
-		Name: "ku-" + machine.RoutingKey + "-git-" + operationID,
+		Name: "strifira-" + machine.RoutingKey + "-git-" + operationID,
 		Config: &container.Config{
 			Image: imageID, User: "1000:1000", WorkingDir: "/repositories",
 			Entrypoint: command, Cmd: []string{}, Env: []string{"PATH=/usr/bin:/bin", "HOME=/tmp"},
@@ -105,8 +105,8 @@ func (r *DockerRuntime) requireProtectedRepositoryMounts(ctx context.Context, ma
 		if protectedVerificationMounts(inspection.Container, machine) || protectedWorkspaceVerificationMounts(inspection.Container, machine) {
 			continue
 		}
-		operationID, operationErr := uuid.Parse(config.Labels["com.ku.repository-operation"])
-		trustedHelper := ownedByMachine(config.Labels, machine.ID) && (config.Labels["com.ku.service"] == "git-helper" || config.Labels["com.ku.service"] == "git-cleanup") &&
+		operationID, operationErr := uuid.Parse(config.Labels["com.strifira.repository-operation"])
+		trustedHelper := ownedByMachine(config.Labels, machine.ID) && (config.Labels["com.strifira.service"] == "git-helper" || config.Labels["com.strifira.service"] == "git-cleanup") &&
 			operationErr == nil && operationID != uuid.Nil && config.Image == imageID && config.User == "1000:1000"
 		if !protectedRepositoryMounts(inspection.Container.HostConfig, volumeName, trustedHelper) && !protectedAtomicWriterMounts(inspection.Container, volumeName, trustedHelper) {
 			return errors.New("machine has a writable legacy repository mount; stop and migrate its services first")
@@ -147,15 +147,15 @@ func protectedRepositoryMounts(config *container.HostConfig, volumeName string, 
 // see the common volume mount. UID1000 cannot modify the root-owned layout
 // record or volume root; its authority equals its two writable subpaths.
 func protectedAtomicWriterMounts(item container.InspectResponse, volumeName string, trustedHelper bool) bool {
-	if !trustedHelper || item.Config == nil || item.HostConfig == nil || item.Config.User != "1000:1000" || item.Config.Labels["com.ku.service"] != "git-helper" || len(item.HostConfig.Mounts) != 3 || len(item.HostConfig.Binds) != 0 || !item.HostConfig.ReadonlyRootfs || item.HostConfig.Privileged || item.HostConfig.NetworkMode != "none" {
+	if !trustedHelper || item.Config == nil || item.HostConfig == nil || item.Config.User != "1000:1000" || item.Config.Labels["com.strifira.service"] != "git-helper" || len(item.HostConfig.Mounts) != 3 || len(item.HostConfig.Binds) != 0 || !item.HostConfig.ReadonlyRootfs || item.HostConfig.Privileged || item.HostConfig.NetworkMode != "none" {
 		return false
 	}
 	if len(item.HostConfig.CapAdd) != 0 || len(item.HostConfig.CapDrop) != 1 || item.HostConfig.CapDrop[0] != "ALL" || len(item.HostConfig.SecurityOpt) != 1 || item.HostConfig.SecurityOpt[0] != "no-new-privileges=true" {
 		return false
 	}
-	identity := item.Config.Labels["com.ku.source-sync-run"]
+	identity := item.Config.Labels["com.strifira.source-sync-run"]
 	if identity == "" {
-		identity = item.Config.Labels["com.ku.provision-checkout"]
+		identity = item.Config.Labels["com.strifira.provision-checkout"]
 	}
 	parsed, err := uuid.Parse(identity)
 	if err != nil || parsed == uuid.Nil || parsed.String() != identity {
@@ -197,7 +197,7 @@ func (r *DockerRuntime) runImmutableGitHelper(ctx context.Context, machine *doma
 		return "", err
 	}
 	if invocation.RunID != uuid.Nil {
-		options.Config.Labels["com.ku.agent-run-id"] = invocation.RunID.String()
+		options.Config.Labels["com.strifira.agent-run-id"] = invocation.RunID.String()
 	}
 	if invocation.Recovery && (!invocation.Cleanup || !invocation.Checkout || !invocation.SourceSync) {
 		return "", errors.New("terminal recovery requires a cleanup source synchronization helper")
@@ -218,18 +218,18 @@ func (r *DockerRuntime) runImmutableGitHelper(ctx context.Context, machine *doma
 		if !invocation.Checkout || invocation.RunID == uuid.Nil || credential != "" {
 			return "", errors.New("source synchronization requires a credential-free checkout helper")
 		}
-		options.Name = "ku-" + machine.RoutingKey + "-source-sync-" + invocation.RunID.String()
-		options.Config.Labels["com.ku.source-sync-run"] = invocation.RunID.String()
+		options.Name = "strifira-" + machine.RoutingKey + "-source-sync-" + invocation.RunID.String()
+		options.Config.Labels["com.strifira.source-sync-run"] = invocation.RunID.String()
 	}
 	if invocation.ProvisionID != uuid.Nil {
 		if !invocation.Checkout || invocation.RunID != uuid.Nil || invocation.SourceSync || invocation.Cleanup || invocation.Recovery || credential != "" {
 			return "", errors.New("default provisioning requires an isolated credential-free checkout helper")
 		}
-		options.Name = "ku-" + machine.RoutingKey + "-provision-" + invocation.ProvisionID.String()
-		options.Config.Labels["com.ku.provision-checkout"] = invocation.ProvisionID.String()
+		options.Name = "strifira-" + machine.RoutingKey + "-provision-" + invocation.ProvisionID.String()
+		options.Config.Labels["com.strifira.provision-checkout"] = invocation.ProvisionID.String()
 	}
 	if invocation.Checkout {
-		options.Config.Labels["com.ku.service"] = "git-checkout"
+		options.Config.Labels["com.strifira.service"] = "git-checkout"
 		options.HostConfig.Mounts[0].ReadOnly = false
 		options.HostConfig.Mounts[1].ReadOnly = true
 		options.HostConfig.NetworkMode = "none"
@@ -238,12 +238,12 @@ func (r *DockerRuntime) runImmutableGitHelper(ctx context.Context, machine *doma
 	if invocation.SourceSync || invocation.ProvisionID != uuid.Nil {
 		// This immutable, network-isolated helper alone may update both the
 		// editable Git metadata and its protected recovery transaction.
-		options.Config.Labels["com.ku.service"] = "git-helper"
+		options.Config.Labels["com.strifira.service"] = "git-helper"
 		options.HostConfig.Mounts[1].ReadOnly = false
 		options.HostConfig.Mounts = append(options.HostConfig.Mounts, mount.Mount{Type: mount.TypeVolume, Source: *machine.WorkspaceVolumeName, Target: "/volume", VolumeOptions: &mount.VolumeOptions{NoCopy: true}})
 	}
 	if invocation.Cleanup {
-		options.Config.Labels["com.ku.service"] = "git-cleanup"
+		options.Config.Labels["com.strifira.service"] = "git-cleanup"
 		options.HostConfig.NetworkMode = "none"
 		options.NetworkingConfig = nil
 	}
@@ -278,14 +278,14 @@ func (r *DockerRuntime) executeRepositoryContainer(ctx context.Context, machine 
 	if machine == nil || options.Config == nil || options.HostConfig == nil || options.Name == "" || strings.ContainsAny(credential, "\r\n\x00") {
 		return nil, errors.New("repository container options or credential are invalid")
 	}
-	operationID := options.Config.Labels["com.ku.repository-operation"]
+	operationID := options.Config.Labels["com.strifira.repository-operation"]
 	operation, err := uuid.Parse(operationID)
 	if err != nil || operation == uuid.Nil || !ownedByMachine(options.Config.Labels, machine.ID) {
 		return nil, errors.New("repository container ownership is invalid")
 	}
-	runID, _ := uuid.Parse(options.Config.Labels["com.ku.agent-run-id"])
+	runID, _ := uuid.Parse(options.Config.Labels["com.strifira.agent-run-id"])
 	checkActive := func() error {
-		if options.Config.Labels["com.ku.service"] == "git-cleanup" {
+		if options.Config.Labels["com.strifira.service"] == "git-cleanup" {
 			return nil
 		}
 		return r.requireAgentRunActive(ctx, machine, runID)
@@ -316,7 +316,7 @@ func (r *DockerRuntime) executeRepositoryContainer(ctx context.Context, machine 
 				return errors.New("repository helper cleanup ownership is unavailable")
 			}
 			labels := inspection.Container.Config.Labels
-			if !ownedByMachine(labels, machine.ID) || labels["com.ku.repository-operation"] != operationID || labels["com.ku.service"] != options.Config.Labels["com.ku.service"] {
+			if !ownedByMachine(labels, machine.ID) || labels["com.strifira.repository-operation"] != operationID || labels["com.strifira.service"] != options.Config.Labels["com.strifira.service"] {
 				return errors.New("repository helper cleanup ownership does not match")
 			}
 			containerID = inspection.Container.ID
@@ -400,7 +400,7 @@ func (r *DockerRuntime) executeRepositoryContainer(ctx context.Context, machine 
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if (stdout.overflow || stderr.overflow) && !verificationService(options.Config.Labels["com.ku.service"]) {
+	if (stdout.overflow || stderr.overflow) && !verificationService(options.Config.Labels["com.strifira.service"]) {
 		return nil, errors.New("repository helper output exceeds the capture limit")
 	}
 	inspection, err := r.client.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})

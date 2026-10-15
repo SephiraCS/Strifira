@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/require"
 )
@@ -110,7 +110,7 @@ func newWorkspaceVerificationFixture(t *testing.T) workspaceVerificationFixture 
 
 func (f workspaceVerificationFixture) script(t *testing.T, script, owner string) (string, error) {
 	t.Helper()
-	command := exec.CommandContext(t.Context(), "/bin/sh", "-c", script, "ku-workspace-test", f.store, f.run, f.source, owner)
+	command := exec.CommandContext(t.Context(), "/bin/sh", "-c", script, "strifira-workspace-test", f.store, f.run, f.source, owner)
 	command.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}
 	output, err := command.CombinedOutput()
 	return string(output), err
@@ -220,9 +220,9 @@ func TestWorkspaceVerificationMountPolicy(t *testing.T) {
 	encoded, err := json.Marshal(baseline)
 	require.NoError(t, err)
 	for name, mutate := range map[string]func(*container.InspectResponse){
-		"foreign machine":   func(i *container.InspectResponse) { i.Config.Labels["com.ku.machine-id"] = uuid.NewString() },
-		"foreign workspace": func(i *container.InspectResponse) { i.Config.Labels["com.ku.workspace-id"] = uuid.NewString() },
-		"foreign run":       func(i *container.InspectResponse) { i.Config.Labels["com.ku.agent-run-id"] = uuid.NewString() },
+		"foreign machine":   func(i *container.InspectResponse) { i.Config.Labels["com.strifira.machine-id"] = uuid.NewString() },
+		"foreign workspace": func(i *container.InspectResponse) { i.Config.Labels["com.strifira.workspace-id"] = uuid.NewString() },
+		"foreign run":       func(i *container.InspectResponse) { i.Config.Labels["com.strifira.agent-run-id"] = uuid.NewString() },
 		"live workspace":    func(i *container.InspectResponse) { i.HostConfig.Mounts[0].VolumeOptions.Subpath = "workspace" },
 		"protected store":   func(i *container.InspectResponse) { i.HostConfig.Mounts[0].VolumeOptions.Subpath = "repositories" },
 		"traversal":         func(i *container.InspectResponse) { i.HostConfig.Mounts[0].VolumeOptions.Subpath += "/../.." },

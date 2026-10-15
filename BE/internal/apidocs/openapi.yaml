@@ -1,4 +1,4 @@
-# Ku REST API — OpenAPI 3.1 description.
+# Strifira REST API — OpenAPI 3.1 description.
 #
 # Single source of truth for the HTTP surface registered in
 # cmd/server/main.go. Served same-origin at /api/openapi.json and browsed
@@ -8,14 +8,14 @@
 openapi: 3.1.0
 
 info:
-  title: Ku API
+  title: Strifira API
   version: 0.3.24
-  summary: Issue tracker REST API behind ku.mariogk.com
+  summary: Issue tracker REST API behind strifira.mariogk.com
   description: |
-    Ku is a Linear-style issue tracker. This document describes the REST API
+    Strifira is a Linear-style issue tracker. This document describes the REST API
     served by the Go backend under `/api` (plus `/health`, `/ready`, `/mcp`,
     and the public share/avatar paths), as deployed at
-    [ku.mariogk.com](https://ku.mariogk.com/).
+    [strifira.mariogk.com](https://strifira.mariogk.com/).
 
     ## Authentication
 
@@ -27,11 +27,11 @@ info:
     jar).
 
     The MCP endpoint is different: it authenticates with a **personal API
-    key** (`Authorization: Bearer ku_...`) created under
+    key** (`Authorization: Bearer strifira_...`) created under
     Settings → Personal → API Keys.
 
     Dev-box workers authenticate with a dedicated **registration token**
-    (`Authorization: Bearer kub_...`) on `/api/dev-box-worker` only. These
+    (`Authorization: Bearer strifira_...`) on `/api/dev-box-worker` only. These
     tokens carry no personal API/MCP access. Job mutations also require a
     separate expiring lease token in the request body.
 
@@ -51,8 +51,8 @@ info:
     * Workspace entities (teams, labels, projects, cycles…) are UUID-keyed.
     * Live updates ride the workspace WebSocket `/api/workspaces/{slug}/ws`.
   license:
-    name: Fork of carbogninalberto/kuayle
-    url: https://github.com/carbogninalberto/kuayle
+    name: Fork of SephiraCS/Strifira
+    url: https://github.com/SephiraCS/Strifira
 
 # No servers entry: the document is served same-origin, so clients explore
 # against whichever origin they loaded it from.
@@ -2728,7 +2728,7 @@ paths:
         `create`, `status`, `check_run` and `workflow_run` events. Every
         delivery must carry a valid `X-Hub-Signature-256`
         (`sha256=` + hex HMAC-SHA256 of the raw body, using the shared secret
-        ku generated when the repo was linked; the legacy `X-Hub-Signature`
+        strifira generated when the repo was linked; the legacy `X-Hub-Signature`
         SHA-1 variant is accepted as a fallback); invalid signatures are
         dropped.
       security: []
@@ -2837,7 +2837,7 @@ paths:
       tags: [GitHub]
       summary: Link repos
       description: |
-        Requires: workspace:manage. Linking creates ku-generated signed
+        Requires: workspace:manage. Linking creates strifira-generated signed
         webhooks on each repo (push/pull_request/create + Actions
         completion).
       requestBody:
@@ -2953,7 +2953,7 @@ paths:
       operationId: githubListActionJobs
       tags: [GitHub]
       summary: List jobs in a workflow run
-      description: "Requires: issue:read. GitHub's job array is paginated by Ku."
+      description: "Requires: issue:read. GitHub's job array is paginated by Strifira."
       parameters:
         - $ref: "#/components/parameters/GitHubActionsPage"
         - name: per_page
@@ -2984,7 +2984,7 @@ paths:
       tags: [GitHub]
       summary: Get a workflow job in its run
       description: |
-        Requires: issue:read. Ku resolves the job from GitHub's
+        Requires: issue:read. Strifira resolves the job from GitHub's
         repository-scoped run-jobs list and verifies its run ID. A missing
         job or a job belonging to another run returns `ACTION_NOT_FOUND`.
         The native API provides job metadata and attempt; step details,
@@ -3014,7 +3014,7 @@ paths:
       tags: [GitHub]
       summary: Read a bounded workflow job log
       description: |
-        Requires: issue:read. Ku first verifies that the job belongs to
+        Requires: issue:read. Strifira first verifies that the job belongs to
         this run through GitHub's repository-scoped run-jobs list. A
         missing job or mismatched run returns `ACTION_NOT_FOUND` before
         requesting any log. GitHub serves the latest attempt's logs; an
@@ -3055,7 +3055,7 @@ paths:
       tags: [GitHub]
       summary: Cancel an active workflow run
       description: |
-        Requires: workspace:manage (workspace owner only). Ku checks the
+        Requires: workspace:manage (workspace owner only). Strifira checks the
         upstream run state before requesting the action. Allowed states:
         `queued` or `in_progress`. This operation uses the configured workspace
         GitHub token and accepts no caller-supplied token or repository URL.
@@ -3083,7 +3083,7 @@ paths:
     get:
       operationId: githubListUserMappings
       tags: [GitHub]
-      summary: List GitHub → Ku user mappings
+      summary: List GitHub → Strifira user mappings
       responses:
         "200":
           description: Mappings (unmapped GitHub logins fall back to unique case-insensitive member-name matches).
@@ -3440,7 +3440,7 @@ paths:
       tags: [API Keys]
       summary: Create a personal API key
       description: |
-        The raw `ku_...` token is returned exactly once, in this response.
+        The raw `strifira_...` token is returned exactly once, in this response.
         Optional read-only scope (query MCP tools only) and expiry in days
         (≤ 3650). Keys work in every workspace the owner belongs to.
       requestBody:
@@ -4140,7 +4140,7 @@ paths:
         Model Context Protocol over stateless streamable HTTP. Every POST
         is a self-contained JSON-RPC 2.0 message (`initialize`,
         `tools/list`, `tools/call`); `Mcp-Session-Id` is ignored.
-        Authenticate with a personal API key (`Bearer ku_...`); tools run
+        Authenticate with a personal API key (`Bearer strifira_...`); tools run
         with the key owner's identity and the same workspace RBAC as the
         UI. Read-only keys are limited to query tools. 44 tools cover the
         full ticketing surface (workspaces, teams, states, projects,
@@ -4193,7 +4193,7 @@ paths:
       summary: Register a dev box
       description: Requires current workspace membership and development permissions. Only the registration creator can access
         this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
-        development features. The dedicated kub_ token is returned once. Store it in a protected local token file; Ku stores
+        development features. The dedicated strifira_ token is returned once. Store it in a protected local token file; Strifira stores
         only its hash.
       parameters:
       - {$ref: '#/components/parameters/Slug'}
@@ -4430,7 +4430,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Report dev-box capabilities
-      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Heartbeats update the online indicator
         and installed provider list.
       security:
@@ -4457,7 +4457,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Claim one eligible dev-box job
-      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Claiming is atomic; each box can hold only
         one active job. The 60-second lease token is separate from the box token.
       security:
@@ -4484,7 +4484,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Start a claimed dev-box job
-      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
         Cancel and deadline state wins over further execution. Renew before lease expiry, normally every 15 seconds.
       security:
@@ -4513,7 +4513,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Renew a dev-box job lease
-      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
         Cancel and deadline state wins over further execution. Renew before lease expiry, normally every 15 seconds.
       security:
@@ -4542,7 +4542,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Append a bounded dev-box job log chunk
-      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
         Sequence numbers are idempotent; duplicate retries acknowledge the previously accepted chunk without storing it again. Each content chunk is at most 64 KiB and total
         stored output is at most 4 MiB.
@@ -4572,7 +4572,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Complete a dev-box job
-      description: Requires a dedicated kub_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching lease token; retries
         are idempotent. The server validates the assigned branch and independent test report. Failed harness exits or missing/failed
         required tests cannot produce success. Expiry, cancellation, and deadline state override a late success. The patch is
@@ -4613,7 +4613,7 @@ components:
     apiKeyAuth:
       type: http
       scheme: bearer
-      description: Personal API key (`ku_...`) from Settings → Personal → API Keys. MCP endpoint only.
+      description: Personal API key (`strifira_...`) from Settings → Personal → API Keys. MCP endpoint only.
     machineToken:
       type: http
       scheme: bearer
@@ -4622,7 +4622,7 @@ components:
     devBoxWorkerToken:
       type: http
       scheme: bearer
-      description: Dedicated kub_ dev-box registration token; only the worker API accepts it. Creator membership and development permissions are rechecked on every request.
+      description: Dedicated strifira_ dev-box registration token; only the worker API accepts it. Creator membership and development permissions are rechecked on every request.
 
   parameters:
     DevBoxId:
@@ -4722,7 +4722,7 @@ components:
       name: repoId
       in: path
       required: true
-      description: UUID of an active Ku repository link in this workspace (not the upstream numeric repository ID).
+      description: UUID of an active Strifira repository link in this workspace (not the upstream numeric repository ID).
       schema: { type: string, format: uuid }
     GitHubActionRunId:
       name: runId
@@ -5690,7 +5690,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         name: { type: string }
-        key_prefix: { type: string, example: ku_9f2A }
+        key_prefix: { type: string, example: strifira_9f2A }
         scopes: { type: array, items: { type: string, enum: [read, write] } }
         created_at: { type: string, format: date-time }
         last_used_at: { type: string, format: date-time, nullable: true }
@@ -5784,7 +5784,7 @@ components:
       - token
       properties:
         box: {$ref: '#/components/schemas/DevBox'}
-        token: {type: string, pattern: '^kub_[0-9a-f]{64}$', description: Shown only by registration or rotation. Not a JWT or
+        token: {type: string, pattern: '^strifira_[0-9a-f]{64}$', description: Shown only by registration or rotation. Not a JWT or
             personal API key.}
     CreateDevBoxJobRequest:
       type: object
@@ -5994,7 +5994,7 @@ components:
       - heartbeat_interval_seconds
       properties:
         job: {$ref: '#/components/schemas/DevBoxJob'}
-        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+        lease_token: {type: string, pattern: '^sfl_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
             never the registration token.}
         lease_expires_at: {type: string, format: date-time}
         server_time: {type: string, format: date-time}
@@ -6004,7 +6004,7 @@ components:
       required:
       - lease_token
       properties:
-        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+        lease_token: {type: string, pattern: '^sfl_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
             never the registration token.}
     DevBoxLeaseResponse:
       type: object
@@ -6035,7 +6035,7 @@ components:
       - stream
       - content
       properties:
-        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+        lease_token: {type: string, pattern: '^sfl_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
             never the registration token.}
         sequence: {type: integer, format: int64, minimum: 1}
         stream:
@@ -6064,7 +6064,7 @@ components:
       - lease_token
       - result
       properties:
-        lease_token: {type: string, pattern: '^kul_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
+        lease_token: {type: string, pattern: '^sfl_[0-9a-f]{64}$', description: Separate per-job lease token returned by claim;
             never the registration token.}
         result: {$ref: '#/components/schemas/DevBoxCompletionResult'}
 

@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 // Runner for the production-facing specs under tests/prod/ (deployed
-// ku.mariogk.com). No webServer: these exercise the live build.
+// strifira.mariogk.com). No webServer: these exercise the live build.
 //   npx playwright test --config playwright.prod.config.ts [spec name]
 export default defineConfig({
 	testDir: 'tests/prod',
@@ -9,5 +9,5 @@ export default defineConfig({
 	workers: 1,
 	reporter: 'list',
 	timeout: 330_000,
-	use: { baseURL: 'https://ku.mariogk.com' }
+	use: { baseURL: 'https://strifira.mariogk.com' }
 });

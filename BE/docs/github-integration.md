@@ -1,6 +1,6 @@
 # GitHub Integration
 
-Ku links a GitHub instance (github.com or GitHub Enterprise Server) to a
+Strifira links a GitHub instance (github.com or GitHub Enterprise Server) to a
 workspace so development activity appears on issues and drives status
 automation.
 
@@ -69,7 +69,7 @@ Actions APIs work. Fine-grained tokens need repository **Contents**, **Pull
 requests**, **Metadata** and **Actions** permissions (read, plus write for
 linking and cancellation). Reruns use the native GitHub run page and your
 normal GitHub login and repository permissions. Instance URLs must be HTTP(S)
-origins, without a path, query, fragment, or embedded credentials. Ku refuses
+origins, without a path, query, fragment, or embedded credentials. Strifira refuses
 to change the instance while repositories remain linked; unlink them first.
 Introducing an organization restriction follows the same rule: repositories
 outside the organization must be unlinked first, while clearing the
@@ -88,12 +88,12 @@ queued and in-progress runs can be cancelled.
 For completed runs (`success`, `failure`, `cancelled`, `skipped`), the owner's
 **Rerun in GitHub** link opens the native run page. Sign in with your normal
 GitHub account and use the rerun controls there; your GitHub repository
-permissions apply. Ku does not submit a rerun request or report that one
+permissions apply. Strifira does not submit a rerun request or report that one
 succeeded.
 
 The REST base is
 `/api/workspaces/:slug/github/repos/:repoId/actions`, where `repoId` is the
-**Ku linked repository UUID** from `/github/status`, not the numeric GitHub
+**Strifira linked repository UUID** from `/github/status`, not the numeric GitHub
 repository ID. Run and job IDs are the numeric IDs returned by GitHub.
 
 | Method and suffix | Result |
@@ -109,14 +109,14 @@ Run filters are `status`, `ref`, `event`, `head_sha`, and `workflow_id`, with
 `page` and `per_page` for pagination. GitHub filters runs by status
 (`queued`, `in_progress`, `completed`); `waiting` and `running` are accepted
 aliases. A `ref` filter accepts a full ref (`refs/heads/main`) or a branch
-name — Ku converts full refs to branch names for GitHub's `branch` query
+name — Strifira converts full refs to branch names for GitHub's `branch` query
 parameter. A `workflow_id` filter uses GitHub's workflow-scoped endpoint.
 Job logs use **job IDs**; GitHub serves the latest attempt's logs, so an
 explicit `attempt` is accepted only when it matches the job's current attempt.
 The upstream contracts are defined in GitHub's
 [REST API reference for Actions](https://docs.github.com/en/rest/actions).
 
-Ku resolves job metadata through GitHub's supported
+Strifira resolves job metadata through GitHub's supported
 `GET /repos/{owner}/{repo}/actions/runs/{runId}/jobs` and checks that the
 requested job belongs to that run before returning metadata or requesting
 logs. The native job list exposes ID, run ID, name, status, conclusion, and
@@ -129,7 +129,7 @@ explicitly. Log downloads may redirect to a signed
 `objects.githubusercontent.com` URL; only that endpoint follows https
 redirects off the instance origin.
 
-Before sending credentials, Ku checks the linked repository belongs to the
+Before sending credentials, Strifira checks the linked repository belongs to the
 workspace, is active, and points to the configured instance. Clients reject
 redirects to another origin, honor request cancellation, and use a 15-second
 request timeout. Upstream error bodies are never forwarded to clients. A
@@ -214,7 +214,7 @@ removed — replacing the set made issues vanish from other assignees'
 also assign someone without moving the issue by selecting **No transition**.
 **Match GitHub user** first resolves the event's GitHub login through
 **User mappings** in the same settings page. Without a mapping, it compares
-the login with the Ku `name` of current workspace members, ignoring case. It
+the login with the Strifira `name` of current workspace members, ignoring case. It
 assigns only on a unique match; an absent or ambiguous match leaves the issue's
 assignees unchanged and still applies the status transition. Branch creation
 uses the webhook sender; PR events use the
@@ -228,7 +228,7 @@ the status transition still applies. To add a reviewer after merge, set **Pull
 request merged** to the team's review status and choose that person under
 **Assign to**.
 
-Ku refreshes the aggregate checks after each `check_run` (action `completed`)
+Strifira refreshes the aggregate checks after each `check_run` (action `completed`)
 and `workflow_run` (action `completed`) delivery — both report the PR head
 SHA — as well as after legacy `status` deliveries, performs a catch-up pass
 on startup, and reconciles open PRs every five minutes if a delivery was

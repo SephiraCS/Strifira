@@ -60,7 +60,7 @@
       class="animate-fade-up mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl"
       style="animation-delay: 200ms"
     >
-      Run Ku on your own infrastructure. Manage multi-assignee issues, cycles,
+      Run Strifira on your own infrastructure. Manage multi-assignee issues, cycles,
       projects, analytics and GitHub activity from one Apache 2.0-licensed
       codebase. Unreleased opt-in Dev Machines are documented separately from the public release.
     </p>
@@ -70,7 +70,7 @@
       style="animation-delay: 300ms"
     >
       <Button
-        href="https://github.com/carbogninalberto/kuayle"
+        href="https://github.com/SephiraCS/Strifira"
         target="_blank"
         rel="noopener"
         size="lg"
@@ -85,7 +85,7 @@
         size="lg"
         class="h-11 px-6 text-base"
       >
-        Self-host Ku
+        Self-host Strifira
         <ArrowRight />
       </Button>
     </div>
@@ -136,7 +136,7 @@
           <span
             class="ml-3 hidden h-5 flex-1 items-center rounded-md bg-white/5 px-2 font-mono text-[10px] text-muted-foreground sm:flex"
           >
-            ku.yourcompany.com
+            strifira.yourcompany.com
           </span>
         </div>
         <div class="relative overflow-hidden">
@@ -145,7 +145,7 @@
             src="/product-screenshot.png"
             srcset="/product-screenshot-720.png 720w, /product-screenshot-1440.png 1440w, /product-screenshot.png 3600w"
             sizes="(max-width: 640px) 100vw, (max-width: 1200px) 92vw, 1152px"
-            alt="Ku issue tracker interface showing the board view with issues"
+            alt="Strifira issue tracker interface showing the board view with issues"
             width="3600"
             height="1886"
             class="w-full h-auto"

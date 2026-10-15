@@ -8,11 +8,11 @@ import (
 
 func TestDecodeTransferJSONRejectsTrailingValues(t *testing.T) {
 	var target map[string]any
-	require.Error(t, DecodeTransferJSON([]byte(`{"format":"ku.workspace"} {"hidden":true}`), &target))
+	require.Error(t, DecodeTransferJSON([]byte(`{"format":"strifira.workspace"} {"hidden":true}`), &target))
 }
 
 func TestDecodeTransferJSONAllowsTrailingWhitespace(t *testing.T) {
 	var target map[string]any
-	require.NoError(t, DecodeTransferJSON([]byte("{\"format\":\"ku.workspace\"}\n\t"), &target))
-	require.Equal(t, "ku.workspace", target["format"])
+	require.NoError(t, DecodeTransferJSON([]byte("{\"format\":\"strifira.workspace\"}\n\t"), &target))
+	require.Equal(t, "strifira.workspace", target["format"])
 }

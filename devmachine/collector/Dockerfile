@@ -5,13 +5,13 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /collector main.go
 
 FROM docker.io/library/alpine:3.22
 RUN apk upgrade --no-cache && apk add --no-cache ca-certificates coreutils git util-linux \
-    && addgroup -g 1000 ku \
-    && adduser -D -u 1000 -G ku ku
-COPY --from=build /collector /usr/local/bin/ku-collector
-COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
-RUN chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-collector
+    && addgroup -g 1000 strifira \
+    && adduser -D -u 1000 -G strifira strifira
+COPY --from=build /collector /usr/local/bin/strifira-collector
+COPY common/strifira-service-entrypoint /usr/local/bin/strifira-service-entrypoint
+RUN chmod 0755 /usr/local/bin/strifira-service-entrypoint /usr/local/bin/strifira-collector
 
 USER 1000:1000
-ENV HOME=/home/ku
+ENV HOME=/home/strifira
 EXPOSE 8091
-CMD ["/usr/local/bin/ku-collector"]
+CMD ["/usr/local/bin/strifira-collector"]

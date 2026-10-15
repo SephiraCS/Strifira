@@ -3,7 +3,7 @@ package response
 import (
 	"net/http"
 
-	"github.com/ku/ku-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/labstack/echo/v4"
 )
 

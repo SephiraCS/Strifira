@@ -4,7 +4,7 @@ import "strings"
 
 func managedGitEnvironmentKey(key string) bool {
 	switch key {
-	case "GITHUB_TOKEN", "KU_GIT_CREDENTIAL_HELPER", "KU_GITHUB_HOST", "KU_GIT_REPOSITORY", "KU_REPO_URL", "KU_BASE_BRANCH", "KU_WORKING_BRANCH":
+	case "GITHUB_TOKEN", "STRIFIRA_GIT_CREDENTIAL_HELPER", "STRIFIRA_GITHUB_HOST", "STRIFIRA_GIT_REPOSITORY", "STRIFIRA_REPO_URL", "STRIFIRA_BASE_BRANCH", "STRIFIRA_WORKING_BRANCH":
 		return true
 	default:
 		return false
@@ -16,7 +16,7 @@ func managedGitEnvironmentKey(key string) bool {
 func untrustedGitSecrets(secrets map[string]string, agent bool) map[string]string {
 	result := make(map[string]string, len(secrets))
 	for name, value := range secrets {
-		if managedGitEnvironmentKey(name) || agent && strings.HasPrefix(name, "KU_") {
+		if managedGitEnvironmentKey(name) || agent && strings.HasPrefix(name, "STRIFIRA_") {
 			continue
 		}
 		result[name] = value
@@ -45,7 +45,7 @@ func containerHasManagedGitCredentials(environment []string) bool {
 		if managedGitEnvironmentKey(key) && value != "" {
 			return true
 		}
-		if key == "KU_SECRET_NAMES" {
+		if key == "STRIFIRA_SECRET_NAMES" {
 			for name := range strings.SplitSeq(value, ",") {
 				if managedGitEnvironmentKey(name) {
 					return true

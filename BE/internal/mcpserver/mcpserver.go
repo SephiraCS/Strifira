@@ -1,4 +1,4 @@
-// Package mcpserver exposes ku's ticketing surface over the Model Context
+// Package mcpserver exposes strifira's ticketing surface over the Model Context
 // Protocol. It serves a stateless streamable-HTTP endpoint at /mcp whose
 // requests authenticate with a personal API key; tools then run with the
 // key owner's identity and the same workspace RBAC as the web UI.
@@ -11,11 +11,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -55,7 +55,7 @@ type Deps struct {
 // self-contained (no session storage, curl-friendly) and JSONResponse keeps
 // replies plain JSON instead of SSE frames.
 func NewHTTPHandler(deps Deps) http.Handler {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "ku", Version: deps.Version}, nil)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "strifira", Version: deps.Version}, nil)
 	registerTools(srv, deps)
 	return mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return srv },
@@ -64,7 +64,7 @@ func NewHTTPHandler(deps Deps) http.Handler {
 			JSONResponse: true,
 			// The API listens on loopback behind the in-container Caddy and
 			// the edge proxy; requests legitimately carry the public Host
-			// (ku.mariogk.com). The SDK's DNS-rebinding guard would reject
+			// (strifira.mariogk.com). The SDK's DNS-rebinding guard would reject
 			// that Host as non-loopback, but it targets browser-local
 			// servers — this endpoint is remote-facing and bearer-auth'd.
 			DisableLocalhostProtection: true,

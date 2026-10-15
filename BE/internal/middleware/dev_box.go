@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/pkg/response"
 	"github.com/labstack/echo/v4"
 )
 
@@ -22,7 +22,7 @@ func DevBoxWorkerAuth(authenticator devBoxAuthenticator) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			scheme, raw, ok := strings.Cut(c.Request().Header.Get(echo.HeaderAuthorization), " ")
-			if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(raw, "kub_") || len(raw) <= len("kub_") || strings.ContainsAny(raw, " \t\r\n") || authenticator == nil {
+			if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(raw, "strifira_") || len(raw) <= len("strifira_") || strings.ContainsAny(raw, " \t\r\n") || authenticator == nil {
 				return response.Unauthorized(c)
 			}
 

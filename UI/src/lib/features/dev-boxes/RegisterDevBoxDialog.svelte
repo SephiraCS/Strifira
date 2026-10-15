@@ -47,8 +47,8 @@
 		JSON.stringify(
 			{
 				server_url: typeof window !== 'undefined' ? window.location.origin : '',
-				token_file: '/home/YOUR_USER/.config/ku/worker.token',
-				work_root: '/home/YOUR_USER/ku-worktrees',
+				token_file: '/home/YOUR_USER/.config/strifira/worker.token',
+				work_root: '/home/YOUR_USER/strifira-worktrees',
 				execution_mode: 'trusted-local',
 				repositories: {
 					'OWNER/REPOSITORY': {
@@ -137,11 +137,11 @@
 				</div>
 				<ol class="list-decimal space-y-3 pl-5 text-sm">
 					<li>{m['dev_boxes.setup_install']()}</li>
-					<li>{m['dev_boxes.setup_token']()} <code class="break-all">/home/YOUR_USER/.config/ku/worker.token</code></li>
+					<li>{m['dev_boxes.setup_token']()} <code class="break-all">/home/YOUR_USER/.config/strifira/worker.token</code></li>
 					<li>{m['dev_boxes.setup_config']()}</li>
 					<li>
 						{m['dev_boxes.setup_run']()}
-						<code class="break-all">dev-box-worker --config /home/YOUR_USER/.config/ku/worker.json</code>
+						<code class="break-all">dev-box-worker --config /home/YOUR_USER/.config/strifira/worker.json</code>
 					</li>
 				</ol>
 				<div class="space-y-2">
@@ -171,7 +171,7 @@
 							bind:value={name}
 							required
 							maxlength={100}
-							placeholder="ku"
+							placeholder="strifira"
 							autofocus
 						/></label
 					>

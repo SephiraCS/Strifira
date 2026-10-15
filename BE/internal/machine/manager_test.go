@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	cryptoutil "github.com/SephiraCS/strifira-backend/pkg/crypto"
+	githubclient "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/domain"
-	cryptoutil "github.com/ku/ku-backend/pkg/crypto"
-	githubclient "github.com/ku/ku-backend/pkg/github"
 	"github.com/stretchr/testify/require"
 )
 
@@ -351,7 +351,7 @@ func (f githubAPIFake) CreatePullRequest(string, string, string, string, string,
 	if f.pullRequestErr != nil {
 		return nil, f.pullRequestErr
 	}
-	return &githubclient.PullRequest{HTMLURL: "https://git.example.com/ku/api/pull/1", Number: 1}, nil
+	return &githubclient.PullRequest{HTMLURL: "https://git.example.com/strifira/api/pull/1", Number: 1}, nil
 }
 
 type runtimeFake struct {
@@ -526,7 +526,7 @@ func TestAgentToolchainFailureOverridesOuterSuccess(t *testing.T) {
 		},
 		agentRun: run,
 		provider: &domain.DevMachineAgentProvider{
-			MachineID: machineID, ProviderID: "opencode", ImageRef: "ku/opencode:test", Enabled: true,
+			MachineID: machineID, ProviderID: "opencode", ImageRef: "strifira/opencode:test", Enabled: true,
 		},
 	}
 	runtime := &runtimeFake{agentExecution: &AgentExecution{
@@ -534,7 +534,7 @@ func TestAgentToolchainFailureOverridesOuterSuccess(t *testing.T) {
 		Stdout: `{"type":"tool_use","part":{"type":"tool","tool":"bash","state":{"status":"completed","title":"Build project","output":"go: command not found\n","metadata":{"exit":127}}}}` + "\n" +
 			`{"type":"text","part":{"type":"text","text":"Unable to verify the build"}}`,
 	}}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("strifira/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 
 	err := manager.runAgent(context.Background(), store.machine, &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, AgentRunID: &runID,
@@ -562,7 +562,7 @@ func TestManagerDoesNotLaunchAgentCancelledBeforeStart(t *testing.T) {
 		},
 		agentRun: run,
 		provider: &domain.DevMachineAgentProvider{
-			MachineID: machineID, ProviderID: "opencode", ImageRef: "ku/opencode:test", Enabled: true,
+			MachineID: machineID, ProviderID: "opencode", ImageRef: "strifira/opencode:test", Enabled: true,
 		},
 	}
 	store.updateAgentRunStarted = func() error {
@@ -570,7 +570,7 @@ func TestManagerDoesNotLaunchAgentCancelledBeforeStart(t *testing.T) {
 		return sql.ErrNoRows
 	}
 	runtime := &runtimeFake{}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("strifira/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
 	err := manager.runAgent(context.Background(), store.machine, &domain.DevMachineOperation{
 		MachineID: machineID, WorkspaceID: workspaceID, AgentRunID: &runID,
@@ -682,7 +682,7 @@ func TestManagerCheckoutTokenUsesCheckoutRepository(t *testing.T) {
 	store := &managerStoreFake{
 		machine:  &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RoutingKey: "0123456789abcdef0123", Status: domain.DevMachineStatusRunning, Generation: 2, RepoOwner: "legacy", RepoName: "old"},
 		services: []domain.DevMachineService{{ID: uuid.New(), MachineID: machineID, ServiceKey: "ide", ServiceType: "ide"}},
-		checkout: &domain.DevMachineCheckout{ID: checkoutID, WorkspaceID: workspaceID, MachineID: machineID, RepositoryFullName: "selected/repo", BaseBranch: "main", WorkingBranch: "ku/test", WorkspacePath: "/workspace/tasks/eng-1", Status: "queued"},
+		checkout: &domain.DevMachineCheckout{ID: checkoutID, WorkspaceID: workspaceID, MachineID: machineID, RepositoryFullName: "selected/repo", BaseBranch: "main", WorkingBranch: "strifira/test", WorkspacePath: "/workspace/tasks/eng-1", Status: "queued"},
 	}
 	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, make([]byte, 32), nil, "test")
 
@@ -777,20 +777,20 @@ func TestGitHubCredentialRegistersRuntimeCredentialBeforeReturning(t *testing.T)
 	encrypted, err := cryptoutil.Encrypt(token, githubKey)
 	require.NoError(t, err)
 	store := &managerStoreFake{
-		machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
+		machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "strifira", RepoName: "api"},
 		linkedRepository: &domain.GitHubRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
-			FullName: "ku/api", InstanceURL: "https://git.example.com"},
+			FullName: "strifira/api", InstanceURL: "https://git.example.com"},
 		githubConnection: &domain.GitHubConnection{WorkspaceID: workspaceID,
 			InstanceURL: "https://git.example.com", Token: encrypted},
 	}
 	manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{}, nil, key, githubKey, "test")
 
-	instanceURL, returnedToken, err := manager.githubCredential(context.Background(), store.machine, "ku/api")
+	instanceURL, returnedToken, err := manager.githubCredential(context.Background(), store.machine, "strifira/api")
 
 	require.NoError(t, err)
 	require.Equal(t, "https://git.example.com", instanceURL)
 	require.Equal(t, token, returnedToken)
-	require.Equal(t, []string{"ku/api"}, store.installationFullNameCalls)
+	require.Equal(t, []string{"strifira/api"}, store.installationFullNameCalls)
 	require.Len(t, store.runtimeCredentials, 1)
 	credential := store.runtimeCredentials[0]
 	require.Equal(t, machineID, credential.MachineID)
@@ -827,17 +827,17 @@ func TestGitHubCredentialPrecedence(t *testing.T) {
 	encrypted, err := cryptoutil.Encrypt(rowToken, githubKey)
 	require.NoError(t, err)
 	linkedRepository := &domain.GitHubRepoModel{ID: uuid.New(), WorkspaceID: workspaceID,
-		FullName: "ku/api", InstanceURL: "https://git.example.com"}
+		FullName: "strifira/api", InstanceURL: "https://git.example.com"}
 	connection := &domain.GitHubConnection{WorkspaceID: workspaceID,
 		InstanceURL: "https://git.example.com", Token: encrypted}
 
 	t.Run("row overrides global", func(t *testing.T) {
-		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
+		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "strifira", RepoName: "api"},
 			linkedRepository: linkedRepository, githubConnection: connection}
 		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{},
 			&GlobalGitHubCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), githubKey, "test")
 
-		instanceURL, token, err := manager.githubCredential(t.Context(), store.machine, "ku/api")
+		instanceURL, token, err := manager.githubCredential(t.Context(), store.machine, "strifira/api")
 
 		require.NoError(t, err)
 		require.Equal(t, "https://git.example.com", instanceURL)
@@ -845,13 +845,13 @@ func TestGitHubCredentialPrecedence(t *testing.T) {
 	})
 
 	t.Run("disable marker yields no credentials even with row and global", func(t *testing.T) {
-		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "ku", RepoName: "api"},
+		store := &managerStoreFake{machine: &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, RepoOwner: "strifira", RepoName: "api"},
 			linkedRepository: linkedRepository, githubConnection: connection,
 			githubWorkspaceDisable: &domain.GitHubWorkspaceDisable{WorkspaceID: workspaceID}}
 		manager := NewManager(store, &runtimeFake{}, agent.NewRegistry(), githubAPIFake{},
 			&GlobalGitHubCredentials{URL: "https://git.example.com", Token: "global-must-not-win"}, make([]byte, 32), githubKey, "test")
 
-		_, token, err := manager.githubCredential(t.Context(), store.machine, "ku/api")
+		_, token, err := manager.githubCredential(t.Context(), store.machine, "strifira/api")
 
 		require.ErrorIs(t, err, sql.ErrNoRows)
 		require.Empty(t, token)
@@ -875,7 +875,7 @@ func TestReconcilePurgesExpiredRuntimeCredentials(t *testing.T) {
 func TestReconcileRetriesEnvironmentImageCleanupFailure(t *testing.T) {
 	environmentID, workspaceID := uuid.New(), uuid.New()
 	store := &managerStoreFake{deleteRequestedEnvs: []domain.DevMachineEnvironment{{
-		ID: environmentID, WorkspaceID: workspaceID, Status: "delete_requested", ImageRef: "ku/environment:test",
+		ID: environmentID, WorkspaceID: workspaceID, Status: "delete_requested", ImageRef: "strifira/environment:test",
 	}}}
 	runtime := &runtimeFake{deleteEnvironmentImageErr: errors.New("image is busy")}
 	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
@@ -932,7 +932,7 @@ func TestManagerRejectsRepositoryAgentRunWithoutCheckout(t *testing.T) {
 
 func TestManagerSnapshotEnvironmentTransitionsThroughBuilding(t *testing.T) {
 	machineID, workspaceID, environmentID := uuid.New(), uuid.New(), uuid.New()
-	environment := &domain.DevMachineEnvironment{ID: environmentID, WorkspaceID: workspaceID, Name: "base", ImageRef: "ku/dev-environment-test:snapshot", Status: "pending"}
+	environment := &domain.DevMachineEnvironment{ID: environmentID, WorkspaceID: workspaceID, Name: "base", ImageRef: "strifira/dev-environment-test:snapshot", Status: "pending"}
 	store := &managerStoreFake{
 		machine: &domain.DevMachine{
 			ID: machineID, WorkspaceID: workspaceID, RoutingKey: "0123456789abcdef0123",
@@ -958,7 +958,7 @@ func TestManagerFailsGenerationMismatchedSnapshotsWithoutRetry(t *testing.T) {
 			machineID, workspaceID, environmentID := uuid.New(), uuid.New(), uuid.New()
 			environment := &domain.DevMachineEnvironment{
 				ID: environmentID, WorkspaceID: workspaceID, Name: "base",
-				ImageRef: "ku/dev-environment-test:snapshot", Status: "pending",
+				ImageRef: "strifira/dev-environment-test:snapshot", Status: "pending",
 			}
 			store := &managerStoreFake{
 				machine: &domain.DevMachine{
@@ -994,7 +994,7 @@ func TestManagerFailsSnapshotWhenMachineStateChanged(t *testing.T) {
 	machineID, workspaceID, environmentID := uuid.New(), uuid.New(), uuid.New()
 	environment := &domain.DevMachineEnvironment{
 		ID: environmentID, WorkspaceID: workspaceID, Name: "base",
-		ImageRef: "ku/dev-environment-test:snapshot", Status: "building",
+		ImageRef: "strifira/dev-environment-test:snapshot", Status: "building",
 	}
 	store := &managerStoreFake{
 		machine: &domain.DevMachine{
@@ -1028,7 +1028,7 @@ func TestManagerSnapshotRetryDoesNotUndoEnvironmentDeletion(t *testing.T) {
 	machineID, workspaceID, environmentID := uuid.New(), uuid.New(), uuid.New()
 	environment := &domain.DevMachineEnvironment{
 		ID: environmentID, WorkspaceID: workspaceID, Name: "base",
-		ImageRef: "ku/dev-environment-test:snapshot", Status: "delete_requested",
+		ImageRef: "strifira/dev-environment-test:snapshot", Status: "delete_requested",
 	}
 	store := &managerStoreFake{
 		machine:     &domain.DevMachine{ID: machineID, WorkspaceID: workspaceID, Status: domain.DevMachineStatusPaused, Generation: 3},
@@ -1048,7 +1048,7 @@ func TestManagerSnapshotRetryDoesNotUndoEnvironmentDeletion(t *testing.T) {
 }
 
 func TestReconcileDeletesRequestedEnvironmentImagesBeforeRecords(t *testing.T) {
-	environment := domain.DevMachineEnvironment{ID: uuid.New(), WorkspaceID: uuid.New(), ImageRef: "ku/dev-environment-test:snapshot", Status: "delete_requested"}
+	environment := domain.DevMachineEnvironment{ID: uuid.New(), WorkspaceID: uuid.New(), ImageRef: "strifira/dev-environment-test:snapshot", Status: "delete_requested"}
 	store := &managerStoreFake{deleteRequestedEnvs: []domain.DevMachineEnvironment{environment}}
 	runtime := &runtimeFake{}
 	manager := NewManager(store, runtime, agent.NewRegistry(), githubAPIFake{}, nil, nil, nil, "test")
@@ -1127,9 +1127,9 @@ func TestWorkspaceMountDisablesImageCopyUp(t *testing.T) {
 
 func TestOwnedByMachineRequiresManagedLabel(t *testing.T) {
 	machineID := uuid.New()
-	require.True(t, ownedByMachine(map[string]string{"com.ku.managed": "true", "com.ku.machine-id": machineID.String()}, machineID))
-	require.False(t, ownedByMachine(map[string]string{"com.ku.machine-id": machineID.String()}, machineID))
-	require.False(t, ownedByMachine(map[string]string{"com.ku.managed": "true", "com.ku.machine-id": uuid.NewString()}, machineID))
+	require.True(t, ownedByMachine(map[string]string{"com.strifira.managed": "true", "com.strifira.machine-id": machineID.String()}, machineID))
+	require.False(t, ownedByMachine(map[string]string{"com.strifira.machine-id": machineID.String()}, machineID))
+	require.False(t, ownedByMachine(map[string]string{"com.strifira.managed": "true", "com.strifira.machine-id": uuid.NewString()}, machineID))
 }
 
 func TestUniqueContainerIDsDeduplicatesSharedDeveloperServices(t *testing.T) {
@@ -1189,14 +1189,14 @@ func TestManagerAgentRetryKeepsOriginalDeadline(t *testing.T) {
 	machine.Generation = 1
 	started := time.Now().Add(-15 * time.Second)
 	run := &domain.DevMachineAgentRun{ID: uuid.New(), MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, ProviderID: "opencode", Mode: "autonomous", Status: domain.DevMachineAgentRunStatusRunning, MaxRuntimeSeconds: 30, StartedAt: &started}
-	store := &managerStoreFake{machine: machine, agentRun: run, provider: &domain.DevMachineAgentProvider{MachineID: machine.ID, ProviderID: "opencode", ImageRef: "ku/opencode:test", Enabled: true}}
+	store := &managerStoreFake{machine: machine, agentRun: run, provider: &domain.DevMachineAgentProvider{MachineID: machine.ID, ProviderID: "opencode", ImageRef: "strifira/opencode:test", Enabled: true}}
 	runtime := &runtimeFake{agentExecution: &AgentExecution{ExitCode: 0}}
 	runtime.onAgentRun = func(ctx context.Context) {
 		deadline, ok := ctx.Deadline()
 		require.True(t, ok)
 		require.Equal(t, started.Add(30*time.Second), deadline, "retry must not grant another full runtime")
 	}
-	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("ku/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
+	manager := NewManager(store, runtime, agent.NewRegistry(agent.NewOpenCodeProvider("strifira/opencode:test")), githubAPIFake{}, nil, make([]byte, 32), make([]byte, 32), "test")
 	require.NoError(t, manager.runAgent(t.Context(), machine, &domain.DevMachineOperation{AgentRunID: &run.ID, MachineID: machine.ID, WorkspaceID: machine.WorkspaceID, Generation: 1}))
 	require.Equal(t, started, *run.StartedAt)
 }

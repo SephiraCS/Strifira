@@ -42,7 +42,7 @@
 
 	function loadCollapsed(): Set<string> {
 		try {
-			const raw = localStorage.getItem('ku:docs:collapsed');
+			const raw = localStorage.getItem('strifira:docs:collapsed');
 			const ids = raw ? (JSON.parse(raw) as string[]) : [];
 			return new Set(Array.isArray(ids) ? ids : []);
 		} catch {
@@ -52,7 +52,7 @@
 
 	function persistCollapsed() {
 		try {
-			localStorage.setItem('ku:docs:collapsed', JSON.stringify([...collapsed]));
+			localStorage.setItem('strifira:docs:collapsed', JSON.stringify([...collapsed]));
 		} catch {
 			// Best-effort.
 		}

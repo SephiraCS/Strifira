@@ -8,15 +8,15 @@ import (
 
 func TestGitSnapshotRejectsIncompletePathAndCommitRecords(t *testing.T) {
 	for _, output := range []string{
-		"ku/task\x00\x00false\x00forbidden",
-		"ku/task\x00invalid\x00false\x00",
-		"ku/task\x00\x00false\x00file\x00\x00",
-		"ku/task\x00\x00unknown\x00",
+		"strifira/task\x00\x00false\x00forbidden",
+		"strifira/task\x00invalid\x00false\x00",
+		"strifira/task\x00\x00false\x00file\x00\x00",
+		"strifira/task\x00\x00unknown\x00",
 	} {
 		_, err := parseGitSnapshot(output)
 		require.Error(t, err)
 	}
-	state, err := parseGitSnapshot("ku/task\x00\x00false\x00a\nfile\x00last\x00")
+	state, err := parseGitSnapshot("strifira/task\x00\x00false\x00a\nfile\x00last\x00")
 	require.NoError(t, err)
 	require.Equal(t, []string{"a\nfile", "last"}, state.ChangedFiles)
 }

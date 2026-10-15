@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	volumetypes "github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/require"
 )
 
 func TestWorkspaceVolumeOptionsApplyExactHardQuota(t *testing.T) {
-	labels := map[string]string{"com.ku.managed": "true", "com.ku.machine-id": uuid.NewString()}
+	labels := map[string]string{"com.strifira.managed": "true", "com.strifira.machine-id": uuid.NewString()}
 
 	options, err := workspaceVolumeCreateOptions("workspace-test", labels, 20)
 
@@ -28,7 +28,7 @@ func TestWorkspaceVolumeOptionsApplyExactHardQuota(t *testing.T) {
 }
 
 func TestWorkspaceVolumeValidationRejectsUnboundedOrMismatchedVolumes(t *testing.T) {
-	options, err := workspaceVolumeCreateOptions("workspace-test", map[string]string{"com.ku.managed": "true"}, 50)
+	options, err := workspaceVolumeCreateOptions("workspace-test", map[string]string{"com.strifira.managed": "true"}, 50)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -64,8 +64,8 @@ func TestInteractiveToolingTmpfsAllowsExecutables(t *testing.T) {
 	require.False(t, strings.Contains(ideConfig.Tmpfs["/tmp"], "noexec"))
 	require.True(t, strings.Contains(ideConfig.Tmpfs["/tmp"], "exec"))
 	require.True(t, strings.Contains(collectorConfig.Tmpfs["/tmp"], "noexec"))
-	require.True(t, strings.Contains(agentConfig.Tmpfs["/run/ku-secrets"], "noexec"))
-	require.True(t, strings.Contains(ideConfig.Tmpfs["/run/ku-secrets"], "noexec"))
+	require.True(t, strings.Contains(agentConfig.Tmpfs["/run/strifira-secrets"], "noexec"))
+	require.True(t, strings.Contains(ideConfig.Tmpfs["/run/strifira-secrets"], "noexec"))
 }
 
 func TestSpawnCleanupPlanOnlyIncludesInvocationOwnedResources(t *testing.T) {
@@ -152,8 +152,8 @@ func TestInstallSecretsClearsStaleFilesBeforeActiveValuesAndReady(t *testing.T) 
 }
 
 func TestMissingImmutableLocalImageRefusesPull(t *testing.T) {
-	require.NoError(t, missingImageError("registry.example/ku/app:latest", true))
-	require.ErrorContains(t, missingImageError("registry.example/ku/app:latest", false), "pulling is disabled")
+	require.NoError(t, missingImageError("registry.example/strifira/app:latest", true))
+	require.ErrorContains(t, missingImageError("registry.example/strifira/app:latest", false), "pulling is disabled")
 
 	err := missingImageError("sha256:local-environment", true)
 	require.True(t, errors.Is(err, ErrLocalEnvironmentMissing))
@@ -163,25 +163,25 @@ func TestMissingImmutableLocalImageRefusesPull(t *testing.T) {
 func TestValidateEnvironmentImageLabelsRequiresExpectedWorkspaceAndEnvironment(t *testing.T) {
 	workspaceID, environmentID := uuid.New(), uuid.New()
 	labels := map[string]string{
-		"com.ku.managed":        "true",
-		"com.ku.kind":           "dev-machine-environment",
-		"com.ku.workspace-id":   workspaceID.String(),
-		"com.ku.environment-id": environmentID.String(),
+		"com.strifira.managed":        "true",
+		"com.strifira.kind":           "dev-machine-environment",
+		"com.strifira.workspace-id":   workspaceID.String(),
+		"com.strifira.environment-id": environmentID.String(),
 	}
 
 	require.NoError(t, validateEnvironmentImageLabels(labels, workspaceID, environmentID))
 	require.Error(t, validateEnvironmentImageLabels(labels, uuid.New(), environmentID))
 	require.Error(t, validateEnvironmentImageLabels(labels, workspaceID, uuid.New()))
-	require.Error(t, validateEnvironmentImageLabels(map[string]string{"com.ku.managed": "true"}, workspaceID, environmentID))
+	require.Error(t, validateEnvironmentImageLabels(map[string]string{"com.strifira.managed": "true"}, workspaceID, environmentID))
 }
 
 func TestEnvironmentImageReferencesPreferDigestAndCleanupFallsBackToTag(t *testing.T) {
 	digest := "sha256:immutable"
-	environment := &domain.DevMachineEnvironment{ImageRef: "ku/dev-environment-test:snapshot", ImageDigest: &digest}
+	environment := &domain.DevMachineEnvironment{ImageRef: "strifira/dev-environment-test:snapshot", ImageDigest: &digest}
 
 	require.Equal(t, digest, environmentImmutableImageID(environment))
 	require.Equal(t, digest, environmentImmutableImageID(&domain.DevMachineEnvironment{ImageRef: digest}))
-	require.Empty(t, environmentImmutableImageID(&domain.DevMachineEnvironment{ImageRef: "ku/dev-environment-test:snapshot"}))
+	require.Empty(t, environmentImmutableImageID(&domain.DevMachineEnvironment{ImageRef: "strifira/dev-environment-test:snapshot"}))
 	require.Equal(t, digest, environmentImageCleanupReference(environment))
-	require.Equal(t, "ku/dev-environment-test:snapshot", environmentImageCleanupReference(&domain.DevMachineEnvironment{ImageRef: "ku/dev-environment-test:snapshot"}))
+	require.Equal(t, "strifira/dev-environment-test:snapshot", environmentImageCleanupReference(&domain.DevMachineEnvironment{ImageRef: "strifira/dev-environment-test:snapshot"}))
 }

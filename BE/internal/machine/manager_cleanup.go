@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	log "github.com/sirupsen/logrus"
 )
 

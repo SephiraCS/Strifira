@@ -4,8 +4,8 @@
 	import { breadcrumbsFrom } from '$lib/data/routes';
 
 	const meta = {
-		title: 'Ku Open-Source Model — Apache 2.0, One Edition',
-		description: 'How Ku uses the Apache 2.0 license, what is included in its public repository, and which self-hosting costs remain yours.',
+		title: 'Strifira Open-Source Model — Apache 2.0, One Edition',
+		description: 'How Strifira uses the Apache 2.0 license, what is included in its public repository, and which self-hosting costs remain yours.',
 		canonical: url('/open-source'),
 		modifiedAt: contentModifiedAt('/open-source')
 	};
@@ -15,7 +15,7 @@
 	const sections = [
 		{
 			heading: 'What Apache 2.0 permits',
-			body: 'Ku is distributed under the Apache License 2.0. The license permits use, modification and redistribution, including commercial use, subject to its notice and attribution requirements. It also includes an explicit patent grant from contributors.',
+			body: 'Strifira is distributed under the Apache License 2.0. The license permits use, modification and redistribution, including commercial use, subject to its notice and attribution requirements. It also includes an explicit patent grant from contributors.',
 			list: [
 				'Commercial and internal use',
 				'Modification and redistribution',
@@ -25,7 +25,7 @@
 		},
 		{
 			heading: 'What is in the public repository',
-			body: 'The current backend, frontend, database migrations, Docker Compose deployment and implemented product features are maintained in one public repository. Ku does not currently publish a separate enterprise edition or commercial feature package.',
+			body: 'The current backend, frontend, database migrations, Docker Compose deployment and implemented product features are maintained in one public repository. Strifira does not currently publish a separate enterprise edition or commercial feature package.',
 			list: [
 				'Go backend and SvelteKit frontend',
 				'Database migrations and self-hosting configuration',
@@ -35,7 +35,7 @@
 		},
 		{
 			heading: 'What “no paid tier” means',
-			body: 'Ku does not charge a software license fee, meter users or require a commercial key to enable implemented features. It does not mean that operating an instance is cost-free.',
+			body: 'Strifira does not charge a software license fee, meter users or require a commercial key to enable implemented features. It does not mean that operating an instance is cost-free.',
 			list: [
 				'No per-seat software fee',
 				'No paid feature switch',
@@ -59,7 +59,7 @@
 <StandalonePage
 	{meta}
 	heading="Open Source"
-	intro="Ku’s application code and self-hosting configuration are public under Apache 2.0. Here is the practical scope of that statement, without treating open source as a substitute for product due diligence."
+	intro="Strifira’s application code and self-hosting configuration are public under Apache 2.0. Here is the practical scope of that statement, without treating open source as a substitute for product due diligence."
 	{sections}
 	breadcrumbs={crumbs}
 />

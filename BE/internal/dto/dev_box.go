@@ -3,7 +3,7 @@ package dto
 import (
 	"time"
 
-	"github.com/ku/ku-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 )
 
 type CreateDevBoxRequest struct {

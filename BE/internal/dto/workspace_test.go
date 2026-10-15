@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/pkg/validate"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/pkg/validate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

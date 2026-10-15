@@ -15,11 +15,11 @@ import (
 	"github.com/labstack/echo/v4"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/pkg/response"
-	"github.com/ku/ku-backend/pkg/storage"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/pkg/response"
+	"github.com/SephiraCS/strifira-backend/pkg/storage"
 )
 
 const maxAvatarSize = 5 * 1024 * 1024

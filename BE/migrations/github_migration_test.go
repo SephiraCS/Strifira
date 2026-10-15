@@ -25,7 +25,7 @@ func TestGitHubMigrationRoundTrip(t *testing.T) {
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_github_rename_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_github_rename_migration_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {

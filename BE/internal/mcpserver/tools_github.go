@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/dto"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -52,7 +52,7 @@ func registerGitHubTools(s *mcp.Server, deps Deps) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "github_link_repos",
 		Title:       "Link GitHub repositories",
-		Description: "Link repositories to the workspace by full name (e.g. Tools/ku); ku creates a signed webhook on each. Requires an API key with write scope and the workspace:manage permission.",
+		Description: "Link repositories to the workspace by full name (e.g. Tools/strifira); strifira creates a signed webhook on each. Requires an API key with write scope and the workspace:manage permission.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in struct {
 		Workspace string   `json:"workspace"`
 		Repos     []string `json:"repos" jsonschema:"repository full names (owner/name)"`

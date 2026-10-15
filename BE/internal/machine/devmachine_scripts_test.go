@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const removedCheckoutTokenPath = "/run/ku-secrets/github-token"
+const removedCheckoutTokenPath = "/run/strifira-secrets/github-token"
 
 func TestCredentialHelperScriptsDoNotReferencePersistentCheckoutToken(t *testing.T) {
 	repoRoot := repoRootFromCaller(t)
 	paths := []string{
 		filepath.Join(repoRoot, "devmachine", "ide", "start.sh"),
-		filepath.Join(repoRoot, "devmachine", "common", "ku-agent-runner"),
+		filepath.Join(repoRoot, "devmachine", "common", "strifira-agent-runner"),
 		filepath.Join(repoRoot, "BE", "internal", "machine", "docker.go"),
 	}
 
@@ -25,7 +25,7 @@ func TestCredentialHelperScriptsDoNotReferencePersistentCheckoutToken(t *testing
 		require.NoError(t, err)
 		content := string(contentBytes)
 		require.NotContains(t, content, removedCheckoutTokenPath, path)
-		require.NotContains(t, content, "cat /run/ku-secrets/github-token", path)
+		require.NotContains(t, content, "cat /run/strifira-secrets/github-token", path)
 	}
 }
 
@@ -44,8 +44,8 @@ func TestTerminalSessionCloseKillsOnlyTheNamedSessionAndIsIdempotent(t *testing.
 		cmd := exec.Command("sh", script, "--close", "term-test")
 		cmd.Env = []string{
 			"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
-			"KU_FAKE_TMUX_STATE=" + statePath,
-			"KU_FAKE_TMUX_LOG=" + logPath,
+			"STRIFIRA_FAKE_TMUX_STATE=" + statePath,
+			"STRIFIRA_FAKE_TMUX_LOG=" + logPath,
 		}
 		return cmd.Run()
 	}
@@ -72,9 +72,9 @@ func TestTerminalSessionCloseReportsPersistentTmuxFailure(t *testing.T) {
 	cmd := exec.Command("sh", filepath.Join(repoRoot, "devmachine", "ide", "terminal-session.sh"), "--close", "term-test")
 	cmd.Env = []string{
 		"PATH=" + fakeBin + string(os.PathListSeparator) + os.Getenv("PATH"),
-		"KU_FAKE_TMUX_STATE=" + statePath,
-		"KU_FAKE_TMUX_LOG=" + logPath,
-		"KU_FAKE_TMUX_FAIL_KILL=1",
+		"STRIFIRA_FAKE_TMUX_STATE=" + statePath,
+		"STRIFIRA_FAKE_TMUX_LOG=" + logPath,
+		"STRIFIRA_FAKE_TMUX_FAIL_KILL=1",
 	}
 
 	err := cmd.Run()
@@ -87,8 +87,8 @@ func writeFakeTmux(t *testing.T, path string) {
 	t.Helper()
 	script := `#!/bin/sh
 set -eu
-state=${KU_FAKE_TMUX_STATE:?}
-log=${KU_FAKE_TMUX_LOG:?}
+state=${STRIFIRA_FAKE_TMUX_STATE:?}
+log=${STRIFIRA_FAKE_TMUX_LOG:?}
 printf '%s\n' "$*" >> "$log"
 case "${1:-}" in
   has-session )
@@ -98,7 +98,7 @@ case "${1:-}" in
   kill-session )
     [ "${2:-}" = "-t" ]
     [ -f "$state" ] && [ "$(cat "$state")" = "${3:-}" ]
-    [ "${KU_FAKE_TMUX_FAIL_KILL:-}" != "1" ]
+    [ "${STRIFIRA_FAKE_TMUX_FAIL_KILL:-}" != "1" ]
     rm -f "$state"
     ;;
   * ) exit 2 ;;

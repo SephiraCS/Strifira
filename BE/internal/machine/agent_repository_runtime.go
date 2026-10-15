@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 func authorizedRunRepository(machine *domain.DevMachine, checkout *domain.DevMachineCheckout, runID uuid.UUID) (string, string, error) {
@@ -34,7 +34,7 @@ func (r *DockerRuntime) PrepareAgentRepository(ctx context.Context, machine *dom
 		return errors.New("repository credential is unavailable")
 	}
 	_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(prepareProtectedRepositoryScript,
-		"ku-pin-agent-repository", repository, strings.TrimSuffix(checkout.RepositoryURL, ".git"), checkout.BaseBranch, checkout.WorkingBranch,
+		"strifira-pin-agent-repository", repository, strings.TrimSuffix(checkout.RepositoryURL, ".git"), checkout.BaseBranch, checkout.WorkingBranch,
 		host, checkout.RepositoryFullName, "http://"+machine.RoutingKey+"-egress:3128", runID.String()), token, repositoryHelperInvocation{RunID: runID})
 	return err
 }
@@ -45,7 +45,7 @@ func (r *DockerRuntime) RetainAgentCandidate(ctx context.Context, machine *domai
 		return RepositoryCandidate{}, err
 	}
 	output, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(retainRepositoryCandidateScript,
-		"ku-retain-agent-candidate", checkout.WorkspacePath, repository, runID.String()), "", repositoryHelperInvocation{RunID: runID})
+		"strifira-retain-agent-candidate", checkout.WorkspacePath, repository, runID.String()), "", repositoryHelperInvocation{RunID: runID})
 	if err != nil {
 		return RepositoryCandidate{}, err
 	}
@@ -61,7 +61,7 @@ func (r *DockerRuntime) PublishAgentCandidate(ctx context.Context, machine *doma
 		return errors.New("publication requires the selected candidate, branch and credential")
 	}
 	_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(publishRetainedRepositoryCandidateScript,
-		"ku-publish-agent-candidate", repository, strings.TrimSuffix(checkout.RepositoryURL, ".git"), checkout.WorkingBranch,
+		"strifira-publish-agent-candidate", repository, strings.TrimSuffix(checkout.RepositoryURL, ".git"), checkout.WorkingBranch,
 		host, checkout.RepositoryFullName, "http://"+machine.RoutingKey+"-egress:3128", runID.String(), candidate.Commit), token, repositoryHelperInvocation{RunID: runID})
 	return err
 }

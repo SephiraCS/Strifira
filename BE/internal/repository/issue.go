@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
 )
 
 type IssueRepository struct {

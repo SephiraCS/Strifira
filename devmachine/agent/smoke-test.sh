@@ -10,7 +10,7 @@ command -v "$cli" >/dev/null 2>&1 || { echo "missing provider CLI: $cli" >&2; ex
 command -v go >/dev/null 2>&1 || { echo 'missing Go toolchain' >&2; exit 1; }
 command -v make >/dev/null 2>&1 || { echo 'missing Make' >&2; exit 1; }
 
-smoke_dir=$(mktemp -d /tmp/ku-agent-smoke.XXXXXX)
+smoke_dir=$(mktemp -d /tmp/strifira-agent-smoke.XXXXXX)
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
@@ -20,20 +20,20 @@ cleanup() {
 }
 trap cleanup EXIT
 cd "$smoke_dir"
-printf '%s\n' 'package main' 'import "fmt"' 'func main() { fmt.Println("ku-smoke-test-passed") }' > main.go
+printf '%s\n' 'package main' 'import "fmt"' 'func main() { fmt.Println("strifira-smoke-test-passed") }' > main.go
 go build -o smoke-binary main.go
-[ "$(./smoke-binary)" = ku-smoke-test-passed ] || exit 1
+[ "$(./smoke-binary)" = strifira-smoke-test-passed ] || exit 1
 printf '%s\n' 'offline toolchain smoke passed'
 [ "$mode" = --live ] || exit 0
 
 # A disposable repository with no remote, hooks, dependencies or user files.
 # Provider authentication is reused, but no credentials are read or displayed.
 git init --quiet
-git -c user.name=KuSmoke -c user.email=ku-smoke@localhost add main.go
-git -c user.name=KuSmoke -c user.email=ku-smoke@localhost commit --quiet -m 'Initialize disposable smoke fixture'
+git -c user.name=KuSmoke -c user.email=strifira-smoke@localhost add main.go
+git -c user.name=KuSmoke -c user.email=strifira-smoke@localhost commit --quiet -m 'Initialize disposable smoke fixture'
 printf '%s\n' '#!/bin/sh' 'printf "%s\n" old-value' > greeting.sh
-printf '%s\n' '#!/bin/sh' 'set -eu' '[ "$(sh greeting.sh)" = ku-agent-live-ok ]' > test.sh
-prompt='In this disposable repository, edit only greeting.sh so it prints exactly ku-agent-live-ok on one line, then run sh test.sh. Do not read credentials, inspect other directories, use the network, commit or push. Finish with a brief summary.'
+printf '%s\n' '#!/bin/sh' 'set -eu' '[ "$(sh greeting.sh)" = strifira-agent-live-ok ]' > test.sh
+prompt='In this disposable repository, edit only greeting.sh so it prints exactly strifira-agent-live-ok on one line, then run sh test.sh. Do not read credentials, inspect other directories, use the network, commit or push. Finish with a brief summary.'
 case "$provider" in
   claude-code)
     timeout 120 claude --print --output-format stream-json --verbose --permission-mode dontAsk \
@@ -49,7 +49,7 @@ case "$provider" in
     ;;
 esac
 sh test.sh
-[ "$(sh greeting.sh)" = ku-agent-live-ok ]
+[ "$(sh greeting.sh)" = strifira-agent-live-ok ]
 # Keep live provider output out of console logs; assert terminal state only.
 case "$provider" in
   claude-code) node -e 'const fs=require("fs");const events=fs.readFileSync("provider.jsonl","utf8").trim().split("\n").map(JSON.parse);if(!events.some(e=>e.type==="result"&&e.subtype==="success"&&!e.is_error))process.exit(1)' ;;

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -22,10 +22,10 @@ import (
 
 func fixtureLayoutRecord(machine *domain.DevMachine) container.InspectResponse {
 	labels := machineLabels(machine)
-	labels["com.ku.service"] = "workspace-layout"
-	labels["com.ku.layout-version"] = workspaceLayoutVersion
-	labels["com.ku.layout-volume"] = *machine.WorkspaceVolumeName
-	labels["com.ku.layout-key"] = uuid.NewString()
+	labels["com.strifira.service"] = "workspace-layout"
+	labels["com.strifira.layout-version"] = workspaceLayoutVersion
+	labels["com.strifira.layout-volume"] = *machine.WorkspaceVolumeName
+	labels["com.strifira.layout-key"] = uuid.NewString()
 	return container.InspectResponse{ID: "record", Config: &container.Config{Labels: labels}, HostConfig: &container.HostConfig{}, State: &container.State{Status: container.StateCreated}}
 }
 
@@ -40,17 +40,17 @@ func TestWorkspaceLayoutRecordAuthority(t *testing.T) {
 			case "missing-host":
 				record.HostConfig = nil
 			case "foreign":
-				record.Config.Labels["com.ku.machine-id"] = uuid.NewString()
+				record.Config.Labels["com.strifira.machine-id"] = uuid.NewString()
 			case "wrong-volume":
-				record.Config.Labels["com.ku.layout-volume"] = "other"
+				record.Config.Labels["com.strifira.layout-volume"] = "other"
 			case "old-version":
-				record.Config.Labels["com.ku.layout-version"] = "1"
+				record.Config.Labels["com.strifira.layout-version"] = "1"
 			case "invalid-key":
-				record.Config.Labels["com.ku.layout-key"] = "marker"
+				record.Config.Labels["com.strifira.layout-key"] = "marker"
 			case "nil-key":
-				record.Config.Labels["com.ku.layout-key"] = uuid.Nil.String()
+				record.Config.Labels["com.strifira.layout-key"] = uuid.Nil.String()
 			case "noncanonical-key":
-				record.Config.Labels["com.ku.layout-key"] = strings.ToUpper(record.Config.Labels["com.ku.layout-key"])
+				record.Config.Labels["com.strifira.layout-key"] = strings.ToUpper(record.Config.Labels["com.strifira.layout-key"])
 			case "mount":
 				record.HostConfig.Mounts = []mount.Mount{{Source: "volume"}}
 			case "bind":
@@ -61,7 +61,7 @@ func TestWorkspaceLayoutRecordAuthority(t *testing.T) {
 			key, err := validateWorkspaceLayoutRecord(record, machine, *machine.WorkspaceVolumeName)
 			if mode == "valid" {
 				require.NoError(t, err)
-				require.Equal(t, record.Config.Labels["com.ku.layout-key"], key)
+				require.Equal(t, record.Config.Labels["com.strifira.layout-key"], key)
 			} else {
 				require.Error(t, err)
 				require.Empty(t, key)
@@ -133,7 +133,7 @@ func TestWorkspaceLayoutDaemonBoundaries(t *testing.T) {
 					if consumerPresent {
 						labels := machineLabels(machine)
 						if mode == "legacy-foreign" || mode == "foreign-modern" {
-							labels["com.ku.machine-id"] = uuid.NewString()
+							labels["com.strifira.machine-id"] = uuid.NewString()
 						}
 						items = append(items, map[string]any{"Id": "consumer", "Labels": labels, "Mounts": []map[string]any{{"Name": "fixture-volume"}}})
 					}
@@ -144,7 +144,7 @@ func TestWorkspaceLayoutDaemonBoundaries(t *testing.T) {
 					host := &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: "fixture-volume", Target: "/workspace"}}}
 					state := &container.State{Status: container.StateExited}
 					if mode == "legacy-foreign" || mode == "foreign-modern" {
-						labels["com.ku.machine-id"] = uuid.NewString()
+						labels["com.strifira.machine-id"] = uuid.NewString()
 					}
 					if strings.HasPrefix(mode, "modern-") || mode == "foreign-modern" || mode == "helper-running-ready" {
 						host = (&DockerRuntime{}).secureHostConfig(machine, "ide", "network", "fixture-volume")
@@ -153,7 +153,7 @@ func TestWorkspaceLayoutDaemonBoundaries(t *testing.T) {
 					if mode == "helper-running-ready" {
 						host.Mounts[0].ReadOnly, host.Mounts[1].ReadOnly = true, false
 						config.Image, config.User = fixtureHelperImageID, "1000:1000"
-						labels["com.ku.service"], labels["com.ku.repository-operation"] = "git-helper", uuid.NewString()
+						labels["com.strifira.service"], labels["com.strifira.repository-operation"] = "git-helper", uuid.NewString()
 					}
 					state.Running = mode == "legacy-running" || strings.HasPrefix(mode, "modern-running") || mode == "helper-running-ready" || (mode == "legacy-restarted" && legacyInspects > 1)
 					state.Paused = mode == "legacy-paused"
@@ -169,7 +169,7 @@ func TestWorkspaceLayoutDaemonBoundaries(t *testing.T) {
 						HostConfig container.HostConfig
 					}
 					require.NoError(t, json.NewDecoder(req.Body).Decode(&body))
-					if body.Labels["com.ku.service"] == "workspace-layout" {
+					if body.Labels["com.strifira.service"] == "workspace-layout" {
 						require.Empty(t, body.HostConfig.Mounts)
 						require.Empty(t, body.Volumes)
 						record.Config = &body.Config
@@ -203,11 +203,11 @@ func TestWorkspaceLayoutDaemonBoundaries(t *testing.T) {
 						w.WriteHeader(http.StatusCreated)
 						_, _ = io.WriteString(w, `{"Id":"initializer"}`)
 					}
-				case strings.HasPrefix(path, "/containers/ku-helper-fixture-layout-init-") && strings.HasSuffix(path, "/json"):
+				case strings.HasPrefix(path, "/containers/strifira-helper-fixture-layout-init-") && strings.HasSuffix(path, "/json"):
 					config := createdConfig
 					config.Labels = maps.Clone(config.Labels)
 					if mode == "foreign-create" {
-						config.Labels["com.ku.machine-id"] = uuid.NewString()
+						config.Labels["com.strifira.machine-id"] = uuid.NewString()
 					}
 					_ = json.NewEncoder(w).Encode(container.InspectResponse{ID: "initializer", Config: &config, HostConfig: &createdHost})
 				case path == "/containers/initializer/start":
@@ -284,7 +284,7 @@ func TestWorkspaceLayoutTeardownPreservesAuthorityUntilVolumeRemoval(t *testing.
 			record := fixtureLayoutRecord(machine)
 			record.Name = "/" + workspaceLayoutName(machine)
 			if mode == "foreign-record" {
-				record.Config.Labels["com.ku.layout-volume"] = "foreign-volume"
+				record.Config.Labels["com.strifira.layout-volume"] = "foreign-volume"
 			}
 			var mu sync.Mutex
 			var removals []string

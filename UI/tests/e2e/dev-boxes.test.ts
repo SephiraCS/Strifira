@@ -19,15 +19,15 @@ const box = {
 	id: boxId,
 	workspace_id: 'w1',
 	created_by_user_id: 'u1',
-	name: 'ku',
+	name: 'strifira',
 	enabled: true,
 	online: true,
-	hostname: 'ku-dev',
+	hostname: 'strifira-dev',
 	os: 'linux',
 	arch: 'amd64',
 	version: '0.3.0',
 	providers: [{ id: 'codex', version: '0.159.2' }],
-	token_prefix: 'kub_12345678',
+	token_prefix: 'strifira_12345678',
 	last_seen_at: '2026-09-30T00:00:00Z',
 	created_at: '2026-09-30T00:00:00Z',
 	updated_at: '2026-09-30T00:00:00Z'
@@ -42,10 +42,10 @@ const job = {
 	provider: 'codex',
 	prompt: 'Implement the feature',
 	github_repo_id: 'repo1',
-	repository_url: 'https://github.example/owner/ku.git',
-	repository_full_name: 'owner/ku',
+	repository_url: 'https://github.example/owner/strifira.git',
+	repository_full_name: 'owner/strifira',
 	base_branch: 'main',
-	working_branch: 'ku/ENG-1',
+	working_branch: 'strifira/ENG-1',
 	test_command: ['go', 'test', './...'],
 	acceptance_criteria: ['Tests pass'],
 	max_runtime_seconds: 3600,
@@ -99,8 +99,8 @@ async function mockWorkspace(page: Page, handler: (route: Route, url: URL) => Pr
 }
 
 test('registers a box with a token shown once and replaces it without browser persistence', async ({ page }) => {
-	const token = `kub_${'a'.repeat(64)}`;
-	const replacement = `kub_${'b'.repeat(64)}`;
+	const token = `strifira_${'a'.repeat(64)}`;
+	const replacement = `strifira_${'b'.repeat(64)}`;
 	const requests: unknown[] = [];
 	let registered = false;
 	await mockWorkspace(page, async (route, url) => {
@@ -116,14 +116,14 @@ test('registers a box with a token shown once and replaces it without browser pe
 	await page.goto('/test/dev-boxes');
 	await page.getByRole('button', { name: 'Register dev box', exact: true }).click();
 	let dialog = page.getByRole('dialog');
-	await dialog.getByLabel('Name', { exact: true }).fill('ku');
+	await dialog.getByLabel('Name', { exact: true }).fill('strifira');
 	await dialog.getByRole('button', { name: 'Register dev box', exact: true }).click();
 	await expect(dialog.getByLabel('Worker token')).toHaveValue(token);
 	const config = JSON.parse(await dialog.getByLabel('Worker configuration').inputValue());
 	expect(config.server_url).toBe(new URL(page.url()).origin);
 	expect(config.token_file).toContain('/worker.token');
 	expect(JSON.stringify(config)).not.toContain(token);
-	expect(requests).toEqual([{ name: 'ku' }]);
+	expect(requests).toEqual([{ name: 'strifira' }]);
 	await page.evaluate(() =>
 		Object.defineProperty(navigator, 'clipboard', {
 			configurable: true,
@@ -173,12 +173,12 @@ test('delegates to an online installed provider with independent test arguments 
 	await page.getByRole('button', { name: 'Issue actions' }).click();
 	await page.getByRole('button', { name: 'Delegate to dev box' }).click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('strifira');
 	await expect(dialog.getByLabel('Coding provider', { exact: true })).toHaveText('Codex');
 	await dialog.getByLabel('Dev box', { exact: true }).click();
 	await expect(page.getByRole('option', { name: 'Offline box' })).toHaveCount(0);
 	await expect(page.getByRole('option', { name: 'No provider box' })).toHaveCount(0);
-	await page.getByRole('option', { name: 'ku', exact: true }).click();
+	await page.getByRole('option', { name: 'strifira', exact: true }).click();
 	await dialog.getByLabel('Test command').fill('go test ./...');
 	await dialog.getByRole('button', { name: 'Delegate issue' }).click();
 	await expect(dialog.getByRole('alert')).toHaveText('Enter the test command as a nonempty JSON list of strings.');
@@ -223,7 +223,7 @@ for (const succeeds of [true, false]) {
 		await page.getByRole('button', { name: 'Issue actions' }).click();
 		await page.getByRole('button', { name: 'Delegate to dev box' }).click();
 		const dialog = page.getByRole('dialog');
-		await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+		await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('strifira');
 		await dialog.getByLabel('Test command').fill('["go", "test", "./..."]');
 		await dialog.getByRole('button', { name: 'Delegate issue', exact: true }).click();
 		await started.promise;
@@ -409,7 +409,7 @@ test('command validation rejects oversized UTF-8 arguments before delegation and
 	await page.getByRole('button', { name: 'Issue actions' }).click();
 	await page.getByRole('button', { name: 'Delegate to dev box' }).click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('strifira');
 	const command = dialog.getByLabel('Test command');
 	await command.fill(JSON.stringify(['runner', 'é'.repeat(2049)]));
 	await dialog.getByRole('button', { name: 'Delegate issue', exact: true }).click();
@@ -428,7 +428,7 @@ for (const operation of ['register', 'rotate'] as const) {
 	test(`pending ${operation} keeps its dialog open until the one-time token arrives`, async ({ page }) => {
 		const started = deferred();
 		const response = deferred();
-		const token = `kub_${'c'.repeat(64)}`;
+		const token = `strifira_${'c'.repeat(64)}`;
 		await mockWorkspace(page, async (route, url) => {
 			const expectedPath =
 				operation === 'register'
@@ -480,7 +480,7 @@ test('criteria validation explains count, UTF-8 size and null characters before 
 	await page.getByRole('button', { name: 'Issue actions' }).click();
 	await page.getByRole('button', { name: 'Delegate to dev box' }).click();
 	const dialog = page.getByRole('dialog');
-	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('ku');
+	await expect(dialog.getByLabel('Dev box', { exact: true })).toHaveText('strifira');
 	await dialog.getByLabel('Test command').fill('["go", "test", "./..."]');
 	const criteria = dialog.getByLabel('Acceptance criteria');
 	await criteria.fill(Array.from({ length: 51 }, (_, index) => `Requirement ${index}`).join('\n'));
@@ -600,12 +600,12 @@ test('box polling pauses while hidden after a mutation and refreshes heartbeat s
 		return false;
 	});
 	await page.goto('/test/dev-boxes');
-	await expect(page.getByRole('article', { name: 'ku', exact: true })).toBeVisible();
-	await page.getByRole('switch', { name: 'Enable ku' }).click();
+	await expect(page.getByRole('article', { name: 'strifira', exact: true })).toBeVisible();
+	await page.getByRole('switch', { name: 'Enable strifira' }).click();
 	await mutationStarted.promise;
 	await setVisibility(page, 'hidden');
 	mutationResponse.resolve();
-	await expect(page.getByRole('switch', { name: 'Enable ku' })).toHaveAttribute('aria-checked', 'false');
+	await expect(page.getByRole('switch', { name: 'Enable strifira' })).toHaveAttribute('aria-checked', 'false');
 	await page.clock.runFor(15_000);
 	expect({ boxesRequests, jobsRequests }).toEqual({ boxesRequests: 1, jobsRequests: 1 });
 	await setVisibility(page, 'visible');

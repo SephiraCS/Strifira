@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ku/ku-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 )

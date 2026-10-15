@@ -31,13 +31,13 @@ const pullRequest = {
 	checks_green: false,
 	author_login: 'dev',
 	author_avatar_url: '',
-	html_url: 'https://git.example.com/TerraScale/ku/pull/7',
+	html_url: 'https://git.example.com/TerraScale/strifira/pull/7',
 	head_branch: 'ENG-1-fix',
 	head_sha: 'abcdef0123456789',
 	base_branch: 'main',
 	additions: 3,
 	deletions: 1,
-	repo_full_name: 'TerraScale/ku',
+	repo_full_name: 'TerraScale/strifira',
 	repo_id: repositoryId,
 	merged_at: null,
 	created_at: '2026-09-30T00:00:00Z',
@@ -73,7 +73,7 @@ async function mockActions(
 		workflow_id: 'build.yaml',
 		head_branch: 'ENG-1-fix',
 		head_sha: 'abcdef0123456789',
-		html_url: 'https://git.example.com/TerraScale/ku/actions/runs/42',
+		html_url: 'https://git.example.com/TerraScale/strifira/actions/runs/42',
 		created_at: '2026-09-30T12:00:00Z',
 		updated_at: '2026-09-30T12:01:00Z',
 		started_at: '2026-09-30T12:00:00Z',
@@ -124,7 +124,7 @@ async function mockActions(
 		current_user_role: options.role ?? 'owner',
 		screen_sharing_enabled: false
 	};
-	await page.route('https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json', (route) =>
+	await page.route('https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json', (route) =>
 		route.fulfill({ json: [] })
 	);
 	await page.route('**/api/**', async (route) => {
@@ -167,7 +167,7 @@ async function mockActions(
 						{
 							id: repositoryId,
 							github_repo_id: 1,
-							full_name: 'TerraScale/ku',
+							full_name: 'TerraScale/strifira',
 							instance_url: 'https://git.example.com',
 							default_branch: 'main',
 							is_active: true
@@ -307,7 +307,7 @@ test('shows pull request workflow runs, jobs, and plain logs on the issue and ca
 	// Only the run with a trusted GitHub URL links out.
 	const links = actions.getByRole('link', { name: 'Open in GitHub' });
 	await expect(links).toHaveCount(1);
-	await expect(links).toHaveAttribute('href', 'https://git.example.com/TerraScale/ku/actions/runs/42');
+	await expect(links).toHaveAttribute('href', 'https://git.example.com/TerraScale/strifira/actions/runs/42');
 	await expect(links).toHaveAttribute('rel', 'noopener noreferrer');
 
 	await actions.getByRole('button', { name: /Build application/ }).click();
@@ -573,8 +573,8 @@ test('coalesces GitHub issue updates, ignores other issues, and waits for clipbo
 						{
 							id: 'branch-one',
 							name: 'ENG-1-fix',
-							html_url: 'https://git.example.com/TerraScale/ku/tree/ENG-1-fix',
-							repo_full_name: 'TerraScale/ku',
+							html_url: 'https://git.example.com/TerraScale/strifira/tree/ENG-1-fix',
+							repo_full_name: 'TerraScale/strifira',
 							created_at: '2026-09-30T00:00:00Z'
 						}
 					]

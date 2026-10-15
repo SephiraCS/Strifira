@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ku/ku-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 )
 
 type ProviderInfo struct {

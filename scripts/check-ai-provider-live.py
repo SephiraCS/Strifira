@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Verify a real provider through disposable Ku settings and editor APIs.
+"""Verify a real provider through disposable Strifira settings and editor APIs.
 
-Creates an isolated PostgreSQL container, Ku backend, account, and workspace.
+Creates an isolated PostgreSQL container, Strifira backend, account, and workspace.
 The provider key is read from an explicit owner-controlled projection and stays
 in memory or the disposable database. No app .env, OAuth cache, Forgejo token,
 production workspace, or deployed service is read or changed.
 
 Requires Python 3, ss, Podman with existing registry configuration, and a reviewed
-Ku backend binary (or Go to build one). Run within the development VM's bounded
+Strifira backend binary (or Go to build one). Run within the development VM's bounded
 workload scope, after other build/database acceptance jobs release the lane.
 """
 
@@ -28,7 +28,7 @@ import uuid
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
-from ku_live_fixture import LiveCheckError, NoRedirect, disposable_backend, request_json
+from strifira_live_fixture import LiveCheckError, NoRedirect, disposable_backend, request_json
 
 
 def provider_key(path):
@@ -159,8 +159,8 @@ def html_result(value, label):
 
 
 def acceptance(args):
-    ku_dir = pathlib.Path(__file__).resolve().parent.parent
-    be_dir = ku_dir / "BE"
+    strifira_dir = pathlib.Path(__file__).resolve().parent.parent
+    be_dir = strifira_dir / "BE"
     trusted_origins = (
         [provider_origin(args.provider_base_url)] if args.trust_provider_origin else []
     )
@@ -199,7 +199,7 @@ def acceptance(args):
                 expected=201,
                 data={
                     "name": "Disposable AI acceptance",
-                    "email": f"ku-ai-{nonce}@example.invalid",
+                    "email": f"strifira-ai-{nonce}@example.invalid",
                     "password": secrets.token_hex(24) + "Aa9!",
                 },
             )
@@ -404,7 +404,7 @@ def main():
     parser.add_argument(
         "--server-bin",
         type=pathlib.Path,
-        help="Reviewed Ku backend binary; otherwise builds the current tree",
+        help="Reviewed Strifira backend binary; otherwise builds the current tree",
     )
     parser.add_argument(
         "--dry-run",
@@ -419,7 +419,7 @@ def main():
     args = parser.parse_args()
     if args.dry_run:
         print(
-            "Would verify the provider catalog, create disposable PostgreSQL/Ku/account/workspace, save own-provider settings, test connection and HTML generation/rewrite/rework, verify key removal, then delete the fixture."
+            "Would verify the provider catalog, create disposable PostgreSQL/Strifira/account/workspace, save own-provider settings, test connection and HTML generation/rewrite/rework, verify key removal, then delete the fixture."
         )
         print(
             json.dumps(

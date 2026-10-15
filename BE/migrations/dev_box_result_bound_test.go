@@ -34,7 +34,7 @@ func TestDevBoxResultStorageBoundUpgrade(t *testing.T) {
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_devbox_bound_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_devbox_bound_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -64,9 +64,9 @@ func TestDevBoxResultStorageBoundUpgrade(t *testing.T) {
 		{`INSERT INTO team_statuses(id,team_id,name,slug,category) VALUES($1,$2,'Todo','todo','unstarted')`, []any{statusID, teamID}},
 		{`INSERT INTO issues(id,workspace_id,team_id,number,identifier_text,title,creator_id,status_id) VALUES($1,$2,$3,1,'BOX-1','Bound',$4,$5)`, []any{issueID, workspaceID, teamID, userID, statusID}},
 		{`INSERT INTO forgejo_repos(id,workspace_id,forgejo_repo_id,full_name,instance_url) VALUES($1,$2,1,$3,'https://github.test')`, []any{repoID, workspaceID, "tests/" + suffix}},
-		{`INSERT INTO dev_boxes(id,workspace_id,created_by_user_id,name,token_hash,token_prefix) VALUES($1,$2,$3,'ku',$4,'kub_test')`, []any{boxID, workspaceID, userID, strings.Repeat("a", 64)}},
+		{`INSERT INTO dev_boxes(id,workspace_id,created_by_user_id,name,token_hash,token_prefix) VALUES($1,$2,$3,'strifira',$4,'strifira_test')`, []any{boxID, workspaceID, userID, strings.Repeat("a", 64)}},
 		{`INSERT INTO dev_box_jobs(id,workspace_id,box_id,requested_by_user_id,issue_id,issue_identifier,forgejo_repo_id,provider,prompt,repository_url,repository_full_name,base_branch,working_branch,max_runtime_seconds)
-			VALUES($1,$2,$3,$4,$5,'BOX-1',$6,'codex','Bound test','https://github.test/tests/repo.git','tests/repo','main','ku/BOX-1-bound',300)`,
+			VALUES($1,$2,$3,$4,$5,'BOX-1',$6,'codex','Bound test','https://github.test/tests/repo.git','tests/repo','main','strifira/BOX-1-bound',300)`,
 			[]any{jobID, workspaceID, boxID, userID, issueID, repoID}},
 	} {
 		_, err = db.ExecContext(t.Context(), statement.query, statement.args...)

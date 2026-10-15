@@ -7,7 +7,7 @@ import {
 
 const webhook = {
 	id: 'webhook-1',
-	url: 'https://hooks.example.com/ku',
+	url: 'https://hooks.example.com/strifira',
 	events: ['issue.created'],
 	is_active: true,
 	created_at: '2026-01-01T00:00:00Z',

@@ -13,13 +13,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/SephiraCS/strifira-backend/internal/agent"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/agent"
 	"github.com/stretchr/testify/require"
 )
 
 func TestBoundedBufferRedactsBeforeWriteAndLogChunkBoundaries(t *testing.T) {
-	token := "kub_" + strings.Repeat("a", 64)
+	token := "strifira_" + strings.Repeat("a", 64)
 	for split := 1; split < len(token); split++ {
 		t.Run(fmt.Sprintf("token write split %d", split), func(t *testing.T) {
 			var logs strings.Builder
@@ -63,12 +63,12 @@ func TestBoundedBufferStreamingUTF8EOFAndLimits(t *testing.T) {
 	}{
 		{name: "split Unicode runes", writes: []string{"text \xe2", "\x82", "\xac and \xf0\x9f", "\x8c\x8d"}, want: "text € and 🌍"},
 		{name: "incomplete UTF8 at EOF", writes: []string{"text \xf0\x9f"}, want: "text �"},
-		{name: "partial token prefix at EOF", writes: []string{"ordinary ku"}, want: "ordinary ku"},
+		{name: "partial token prefix at EOF", writes: []string{"ordinary strifira"}, want: "ordinary strifira"},
 		{name: "binary log output", writes: []string{"\x00\xff\x01"}, want: "\\0�\x01"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var logs strings.Builder
-			output := &boundedBuffer{limit: maxOutputBytes, token: "kub_" + strings.Repeat("b", 64), log: func(_, content string) {
+			output := &boundedBuffer{limit: maxOutputBytes, token: "strifira_" + strings.Repeat("b", 64), log: func(_, content string) {
 				require.LessOrEqual(t, len(content), 16*1024)
 				require.True(t, utf8.ValidString(content))
 				require.NotContains(t, content, "\x00")
@@ -122,7 +122,7 @@ func fixtureRepository(t *testing.T) Config {
 
 func fixtureJob(config Config) Job {
 	id := uuid.NewString()
-	return Job{ID: id, Provider: "claude-code", Prompt: "edit a file", RepositoryURL: config.Repositories["owner/repo"].URL, RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "ku/task-" + id[:8], MaxRuntimeSeconds: 30, TestCommand: []string{"/bin/sh", "-c", "test -f new.txt && test \"$(cat README.md)\" = changed"}}
+	return Job{ID: id, Provider: "claude-code", Prompt: "edit a file", RepositoryURL: config.Repositories["owner/repo"].URL, RepositoryFullName: "owner/repo", BaseBranch: "main", WorkingBranch: "strifira/task-" + id[:8], MaxRuntimeSeconds: 30, TestCommand: []string{"/bin/sh", "-c", "test -f new.txt && test \"$(cat README.md)\" = changed"}}
 }
 
 func TestLocalExecutorProducesReviewPatchAndRunsTestsSeparately(t *testing.T) {
@@ -137,7 +137,7 @@ func TestLocalExecutorProducesReviewPatchAndRunsTestsSeparately(t *testing.T) {
 	require.ElementsMatch(t, []string{"README.md", "new.txt"}, result.ChangedFiles)
 	require.Contains(t, result.Patch, "+changed")
 	require.Contains(t, result.Patch, "new.txt")
-	require.True(t, strings.HasPrefix(result.Branch, "ku/task-"))
+	require.True(t, strings.HasPrefix(result.Branch, "strifira/task-"))
 	after, err := os.ReadFile(index)
 	require.NoError(t, err)
 	require.Equal(t, before, after, "original checkout index must stay unchanged")
@@ -148,7 +148,7 @@ func TestLocalExecutorProducesReviewPatchAndRunsTestsSeparately(t *testing.T) {
 
 func TestLocalExecutorRedactsProviderTestsAndSystemLogsAndFlushesEOF(t *testing.T) {
 	config := fixtureRepository(t)
-	token := "kub_" + strings.Repeat("c", 64)
+	token := "strifira_" + strings.Repeat("c", 64)
 	privateRoot := config.WorkRoot + "-" + token
 	require.NoError(t, os.Rename(config.WorkRoot, privateRoot))
 	config.WorkRoot = privateRoot

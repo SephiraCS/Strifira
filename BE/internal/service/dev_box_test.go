@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,10 +110,10 @@ func TestDevBoxTokenIsDedicatedHashedAndReturnedOnlyOnce(t *testing.T) {
 	store := &devBoxStoreFake{}
 	members := &devBoxMembersFake{role: domain.RoleMember}
 	svc := NewDevBoxService(store, members, nil, func(uuid.UUID) bool { return true })
-	created, err := svc.Create(t.Context(), uuid.New(), uuid.New(), dto.CreateDevBoxRequest{Name: " ku "})
+	created, err := svc.Create(t.Context(), uuid.New(), uuid.New(), dto.CreateDevBoxRequest{Name: " strifira "})
 	require.NoError(t, err)
-	require.Equal(t, "ku", created.Box.Name)
-	require.True(t, validDevBoxToken(created.Token, "kub_"))
+	require.Equal(t, "strifira", created.Box.Name)
+	require.True(t, validDevBoxToken(created.Token, "strifira_"))
 	require.NotEqual(t, created.Token, store.box.TokenHash)
 	require.Equal(t, hashDevBoxToken(created.Token), store.box.TokenHash)
 	encoded, err := json.Marshal(store.box)
@@ -122,7 +122,7 @@ func TestDevBoxTokenIsDedicatedHashedAndReturnedOnlyOnce(t *testing.T) {
 	require.NotContains(t, string(encoded), store.box.TokenHash)
 	_, err = svc.AuthenticateWorker(t.Context(), created.Token)
 	require.NoError(t, err)
-	for _, token := range []string{"ku_" + strings.Repeat("a", 64), "kub_" + strings.Repeat("z", 64), "kub_" + strings.Repeat("a", 64), ""} {
+	for _, token := range []string{"strifira_" + strings.Repeat("a", 64), "strifira_" + strings.Repeat("z", 64), "strifira_" + strings.Repeat("a", 64), ""} {
 		_, err = svc.AuthenticateWorker(t.Context(), token)
 		require.ErrorIs(t, err, ErrDevBoxAuthentication)
 	}
@@ -142,8 +142,8 @@ func TestDevBoxJobUsesIssueDefaultsWithoutDockerAndEnforcesCreator(t *testing.T)
 	workspaceID, userID, boxID, issueID, repoID := uuid.New(), uuid.New(), uuid.New(), uuid.New(), uuid.New()
 	store := &devBoxStoreFake{box: &domain.DevBox{ID: boxID, WorkspaceID: workspaceID, CreatedByUserID: userID, Enabled: true, Providers: json.RawMessage(`[{"id":"codex","version":"1"}]`)}}
 	development := &devBoxDevelopmentFake{
-		issue:            &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: uuid.New(), Identifier: "KU-27", Title: "Implement sum", Description: new("Cover negative numbers")},
-		repo:             &domain.GitHubRepoModel{ID: repoID, WorkspaceID: workspaceID, FullName: "team/ku", InstanceURL: "https://git.example.test/", DefaultBranch: "main", IsActive: true},
+		issue:            &domain.Issue{ID: issueID, WorkspaceID: workspaceID, TeamID: uuid.New(), Identifier: "STRIFIRA-27", Title: "Implement sum", Description: new("Cover negative numbers")},
+		repo:             &domain.GitHubRepoModel{ID: repoID, WorkspaceID: workspaceID, FullName: "team/strifira", InstanceURL: "https://git.example.test/", DefaultBranch: "main", IsActive: true},
 		issueSetting:     &domain.DevMachineScopeSetting{GitHubRepoID: new(repoID), BaseBranch: new("develop")},
 		workspaceSetting: &domain.DevMachineScopeSetting{GitHubRepoID: new(uuid.New()), BaseBranch: new("wrong-default")},
 	}
@@ -151,9 +151,9 @@ func TestDevBoxJobUsesIssueDefaultsWithoutDockerAndEnforcesCreator(t *testing.T)
 	req := dto.CreateDevBoxJobRequest{IssueID: issueID.String(), Provider: "codex", Prompt: "Use CommonJS", TestCommand: []string{"node", "sum.test.cjs"}, AcceptanceCriteria: []string{"Returns the sum"}}
 	job, err := svc.CreateJob(t.Context(), workspaceID, boxID, userID, req)
 	require.NoError(t, err)
-	require.Equal(t, "https://git.example.test/team/ku", job.RepositoryURL)
+	require.Equal(t, "https://git.example.test/team/strifira", job.RepositoryURL)
 	require.Equal(t, "develop", job.BaseBranch)
-	require.True(t, strings.HasPrefix(job.WorkingBranch, "ku/ku-27-"))
+	require.True(t, strings.HasPrefix(job.WorkingBranch, "strifira/strifira-27-"))
 	require.Contains(t, job.Prompt, "Cover negative numbers")
 	require.Contains(t, job.Prompt, "Use CommonJS")
 	require.Contains(t, job.Prompt, "Do not push")
@@ -182,7 +182,7 @@ func TestDevBoxCompletionRequiresIndependentSuccessfulTests(t *testing.T) {
 		{"failed test", domain.DevBoxJobResult{Status: "succeeded", TestStatus: "failed", TestExitCode: new(1), TestsRun: []string{"node test.cjs"}}, "failed"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			lease, hash, err := newDevBoxToken("kul_")
+			lease, hash, err := newDevBoxToken("sfl_")
 			require.NoError(t, err)
 			boxID, jobID := uuid.New(), uuid.New()
 			box := &domain.DevBox{ID: boxID, TokenHash: strings.Repeat("b", 64)}
@@ -198,14 +198,14 @@ func TestDevBoxCompletionRequiresIndependentSuccessfulTests(t *testing.T) {
 
 func TestDevBoxWorkerPayloadsRejectOversizedLogsResultsAndWrongLeases(t *testing.T) {
 	svc := NewDevBoxService(&devBoxStoreFake{}, nil, nil, nil)
-	lease, _, err := newDevBoxToken("kul_")
+	lease, _, err := newDevBoxToken("sfl_")
 	require.NoError(t, err)
 	box := &domain.DevBox{ID: uuid.New()}
 	_, err = svc.AppendLog(t.Context(), box, uuid.New(), dto.DevBoxAppendLogRequest{LeaseToken: lease, Sequence: 1, Stream: "stdout", Content: strings.Repeat("é", 32769)})
 	require.ErrorIs(t, err, ErrInvalidDevBoxInput)
 	_, err = svc.AppendLog(t.Context(), box, uuid.New(), dto.DevBoxAppendLogRequest{LeaseToken: lease, Sequence: 1, Stream: "stdout", Content: "null\x00output"})
 	require.ErrorIs(t, err, ErrInvalidDevBoxInput)
-	_, err = svc.Start(t.Context(), box, uuid.New(), dto.DevBoxLeaseRequest{LeaseToken: "kub_" + strings.Repeat("a", 64)})
+	_, err = svc.Start(t.Context(), box, uuid.New(), dto.DevBoxLeaseRequest{LeaseToken: "strifira_" + strings.Repeat("a", 64)})
 	require.ErrorIs(t, err, ErrDevBoxLeaseLost)
 	_, err = svc.Complete(t.Context(), box, uuid.New(), dto.DevBoxCompleteRequest{LeaseToken: lease, Result: domain.DevBoxJobResult{Status: "succeeded", TestStatus: "not_run", Patch: strings.Repeat("a", DevBoxMaxPatchBytes+1)}})
 	require.ErrorIs(t, err, ErrInvalidDevBoxInput)

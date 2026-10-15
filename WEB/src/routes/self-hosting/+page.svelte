@@ -29,7 +29,7 @@
 	<div class="grid gap-10 lg:grid-cols-[1fr_260px]">
 		<article class="min-w-0 [overflow-wrap:anywhere]">
 			<div use:reveal>
-				<h1 class="text-4xl font-bold tracking-tight">Self-Hosting Ku</h1>
+				<h1 class="text-4xl font-bold tracking-tight">Self-Hosting Strifira</h1>
 				<p class="mt-4 text-lg leading-relaxed text-muted-foreground">
 					The reference Docker Compose stack runs Caddy, PostgreSQL 17, Redis 7, the Go API and the SvelteKit frontend.
 					These guides cover configuration, storage, updates, GitHub webhook delivery and the {DEV_MACHINES_RELEASE_STATUS.toLowerCase()}

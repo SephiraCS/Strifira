@@ -99,8 +99,8 @@ check-gofmt:
 test-migrate:
 	@$(DOTENV) sh scripts/ci/check-test-database.sh
 	$(DOTENV) cd BE && dir=$$(mktemp -d) && trap 'rm -rf "$$dir"' EXIT && \
-		go build -o "$$dir/ku-server" ./cmd/server && \
-		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/ku-server" migrate up
+		go build -o "$$dir/strifira-server" ./cmd/server && \
+		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/strifira-server" migrate up
 
 test-fast-backend: test-migrate
 	$(DOTENV) cd BE && DATABASE_URL="$$TEST_DATABASE_URL" go test $(GO_TEST_FLAGS) -skip '$(GO_SLOW_TESTS)' ./...
@@ -115,19 +115,19 @@ test-slow-frontend:
 	cd UI && E2E_SUITE=slow npx playwright test $(E2E_FLAGS)
 
 # Disposable PostgreSQL/backend/browser checks. The AI provider check needs a
-# real provider and runs only when KU_LIVE_PROVIDER_KEY, KU_LIVE_PROVIDER_URL
-# and KU_LIVE_PROVIDER_MODEL are set. check-dev-box-live.py needs an
+# real provider and runs only when STRIFIRA_LIVE_PROVIDER_KEY, STRIFIRA_LIVE_PROVIDER_URL
+# and STRIFIRA_LIVE_PROVIDER_MODEL are set. check-dev-box-live.py needs an
 # authenticated coding CLI on a dev VM and is run by hand only.
 test-slow-live:
 	node scripts/check-screen-share-live.mjs
-	@if [ -n "$${KU_LIVE_PROVIDER_KEY:-}" ] && [ -n "$${KU_LIVE_PROVIDER_URL:-}" ] && [ -n "$${KU_LIVE_PROVIDER_MODEL:-}" ]; then \
+	@if [ -n "$${STRIFIRA_LIVE_PROVIDER_KEY:-}" ] && [ -n "$${STRIFIRA_LIVE_PROVIDER_URL:-}" ] && [ -n "$${STRIFIRA_LIVE_PROVIDER_MODEL:-}" ]; then \
 		dir=$$(mktemp -d) && trap 'rm -rf "$$dir"' EXIT && umask 077 && \
-		printf 'CLIPROXYAPI_API_KEY=%s\n' "$$KU_LIVE_PROVIDER_KEY" >"$$dir/provider.env" && \
+		printf 'CLIPROXYAPI_API_KEY=%s\n' "$$STRIFIRA_LIVE_PROVIDER_KEY" >"$$dir/provider.env" && \
 		python3 scripts/check-ai-provider-live.py --provider-env-file "$$dir/provider.env" \
-			--provider-base-url "$$KU_LIVE_PROVIDER_URL" --model "$$KU_LIVE_PROVIDER_MODEL" \
-			$${KU_LIVE_PROVIDER_TRUST_ORIGIN:+--trust-provider-origin}; \
+			--provider-base-url "$$STRIFIRA_LIVE_PROVIDER_URL" --model "$$STRIFIRA_LIVE_PROVIDER_MODEL" \
+			$${STRIFIRA_LIVE_PROVIDER_TRUST_ORIGIN:+--trust-provider-origin}; \
 	else \
-		echo "Skipping the AI provider live check: KU_LIVE_PROVIDER_KEY/_URL/_MODEL are not set."; \
+		echo "Skipping the AI provider live check: STRIFIRA_LIVE_PROVIDER_KEY/_URL/_MODEL are not set."; \
 	fi
 
 lint:

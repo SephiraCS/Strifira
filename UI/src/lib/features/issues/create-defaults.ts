@@ -11,7 +11,7 @@ export type IssueCreateDefaults = {
 	cycleId?: string | null;
 };
 
-const DEFAULTS_STORAGE_KEY = 'ku-issue-create-defaults';
+const DEFAULTS_STORAGE_KEY = 'strifira-issue-create-defaults';
 
 export function getIssueCreateDefaults(slug: string): IssueCreateDefaults {
 	try {

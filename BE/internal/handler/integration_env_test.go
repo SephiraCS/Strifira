@@ -25,14 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/mcpserver"
-	mw "github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
-	"github.com/ku/ku-backend/pkg/validate"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/mcpserver"
+	mw "github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	jwtpkg "github.com/SephiraCS/strifira-backend/pkg/jwt"
+	"github.com/SephiraCS/strifira-backend/pkg/validate"
 )
 
 // integrationJWTSecret signs tokens for the HTTP integration environment.
@@ -78,7 +78,7 @@ func newIntegrationEnv(t *testing.T) *integrationEnv {
 	t.Cleanup(func() { _ = admin.Close() })
 	require.NoError(t, admin.PingContext(ctx))
 
-	name := "ku_handler_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_handler_it_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -158,8 +158,8 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	teamStatusH := NewTeamStatusHandler(teamStatusSvc)
 	webhookH := NewWebhookHandler(webhookSvc)
 	projectH := NewProjectHandler(projectSvc)
-	sharedLinkH := NewSharedLinkHandler(sharedLinkSvc, "http://ku.test")
-	githubH := NewGitHubHandler(service.NewGitHubService(repository.NewGitHubRepository(db), issueRepo, teamRepo, teamStatusRepo, make([]byte, 32), hub, "http://ku.test", "", nil))
+	sharedLinkH := NewSharedLinkHandler(sharedLinkSvc, "http://strifira.test")
+	githubH := NewGitHubHandler(service.NewGitHubService(repository.NewGitHubRepository(db), issueRepo, teamRepo, teamStatusRepo, make([]byte, 32), hub, "http://strifira.test", "", nil))
 
 	env.apiKeySvc = service.NewAPIKeyService(repository.NewAPIKeyRepository(db), userRepo)
 	mcpHandler := mcpserver.NewHTTPHandler(mcpserver.Deps{

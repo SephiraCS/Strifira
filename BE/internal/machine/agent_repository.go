@@ -48,14 +48,14 @@ repository_git() {
 read_repository_credential() {
   IFS= read -r GITHUB_TOKEN
   [ -n "$GITHUB_TOKEN" ]
-  export GITHUB_TOKEN KU_GITHUB_HOST="$expected_host" KU_GIT_REPOSITORY="$expected_repository"
+  export GITHUB_TOKEN STRIFIRA_GITHUB_HOST="$expected_host" STRIFIRA_GIT_REPOSITORY="$expected_repository"
 }
 credential_helper='!f() {
 protocol=; host=; path=
 while IFS= read -r line && [ -n "$line" ]; do
   case "$line" in protocol=*) protocol=${line#protocol=} ;; host=*) host=${line#host=} ;; path=*) path=${line#path=} ;; esac
 done
-if [ "$protocol" = https ] && [ "$host" = "$KU_GITHUB_HOST" ] && [ "${path%.git}" = "$KU_GIT_REPOSITORY" ]; then
+if [ "$protocol" = https ] && [ "$host" = "$STRIFIRA_GITHUB_HOST" ] && [ "${path%.git}" = "$STRIFIRA_GIT_REPOSITORY" ]; then
   printf "%s\n" username=x-access-token "password=$GITHUB_TOKEN"
 fi
 }; f'
@@ -78,9 +78,9 @@ proxy=$7
 run_key=$8
 mkdir -p "$repository_dir"
 cd "$repository_dir"
-exec 9> "$repository_dir/ku.lock"
+exec 9> "$repository_dir/strifira.lock"
 flock -w 30 9
-[ ! -e "$repository_dir/ku-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
+[ ! -e "$repository_dir/strifira-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
 if [ ! -f "$repository_dir/HEAD" ]; then
   git -c init.defaultBranch=main init --quiet --bare --template= "$repository_dir"
 fi
@@ -89,31 +89,31 @@ fi
 git check-ref-format "refs/heads/$base_branch"
 git check-ref-format "refs/heads/$working_branch"
 case "$run_key" in ''|*[!A-Za-z0-9-]*) exit 1 ;; esac
-if [ -f "$repository_dir/ku.repository-url" ]; then
-  [ "$(cat "$repository_dir/ku.repository-url")" = "$repository_url" ]
+if [ -f "$repository_dir/strifira.repository-url" ]; then
+  [ "$(cat "$repository_dir/strifira.repository-url")" = "$repository_url" ]
 else
-  printf '%s\n' "$repository_url" > "$repository_dir/ku.repository-url"
+  printf '%s\n' "$repository_url" > "$repository_dir/strifira.repository-url"
 fi
-if repository_git show-ref --verify --quiet "refs/ku/runs/$run_key/base"; then
-  repository_git show-ref --verify --quiet "refs/ku/runs/$run_key/parent"
+if repository_git show-ref --verify --quiet "refs/strifira/runs/$run_key/base"; then
+  repository_git show-ref --verify --quiet "refs/strifira/runs/$run_key/parent"
   exit 0
 fi
 read_repository_credential
 refs=$(authenticated_git ls-remote --heads -- "$repository_url" "refs/heads/$base_branch" "refs/heads/$working_branch")
 if printf '%s\n' "$refs" | awk -v ref="refs/heads/$working_branch" '$2==ref { found=1 } END { exit !found }'; then
-  authenticated_git fetch --quiet --no-tags -- "$repository_url" "+refs/heads/$base_branch:refs/remotes/ku/base" "+refs/heads/$working_branch:refs/remotes/ku/working"
+  authenticated_git fetch --quiet --no-tags -- "$repository_url" "+refs/heads/$base_branch:refs/remotes/strifira/base" "+refs/heads/$working_branch:refs/remotes/strifira/working"
 else
-  authenticated_git fetch --quiet --no-tags -- "$repository_url" "+refs/heads/$base_branch:refs/remotes/ku/base"
-  repository_git update-ref -d refs/remotes/ku/working
+  authenticated_git fetch --quiet --no-tags -- "$repository_url" "+refs/heads/$base_branch:refs/remotes/strifira/base"
+  repository_git update-ref -d refs/remotes/strifira/working
 fi
-unset GITHUB_TOKEN KU_GITHUB_HOST KU_GIT_REPOSITORY
-base=$(repository_git rev-parse --verify 'refs/remotes/ku/base^{commit}')
-if repository_git show-ref --verify --quiet refs/remotes/ku/working; then
-  parent=$(repository_git rev-parse --verify 'refs/remotes/ku/working^{commit}')
+unset GITHUB_TOKEN STRIFIRA_GITHUB_HOST STRIFIRA_GIT_REPOSITORY
+base=$(repository_git rev-parse --verify 'refs/remotes/strifira/base^{commit}')
+if repository_git show-ref --verify --quiet refs/remotes/strifira/working; then
+  parent=$(repository_git rev-parse --verify 'refs/remotes/strifira/working^{commit}')
 else
   parent=$base
 fi
-printf 'start\ncreate refs/ku/runs/%s/base %s\ncreate refs/ku/runs/%s/parent %s\nprepare\ncommit\n' "$run_key" "$base" "$run_key" "$parent" | repository_git update-ref --stdin > /dev/null
+printf 'start\ncreate refs/strifira/runs/%s/base %s\ncreate refs/strifira/runs/%s/parent %s\nprepare\ncommit\n' "$run_key" "$base" "$run_key" "$parent" | repository_git update-ref --stdin > /dev/null
 `
 
 // Snapshot history uses local alternates while staging, then imports only objects
@@ -126,12 +126,12 @@ repository_dir=$2
 run_key=$3
 case "$run_key" in ''|*[!A-Za-z0-9-]*) exit 1 ;; esac
 cd "$repository_dir"
-exec 9> "$repository_dir/ku.lock"
+exec 9> "$repository_dir/strifira.lock"
 flock -w 30 9
-[ ! -e "$repository_dir/ku-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
-base=$(repository_git rev-parse --verify "refs/ku/runs/$run_key/base^{commit}")
-parent=$(repository_git rev-parse --verify "refs/ku/runs/$run_key/parent^{commit}")
-run_dir="$repository_dir/ku-runs/$run_key"
+[ ! -e "$repository_dir/strifira-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
+base=$(repository_git rev-parse --verify "refs/strifira/runs/$run_key/base^{commit}")
+parent=$(repository_git rev-parse --verify "refs/strifira/runs/$run_key/parent^{commit}")
+run_dir="$repository_dir/strifira-runs/$run_key"
 if [ -f "$run_dir/candidate.info" ]; then
   cat "$run_dir/candidate.info"
   exit 0
@@ -174,7 +174,7 @@ if ! snapshot_git diff --cached --quiet --no-ext-diff --no-textconv HEAD --; the
 tree=$(snapshot_git write-tree)
 candidate=$source_commit
 if [ "$dirty" = true ]; then
-  candidate=$(printf '%s\n' 'Complete delegated task' | snapshot_git -c user.name='Ku Agent' -c user.email='ku-agent@localhost' commit-tree "$tree" -p "$source_commit")
+  candidate=$(printf '%s\n' 'Complete delegated task' | snapshot_git -c user.name='Strifira Agent' -c user.email='strifira-agent@localhost' commit-tree "$tree" -p "$source_commit")
 fi
 # Pack the candidate before any credential is read, and validate its complete
 # connectivity using only retained, protected objects. The volume's hard quota
@@ -182,7 +182,7 @@ fi
 printf '%s\n' "$candidate" "^$base" "^$parent" | snapshot_git pack-objects --revs --stdout > "$snapshot_dir/candidate.pack"
 repository_git index-pack --stdin < "$snapshot_dir/candidate.pack" > /dev/null
 repository_git fsck --connectivity-only --no-dangling "$candidate" > /dev/null
-repository_git update-ref "refs/ku/runs/$run_key/candidate" "$candidate"
+repository_git update-ref "refs/strifira/runs/$run_key/candidate" "$candidate"
 merge_base=$(repository_git merge-base "$base" "$candidate")
 commits=$(repository_git rev-list "$base..$candidate")
 printf '%s\0%s\0%s\0%s\0%s\0%s\0%s\0' "$branch" "$commits" "$dirty" "$candidate" "$base" "$source_commit" "$source_index_hash" > "$snapshot_dir/candidate.info"
@@ -204,18 +204,18 @@ run_key=$7
 expected_commit=$8
 case "$run_key" in ''|*[!A-Za-z0-9-]*) exit 1 ;; esac
 cd "$repository_dir"
-exec 9> "$repository_dir/ku.lock"
+exec 9> "$repository_dir/strifira.lock"
 flock -w 30 9
-[ ! -e "$repository_dir/ku-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
-[ "$(cat "$repository_dir/ku.repository-url")" = "$repository_url" ]
+[ ! -e "$repository_dir/strifira-runs/$run_key/terminal-cleanup" ] || { echo 'agent run is terminal' >&2; exit 1; }
+[ "$(cat "$repository_dir/strifira.repository-url")" = "$repository_url" ]
 git check-ref-format "refs/heads/$working_branch"
-candidate=$(repository_git rev-parse --verify "refs/ku/runs/$run_key/candidate^{commit}")
+candidate=$(repository_git rev-parse --verify "refs/strifira/runs/$run_key/candidate^{commit}")
 [ "$candidate" = "$expected_commit" ]
 repository_git fsck --connectivity-only --no-dangling "$candidate" > /dev/null
 read_repository_credential
 authenticated_git push --quiet -- "$repository_url" "$candidate:refs/heads/$working_branch"
-unset GITHUB_TOKEN KU_GITHUB_HOST KU_GIT_REPOSITORY
-repository_git update-ref refs/remotes/ku/working "$candidate"
+unset GITHUB_TOKEN STRIFIRA_GITHUB_HOST STRIFIRA_GIT_REPOSITORY
+repository_git update-ref refs/remotes/strifira/working "$candidate"
 `
 
 func parseRepositoryCandidate(output string) (RepositoryCandidate, error) {

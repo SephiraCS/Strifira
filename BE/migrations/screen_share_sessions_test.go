@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/repository"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +25,7 @@ func TestScreenShareSessionMigrationAndConcurrentCaptureConstraint(t *testing.T)
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	databaseName := "ku_share_sessions_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "strifira_share_sessions_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+databaseName+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {

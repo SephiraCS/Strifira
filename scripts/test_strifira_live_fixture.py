@@ -6,7 +6,7 @@ import traceback
 import unittest
 import urllib.request
 
-from ku_live_fixture import LiveCheckError, NoRedirect, request_json
+from strifira_live_fixture import LiveCheckError, NoRedirect, request_json
 
 
 class RequestJSONRedactionTests(unittest.TestCase):

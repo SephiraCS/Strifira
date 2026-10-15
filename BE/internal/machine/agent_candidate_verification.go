@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -29,11 +29,11 @@ case "$expected_commit" in *[!a-f0-9]*) exit 1 ;; esac
 [ "${#expected_commit}" -eq 40 ] || [ "${#expected_commit}" -eq 64 ] || exit 1
 [ "$(realpath -e "$repository_dir")" = "$repository_dir" ]
 cd "$repository_dir"
-exec 9> "$repository_dir/ku.lock"
+exec 9> "$repository_dir/strifira.lock"
 flock -w 30 9
-candidate=$(repository_git rev-parse --verify "refs/ku/runs/$run_key/candidate^{commit}")
+candidate=$(repository_git rev-parse --verify "refs/strifira/runs/$run_key/candidate^{commit}")
 [ "$candidate" = "$expected_commit" ]
-run_dir="$repository_dir/ku-runs/$run_key"
+run_dir="$repository_dir/strifira-runs/$run_key"
 [ -d "$run_dir" ] && [ ! -L "$run_dir" ] || exit 1
 [ "$(realpath -e "$run_dir")" = "$run_dir" ]
 verification_dir="$run_dir/verification"
@@ -162,16 +162,16 @@ func candidateVerificationOptions(machine *domain.DevMachine, imageID, operation
 	if err != nil {
 		return client.ContainerCreateOptions{}, err
 	}
-	options.Config.Labels["com.ku.service"] = "git-verification"
-	options.Config.Labels["com.ku.agent-run-id"] = runID.String()
-	options.Config.Labels["com.ku.verification-commit"] = candidate.Commit
-	options.Name = "ku-" + machine.RoutingKey + "-verification-" + runID.String()
+	options.Config.Labels["com.strifira.service"] = "git-verification"
+	options.Config.Labels["com.strifira.agent-run-id"] = runID.String()
+	options.Config.Labels["com.strifira.verification-commit"] = candidate.Commit
+	options.Name = "strifira-" + machine.RoutingKey + "-verification-" + runID.String()
 	options.Config.WorkingDir = checkout.WorkspacePath
 	options.Config.Env = []string{"PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp", "LANG=C.UTF-8", "CI=true"}
 	options.Config.OpenStdin, options.Config.StdinOnce, options.Config.AttachStdin = false, false, false
 	options.HostConfig.Mounts[0].ReadOnly = false
 	options.HostConfig.Mounts[0].Target = checkout.WorkspacePath
-	options.HostConfig.Mounts[0].VolumeOptions.Subpath = strings.TrimPrefix(repository, "/") + "/ku-runs/" + runID.String() + "/verification"
+	options.HostConfig.Mounts[0].VolumeOptions.Subpath = strings.TrimPrefix(repository, "/") + "/strifira-runs/" + runID.String() + "/verification"
 	options.HostConfig.Mounts[1].ReadOnly = true
 	options.HostConfig.Tmpfs = nil
 	scratch := options.HostConfig.Mounts[0]
@@ -192,10 +192,10 @@ func candidateVerificationOptions(machine *domain.DevMachine, imageID, operation
 // Recognizing it never authorizes writes to repository objects or another run.
 func protectedVerificationMounts(inspection container.InspectResponse, machine *domain.DevMachine) bool {
 	config, host := inspection.Config, inspection.HostConfig
-	if config == nil || host == nil || machine == nil || machine.WorkspaceVolumeName == nil || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.ku.service"] != "git-verification" || config.User != "1000:1000" || !isImmutableLocalImageID(config.Image) || !validGitObjectID(config.Labels["com.ku.verification-commit"]) {
+	if config == nil || host == nil || machine == nil || machine.WorkspaceVolumeName == nil || !ownedByMachine(config.Labels, machine.ID) || config.Labels["com.strifira.service"] != "git-verification" || config.User != "1000:1000" || !isImmutableLocalImageID(config.Image) || !validGitObjectID(config.Labels["com.strifira.verification-commit"]) {
 		return false
 	}
-	for _, key := range []string{"com.ku.repository-operation", "com.ku.agent-run-id"} {
+	for _, key := range []string{"com.strifira.repository-operation", "com.strifira.agent-run-id"} {
 		id, err := uuid.Parse(config.Labels[key])
 		if err != nil || id == uuid.Nil || id.String() != config.Labels[key] {
 			return false
@@ -221,7 +221,7 @@ func protectedVerificationMounts(inspection container.InspectResponse, machine *
 		return false
 	}
 	parts := strings.Split(worktree.VolumeOptions.Subpath, "/")
-	if len(parts) != 5 || parts[0] != "repositories" || parts[2] != "ku-runs" || parts[3] != config.Labels["com.ku.agent-run-id"] || parts[4] != "verification" {
+	if len(parts) != 5 || parts[0] != "repositories" || parts[2] != "strifira-runs" || parts[3] != config.Labels["com.strifira.agent-run-id"] || parts[4] != "verification" {
 		return false
 	}
 	key, ok := strings.CutSuffix(parts[1], ".git")
@@ -329,7 +329,7 @@ func (r *DockerRuntime) RunCandidateCommand(ctx context.Context, machine *domain
 	if err := r.verifyRepositoryHelperWorkspace(ctx, machine, helperImage); err != nil {
 		return nil, err
 	}
-	_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(ensureCandidateVerificationDirectoryScript, "ku-verify-directory", repository, runID.String(), candidate.Commit), "", repositoryHelperInvocation{RunID: runID})
+	_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(ensureCandidateVerificationDirectoryScript, "strifira-verify-directory", repository, runID.String(), candidate.Commit), "", repositoryHelperInvocation{RunID: runID})
 	if err != nil {
 		return nil, err
 	}
@@ -346,23 +346,23 @@ func (r *DockerRuntime) RunCandidateCommand(ctx context.Context, machine *domain
 			if inspection.Container.ID != containerID {
 				return errors.New("verification reservation container changed")
 			}
-			owner, err = verificationReservationOwner(inspection.Container, options.Config.Labels["com.ku.repository-operation"])
+			owner, err = verificationReservationOwner(inspection.Container, options.Config.Labels["com.strifira.repository-operation"])
 			return err
 		},
 		beforeStart: func(ctx context.Context) error {
-			_, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(claimCandidateVerificationScript, "ku-verify-claim", repository, runID.String(), candidate.Commit, owner), "", repositoryHelperInvocation{RunID: runID})
+			_, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(claimCandidateVerificationScript, "strifira-verify-claim", repository, runID.String(), candidate.Commit, owner), "", repositoryHelperInvocation{RunID: runID})
 			if err != nil {
 				return err
 			}
 			prepared = true
-			_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(prepareCandidateVerificationScript, "ku-verify-prepare", repository, runID.String(), candidate.Commit, owner, checkout.WorkingBranch), "", repositoryHelperInvocation{RunID: runID})
+			_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(prepareCandidateVerificationScript, "strifira-verify-prepare", repository, runID.String(), candidate.Commit, owner, checkout.WorkingBranch), "", repositoryHelperInvocation{RunID: runID})
 			return err
 		},
 		afterExit: func(ctx context.Context, execution *CommandExecution) error {
 			if execution.ExitCode != 0 {
 				return nil
 			}
-			output, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(attestCandidateVerificationScript, "ku-verify-attest", repository, runID.String(), candidate.Commit, owner), "", repositoryHelperInvocation{RunID: runID})
+			output, err := r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(attestCandidateVerificationScript, "strifira-verify-attest", repository, runID.String(), candidate.Commit, owner), "", repositoryHelperInvocation{RunID: runID})
 			if err != nil {
 				return err
 			}
@@ -386,7 +386,7 @@ func (r *DockerRuntime) RunCandidateCommand(ctx context.Context, machine *domain
 				return nil
 			}
 
-			_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(cleanupCandidateVerificationScript, "ku-verify-cleanup", repository, runID.String(), candidate.Commit, owner), "", repositoryHelperInvocation{RunID: runID, Cleanup: true})
+			_, err = r.runRepositoryHelper(ctx, machine, services, isolatedGitCommand(cleanupCandidateVerificationScript, "strifira-verify-cleanup", repository, runID.String(), candidate.Commit, owner), "", repositoryHelperInvocation{RunID: runID, Cleanup: true})
 			if err != nil {
 				return fmt.Errorf("private candidate cleanup failed: %w", err)
 			}

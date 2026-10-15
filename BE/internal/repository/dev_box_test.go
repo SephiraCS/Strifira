@@ -13,13 +13,13 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/domain"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,7 +54,7 @@ func devBoxTestDatabase(t *testing.T) *sqlx.DB {
 	admin, err := sqlx.ConnectContext(t.Context(), "pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	databaseName := "ku_devbox_repository_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "strifira_devbox_repository_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(t.Context(), `CREATE DATABASE "`+databaseName+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -104,14 +104,14 @@ func newDevBoxFixture(t *testing.T, db *sqlx.DB) devBoxFixture {
 		_, err := db.ExecContext(t.Context(), stmt.query, stmt.args...)
 		require.NoError(t, err)
 	}
-	f.box = &domain.DevBox{ID: uuid.New(), WorkspaceID: f.workspaceID, CreatedByUserID: f.userID, Name: "ku", Enabled: true, TokenHash: strings.ReplaceAll(uuid.NewString()+uuid.NewString(), "-", ""), TokenPrefix: "kub_test", Providers: json.RawMessage(`[{"id":"codex","version":"test"}]`)}
+	f.box = &domain.DevBox{ID: uuid.New(), WorkspaceID: f.workspaceID, CreatedByUserID: f.userID, Name: "strifira", Enabled: true, TokenHash: strings.ReplaceAll(uuid.NewString()+uuid.NewString(), "-", ""), TokenPrefix: "strifira_test", Providers: json.RawMessage(`[{"id":"codex","version":"test"}]`)}
 	require.NoError(t, f.repo.CreateBox(t.Context(), f.box))
 	return f
 }
 func (f devBoxFixture) job() *domain.DevBoxJob {
 	id := uuid.New()
 	return &domain.DevBoxJob{ID: id, WorkspaceID: f.workspaceID, BoxID: f.box.ID, RequestedByUserID: f.userID, IssueID: f.issueID, IssueIdentifier: "BOX-1", GitHubRepoID: f.repoID,
-		Provider: "codex", Prompt: "Implement a real change and test it", RepositoryURL: "https://github.test/test/repo.git", RepositoryFullName: "test/repo", BaseBranch: "main", WorkingBranch: "ku/BOX-1-" + id.String(), MaxRuntimeSeconds: 300}
+		Provider: "codex", Prompt: "Implement a real change and test it", RepositoryURL: "https://github.test/test/repo.git", RepositoryFullName: "test/repo", BaseBranch: "main", WorkingBranch: "strifira/BOX-1-" + id.String(), MaxRuntimeSeconds: 300}
 }
 func (f devBoxFixture) runningJob(t *testing.T) (*domain.DevBoxJob, string) {
 	t.Helper()
@@ -302,7 +302,7 @@ func TestDevBoxRepositoryPostgres(t *testing.T) {
 				require.NoError(t, f.repo.CreateJob(t.Context(), f.job()))
 				switch action {
 				case "rotate":
-					_, err := f.repo.RotateBoxToken(t.Context(), f.workspaceID, f.box.ID, f.userID, strings.Repeat("r", 64), "kub_new")
+					_, err := f.repo.RotateBoxToken(t.Context(), f.workspaceID, f.box.ID, f.userID, strings.Repeat("r", 64), "strifira_new")
 					require.NoError(t, err)
 				case "disable":
 					_, err := f.repo.UpdateBox(t.Context(), f.workspaceID, f.box.ID, f.userID, nil, new(false))
@@ -441,7 +441,7 @@ func TestDevBoxRepositoryPostgres(t *testing.T) {
 		newHash := strings.Repeat("n", 64)
 		var wg sync.WaitGroup
 		wg.Go(func() {
-			_, err := f.repo.RotateBoxToken(t.Context(), f.workspaceID, f.box.ID, f.userID, newHash, "kub_rotated")
+			_, err := f.repo.RotateBoxToken(t.Context(), f.workspaceID, f.box.ID, f.userID, newHash, "strifira_rotated")
 			rotated <- err
 		})
 		waitForBoxLock := func(queryPrefix string) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ku/ku-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 )
 
 // loadSpec parses the embedded document and returns its paths.

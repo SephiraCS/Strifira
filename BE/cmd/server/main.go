@@ -23,20 +23,20 @@ import (
 	echomw "github.com/labstack/echo/v4/middleware"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/ku/ku-backend/internal/agent"
-	"github.com/ku/ku-backend/internal/apidocs"
-	"github.com/ku/ku-backend/internal/config"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/handler"
-	"github.com/ku/ku-backend/internal/mcpserver"
-	"github.com/ku/ku-backend/internal/metrics"
-	mw "github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/crypto"
-	"github.com/ku/ku-backend/pkg/safego"
-	"github.com/ku/ku-backend/pkg/storage"
+	"github.com/SephiraCS/strifira-backend/internal/agent"
+	"github.com/SephiraCS/strifira-backend/internal/apidocs"
+	"github.com/SephiraCS/strifira-backend/internal/config"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/handler"
+	"github.com/SephiraCS/strifira-backend/internal/mcpserver"
+	"github.com/SephiraCS/strifira-backend/internal/metrics"
+	mw "github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
+	"github.com/SephiraCS/strifira-backend/pkg/safego"
+	"github.com/SephiraCS/strifira-backend/pkg/storage"
 )
 
 func main() {
@@ -658,7 +658,7 @@ func main() {
 	api.DELETE("/api-keys/:id", apiKeyH.Revoke)
 
 	// MCP endpoint: stateless streamable HTTP, authenticated with a
-	// personal API key (Authorization: Bearer ku_...). Tools run with the
+	// personal API key (Authorization: Bearer strifira_...). Tools run with the
 	// key owner's identity and workspace RBAC.
 	e.Any("/mcp", echo.WrapHandler(mcpHandler), mw.APIKeyAuth(apiKeySvc))
 

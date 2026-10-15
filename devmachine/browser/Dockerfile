@@ -28,15 +28,15 @@ RUN apt-get update \
     && rm -f /tmp/kasmvnc.deb /tmp/chrome.deb \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /home/ku \
-    && chown 1000:1000 /home/ku
-COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
-COPY --from=cdp-proxy-build /cdp-proxy /usr/local/bin/ku-browser-cdp-proxy
-COPY browser/start.sh /usr/local/bin/ku-browser-start
-COPY browser/healthcheck.sh /usr/local/bin/ku-browser-healthcheck
-RUN chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-browser-cdp-proxy /usr/local/bin/ku-browser-start /usr/local/bin/ku-browser-healthcheck
+    && mkdir -p /home/strifira \
+    && chown 1000:1000 /home/strifira
+COPY common/strifira-service-entrypoint /usr/local/bin/strifira-service-entrypoint
+COPY --from=cdp-proxy-build /cdp-proxy /usr/local/bin/strifira-browser-cdp-proxy
+COPY browser/start.sh /usr/local/bin/strifira-browser-start
+COPY browser/healthcheck.sh /usr/local/bin/strifira-browser-healthcheck
+RUN chmod 0755 /usr/local/bin/strifira-service-entrypoint /usr/local/bin/strifira-browser-cdp-proxy /usr/local/bin/strifira-browser-start /usr/local/bin/strifira-browser-healthcheck
 
 USER 1000:1000
-ENV HOME=/home/ku DISPLAY=:1
+ENV HOME=/home/strifira DISPLAY=:1
 EXPOSE 3000 9222
-CMD ["/usr/local/bin/ku-browser-start"]
+CMD ["/usr/local/bin/strifira-browser-start"]

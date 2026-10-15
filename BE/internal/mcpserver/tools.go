@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// registerTools wires every ku MCP tool. Inputs are plain structs; the SDK
+// registerTools wires every strifira MCP tool. Inputs are plain structs; the SDK
 // infers their JSON schema, validates arguments, and converts returned
 // errors into tool-level error results (not protocol failures).
 func registerTools(s *mcp.Server, deps Deps) {

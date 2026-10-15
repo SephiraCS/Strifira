@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
 	"github.com/labstack/echo/v4"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -283,7 +283,7 @@ func connectMCP(t *testing.T, env *mcpTestEnv, token string) *mcp.ClientSession 
 		Endpoint:   env.server.URL + "/mcp",
 		HTTPClient: &http.Client{Transport: bearerClient{token}, Timeout: 10 * time.Second},
 	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "ku-test", Version: "1.0"}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "strifira-test", Version: "1.0"}, nil)
 	session, err := client.Connect(context.Background(), transport, nil)
 	require.NoError(t, err, "initialize over streamable HTTP must succeed with a valid key")
 	t.Cleanup(func() { _ = session.Close() })
@@ -451,7 +451,7 @@ func TestMCPAuthFailures(t *testing.T) {
 	}
 
 	assert.Equal(t, http.StatusUnauthorized, post(""), "missing key must 401")
-	assert.Equal(t, http.StatusUnauthorized, post("Bearer ku_bogus"), "unknown key must 401")
+	assert.Equal(t, http.StatusUnauthorized, post("Bearer strifira_bogus"), "unknown key must 401")
 	assert.Equal(t, http.StatusOK, post("Bearer "+env.fullToken), "valid key passes the gate")
 
 	// A revoked key stops authenticating immediately (stateless mode
@@ -484,7 +484,7 @@ func TestMCPPublicHostHeaderAccepted(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Authorization", "Bearer "+env.fullToken)
-	req.Host = "ku.mariogk.com"
+	req.Host = "strifira.mariogk.com"
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)

@@ -28,16 +28,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"nhooyr.io/websocket"
 
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/handler"
-	"github.com/ku/ku-backend/internal/metrics"
-	mw "github.com/ku/ku-backend/internal/middleware"
-	"github.com/ku/ku-backend/internal/realtime"
-	"github.com/ku/ku-backend/internal/repository"
-	"github.com/ku/ku-backend/internal/service"
-	"github.com/ku/ku-backend/pkg/crypto"
-	jwtpkg "github.com/ku/ku-backend/pkg/jwt"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/handler"
+	"github.com/SephiraCS/strifira-backend/internal/metrics"
+	mw "github.com/SephiraCS/strifira-backend/internal/middleware"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/crypto"
+	jwtpkg "github.com/SephiraCS/strifira-backend/pkg/jwt"
 )
 
 const (
@@ -91,7 +91,7 @@ func setupObservabilityWith(t *testing.T, opts obsOptions) *obsEnv {
 	admin, err := sql.Open("pgx", databaseURL)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = admin.Close() })
-	name := "ku_handler_obs_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	name := "strifira_handler_obs_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+name+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = admin.ExecContext(context.Background(), `DROP DATABASE "`+name+`" WITH (FORCE)`) })
@@ -455,8 +455,8 @@ func TestMetricsExposeRequestsAndGitHubWebhookOutcomes(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rawRequest(http.MethodGet, "/api/test/panic"))
 
 	after := env.metricsText(t)
-	require.Contains(t, after, `ku_http_requests_total{method="GET",route="/api/workspaces/:slug/issues/:identifier/sub-issues",status="200"}`)
-	require.Contains(t, after, `ku_http_request_duration_seconds_bucket{method="POST",route="/api/workspaces/:slug/issues",le="+Inf"}`)
+	require.Contains(t, after, `strifira_http_requests_total{method="GET",route="/api/workspaces/:slug/issues/:identifier/sub-issues",status="200"}`)
+	require.Contains(t, after, `strifira_http_request_duration_seconds_bucket{method="POST",route="/api/workspaces/:slug/issues",le="+Inf"}`)
 	require.NotContains(t, after, parent.Identifier, "route labels must use templates, not concrete paths")
 	require.NotContains(t, after, `route="/metrics"`)
 	require.NotContains(t, after, "attacker_chosen_event")
@@ -466,11 +466,11 @@ func TestMetricsExposeRequestsAndGitHubWebhookOutcomes(t *testing.T) {
 	require.Contains(t, after, `route="unmatched",status="404"`)
 
 	for _, sample := range []string{
-		`ku_github_webhook_deliveries_total{event="push",result="invalid_signature"}`,
-		`ku_github_webhook_deliveries_total{event="issues",result="processed"}`,
-		`ku_github_webhook_deliveries_total{event="push",result="error"}`,
-		`ku_github_webhook_deliveries_total{event="other",result="invalid_signature"}`,
-		`ku_http_requests_total{method="GET",route="/api/test/panic",status="500"}`,
+		`strifira_github_webhook_deliveries_total{event="push",result="invalid_signature"}`,
+		`strifira_github_webhook_deliveries_total{event="issues",result="processed"}`,
+		`strifira_github_webhook_deliveries_total{event="push",result="error"}`,
+		`strifira_github_webhook_deliveries_total{event="other",result="invalid_signature"}`,
+		`strifira_http_requests_total{method="GET",route="/api/test/panic",status="500"}`,
 	} {
 		require.Equal(t, counterValue(before, sample)+1, counterValue(after, sample), sample)
 	}

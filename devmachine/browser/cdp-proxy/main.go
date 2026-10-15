@@ -12,8 +12,8 @@ import (
 )
 
 func main() {
-	token := os.Getenv("KU_BROWSER_CDP_TOKEN")
-	listenAddress := os.Getenv("KU_BROWSER_CDP_LISTEN")
+	token := os.Getenv("STRIFIRA_BROWSER_CDP_TOKEN")
+	listenAddress := os.Getenv("STRIFIRA_BROWSER_CDP_LISTEN")
 	if token == "" || listenAddress == "" {
 		log.Fatal("browser CDP token and listen address are required")
 	}

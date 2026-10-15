@@ -8,11 +8,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/service"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -149,7 +149,7 @@ func registerDevBoxHostTools(s *mcp.Server, deps Deps) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "register_dev_box", Title: "Register my development box",
-		Description: "Register an existing trusted development host under the API key owner's identity. Requires write scope and dev_machine:create. Returns a dedicated kub_ worker token once; protect the token from transcripts, logs and coding tools and store it in a private regular file. Does not provision or start a VM.",
+		Description: "Register an existing trusted development host under the API key owner's identity. Requires write scope and dev_machine:create. Returns a dedicated strifira_ worker token once; protect the token from transcripts, logs and coding tools and store it in a private regular file. Does not provision or start a VM.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
 		Workspace string `json:"workspace"`
 		Name      string `json:"name" jsonschema:"development box name, at most 100 characters"`
@@ -202,7 +202,7 @@ func registerDevBoxHostTools(s *mcp.Server, deps Deps) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "rotate_dev_box_token", Title: "Rotate my development box token",
-		Description: "Replace your own development box's worker token, invalidating the old credential. Requires write scope and dev_machine:manage. The new dedicated kub_ token is returned once; store it privately and never print or log it.",
+		Description: "Replace your own development box's worker token, invalidating the old credential. Requires write scope and dev_machine:manage. The new dedicated strifira_ token is returned once; store it privately and never print or log it.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in devBoxToolBoxInput) (*mcp.CallToolResult, any, error) {
 		id, w, err := devBoxToolGuard(ctx, deps, in.Workspace, domain.PermDevMachineManage, true)
 		if err != nil {

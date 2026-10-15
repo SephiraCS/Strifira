@@ -1,5 +1,5 @@
 /**
- * Latest Ku release, resolved at runtime.
+ * Latest Strifira release, resolved at runtime.
  *
  * Mirrors the app's mechanism in UI/src/lib/release.ts: the releases
  * manifest is served from the repository's main branch and the first
@@ -11,10 +11,10 @@
  */
 
 export const FALLBACK_VERSION = 'v0.1.12';
-export const RELEASES_PAGE_URL = 'https://github.com/carbogninalberto/kuayle/releases';
+export const RELEASES_PAGE_URL = 'https://github.com/SephiraCS/Strifira/releases';
 
 const RELEASES_MANIFEST_URL =
-	'https://raw.githubusercontent.com/carbogninalberto/kuayle/main/UI/static/releases.json';
+	'https://raw.githubusercontent.com/SephiraCS/Strifira/main/UI/static/releases.json';
 const RELEASE_VERSION = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const RELEASE_RETRY_DELAYS_MS = [0, 250, 1000];
 
@@ -79,7 +79,7 @@ function releaseUrlFor(tagName: string, value: string | undefined): string {
 			url.port !== '' ||
 			path.length !== 5 ||
 			path[0].toLowerCase() !== 'carbogninalberto' ||
-			path[1].toLowerCase() !== 'ku' ||
+			path[1].toLowerCase() !== 'strifira' ||
 			path[2] !== 'releases' ||
 			path[3] !== 'tag' ||
 			path[4] !== tagName

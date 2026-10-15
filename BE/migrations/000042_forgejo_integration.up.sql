@@ -1,6 +1,6 @@
 -- Forgejo integration: replaces the GitHub App integration (000019/000020).
 -- Connections hold a per-workspace instance URL + encrypted token; repos carry
--- the webhook ku created so unlinking can remove it again. PRs link to issues
+-- the webhook strifira created so unlinking can remove it again. PRs link to issues
 -- many-to-many so a PR body referencing several identifiers links them all.
 
 CREATE TABLE forgejo_connections (

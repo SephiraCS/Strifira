@@ -1,6 +1,6 @@
 {
-	"name": "Ku",
-	"short_name": "Ku",
+	"name": "Strifira",
+	"short_name": "Strifira",
 	"description": "The keyboard-driven, self-hosted issue tracker with no paid tier. Available in one public Apache 2.0 repository.",
 	"start_url": "/",
 	"display": "browser",

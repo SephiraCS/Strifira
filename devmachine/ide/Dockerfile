@@ -23,11 +23,11 @@ ARG TAR_VERSION=7.5.21
 ARG UNDICI_VERSION=7.29.1
 
 COPY --from=node-stage /usr/local /usr/local
-COPY common/ku-service-entrypoint /usr/local/bin/ku-service-entrypoint
-COPY ide/start.sh /usr/local/bin/ku-ide-start
-COPY ide/shell.sh /usr/local/bin/ku-shell
-COPY ide/terminal-session.sh /usr/local/bin/ku-terminal-session
-COPY ide/command-event.js /usr/local/lib/ku-command-event.js
+COPY common/strifira-service-entrypoint /usr/local/bin/strifira-service-entrypoint
+COPY ide/start.sh /usr/local/bin/strifira-ide-start
+COPY ide/shell.sh /usr/local/bin/strifira-shell
+COPY ide/terminal-session.sh /usr/local/bin/strifira-terminal-session
+COPY ide/command-event.js /usr/local/lib/strifira-command-event.js
 COPY ide/tmux.conf /etc/tmux.conf
 # VS Code's npm support extension is not the npm CLI package; keep its manifest identity unambiguous.
 RUN apt-get update \
@@ -63,9 +63,9 @@ RUN apt-get update \
     && rm -rf /root/.npm /tmp/npmpatch /tmp/code-server-patches /var/lib/apt/lists/* \
     && rm -f /tmp/code-server.deb \
     && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
-    && mkdir -p /home/ku \
-    && chown 1000:1000 /home/ku \
-    && chmod 0755 /usr/local/bin/ku-service-entrypoint /usr/local/bin/ku-ide-start /usr/local/bin/ku-shell /usr/local/bin/ku-terminal-session \
+    && mkdir -p /home/strifira \
+    && chown 1000:1000 /home/strifira \
+    && chmod 0755 /usr/local/bin/strifira-service-entrypoint /usr/local/bin/strifira-ide-start /usr/local/bin/strifira-shell /usr/local/bin/strifira-terminal-session \
     && code-server --version \
     && node --version \
     && npm --version \
@@ -75,10 +75,10 @@ RUN apt-get update \
     && ttyd --version \
     && rm -rf /root/.config/code-server \
     && user_name=$(getent passwd 1000 | cut -d: -f1) \
-    && printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user_name" > /etc/sudoers.d/ku-builder \
-    && chmod 0440 /etc/sudoers.d/ku-builder
+    && printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user_name" > /etc/sudoers.d/strifira-builder \
+    && chmod 0440 /etc/sudoers.d/strifira-builder
 
 USER 1000:1000
-ENV HOME=/home/ku
+ENV HOME=/home/strifira
 EXPOSE 8080 7681
-CMD ["/usr/local/bin/ku-ide-start"]
+CMD ["/usr/local/bin/strifira-ide-start"]

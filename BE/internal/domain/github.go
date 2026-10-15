@@ -30,7 +30,7 @@ type GitHubWorkspaceDisable struct {
 }
 
 // GitHubRepoModel is a repository linked to a workspace. The webhook fields
-// track the webhook ku itself created on the repository so unlinking can
+// track the webhook strifira itself created on the repository so unlinking can
 // remove it again.
 type GitHubRepoModel struct {
 	ID            uuid.UUID `json:"id" db:"id"`

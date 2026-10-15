@@ -60,7 +60,7 @@
 	}
 
 	function goToWorkspace(ws: Workspace) {
-		localStorage.setItem('ku_last_workspace', ws.slug);
+		localStorage.setItem('strifira_last_workspace', ws.slug);
 		goto(`/${ws.slug}/my-issues`);
 	}
 
@@ -85,7 +85,7 @@
 		try {
 			const workspace = await createWorkspace(workspaceName, workspaceSlug);
 			workspaces = [...workspaces, workspace].sort((a, b) => a.name.localeCompare(b.name));
-			localStorage.setItem('ku_last_workspace', workspace.slug);
+			localStorage.setItem('strifira_last_workspace', workspace.slug);
 			appToast.success(m['sidebar.workspace_created']());
 			showCreateWorkspace = false;
 			newWorkspaceName = '';

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
 )
 
 var ErrLocalEnvironmentMissing = errors.New("local development environment image is missing")
@@ -69,16 +69,16 @@ func validateEnvironmentImageLabels(labels map[string]string, workspaceID, envir
 	if labels == nil {
 		return fmt.Errorf("missing image labels")
 	}
-	if labels["com.ku.managed"] != "true" {
-		return fmt.Errorf("missing Ku management label")
+	if labels["com.strifira.managed"] != "true" {
+		return fmt.Errorf("missing Strifira management label")
 	}
-	if labels["com.ku.kind"] != "dev-machine-environment" {
-		return fmt.Errorf("not a Ku development environment image")
+	if labels["com.strifira.kind"] != "dev-machine-environment" {
+		return fmt.Errorf("not a Strifira development environment image")
 	}
-	if labels["com.ku.environment-id"] != environmentID.String() {
+	if labels["com.strifira.environment-id"] != environmentID.String() {
 		return fmt.Errorf("environment label mismatch")
 	}
-	if labels["com.ku.workspace-id"] != workspaceID.String() {
+	if labels["com.strifira.workspace-id"] != workspaceID.String() {
 		return fmt.Errorf("workspace label mismatch")
 	}
 	return nil

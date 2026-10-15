@@ -11,7 +11,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
  * against the deployed build.
  */
 
-const BASE = 'https://ku.mariogk.com';
+const BASE = 'https://strifira.mariogk.com';
 const RUN = Date.now().toString(36);
 
 async function newUser(request: APIRequestContext, role: string) {

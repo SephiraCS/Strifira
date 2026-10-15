@@ -17,13 +17,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 
-const machineSessionCookie = "__Host-ku-machine"
+const machineSessionCookie = "__Host-strifira-machine"
 
 var routingKeyPattern = regexp.MustCompile(`^[a-z0-9]{12,32}$`)
 
@@ -489,7 +489,7 @@ func stripCredentials(header http.Header) {
 	header.Del("Authorization")
 	header.Del("Proxy-Authorization")
 	for name := range header {
-		if strings.HasPrefix(strings.ToLower(name), "x-ku-") {
+		if strings.HasPrefix(strings.ToLower(name), "x-strifira-") {
 			header.Del(name)
 		}
 	}

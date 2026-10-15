@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClientTokenNeverFollowsRedirectOrAppearsInPublishedContent(t *testing.T) {
-	token := "kub_" + strings.Repeat("a", 64)
+	token := "strifira_" + strings.Repeat("a", 64)
 	var leaked bool
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked = true }))
 	defer destination.Close()
@@ -190,7 +190,7 @@ func TestCompletionUntrustedTLSCertificateIsPermanent(t *testing.T) {
 }
 
 func TestCompletionPreservesMaximumEscapedResultAndIdenticalRetry(t *testing.T) {
-	result := Result{Status: "succeeded", ExitCode: 0, Summary: strings.Repeat("<", 8192), Branch: "ku/" + strings.Repeat("b", 252),
+	result := Result{Status: "succeeded", ExitCode: 0, Summary: strings.Repeat("<", 8192), Branch: "strifira/" + strings.Repeat("b", 252),
 		Patch: strings.Repeat("<", maxPatchBytes), TestStatus: "passed", TestExitCode: new(0)}
 	for range 500 {
 		result.ChangedFiles = append(result.ChangedFiles, strings.Repeat("<", 4096))
@@ -222,7 +222,7 @@ func TestCompletionPreservesMaximumEscapedResultAndIdenticalRetry(t *testing.T) 
 		bodies <- observation{length: len(body), hash: sha256.Sum256(body), result: request.Result}
 	}))
 	defer server.Close()
-	client := NewClient(Config{ServerURL: server.URL}, "kub_"+strings.Repeat("a", 64))
+	client := NewClient(Config{ServerURL: server.URL}, "strifira_"+strings.Repeat("a", 64))
 	require.NoError(t, (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{Token: "kl_" + strings.Repeat("b", 64)}, result))
 	require.Equal(t, int32(2), requests.Load())
 	first, replay := <-bodies, <-bodies
@@ -254,7 +254,7 @@ func TestCompletionEncodedBodyLimitUsesFinalRedactedBytes(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			defer server.Close()
-			token, lease := "kub_"+strings.Repeat("a", 64), "kl_"+strings.Repeat("b", 64)
+			token, lease := "strifira_"+strings.Repeat("a", 64), "kl_"+strings.Repeat("b", 64)
 			result := Result{Status: "failed", ExitCode: -1, TestStatus: "not_run"}
 			base := completionRequestLength(t, lease, result)
 			switch scenario {

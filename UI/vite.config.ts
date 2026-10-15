@@ -4,8 +4,8 @@ import { defineConfig, loadEnv, type ConfigEnv } from 'vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 
 export function createViteConfig({ mode }: ConfigEnv, envDir = '..') {
-	const env = loadEnv(mode, envDir, 'KU_DEV_');
-	const apiUrl = env.KU_DEV_API_URL || 'http://localhost:8080';
+	const env = loadEnv(mode, envDir, 'STRIFIRA_DEV_');
+	const apiUrl = env.STRIFIRA_DEV_API_URL || 'http://localhost:8080';
 
 	return {
 		envDir,
@@ -23,7 +23,7 @@ export function createViteConfig({ mode }: ConfigEnv, envDir = '..') {
 			sveltekit()
 		],
 		server: {
-			port: Number(env.KU_DEV_UI_PORT || '5173'),
+			port: Number(env.STRIFIRA_DEV_UI_PORT || '5173'),
 			proxy: {
 				'/api': {
 					target: apiUrl,

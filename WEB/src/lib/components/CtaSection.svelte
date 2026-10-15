@@ -4,7 +4,7 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 
 	let {
-		heading = 'Review Ku before you deploy it',
+		heading = 'Review Strifira before you deploy it',
 		description = 'Inspect the Apache 2.0 source, then follow the Docker Compose guide to run an instance on your infrastructure.'
 	}: {
 		heading?: string;
@@ -23,7 +23,7 @@
 		<p class="mt-3 text-muted-foreground">{description}</p>
 		<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
 			<Button
-				href="https://github.com/carbogninalberto/kuayle"
+				href="https://github.com/SephiraCS/Strifira"
 				target="_blank"
 				rel="noopener"
 				size="lg"

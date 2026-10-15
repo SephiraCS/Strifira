@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/repository"
 	log "github.com/sirupsen/logrus"
 )
 

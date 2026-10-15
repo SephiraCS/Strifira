@@ -62,7 +62,7 @@ class ApiClient {
 			return this.fetch<void>('/api/auth/refresh', { method: 'POST' });
 		}
 		return locks.request<void>(
-			'ku:auth-refresh',
+			'strifira:auth-refresh',
 			{ mode: 'exclusive' },
 			() => this.fetch<void>('/api/auth/refresh', { method: 'POST' })
 		);

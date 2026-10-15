@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/google/uuid"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/repository"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +28,7 @@ func TestIssueArchivingMigrationAndQueries(t *testing.T) {
 	t.Cleanup(func() { _ = admin.Close() })
 	require.NoError(t, admin.PingContext(ctx))
 
-	databaseName := "ku_archive_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	databaseName := "strifira_archive_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	_, err = admin.ExecContext(ctx, `CREATE DATABASE "`+databaseName+`"`)
 	require.NoError(t, err)
 	t.Cleanup(func() {

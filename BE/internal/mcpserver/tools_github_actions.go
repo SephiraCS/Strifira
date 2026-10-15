@@ -9,11 +9,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/SephiraCS/strifira-backend/internal/domain"
+	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/service"
+	gh "github.com/SephiraCS/strifira-backend/pkg/github"
 	"github.com/google/uuid"
-	"github.com/ku/ku-backend/internal/domain"
-	"github.com/ku/ku-backend/internal/dto"
-	"github.com/ku/ku-backend/internal/service"
-	gh "github.com/ku/ku-backend/pkg/github"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -31,7 +31,7 @@ type GitHubActionsToolsService interface {
 
 type githubActionsRepoInput struct {
 	Workspace string `json:"workspace" jsonschema:"workspace slug"`
-	Repo      string `json:"repo" jsonschema:"active linked repository full name (owner/name) or Ku repository UUID"`
+	Repo      string `json:"repo" jsonschema:"active linked repository full name (owner/name) or Strifira repository UUID"`
 }
 
 type githubActionsPageInput struct {

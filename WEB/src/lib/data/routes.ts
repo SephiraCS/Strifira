@@ -1,5 +1,5 @@
 /**
- * Route and content registry for the Ku marketing site.
+ * Route and content registry for the Strifira marketing site.
  * All routes are statically prerenderable.
  *
  * This file serves as the single source of truth for:
@@ -112,8 +112,8 @@ export const HUBS: Record<string, Hub> = {
 		label: 'Compare',
 		href: '/compare',
 		children: [
-			{ slug: 'ku-vs-linear', label: 'Ku vs Linear', href: '/compare/ku-vs-linear', description: 'Self-hosted source access versus a mature hosted service.' },
-			{ slug: 'ku-vs-plane', label: 'Ku vs Plane', href: '/compare/ku-vs-plane', description: 'A focused ungated tracker versus a broader suite with commercial plans.' }
+			{ slug: 'strifira-vs-linear', label: 'Strifira vs Linear', href: '/compare/strifira-vs-linear', description: 'Self-hosted source access versus a mature hosted service.' },
+			{ slug: 'strifira-vs-plane', label: 'Strifira vs Plane', href: '/compare/strifira-vs-plane', description: 'A focused ungated tracker versus a broader suite with commercial plans.' }
 		]
 	},
 	alternatives: {
@@ -139,16 +139,16 @@ export interface StandalonePage {
 
 export const STANDALONE_PAGES: StandalonePage[] = [
 	{ slug: '', title: '', description: '', canonical: url('/'), inSitemap: true },
-	{ slug: 'features', title: 'Ku Features — Issues, Cycles, Projects and GitHub', description: `Review released issue tracking, cycle, project, GitHub and analytics features alongside ${DEV_MACHINES_RELEASE_STATUS.toLowerCase()} Dev Machine development.`, canonical: url('/features'), inSitemap: true },
-	{ slug: 'self-hosting', title: 'Self-Host Ku With Docker Compose', description: 'Deploy Ku with Caddy, PostgreSQL, Redis, the Go API and SvelteKit frontend; configure storage, updates and GitHub webhooks.', canonical: url('/self-hosting'), inSitemap: true },
-	{ slug: 'compare', title: 'Compare Ku — Issue Tracker Comparisons', description: 'Compare Ku with Linear and Plane by hosting model, license, workflow coverage, product maturity and operating cost.', canonical: url('/compare'), inSitemap: true },
-	{ slug: 'alternatives', title: 'Issue Tracker Alternatives — Ku', description: 'Compare open-source and self-hosted issue trackers by license, edition model, product scope, deployment footprint and operator responsibility.', canonical: url('/alternatives'), inSitemap: true },
-	{ slug: 'open-source', title: 'Ku Open-Source Model — Apache 2.0, One Edition', description: 'Understand Ku’s Apache 2.0 license, single public repository, ungated feature model and self-hosting costs.', canonical: url('/open-source'), inSitemap: true },
-	{ slug: 'license', title: 'Ku License — Apache 2.0', description: 'A plain-language summary of Ku’s Apache 2.0 permissions, redistribution conditions, patent grant and warranty limits.', canonical: url('/license'), inSitemap: true },
-	{ slug: 'security', title: 'Ku Security and Self-Hosting Responsibilities', description: 'Review Ku authentication, network exposure, credential storage, update flow and operator security responsibilities.', canonical: url('/security'), inSitemap: true },
-	{ slug: 'about', title: 'About Ku — Product, Maintainer and Current State', description: `Why Ku exists, who maintains it, how it is built and what the current ${FALLBACK_VERSION} release implements.`, canonical: url('/about'), inSitemap: true },
-	{ slug: 'roadmap', title: 'Ku Roadmap and Development Status', description: `See what Ku ${FALLBACK_VERSION} implements, which product gaps remain and where proposed work is tracked.`, canonical: url('/roadmap'), inSitemap: true },
-	{ slug: 'privacy', title: 'Privacy Policy — Ku', description: 'Ku privacy policy: what we collect, the cookies we use, your GDPR rights, and how to contact us.', canonical: url('/privacy'), inSitemap: true }
+	{ slug: 'features', title: 'Strifira Features — Issues, Cycles, Projects and GitHub', description: `Review released issue tracking, cycle, project, GitHub and analytics features alongside ${DEV_MACHINES_RELEASE_STATUS.toLowerCase()} Dev Machine development.`, canonical: url('/features'), inSitemap: true },
+	{ slug: 'self-hosting', title: 'Self-Host Strifira With Docker Compose', description: 'Deploy Strifira with Caddy, PostgreSQL, Redis, the Go API and SvelteKit frontend; configure storage, updates and GitHub webhooks.', canonical: url('/self-hosting'), inSitemap: true },
+	{ slug: 'compare', title: 'Compare Strifira — Issue Tracker Comparisons', description: 'Compare Strifira with Linear and Plane by hosting model, license, workflow coverage, product maturity and operating cost.', canonical: url('/compare'), inSitemap: true },
+	{ slug: 'alternatives', title: 'Issue Tracker Alternatives — Strifira', description: 'Compare open-source and self-hosted issue trackers by license, edition model, product scope, deployment footprint and operator responsibility.', canonical: url('/alternatives'), inSitemap: true },
+	{ slug: 'open-source', title: 'Strifira Open-Source Model — Apache 2.0, One Edition', description: 'Understand Strifira’s Apache 2.0 license, single public repository, ungated feature model and self-hosting costs.', canonical: url('/open-source'), inSitemap: true },
+	{ slug: 'license', title: 'Strifira License — Apache 2.0', description: 'A plain-language summary of Strifira’s Apache 2.0 permissions, redistribution conditions, patent grant and warranty limits.', canonical: url('/license'), inSitemap: true },
+	{ slug: 'security', title: 'Strifira Security and Self-Hosting Responsibilities', description: 'Review Strifira authentication, network exposure, credential storage, update flow and operator security responsibilities.', canonical: url('/security'), inSitemap: true },
+	{ slug: 'about', title: 'About Strifira — Product, Maintainer and Current State', description: `Why Strifira exists, who maintains it, how it is built and what the current ${FALLBACK_VERSION} release implements.`, canonical: url('/about'), inSitemap: true },
+	{ slug: 'roadmap', title: 'Strifira Roadmap and Development Status', description: `See what Strifira ${FALLBACK_VERSION} implements, which product gaps remain and where proposed work is tracked.`, canonical: url('/roadmap'), inSitemap: true },
+	{ slug: 'privacy', title: 'Privacy Policy — Strifira', description: 'Strifira privacy policy: what we collect, the cookies we use, your GDPR rights, and how to contact us.', canonical: url('/privacy'), inSitemap: true }
 ];
 
 // ---- All indexable routes (for sitemap + validation) ----
@@ -182,13 +182,13 @@ export function allRoutes(): { path: string; priority: number; changefreq: strin
 export const ORGANIZATION_LD = {
 	'@context': 'https://schema.org',
 	'@type': 'Organization',
-	name: 'Bakney srl',
-	url: 'https://kuayle.com',
+	name: 'Sephira',
+	url: 'https://strifira.sephira.app.br',
 	logo: url('/logo_primary.svg'),
-	sameAs: ['https://github.com/carbogninalberto/kuayle'],
+	sameAs: ['https://github.com/SephiraCS/Strifira'],
 	contactPoint: {
 		'@type': 'ContactPoint',
-		email: 'support@bakney.com',
+		url: 'https://github.com/SephiraCS/Strifira/issues',
 		contactType: 'customer support'
 	}
 };
@@ -196,14 +196,14 @@ export const ORGANIZATION_LD = {
 export const WEBSITE_LD = {
 	'@context': 'https://schema.org',
 	'@type': 'WebSite',
-	name: 'Ku',
+	name: 'Strifira',
 	url: url('/')
 };
 
 export const SOFTWARE_APP_LD = {
 	'@context': 'https://schema.org',
 	'@type': 'SoftwareApplication',
-	name: 'Ku',
+	name: 'Strifira',
 	url: url('/'),
 	description: 'A keyboard-driven, self-hosted issue tracker licensed under Apache 2.0.',
 	applicationCategory: 'BusinessApplication',

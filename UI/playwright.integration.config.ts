@@ -1,9 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
 // This suite creates accounts and workspaces. Only its disposable local
-// launcher may opt in; never silently point it at a deployed Ku instance.
-const baseURL = process.env.KU_LIVE_BASE_URL;
-if (process.env.KU_LIVE_ISOLATED !== '1' || !baseURL || new URL(baseURL).hostname !== '127.0.0.1') {
+// launcher may opt in; never silently point it at a deployed Strifira instance.
+const baseURL = process.env.STRIFIRA_LIVE_BASE_URL;
+if (process.env.STRIFIRA_LIVE_ISOLATED !== '1' || !baseURL || new URL(baseURL).hostname !== '127.0.0.1') {
 	throw new Error('Run node ../scripts/check-screen-share-live.mjs for an isolated live test.');
 }
 
@@ -16,7 +16,7 @@ export default defineConfig({
 	timeout: 180_000,
 	expect: { timeout: 30_000 },
 	reporter: [['list'], ['json', { outputFile: 'test-results/integration/results.json' }]],
-	outputDir: process.env.KU_LIVE_OUTPUT_DIR ?? 'test-results/integration',
+	outputDir: process.env.STRIFIRA_LIVE_OUTPUT_DIR ?? 'test-results/integration',
 	use: {
 		baseURL,
 		browserName: 'chromium',
