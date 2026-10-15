@@ -3,7 +3,7 @@
 	<p><strong>The issue tracker with no paid tier.</strong></p>
 	<p>Keyboard-driven, self-hosted, and available in one public Apache 2.0 repository.</p>
 
-[Report Bug](https://github.com/SephiraCS/Strifira/issues/new?labels=bug) · [Request Feature](https://github.com/SephiraCS/Strifira/issues/new?labels=enhancement)
+[Website](https://strifira.sephira.app.br) · [Report Bug](https://github.com/SephiraCS/Strifira/issues/new?labels=bug) · [Request Feature](https://github.com/SephiraCS/Strifira/issues/new?labels=enhancement)
 
 </div>
 
@@ -21,15 +21,17 @@
 
 ## 🚦 Current Implementation State
 
-Strifira's published releases are runnable MVPs, not a mature enterprise platform. This development branch also contains unreleased work described below. The repository includes the Go API, SvelteKit frontend, database migrations, development tooling, and reference self-hosting configuration.
+Strifira's published releases are runnable MVPs, not a mature enterprise platform. This development branch also contains unreleased work described below. The repository includes the Go API, SvelteKit frontend, marketing site, database migrations, development tooling, and reference self-hosting configuration.
 
 | Area             | State                                                                                                                                                                                                                                                     |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, docs (collaborative wiki), and WebSocket events. |
+| **Core tracker** | Available: auth, workspaces, RBAC, teams, custom statuses, issues, multiple assignees, labels, comments, history, sub-issues, relations, triage, templates, favorites, saved views, notifications, public sharing, uploads, screen sharing, docs (collaborative wiki), and WebSocket events. |
 | **Planning**     | Implemented: cycles with burndown/velocity charts, project management with Gantt view, and full cycle/project UI.                                                                                                                                         |
 | **Integrations** | Available: workspace webhooks and GitHub with repository linking, branch/commit/PR activity, CI-green detection, keyword closing, configurable status transitions, and an Actions view for workflow runs, jobs, logs, links to rerun in GitHub, and cancellation. |
 | **Analytics**    | Workspace and team overviews, event-based burn-up trends, and configurable issue insights based on current issue data and stored lifecycle timestamps.                                                                                                                                              |
+| **API & automation** | Available: personal API keys with read/write scopes, a streamable HTTP MCP endpoint (`/mcp`) with tools for GitHub, GitHub Actions, Dev Boxes and workspace management, and a published OpenAPI document with an interactive reference at `/docs`. |
 | **Dev Machines** | Unreleased development-branch functionality with a multi-container runtime, authenticated routing, agent providers, collector, and UI. The production contract requires always-on availability; existing deployment gates remain migration debt. See [`TECHNICAL.md`](TECHNICAL.md). |
+| **Dev Boxes**    | Unreleased development-branch subsystem: members register their own development VM, run the persistent `dev-box-worker`, and queue issue jobs that execute local coding CLIs and return reviewable patches. See [`BE/docs/dev-box-worker.md`](BE/docs/dev-box-worker.md). |
 | **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
 
 ## Production operating contract
@@ -61,7 +63,7 @@ The distribution model is deliberately simple:
 - no per-user software fee;
 - infrastructure, backups, monitoring, and updates remain the operator's responsibility.
 
-The product is intentionally smaller than broad project-management suites. It covers issues, cycles, projects, docs, saved views, analytics, GitHub automation, public sharing, real-time events, and portable per-workspace transfer. It does not currently include enterprise identity or modules.
+The product is intentionally smaller than broad project-management suites. It covers issues, cycles, projects, docs, saved views, analytics, screen sharing, GitHub automation, public sharing, real-time events, and portable per-workspace transfer. It does not currently include enterprise identity or modules.
 
 ## ✨ Features
 
@@ -79,10 +81,14 @@ The product is intentionally smaller than broad project-management suites. It co
 | 📄  | **Docs**               | Notion/Obsidian-style wiki: page tree, real-time collaborative editing with live cursors, `[[wiki links]]` with backlinks and a graph view, tags, full-text search, favorites, templates, daily notes, version history, comments, Markdown import/export, and read-only public share links |
 | 📁  | **File Management**    | Workspace file browser with uploads, authenticated links, and expiring public share links for single files |
 | 🔗  | **Webhooks**           | Plug into external services and integrations                                     |
-| ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, GitHub, and presence |
+| ⚡  | **Real-time**          | Workspace WebSocket events for issues, comments, cycles, views, GitHub, presence, and screen-share signaling |
+| 🖥️  | **Screen Sharing**     | Presenter/viewer screen sharing over peer-to-peer WebRTC, signaled through the workspace WebSocket; viewer counts and active/recent share lists |
 | 🖥️  | **Dev Machines**       | Unreleased multi-container coding environments with agents, browser access, authenticated routing, and work tracking |
+| 🧰  | **Dev Boxes**          | Register your own development VM and run `dev-box-worker`; issue jobs execute local Claude Code, Codex or OpenCode plus your test command and return a reviewable patch — never pushed |
+| 🔑  | **API Keys**           | Personal `strifira_` API keys with read/write scopes and a read-only option |
+| 🧩  | **MCP**                | Streamable HTTP MCP server at `/mcp` with tools for GitHub, GitHub Actions, Dev Boxes, and workspace management |
 | 🔧  | **GitHub**             | Link repos, match issue IDs in development activity, react to CI checks, and apply status rules      |
-| 🤖  | **AI assistance**      | Generate issue descriptions, improve descriptions and comments, and review suggestions without losing attachments or intervening edits |
+| 🤖  | **AI assistance**      | Generate issue descriptions, improve descriptions and comments, and review suggestions without losing attachments or intervening edits; provider URLs are network-guarded against private, loopback, link-local and metadata ranges |
 | ▶️  | **GitHub Actions**     | Browse linked repository workflows, inspect jobs and bounded logs, rerun in GitHub, and cancel active runs |
 | 📊  | **Analytics**          | Workspace/team overview, burn-up, and configurable insights                     |
 | 🔗  | **Public Sharing**     | Token-based read-only links for issues and views                                 |
@@ -90,11 +96,13 @@ The product is intentionally smaller than broad project-management suites. It co
 | 💾  | **Workspace Transfer** | Owner/admin export and new-instance import with assets and ID remapping           |
 | ⌨️  | **Command Palette**    | Global search with highlighting, keyboard shortcuts, and quick actions           |
 | 🎨  | **Rich Text Editor**   | Tiptap-based with code blocks, slash commands, mentions, task lists              |
+| 📚  | **API Reference**      | OpenAPI document served at `/api/openapi.json` with an interactive Scalar reference at `/docs` |
+| 🌐  | **Languages**          | Interface translated into English, Italian, Simplified Chinese, and Traditional Chinese |
 | 🚀  | **Release Changelog**  | Multi-release changelog modal with markdown rendering from static manifest       |
 
 Completed issues can be archived from an issue's actions and restored from **Archived issues** in the workspace sidebar. **Settings → General** enables automatic archiving 30 days after completion by default; workspace owners can turn it off. Restored issues are exempt from automatic archiving until their status changes.
 
-The production contract requires automatic provider discovery and retrieval of vendor keys stored once in OCI Vault. The current UI still requires workspace owners to save an OpenAI-compatible endpoint, model, and API key in **Settings → AI**; that manual setup is migration debt, not automatic Vault pickup. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Strifira presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
+The production contract requires automatic provider discovery and retrieval of vendor keys stored once in OCI Vault. The current UI still requires workspace owners to save an OpenAI-compatible endpoint, model, and API key in **Settings → AI**; that manual setup is migration debt, not automatic Vault pickup. **Test connection** makes a short request with the saved configuration; save connection changes before testing. Provider URLs are network-guarded: the server blocks private, loopback, link-local, metadata and other non-public ranges by default (see the [AI provider network policy](BE/docs/ai-provider-network-policy.md)). Issue descriptions and comments expose **Improve with AI**, and new issues can generate a description from their title. If text changes while a request is running, or the selection contains images, attachments, or mentions, Strifira presents a suggestion to review and insert below the existing content. Applied changes can be undone in the editor.
 
 **Actions** in the workspace sidebar shows workflows from linked GitHub repositories. Filter runs by status and branch, select a run to inspect jobs, and open a job's logs. Workspace owners can cancel active runs in Strifira. For completed runs, **Rerun in GitHub** opens the native run page: sign in with your normal GitHub account and use its rerun controls. Your GitHub repository permissions apply. **View workflow steps in GitHub** opens that page for individual step details. Job logs of completed runs expire after GitHub's retention period.
 
@@ -151,6 +159,20 @@ Machines are created without requiring a repository, branch, issue, project, or 
 
 Per-container PID limits are derived from the profile basis; 512 is not one aggregate machine-wide process limit. Per-machine workspace-volume limits use Docker local-volume project quotas. Self-hosted Dev Machines require Docker's data root on XFS mounted with `pquota` or `prjquota`; the manager fails its startup quota probe instead of running an unbounded workspace when the host does not support this boundary.
 
+## 🧰 Dev Boxes (bring your own VM)
+
+Dev Boxes complement Dev Machines: instead of server-provisioned containers, a member registers an existing development VM in the workspace and runs the open-source `dev-box-worker` on it. The worker connects outbound to Strifira with a dedicated `strifira_` token — personal API keys and server credentials cannot authenticate it — maintains heartbeats and one immutable job lease, and claims issue jobs queued from the UI or the MCP API.
+
+Each job runs the selected local coding CLI (Claude Code, Codex, or OpenCode) in a Git worktree of the linked repository, executes the configured test argv independently after the provider exits, streams bounded logs, and returns a reviewable patch (up to 1 MiB) on a `strifira/<issue>-<job>` branch. A failed test run overrides a successful provider result; the worker never pushes branches or opens pull requests. Registrations and jobs are per-member: workspace administrators cannot see another member's boxes or jobs.
+
+The worker authenticates providers with their normal local logins, validates the configured repository origin before claiming work, and runs under an explicit `execution_mode: "trusted-local"` acknowledgement — a development-worker trust boundary, not an OS sandbox. See [`BE/docs/dev-box-worker.md`](BE/docs/dev-box-worker.md) for installation, configuration, results, and recovery.
+
+## 🔌 Automation API (keys, MCP, OpenAPI)
+
+- **Personal API keys** — create keys in **Settings → API Keys**, optionally read-only. Keys use the `strifira_` prefix, carry `read`/`write` scopes, and can be revoked.
+- **MCP** — a streamable HTTP MCP endpoint at `/mcp`, authenticated with a personal API key. Tools cover GitHub integration status and repository linking, GitHub Actions runs/jobs/logs/cancellation, Dev Box registration and job management, and workspace management (workspaces, members, teams, statuses, projects, labels, issues and relations, cycles, notifications, and analytics). Every call checks the key owner's membership and role permissions. See the [Actions MCP contract](BE/docs/github-actions-mcp.md) and the MCP sections of [`BE/docs/dev-box-worker.md`](BE/docs/dev-box-worker.md).
+- **OpenAPI** — the backend publishes its API document at `/api/openapi.json` and a parity test keeps it in lockstep with registered routes; `/docs` renders it as an interactive Scalar reference.
+
 ## 🛠️ Tech Stack
 
 Here's what Strifira runs on and what each piece does:
@@ -163,10 +185,12 @@ Here's what Strifira runs on and what each piece does:
 | **Frontend**      | SvelteKit + Svelte 5                 | SPA with TypeScript, runes-based reactivity, static adapter           |
 | **UI**            | Tailwind CSS + shadcn-svelte         | Utility-first styling with accessible component primitives            |
 | **Editor**        | Tiptap v3 + Yjs                      | Rich text with code blocks, mentions, slash commands, task lists      |
-| **Real-time**     | WebSocket (nhooyr.io)                | Workspace events, issue presence, targeted notifications, and per-document collaborative editing |
+| **Real-time**     | WebSocket (nhooyr.io) + WebRTC      | Workspace events, issue presence, targeted notifications, per-document collaborative editing, and screen-share signaling (media is peer-to-peer) |
 | **Storage**       | Local FS or S3-compatible            | AWS S3, Cloudflare R2, MinIO, SeaweedFS                               |
 | **Reverse Proxy** | Caddy                                | Production HTTPS and routing                                          |
+| **Automation**    | MCP + OpenAPI                        | Streamable HTTP MCP tools at `/mcp`; OpenAPI document rendered at `/docs` |
 | **Dev Machines**  | Docker + Caddy + Go gateway/manager + code-server + ttyd/xterm + Chrome/KasmVNC | Unreleased multi-container development environments with issue worktrees and provider abstraction |
+| **Dev Boxes**     | Go `dev-box-worker`                  | Persistent worker for member-registered development VMs; runs local coding CLIs and returns reviewable patches |
 | **Infra**         | Docker + Docker Compose              | Local development and reference self-hosting stack                    |
 
 ## 🚀 Quick Start
@@ -184,13 +208,12 @@ App at `http://localhost:5173` · API at `http://localhost:8080`
 
 ```sh
 cp .env.example .env
-make reset-dev
-make seed
-make dev-start-services
-make dev
+make dev-reset
 ```
 
-`make dev` runs the Go backend on `localhost:8080` and Vite on
+`make dev-reset` resets the dev database, seeds it, starts the supporting services, and runs the backend and frontend. The individual targets are listed below.
+
+`make dev` runs migrations and then the Go backend on `localhost:8080` and Vite on
 `localhost:5173` directly on the host for hot reload. The root Compose stack is
 for supporting services only during local development: Postgres, Redis, the Dev
 Machine gateway/manager, runtime image builds, and the Caddy wildcard TLS proxy
@@ -208,13 +231,13 @@ The `STRIFIRA_DEV_` settings can also be supplied through the process environmen
 
 | Command                | What it does                          |
 | ---------------------- | ------------------------------------- |
-| `make dev`             | Run backend + frontend (with migrate) |
+| `make dev`             | Apply migrations, then run backend + frontend on the host |
+| `make dev-all`         | Start supporting services (incl. Dev Machine control plane), then `make dev` |
 | `make dev-start-services` | Start Postgres, Redis, and Dev Machine infrastructure |
 | `make dev-reset`       | Reset, seed, start infrastructure, then run host dev |
 | `make dev-backend`     | Backend only                          |
 | `make dev-frontend`    | Frontend only                         |
-| `make dev-full`        | Backend + frontend + smee proxy       |
-| `make dev-smee`        | Start webhook proxy (smee.io)         |
+| `make dev-full`        | Start services, then run backend + frontend (no migrate step) |
 | `make migrate-up`      | Apply migrations                      |
 | `make migrate-down`    | Roll back migrations                  |
 | `make seed`            | Seed the database                     |
@@ -223,9 +246,9 @@ The `STRIFIRA_DEV_` settings can also be supplied through the process environmen
 | `make test-fast`       | Fast suite: critical paths; gates every deploy |
 | `make test-slow`       | Slow suite: everything else; never blocks a deploy |
 | `make check-backend`   | gofmt and go vet                      |
-| `make lint`            | Lint everything                       |
-| `make docker-up`       | Start all (Docker)                    |
-| `make docker-down`     | Stop all (Docker)                     |
+| `make lint`            | golangci-lint (backend) and UI lint   |
+| `make docker-up`       | Start the app stack (Docker)          |
+| `make docker-down`     | Stop the app stack (Docker)           |
 
 ## 🏠 Self-Hosting
 
@@ -273,7 +296,7 @@ commit generated credentials.
 docker compose up --build -d
 ```
 
-This starts 5 containers: Caddy (auto TLS), PostgreSQL, Redis, backend API, and frontend.
+This starts 5 containers: Caddy (auto TLS), PostgreSQL, Redis, backend API, and frontend. Optional Compose profiles add the Dev Machines control plane and runtime image builds (`dev-machines`, `dev-machine-images`) and the updater sidecar (`updater`).
 
 ### 3. Run migrations and seed
 
@@ -346,7 +369,11 @@ behavior and signed downloads before accepting a storage deployment.
 ### GitHub integration
 
 Strifira's current repository integration is GitHub (github.com and GitHub
-Enterprise Server) over personal access tokens. See the
+Enterprise Server) over personal access tokens. By default each workspace
+connects its own instance URL and token in **Settings → GitHub** (stored
+AES-256-GCM encrypted); an operator can alternatively provide one server-managed
+global connection, and owners can pause and resume the integration per
+workspace. See the
 [GitHub integration contract](BE/docs/github-integration.md) for current APIs,
 permissions and signed webhook handling.
 
@@ -361,7 +388,12 @@ access to repositories or authorize pushes, pull requests or status changes.
 ```
 strifira/
 ├── BE/                     # Backend (Go)
-│   ├── cmd/server/         # Entrypoint (server, migrate, seed)
+│   ├── cmd/
+│   │   ├── server/         # Entrypoint (server, migrate, seed)
+│   │   ├── machine-gateway/ # Dev Machine auth gateway
+│   │   ├── machine-manager/ # Dev Machine container orchestrator
+│   │   ├── dev-box-worker/ # Persistent worker for member-registered Dev Boxes
+│   │   └── updater/        # Instance update sidecar
 │   └── internal/
 │       ├── config/         # Configuration
 │       ├── domain/         # Domain models
@@ -370,7 +402,11 @@ strifira/
 │       ├── service/        # Business logic
 │       ├── repository/     # Data access (raw SQL)
 │       ├── middleware/     # Auth and request middleware
-│       └── realtime/       # WebSocket support
+│       ├── realtime/       # WebSocket support
+│       ├── mcpserver/      # MCP tools at /mcp
+│       ├── apidocs/        # OpenAPI document served to /docs
+│       ├── aiegress/       # AI provider network policy
+│       └── devboxworker/   # Dev Box worker protocol client
 ├── UI/                     # Frontend (SvelteKit)
 │   └── src/
 │       ├── routes/         # Pages
@@ -381,12 +417,13 @@ strifira/
 │           ├── types/      # TypeScript types
 │           └── utils/      # Utilities
 ├── WEB/                    # Public marketing site (SvelteKit, statically generated)
+├── devmachine/             # Dev Machine runtime image sources (IDE, browser, collector, egress, agents)
 ├── selfhosting/            # Production Docker Compose + Caddy config
 │   ├── docker-compose.yml
 │   ├── Caddyfile
 │   ├── update.sh
 │   └── .env.example
-├── scripts/                # Dev and maintenance scripts
+├── scripts/                # Dev, CI, and live-check scripts
 ├── docker-compose.yml      # Dev Docker Compose
 ├── Makefile
 ├── TECHNICAL.md            # Dev Machines specification
@@ -416,7 +453,8 @@ Apache 2.0, see [`LICENSE`](LICENSE).
 
 ## 📬 Contact
 
-Alberto Carbognin, [@carbogninalberto](https://github.com/carbogninalberto)
+- Email: [strifira@sephira.app.br](mailto:strifira@sephira.app.br)
+- Alberto Carbognin, [@carbogninalberto](https://github.com/carbogninalberto)
 
 ---
 
