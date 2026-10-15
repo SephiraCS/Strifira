@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.27",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.27",
+    "body": "Deployed to alpha as 1d8ba842ca836b43d0c26aaefc0a719869d90f71.\n\n- fix(ci): gate the release on the test aggregate",
+    "published_at": "2026-10-15T04:27:20Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.27",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.26",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.26",
     "body": "Deployed to alpha as f6859e5ed2a563f1eabe0efedc0d4e106d505e4f.\n\n- fix(test): align dev-box service test literals with the sfw_ prefix",
