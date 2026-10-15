@@ -113,7 +113,7 @@ func TestDevBoxTokenIsDedicatedHashedAndReturnedOnlyOnce(t *testing.T) {
 	created, err := svc.Create(t.Context(), uuid.New(), uuid.New(), dto.CreateDevBoxRequest{Name: " strifira "})
 	require.NoError(t, err)
 	require.Equal(t, "strifira", created.Box.Name)
-	require.True(t, validDevBoxToken(created.Token, "strifira_"))
+	require.True(t, validDevBoxToken(created.Token, "sfw_"))
 	require.NotEqual(t, created.Token, store.box.TokenHash)
 	require.Equal(t, hashDevBoxToken(created.Token), store.box.TokenHash)
 	encoded, err := json.Marshal(store.box)
@@ -122,7 +122,7 @@ func TestDevBoxTokenIsDedicatedHashedAndReturnedOnlyOnce(t *testing.T) {
 	require.NotContains(t, string(encoded), store.box.TokenHash)
 	_, err = svc.AuthenticateWorker(t.Context(), created.Token)
 	require.NoError(t, err)
-	for _, token := range []string{"strifira_" + strings.Repeat("a", 64), "strifira_" + strings.Repeat("z", 64), "strifira_" + strings.Repeat("a", 64), ""} {
+	for _, token := range []string{"sfw_" + strings.Repeat("a", 64), "sfw_" + strings.Repeat("z", 64), "sfw_" + strings.Repeat("a", 64), ""} {
 		_, err = svc.AuthenticateWorker(t.Context(), token)
 		require.ErrorIs(t, err, ErrDevBoxAuthentication)
 	}
@@ -205,7 +205,7 @@ func TestDevBoxWorkerPayloadsRejectOversizedLogsResultsAndWrongLeases(t *testing
 	require.ErrorIs(t, err, ErrInvalidDevBoxInput)
 	_, err = svc.AppendLog(t.Context(), box, uuid.New(), dto.DevBoxAppendLogRequest{LeaseToken: lease, Sequence: 1, Stream: "stdout", Content: "null\x00output"})
 	require.ErrorIs(t, err, ErrInvalidDevBoxInput)
-	_, err = svc.Start(t.Context(), box, uuid.New(), dto.DevBoxLeaseRequest{LeaseToken: "strifira_" + strings.Repeat("a", 64)})
+	_, err = svc.Start(t.Context(), box, uuid.New(), dto.DevBoxLeaseRequest{LeaseToken: "sfw_" + strings.Repeat("a", 64)})
 	require.ErrorIs(t, err, ErrDevBoxLeaseLost)
 	_, err = svc.Complete(t.Context(), box, uuid.New(), dto.DevBoxCompleteRequest{LeaseToken: lease, Result: domain.DevBoxJobResult{Status: "succeeded", TestStatus: "not_run", Patch: strings.Repeat("a", DevBoxMaxPatchBytes+1)}})
 	require.ErrorIs(t, err, ErrInvalidDevBoxInput)

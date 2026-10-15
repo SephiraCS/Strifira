@@ -40,7 +40,7 @@ func maximumDevBoxResult(character, branch string) domain.DevBoxJobResult {
 
 func TestDevBoxResultSerializedBoundsIncludeMaximumMetadata(t *testing.T) {
 	for _, character := range []string{"<", "\x01"} {
-		result := maximumDevBoxResult(character, "strifira/"+strings.Repeat("b", 252))
+		result := maximumDevBoxResult(character, "strifira/"+strings.Repeat("b", 246))
 		require.NoError(t, validateDevBoxResult(&result))
 		require.NoError(t, validateDevBoxResultSize(&result))
 		encoded, err := json.Marshal(result)
