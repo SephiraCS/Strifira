@@ -334,18 +334,19 @@ jobs:
             case "$r" in success | skipped) ;; *) exit 1 ;; esac
           done
 
-  # Cuts the next patch release of the deployed commit: waits for alpha to
-  # serve the pushed commit (Coolify rolls the deployment itself off the
-  # repository webhook and bakes SOURCE_COMMIT into the binary), then bumps
-  # UI/package.json and the OpenAPI version in a "[skip ci]" commit on
-  # main, tags it, and creates the GitHub release. The release commit only
-  # moves version fields and the release manifest, so it skips the test
-  # suites; it is rolled to alpha via the Coolify deployment API, since
-  # pushes made with GITHUB_TOKEN never trigger webhooks. No loop: they
-  # also never start workflows, and "[skip ci]" keeps CI off that commit
-  # (see scripts/ci/release.sh).
+  # Cuts the next patch release of the deployed commit once the whole test
+  # aggregate is green, waiting for alpha to serve the pushed commit
+  # (Coolify rolls the deployment itself off the repository webhook and
+  # bakes SOURCE_COMMIT into the binary), then bumps UI/package.json and
+  # the OpenAPI version in a "[skip ci]" commit on main, tags it, and
+  # creates the GitHub release. The release commit only moves version
+  # fields and the release manifest, so it skips the test suites; it is
+  # rolled to alpha via the Coolify deployment API, since pushes made with
+  # GITHUB_TOKEN never trigger webhooks. No loop: they also never start
+  # workflows, and "[skip ci]" keeps CI off that commit (see
+  # scripts/ci/release.sh).
   release:
-    needs: [guard]
+    needs: [guard, test]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 60
