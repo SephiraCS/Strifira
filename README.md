@@ -98,7 +98,7 @@ The product is intentionally smaller than broad project-management suites. It co
 | ⌨️  | **Command Palette**    | Global search with highlighting, keyboard shortcuts, and quick actions           |
 | 🎨  | **Rich Text Editor**   | Tiptap-based with code blocks, slash commands, mentions, task lists              |
 | 📚  | **API Reference**      | OpenAPI document served at `/api/openapi.json` with an interactive Scalar reference at `/docs` |
-| 🌐  | **Languages**          | Interface translated into English, Italian, Simplified Chinese, and Traditional Chinese |
+| 🌐  | **Languages**          | Interface translated into English, Italian, Brazilian Portuguese, Simplified Chinese, and Traditional Chinese |
 | 🚀  | **Release Changelog**  | Multi-release changelog modal with markdown rendering from static manifest       |
 
 Completed issues can be archived from an issue's actions and restored from **Archived issues** in the workspace sidebar. **Settings → General** enables automatic archiving 30 days after completion by default; workspace owners can turn it off. Restored issues are exempt from automatic archiving until their status changes.
