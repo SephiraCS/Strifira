@@ -21,7 +21,7 @@ import (
 )
 
 func TestClientTokenNeverFollowsRedirectOrAppearsInPublishedContent(t *testing.T) {
-	token := "strifira_" + strings.Repeat("a", 64)
+	token := "sfw_" + strings.Repeat("a", 64)
 	var leaked bool
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked = true }))
 	defer destination.Close()
@@ -222,7 +222,7 @@ func TestCompletionPreservesMaximumEscapedResultAndIdenticalRetry(t *testing.T) 
 		bodies <- observation{length: len(body), hash: sha256.Sum256(body), result: request.Result}
 	}))
 	defer server.Close()
-	client := NewClient(Config{ServerURL: server.URL}, "strifira_"+strings.Repeat("a", 64))
+	client := NewClient(Config{ServerURL: server.URL}, "sfw_"+strings.Repeat("a", 64))
 	require.NoError(t, (&Worker{API: client}).completeResult(t.Context(), t.Context(), Lease{Token: "kl_" + strings.Repeat("b", 64)}, result))
 	require.Equal(t, int32(2), requests.Load())
 	first, replay := <-bodies, <-bodies
@@ -254,7 +254,7 @@ func TestCompletionEncodedBodyLimitUsesFinalRedactedBytes(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			defer server.Close()
-			token, lease := "strifira_"+strings.Repeat("a", 64), "kl_"+strings.Repeat("b", 64)
+			token, lease := "sfw_"+strings.Repeat("a", 64), "kl_"+strings.Repeat("b", 64)
 			result := Result{Status: "failed", ExitCode: -1, TestStatus: "not_run"}
 			base := completionRequestLength(t, lease, result)
 			switch scenario {

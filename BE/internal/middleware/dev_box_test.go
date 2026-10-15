@@ -18,7 +18,7 @@ func TestDevBoxWorkerAuthEstablishesBoxAndCreatorIdentity(t *testing.T) {
 	box := &domain.DevBox{ID: uuid.New(), WorkspaceID: uuid.New(), CreatedByUserID: uuid.New(), Enabled: true}
 	authenticator := &devBoxAuthenticatorFake{box: box}
 	req := httptest.NewRequest(http.MethodPost, "/api/dev-box-worker/heartbeat?box_id="+uuid.NewString(), nil).WithContext(t.Context())
-	req.Header.Set(echo.HeaderAuthorization, "bearer strifira_test-token")
+	req.Header.Set(echo.HeaderAuthorization, "bearer sfw_test-token")
 	recorder := httptest.NewRecorder()
 	c := echo.New().NewContext(req, recorder)
 	c.Set(string(UserIDKey), uuid.New())
@@ -34,15 +34,15 @@ func TestDevBoxWorkerAuthEstablishesBoxAndCreatorIdentity(t *testing.T) {
 	require.True(t, called)
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	require.Equal(t, 1, authenticator.calls)
-	require.Equal(t, "strifira_test-token", authenticator.raw)
+	require.Equal(t, "sfw_test-token", authenticator.raw)
 	require.Equal(t, t.Context(), authenticator.ctx)
 }
 
 func TestDevBoxWorkerAuthRejectsOtherCredentialsBeforeAuthentication(t *testing.T) {
 	for _, header := range []string{
-		"", "strifira_test-token", "Basic strifira_test-token", "Bearer strifira_personal-key",
-		"Bearer jwt-token", "Bearer", "Bearer ", "Bearer strifira_", "Bearer  strifira_test-token",
-		"Bearer strifira_test-token extra", "Bearer strifira_test-token\t",
+		"", "sfw_test-token", "Basic sfw_test-token", "Bearer strifira_personal-key",
+		"Bearer jwt-token", "Bearer", "Bearer ", "Bearer sfw_", "Bearer  sfw_test-token",
+		"Bearer sfw_test-token extra", "Bearer sfw_test-token\t",
 	} {
 		t.Run(header, func(t *testing.T) {
 			authenticator := &devBoxAuthenticatorFake{}
@@ -61,7 +61,7 @@ func TestDevBoxWorkerAuthRejectsOtherCredentialsBeforeAuthentication(t *testing.
 			require.Zero(t, authenticator.calls)
 			require.Nil(t, GetDevBox(c))
 			require.Equal(t, uuid.Nil, GetUserID(c))
-			require.NotContains(t, recorder.Body.String(), "strifira_")
+			require.NotContains(t, recorder.Body.String(), "sfw_")
 		})
 	}
 }
@@ -90,7 +90,7 @@ func TestDevBoxWorkerAuthFailsClosedForInvalidRecords(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			authenticator := &devBoxAuthenticatorFake{box: test.box, err: test.err}
 			req := httptest.NewRequest(http.MethodPost, "/api/dev-box-worker/claim", nil)
-			req.Header.Set(echo.HeaderAuthorization, "Bearer strifira_test-token")
+			req.Header.Set(echo.HeaderAuthorization, "Bearer sfw_test-token")
 			recorder := httptest.NewRecorder()
 			c := echo.New().NewContext(req, recorder)
 			handler := DevBoxWorkerAuth(authenticator)(func(echo.Context) error {
@@ -104,14 +104,14 @@ func TestDevBoxWorkerAuthFailsClosedForInvalidRecords(t *testing.T) {
 			require.Nil(t, GetDevBox(c))
 			require.Equal(t, uuid.Nil, GetUserID(c))
 			require.NotContains(t, recorder.Body.String(), "database password")
-			require.NotContains(t, recorder.Body.String(), "strifira_")
+			require.NotContains(t, recorder.Body.String(), "sfw_")
 		})
 	}
 }
 
 func TestDevBoxWorkerAuthRejectsMissingAuthenticator(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/dev-box-worker/claim", nil)
-	req.Header.Set(echo.HeaderAuthorization, "Bearer strifira_test-token")
+	req.Header.Set(echo.HeaderAuthorization, "Bearer sfw_test-token")
 	recorder := httptest.NewRecorder()
 	c := echo.New().NewContext(req, recorder)
 	handler := DevBoxWorkerAuth(nil)(func(echo.Context) error {

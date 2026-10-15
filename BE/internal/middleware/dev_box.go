@@ -22,7 +22,7 @@ func DevBoxWorkerAuth(authenticator devBoxAuthenticator) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			scheme, raw, ok := strings.Cut(c.Request().Header.Get(echo.HeaderAuthorization), " ")
-			if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(raw, "strifira_") || len(raw) <= len("strifira_") || strings.ContainsAny(raw, " \t\r\n") || authenticator == nil {
+			if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(raw, "sfw_") || len(raw) <= len("sfw_") || strings.ContainsAny(raw, " \t\r\n") || authenticator == nil {
 				return response.Unauthorized(c)
 			}
 

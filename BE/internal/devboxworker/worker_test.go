@@ -95,7 +95,7 @@ func leasedWorker(executor Executor) (*Worker, *fakeAPI, Lease) {
 
 func TestNewWorkerInjectsTokenIntoVersionAndExecutionRedaction(t *testing.T) {
 	config := testConfig(t)
-	token := "strifira_" + strings.Repeat("d", 64)
+	token := "sfw_" + strings.Repeat("d", 64)
 	provider := filepath.Join(t.TempDir(), "provider")
 	require.NoError(t, os.WriteFile(provider, []byte("#!/bin/sh\nprintf '%s' '"+token+"'\n"), 0700))
 	config.Providers["claude-code"] = provider
@@ -153,7 +153,7 @@ func TestProviderVersionNormalizationAllowsContractHeartbeatAndClaim(t *testing.
 			script := "#!/bin/sh\ncat -- '" + strings.ReplaceAll(output, "'", "'\\''") + "'\n"
 			require.NoError(t, os.WriteFile(provider, []byte(script), 0700))
 			config.Providers["claude-code"] = provider
-			worker, err := New(config, NewClient(config, "strifira_"+strings.Repeat("a", 64)))
+			worker, err := New(config, NewClient(config, "sfw_"+strings.Repeat("a", 64)))
 			require.NoError(t, err)
 			require.NoError(t, worker.Run(t.Context(), true))
 			require.Equal(t, int32(1), claims.Load(), "valid normalized heartbeat must allow the next claim")

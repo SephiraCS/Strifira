@@ -118,7 +118,7 @@ func (s *DevBoxService) Create(ctx context.Context, workspaceID, userID uuid.UUI
 	if name == "" || !validDevBoxText(name, 100) {
 		return nil, ErrInvalidDevBoxInput
 	}
-	raw, hash, err := newDevBoxToken("strifira_")
+	raw, hash, err := newDevBoxToken("sfw_")
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (s *DevBoxService) RotateToken(ctx context.Context, workspaceID, boxID, use
 	if err := s.authorize(ctx, workspaceID, userID, domain.PermDevMachineManage); err != nil {
 		return nil, err
 	}
-	raw, hash, err := newDevBoxToken("strifira_")
+	raw, hash, err := newDevBoxToken("sfw_")
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +388,7 @@ func (s *DevBoxService) JobLogs(ctx context.Context, workspaceID, jobID, userID 
 }
 
 func (s *DevBoxService) AuthenticateWorker(ctx context.Context, raw string) (*domain.DevBox, error) {
-	if !validDevBoxToken(raw, "strifira_") {
+	if !validDevBoxToken(raw, "sfw_") {
 		return nil, ErrDevBoxAuthentication
 	}
 	box, err := s.store.GetBoxByTokenHash(ctx, hashDevBoxToken(raw))

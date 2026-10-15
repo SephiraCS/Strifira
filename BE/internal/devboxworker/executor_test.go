@@ -19,7 +19,7 @@ import (
 )
 
 func TestBoundedBufferRedactsBeforeWriteAndLogChunkBoundaries(t *testing.T) {
-	token := "strifira_" + strings.Repeat("a", 64)
+	token := "sfw_" + strings.Repeat("a", 64)
 	for split := 1; split < len(token); split++ {
 		t.Run(fmt.Sprintf("token write split %d", split), func(t *testing.T) {
 			var logs strings.Builder
@@ -68,7 +68,7 @@ func TestBoundedBufferStreamingUTF8EOFAndLimits(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var logs strings.Builder
-			output := &boundedBuffer{limit: maxOutputBytes, token: "strifira_" + strings.Repeat("b", 64), log: func(_, content string) {
+			output := &boundedBuffer{limit: maxOutputBytes, token: "sfw_" + strings.Repeat("b", 64), log: func(_, content string) {
 				require.LessOrEqual(t, len(content), 16*1024)
 				require.True(t, utf8.ValidString(content))
 				require.NotContains(t, content, "\x00")
@@ -148,7 +148,7 @@ func TestLocalExecutorProducesReviewPatchAndRunsTestsSeparately(t *testing.T) {
 
 func TestLocalExecutorRedactsProviderTestsAndSystemLogsAndFlushesEOF(t *testing.T) {
 	config := fixtureRepository(t)
-	token := "strifira_" + strings.Repeat("c", 64)
+	token := "sfw_" + strings.Repeat("c", 64)
 	privateRoot := config.WorkRoot + "-" + token
 	require.NoError(t, os.Rename(config.WorkRoot, privateRoot))
 	config.WorkRoot = privateRoot

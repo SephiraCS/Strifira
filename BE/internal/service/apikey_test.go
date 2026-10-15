@@ -77,7 +77,7 @@ func TestGenerateAPIKeyFormat(t *testing.T) {
 	raw, err := GenerateAPIKey()
 	require.NoError(t, err)
 	// strifira_ prefix + 48 hex chars
-	assert.Len(t, raw, 3+48)
+	assert.Len(t, raw, len("strifira_")+48)
 	assert.Regexp(t, `^strifira_[0-9a-f]{48}$`, raw)
 
 	second, err := GenerateAPIKey()

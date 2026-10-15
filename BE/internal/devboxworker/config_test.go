@@ -35,7 +35,7 @@ func TestConfigRequiresExplicitLocalTrustAndHTTPS(t *testing.T) {
 
 func TestReadTokenRejectsUnsafePermissionsSymlinksAndPersonalKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "worker.token")
-	token := "strifira_" + strings.Repeat("a", 64)
+	token := "sfw_" + strings.Repeat("a", 64)
 	require.NoError(t, os.WriteFile(path, []byte(token+"\n"), 0600))
 	value, err := ReadToken(path)
 	require.NoError(t, err)

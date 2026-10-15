@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . ./
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/strifira-updater ./cmd/updater
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/strifira-updater ./cmd/updater # zero-config: CGO_ENABLED is the Go toolchain's static-link variable, not a switch
 
 FROM docker.io/library/alpine:3.24
 RUN apk add --no-cache bash ca-certificates docker-cli docker-cli-compose git openssh-client

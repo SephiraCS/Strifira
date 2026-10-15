@@ -31,7 +31,7 @@ info:
     Settings → Personal → API Keys.
 
     Dev-box workers authenticate with a dedicated **registration token**
-    (`Authorization: Bearer strifira_...`) on `/api/dev-box-worker` only. These
+    (`Authorization: Bearer sfw_...`) on `/api/dev-box-worker` only. These
     tokens carry no personal API/MCP access. Job mutations also require a
     separate expiring lease token in the request body.
 
@@ -4193,7 +4193,7 @@ paths:
       summary: Register a dev box
       description: Requires current workspace membership and development permissions. Only the registration creator can access
         this resource, including for workspace administrators. Disabled in public demos unless the caller is allowed to use
-        development features. The dedicated strifira_ token is returned once. Store it in a protected local token file; Strifira stores
+        development features. The dedicated sfw_ token is returned once. Store it in a protected local token file; Strifira stores
         only its hash.
       parameters:
       - {$ref: '#/components/parameters/Slug'}
@@ -4430,7 +4430,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Report dev-box capabilities
-      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated sfw_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Heartbeats update the online indicator
         and installed provider list.
       security:
@@ -4457,7 +4457,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Claim one eligible dev-box job
-      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated sfw_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Claiming is atomic; each box can hold only
         one active job. The 60-second lease token is separate from the box token.
       security:
@@ -4484,7 +4484,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Start a claimed dev-box job
-      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated sfw_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
         Cancel and deadline state wins over further execution. Renew before lease expiry, normally every 15 seconds.
       security:
@@ -4513,7 +4513,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Renew a dev-box job lease
-      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated sfw_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
         Cancel and deadline state wins over further execution. Renew before lease expiry, normally every 15 seconds.
       security:
@@ -4542,7 +4542,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Append a bounded dev-box job log chunk
-      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated sfw_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching unexpired lease.
         Sequence numbers are idempotent; duplicate retries acknowledge the previously accepted chunk without storing it again. Each content chunk is at most 64 KiB and total
         stored output is at most 4 MiB.
@@ -4572,7 +4572,7 @@ paths:
       tags:
       - Dev Boxes
       summary: Complete a dev-box job
-      description: Requires a dedicated strifira_ registration token. Authentication rechecks whether the box is enabled and unrevoked
+      description: Requires a dedicated sfw_ registration token. Authentication rechecks whether the box is enabled and unrevoked
         and whether its creator still has current workspace development permissions. Requires the matching lease token; retries
         are idempotent. The server validates the assigned branch and independent test report. Failed harness exits or missing/failed
         required tests cannot produce success. Expiry, cancellation, and deadline state override a late success. The patch is
@@ -5784,7 +5784,7 @@ components:
       - token
       properties:
         box: {$ref: '#/components/schemas/DevBox'}
-        token: {type: string, pattern: '^strifira_[0-9a-f]{64}$', description: Shown only by registration or rotation. Not a JWT or
+        token: {type: string, pattern: '^sfw_[0-9a-f]{64}$', description: Shown only by registration or rotation. Not a JWT or
             personal API key.}
     CreateDevBoxJobRequest:
       type: object

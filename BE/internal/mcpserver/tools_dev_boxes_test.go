@@ -192,8 +192,8 @@ func TestMCPDevBoxLifecycleAndJob(t *testing.T) {
 	ctx, ws, user := mock.Anything, env.workspace.ID, env.user.ID
 	box := &domain.DevBox{ID: uuid.New(), WorkspaceID: ws, CreatedByUserID: user, Name: "strifira-dev", Enabled: true,
 		TokenHash: "private-worker-token-hash", Providers: json.RawMessage(`[{"id":"claude-code","version":"test"}]`)}
-	token := "strifira_" + strings.Repeat("a", 64)
-	rotated := "strifira_" + strings.Repeat("b", 64)
+	token := "sfw_" + strings.Repeat("a", 64)
+	rotated := "sfw_" + strings.Repeat("b", 64)
 	svc.On("Create", ctx, ws, user, dto.CreateDevBoxRequest{Name: "strifira-dev"}).Return(&dto.DevBoxTokenResponse{Box: box, Token: token}, nil).Once()
 	registration := callTool(t, session, "register_dev_box", map[string]any{"workspace": env.workspace.Slug, "name": " strifira-dev "})
 	registered := structured(t, registration)
@@ -498,7 +498,7 @@ func TestMCPDevBoxForeignIssueRejected(t *testing.T) {
 }
 
 func TestMCPDevBoxServiceErrorsRedactedAndBounded(t *testing.T) {
-	secret := "strifira_" + strings.Repeat("c", 64)
+	secret := "sfw_" + strings.Repeat("c", 64)
 	for _, test := range []struct {
 		name string
 		err  error

@@ -459,7 +459,7 @@ func devBoxHandlerContext(t *testing.T, method, target, body string, recorder *h
 	t.Helper()
 	req := httptest.NewRequest(method, target, strings.NewReader(body)).WithContext(t.Context())
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	req.Header.Set(echo.HeaderAuthorization, "Bearer strifira_test-token")
+	req.Header.Set(echo.HeaderAuthorization, "Bearer sfw_test-token")
 	c := echo.New().NewContext(req, recorder)
 	c.Set("workspace", &domain.Workspace{ID: uuid.New()})
 	c.Set(string(middleware.UserIDKey), uuid.New())
