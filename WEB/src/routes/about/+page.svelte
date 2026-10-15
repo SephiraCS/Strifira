@@ -42,8 +42,8 @@
 			body: 'Strifira is developed and maintained by Sephira. It builds on the public Apache 2.0 Ku codebase, rebranded and continued as Strifira.',
 			list: [
 				'Maintainer: Sephira',
-				'GitHub: github.com/SephiraCS/Strifira',
-				'Issues: github.com/SephiraCS/Strifira/issues'
+				'Contact: strifira@sephira.app.br',
+				'GitHub: github.com/SephiraCS/Strifira'
 			]
 		},
 		{

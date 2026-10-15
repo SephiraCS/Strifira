@@ -72,9 +72,9 @@
 				<a href="/about" class="text-muted-foreground transition-colors hover:text-foreground">About</a>
 				<a href="/roadmap" class="text-muted-foreground transition-colors hover:text-foreground">Roadmap</a>
 			<a
-				href="https://github.com/SephiraCS/Strifira/issues"
+				href="mailto:strifira@sephira.app.br"
 				class="text-muted-foreground transition-colors hover:text-foreground"
-				>GitHub issues</a
+				>strifira@sephira.app.br</a
 			>
 			</div>
 		</div>

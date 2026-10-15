@@ -38,15 +38,14 @@
 				<h2>1. Who we are</h2>
 				<p>
 					Strifira is an open source project maintained by
-					<strong class="text-foreground">Sephira</strong> (P. IVA 04921790236), with
-					registered office at Q.re Aldo Moro 49, 37032 Monteforte d'Alpone (VR), Italy. We are the
+					<strong class="text-foreground">Sephira</strong>. We are the
 					data controller for any personal data processed through this website.
 				</p>
 				<p>
-				For data protection enquiries contact us at
-				<a href="https://github.com/SephiraCS/Strifira/issues" class="text-brand-300 hover:underline"
-					>GitHub issues</a
-				>.
+					For data protection enquiries contact us at
+					<a href="mailto:strifira@sephira.app.br" class="text-brand-300 hover:underline"
+						>strifira@sephira.app.br</a
+					>.
 				</p>
 			</section>
 
@@ -162,8 +161,8 @@
 				</ul>
 				<p class="mt-2">
 				To exercise any of these rights, email
-				<a href="https://github.com/SephiraCS/Strifira/issues" class="text-brand-300 hover:underline"
-					>GitHub issues</a
+				<a href="mailto:strifira@sephira.app.br" class="text-brand-300 hover:underline"
+					>strifira@sephira.app.br</a
 				>.
 				</p>
 			</section>
@@ -171,7 +170,7 @@
 			<section>
 				<h2>7. International transfers</h2>
 				<p>
-					Sephira is based in Italy. If a service provider processes personal data outside the EEA,
+					If a service provider processes personal data outside the EEA,
 					we use an applicable transfer mechanism, such as an adequacy decision or Standard
 					Contractual Clauses, where required.
 				</p>

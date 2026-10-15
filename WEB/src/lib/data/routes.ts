@@ -188,7 +188,7 @@ export const ORGANIZATION_LD = {
 	sameAs: ['https://github.com/SephiraCS/Strifira'],
 	contactPoint: {
 		'@type': 'ContactPoint',
-		url: 'https://github.com/SephiraCS/Strifira/issues',
+		email: 'strifira@sephira.app.br',
 		contactType: 'customer support'
 	}
 };

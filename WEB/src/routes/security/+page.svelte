@@ -55,9 +55,10 @@
 		},
 		{
 			heading: 'Reporting vulnerabilities',
-			body: 'If you discover a security vulnerability in Strifira, please report it responsibly. Do not open a public issue. Report it through GitHub’s private vulnerability reporting so the details stay between you and the maintainers.',
+			body: 'If you discover a security vulnerability in Strifira, please report it responsibly. Do not open a public issue. Email the details so they stay between you and the maintainers; GitHub’s private vulnerability reporting works too.',
 			list: [
-				'Report to: github.com/SephiraCS/Strifira/security/advisories/new',
+				'Report to: strifira@sephira.app.br',
+				'Alternatively: github.com/SephiraCS/Strifira/security/advisories/new',
 				'Do not disclose publicly until a fix is available',
 				'Allow time to investigate and prepare a fix before public disclosure',
 				'Include only the minimum sensitive data needed to reproduce the issue'
