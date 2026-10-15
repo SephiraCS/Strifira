@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.31",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.31",
+    "body": "Deployed to alpha as 58b298260c20fe1c0ec62c6ddaeb515a81f7fc94.\n\n- docs(readme): include Brazilian Portuguese in interface languages\n- docs(readme): refresh contributors and contact",
+    "published_at": "2026-10-15T07:47:16Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.31",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.30",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.30",
     "body": "Deployed to alpha as a757bcefd96930f19744f2a0020aca6a24d6856c.\n\n- feat(i18n): add Brazilian Portuguese translation support",

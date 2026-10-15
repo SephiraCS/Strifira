@@ -9,7 +9,7 @@ openapi: 3.1.0
 
 info:
   title: Strifira API
-  version: 0.3.30
+  version: 0.3.31
   summary: Issue tracker REST API behind strifira.mariogk.com
   description: |
     Strifira is a Linear-style issue tracker. This document describes the REST API
