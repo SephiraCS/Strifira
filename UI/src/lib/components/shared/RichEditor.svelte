@@ -1465,7 +1465,10 @@
 	{/if}
 
 	{#if bubbleMenu && editor && editable}
-		<BubbleMenu {editor} shouldShow={shouldShowBubble}>
+		<!-- Fixed positioning: the menu tracks the selection in viewport space and
+			never extends the document, so long descriptions don't grow a second
+			(body-wide) scrollbar. -->
+		<BubbleMenu {editor} shouldShow={shouldShowBubble} options={{ strategy: 'fixed' }}>
 			{#snippet children()}
 				<div
 					class="bubble-toolbar"
