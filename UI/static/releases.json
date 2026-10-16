@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.39",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.39",
+    "body": "Deployed to alpha as 9adbee5357eeb814fbeeeecfc44ddcbd1bacc3ee.\n\n- fix(ui): hidden bubble menu still reserved document space",
+    "published_at": "2026-10-16T22:13:08Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.39",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.38",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.38",
     "body": "Deployed to alpha as fc7df7956aeb90a819a82d01e33f43273a45322a.\n\n- fix(ui): issue page grew a second, body-wide scrollbar",
