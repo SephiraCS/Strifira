@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { authState } from '$lib/features/auth/auth.state.svelte';
 
 class ApiClient {
 	private baseUrl = '';
@@ -36,6 +37,8 @@ class ApiClient {
 				await this.refresh();
 				return this.fetchResponse(path, options);
 			}
+			// The refresh cookie is dead, so any cached user is no longer real.
+			authState.clear();
 			goto('/login');
 			throw new Error('Unauthorized');
 		}

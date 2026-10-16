@@ -4,6 +4,7 @@
 	import { Input } from "$lib/components/ui/input";
 	import Eye from "@lucide/svelte/icons/eye";
 	import EyeOff from "@lucide/svelte/icons/eye-off";
+	import { m } from "$lib/paraglide/messages.js";
 
 	type Props = WithElementRef<Omit<HTMLInputAttributes, "type" | "files">> & {
 		class?: string;
@@ -40,8 +41,7 @@
 		type="button"
 		class="absolute inset-y-0 right-0 grid w-8 place-items-center border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
 		onclick={togglePassword}
-		tabindex={-1}
-		aria-label={showPassword ? "Hide password" : "Show password"}
+		aria-label={showPassword ? m['password.hide']() : m['password.show']()}
 		{disabled}
 	>
 		{#if showPassword}
