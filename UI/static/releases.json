@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.34",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.34",
+    "body": "Deployed to alpha as 7bcb7f7d120a26322d96d144e6b680d22b055d1f.\n\n- fix(release): trust github.com/SephiraCS/Strifira for release links",
+    "published_at": "2026-10-16T00:53:34Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.34",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.33",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.33",
     "body": "Deployed to alpha as b8c37860a0535d42a69c26c558998ed01ab0e43b.\n\n- feat(ui): vertical logo (wolf over name) and login page rebrand",
