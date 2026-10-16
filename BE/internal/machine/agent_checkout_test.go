@@ -21,12 +21,12 @@ import (
 )
 
 func TestProtectedCheckoutDescriptor(t *testing.T) {
-	valid := domain.DevMachineCheckout{ID: uuid.New(), RepositoryFullName: "TerraScale/strifira",
-		RepositoryURL: "https://git.terrascale.tech/TerraScale/strifira", BaseBranch: "main",
+	valid := domain.DevMachineCheckout{ID: uuid.New(), RepositoryFullName: "SephiraCS/Strifira",
+		RepositoryURL: "https://github.com/SephiraCS/Strifira", BaseBranch: "main",
 		WorkingBranch: "feat/TS-279", WorkspacePath: "/workspace/tasks/TS-279"}
 	repository, parsed, err := protectedCheckoutRepository(&valid)
 	require.NoError(t, err)
-	require.Equal(t, "git.terrascale.tech", parsed.Host)
+	require.Equal(t, "github.com", parsed.Host)
 	require.Regexp(t, `^/repositories/[a-f0-9]{64}\.git$`, repository)
 	withSuffix := valid
 	withSuffix.RepositoryURL += ".git"
@@ -44,12 +44,12 @@ func TestProtectedCheckoutDescriptor(t *testing.T) {
 		mutate func(*domain.DevMachineCheckout)
 	}{
 		{"missing-identity", func(c *domain.DevMachineCheckout) { c.ID = uuid.Nil }},
-		{"http", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "http://git.terrascale.tech/TerraScale/strifira" }},
+		{"http", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "http://github.com/SephiraCS/Strifira" }},
 		{"credentials", func(c *domain.DevMachineCheckout) {
-			c.RepositoryURL = "https://user:secret@git.terrascale.tech/TerraScale/strifira"
+			c.RepositoryURL = "https://user:secret@github.com/SephiraCS/Strifira"
 		}},
-		{"other-repository", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "https://git.terrascale.tech/TerraScale/other" }},
-		{"encoded-path", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "https://git.terrascale.tech/TerraScale/%6bu" }},
+		{"other-repository", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "https://github.com/SephiraCS/other" }},
+		{"encoded-path", func(c *domain.DevMachineCheckout) { c.RepositoryURL = "https://github.com/SephiraCS/%6bu" }},
 		{"query", func(c *domain.DevMachineCheckout) { c.RepositoryURL += "?token=secret" }},
 		{"fragment", func(c *domain.DevMachineCheckout) { c.RepositoryURL += "#secret" }},
 		{"traversal-repository", func(c *domain.DevMachineCheckout) { c.RepositoryFullName = "../strifira" }},
@@ -78,7 +78,7 @@ func TestProtectedCheckoutDescriptor(t *testing.T) {
 		})
 	}
 	otherHost := valid
-	otherHost.RepositoryURL = "https://another.example/TerraScale/strifira"
+	otherHost.RepositoryURL = "https://another.example/SephiraCS/Strifira"
 	otherRepository, _, err := protectedCheckoutRepository(&otherHost)
 	require.NoError(t, err)
 	require.NotEqual(t, repository, otherRepository, "protected stores must be scoped to the authorized GitHub origin")

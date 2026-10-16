@@ -71,8 +71,8 @@ jobs:
 
   # TS-795 switch guard: fails when the change adds an on/off setting.
   # Vendored into scripts/ci/zero-config-check.py from TerraScale/ts-builder
-  # (guard ref 8dacab4) when that repository left the server in the Tools
-  # org move; re-point this job at ts-builder when it is reachable again.
+  # (guard ref 8dacab4); the TerraScale server was decommissioned in the
+  # Sephira company move, so this vendored copy is the maintained source.
   guard:
     runs-on: ubuntu-latest
     timeout-minutes: 10

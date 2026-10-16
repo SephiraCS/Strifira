@@ -218,7 +218,7 @@ func TestMCPDevBoxLifecycleAndJob(t *testing.T) {
 	assert.NotContains(t, devBoxMCPJSON(t, rotation), token)
 
 	request := dto.CreateDevBoxJobRequest{IssueID: env.issueRepo.issue.ID.String(), Provider: "claude-code", Prompt: "Improve the owned repository",
-		RepositoryFullName: "TerraScale/strifira", BaseBranch: "main", TestCommand: []string{"make", "test"}, AcceptanceCriteria: []string{"tests pass"}, MaxRuntimeSeconds: 300}
+		RepositoryFullName: "SephiraCS/Strifira", BaseBranch: "main", TestCommand: []string{"make", "test"}, AcceptanceCriteria: []string{"tests pass"}, MaxRuntimeSeconds: 300}
 	job := &domain.DevBoxJob{ID: uuid.New(), WorkspaceID: ws, BoxID: box.ID, RequestedByUserID: user, IssueID: env.issueRepo.issue.ID,
 		IssueIdentifier: "DEV-1", RepositoryFullName: request.RepositoryFullName, BaseBranch: request.BaseBranch, Provider: request.Provider,
 		Status: domain.DevBoxJobQueued, LeaseHash: "private-job-lease-hash"}
@@ -285,7 +285,7 @@ func TestMCPDevBoxReadKeyCannotMutate(t *testing.T) {
 		{"update_dev_box", map[string]any{"box_id": boxID, "enabled": false}},
 		{"rotate_dev_box_token", map[string]any{"box_id": boxID}},
 		{"revoke_dev_box", map[string]any{"box_id": boxID}},
-		{"create_dev_box_job", map[string]any{"box_id": boxID, "issue": "DEV-1", "repository_full_name": "TerraScale/strifira", "base_branch": "main", "provider": "claude-code"}},
+		{"create_dev_box_job", map[string]any{"box_id": boxID, "issue": "DEV-1", "repository_full_name": "SephiraCS/Strifira", "base_branch": "main", "provider": "claude-code"}},
 		{"cancel_dev_box_job", map[string]any{"job_id": jobID}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -429,7 +429,7 @@ func TestMCPDevBoxBoundedInputs(t *testing.T) {
 	session := connectMCP(t, env.mcpTestEnv, env.fullToken)
 	boxID, jobID := uuid.NewString(), uuid.NewString()
 	jobInput := func() map[string]any {
-		return map[string]any{"box_id": boxID, "issue": "DEV-1", "provider": "claude-code", "repository_full_name": "TerraScale/strifira", "base_branch": "main"}
+		return map[string]any{"box_id": boxID, "issue": "DEV-1", "provider": "claude-code", "repository_full_name": "SephiraCS/Strifira", "base_branch": "main"}
 	}
 	for _, test := range []struct {
 		name string
@@ -490,7 +490,7 @@ func TestMCPDevBoxForeignIssueRejected(t *testing.T) {
 	session := connectMCP(t, env.mcpTestEnv, env.fullToken)
 	for _, ref := range []string{env.issueRepo.issue.Identifier, env.issueRepo.issue.ID.String()} {
 		result := callTool(t, session, "create_dev_box_job", map[string]any{"workspace": env.workspace.Slug, "box_id": uuid.NewString(), "issue": ref,
-			"repository_full_name": "TerraScale/strifira", "base_branch": "main", "provider": "claude-code"})
+			"repository_full_name": "SephiraCS/Strifira", "base_branch": "main", "provider": "claude-code"})
 		require.True(t, result.IsError)
 		assert.Contains(t, devBoxMCPJSON(t, result), "issue not found")
 	}

@@ -55,7 +55,7 @@ List in-progress runs:
 {
   "name": "github_list_action_runs",
   "arguments": {
-    "workspace": "terrascale",
+    "workspace": "sephira",
     "repo": "Tools/strifira",
     "status": "in_progress",
     "per_page": 20
@@ -69,7 +69,7 @@ Read a specific job's logs, using IDs returned by the run and job tools:
 {
   "name": "github_get_action_job_logs",
   "arguments": {
-    "workspace": "terrascale",
+    "workspace": "sephira",
     "repo": "Tools/strifira",
     "run_id": 42,
     "job_id": 91

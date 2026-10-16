@@ -3,15 +3,14 @@ import packageJson from '../../package.json' with { type: 'json' };
 export const currentVersion = packageJson.version;
 export const currentVersionLabel = `v${currentVersion}`;
 
-// Releases track the operator fork on git.terrascale.tech. The manifest is
-// the fork's own UI/static/releases.json served same-origin from the
-// deployed build: the Git instance is private and sends no CORS
-// headers, so browsers cannot fetch it cross-origin. The repository moved
-// from TerraScale/strifira to Tools/strifira; manifests baked before the move carry
-// the legacy owner, so both are trusted for entry URLs.
-export const releaseRepositoryHost = 'git.terrascale.tech';
-export const releaseRepositoryFullName = 'Tools/strifira';
-const trustedReleaseRepositoryNames = [releaseRepositoryFullName, 'TerraScale/strifira'];
+// Releases track github.com/SephiraCS/Strifira. The manifest is the
+// repository's own UI/static/releases.json served same-origin from the
+// deployed build. The project moved from TerraScale to Sephira; the legacy
+// git.terrascale.tech host (TerraScale/strifira, later Tools/strifira) is
+// decommissioned, so only the current repository is trusted for entry URLs.
+export const releaseRepositoryHost = 'github.com';
+export const releaseRepositoryFullName = 'SephiraCS/Strifira';
+const trustedReleaseRepositoryNames = [releaseRepositoryFullName];
 export const releasesPageUrl = `https://${releaseRepositoryHost}/${releaseRepositoryFullName}/releases`;
 export const currentReleaseUrl = `${releasesPageUrl}/tag/${currentVersionLabel}`;
 export const releasesManifestUrl = '/releases.json';
@@ -53,8 +52,8 @@ export function compareVersions(left: string, right: string) {
 	return 0;
 }
 
-// Same trust shape as $lib/security/github-url, anchored to the fork's
-// own host instead of github.com.
+// Same trust shape as $lib/security/github-url, anchored to the releases
+// repository's own host and name.
 function parseReleaseRepositoryUrl(value: unknown, expectedTag?: string): URL | null {
 	if (typeof value !== 'string' || value.trim() !== value || value === '') return null;
 

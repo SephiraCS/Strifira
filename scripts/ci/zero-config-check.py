@@ -18,9 +18,10 @@ carries a trailing `# zero-config: <reason>` comment; the reason must be
 non-empty.
 
 This script is vendored from TerraScale/ts-builder (scripts/zero-config-
-check.py, guard ref 8dacab4) because that repository left the server during
-the Tools org move; re-point the guard job in ci.yml at ts-builder when it
-is reachable again.
+check.py, guard ref 8dacab4); the TerraScale server was decommissioned in
+the Sephira company move and this vendored copy is the maintained source.
+Re-point the guard job in ci.yml at ts-builder if Sephira ever republishes
+it.
 
 Usage: zero-config-check.py <base-sha> <head-sha>
 """

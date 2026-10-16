@@ -12,7 +12,7 @@ import {
 } from '../../src/lib/security/github-url.ts';
 
 const INSTANCE = 'https://github.example.com';
-const REPO = 'TerraScale/strifira';
+const REPO = 'SephiraCS/Strifira';
 
 test('githubOrigin extracts the origin', () => {
 	assert.equal(githubOrigin(INSTANCE), 'https://github.example.com');

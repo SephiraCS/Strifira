@@ -105,7 +105,7 @@ func TestGitHubWebhookPRPayloadParsing(t *testing.T) {
 			"title": "Add feature (KUA-31)",
 			"state": "open",
 			"merged": false,
-			"html_url": "https://github.com/TerraScale/strifira/pull/5",
+			"html_url": "https://github.com/SephiraCS/Strifira/pull/5",
 			"body": "Fixes KUA-31",
 			"additions": 12,
 			"deletions": 3,
@@ -113,13 +113,13 @@ func TestGitHubWebhookPRPayloadParsing(t *testing.T) {
 			"base": {"ref": "main"},
 			"user": {"login": "mariogk", "avatar_url": "https://avatars.githubusercontent.com/u/1"}
 		},
-		"repository": {"id": 7, "full_name": "TerraScale/strifira", "html_url": "https://github.com/TerraScale/strifira"}
+		"repository": {"id": 7, "full_name": "SephiraCS/Strifira", "html_url": "https://github.com/SephiraCS/Strifira"}
 	}`)
 
 	var envelope githubWebhookEnvelope
 	require.NoError(t, json.Unmarshal(payload, &envelope))
-	assert.Equal(t, "TerraScale/strifira", envelope.Repository.FullName)
-	assert.Equal(t, "https://github.com/TerraScale/strifira", envelope.Repository.HTMLURL)
+	assert.Equal(t, "SephiraCS/Strifira", envelope.Repository.FullName)
+	assert.Equal(t, "https://github.com/SephiraCS/Strifira", envelope.Repository.HTMLURL)
 	assert.Equal(t, "https://github.com", instanceOrigin(envelope.Repository.HTMLURL))
 
 	var event ghWebhookPR
@@ -133,8 +133,8 @@ func TestGitHubWebhookPRPayloadParsing(t *testing.T) {
 
 func TestGitHubWebhookStatusPayloadParsing(t *testing.T) {
 	variants := []string{
-		`{"state":"success","sha":"abc123","repository":{"full_name":"TerraScale/strifira","html_url":"https://github.com/TerraScale/strifira"}}`,
-		`{"state":"failure","commit":{"sha":"abc123"},"repository":{"full_name":"TerraScale/strifira","html_url":"https://github.com/TerraScale/strifira"}}`,
+		`{"state":"success","sha":"abc123","repository":{"full_name":"SephiraCS/Strifira","html_url":"https://github.com/SephiraCS/Strifira"}}`,
+		`{"state":"failure","commit":{"sha":"abc123"},"repository":{"full_name":"SephiraCS/Strifira","html_url":"https://github.com/SephiraCS/Strifira"}}`,
 	}
 	for _, raw := range variants {
 		var event ghWebhookStatus
