@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.36",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.36",
+    "body": "Deployed to alpha as 5f22e2ac0891b405229ea8dfb3a20996a0b6c3d1.\n\n- feat(ui): production UX review fixes across issues, board and onboarding",
+    "published_at": "2026-10-16T17:36:09Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.36",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.35",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.35",
     "body": "Deployed to alpha as 12fce9993f21b59da448a2870af1b3ed7587cd18.\n\n- feat(ui): rework auth pages with dedicated /register route",
