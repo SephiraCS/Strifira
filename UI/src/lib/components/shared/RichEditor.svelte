@@ -1180,12 +1180,17 @@
 		editor?.chain().focus().run();
 	}
 
-	function shouldShowBubble(props: { from: number; to: number; editor: any }): boolean {
-		if (!props.editor.isFocused) return false;
-		if (props.editor.isActive('image')) return true;
-		if (props.from === props.to) return false;
-		if (props.editor.isActive('codeBlock')) return false;
-		return true;
+	function shouldShowBubble(props: { element: HTMLElement; from: number; to: number; editor: any }): boolean {
+		const show =
+			props.editor.isFocused &&
+			(props.editor.isActive('image') ||
+				(props.from !== props.to && !props.editor.isActive('codeBlock')));
+		// The plugin measures the menu while computing its position, so the
+		// wrapper must be laid out exactly then — displayed while shown, and
+		// out of the document entirely while hidden (left in the flow it would
+		// sit absolute after long content and inflate the body).
+		props.element.style.display = show ? '' : 'none';
+		return show;
 	}
 
 	function btnClass(active: boolean): string {
@@ -1665,12 +1670,10 @@
 		padding: 4px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 	}
-	/* The plugin's wrapper sits hidden in document flow (inline absolute) and,
-	   after long content, inflates documentElement.scrollHeight — a second,
-	   body-wide scrollbar on the issue page. Take it out of the flow while
-	   hidden; showing flips visibility and the plugin's inline position and
-	   offsets take over from there. */
-	:global(div[style*='visibility: hidden']:has(> .bubble-toolbar)) {
+	/* Mount-time cover for the same leak: until shouldShow first runs, the
+	   wrapper carries exactly this inline style and would still sit in
+	   document flow. Afterwards the shouldShow handler manages display. */
+	:global(div[style='visibility: hidden; position: absolute;']:has(> .bubble-toolbar)) {
 		display: none;
 	}
 	:global(.bubble-separator) {
