@@ -24,6 +24,6 @@ pkill -f "air" 2>/dev/null && echo "Stopped air" || true
 pkill -f "vite.*strifira" 2>/dev/null && echo "Stopped vite" || true
 
 # Stop Docker services
-docker compose stop 2>/dev/null && echo "Stopped Postgres and Redis" || true
+docker compose stop 2>/dev/null && echo "Stopped Postgres" || true
 
 echo "Done."

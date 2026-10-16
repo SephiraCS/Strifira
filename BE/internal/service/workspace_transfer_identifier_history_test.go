@@ -80,8 +80,7 @@ func TestWorkspaceIdentifierHistoryTransferPostgres(t *testing.T) {
 		_, err := db.ExecContext(ctx, statement.query, statement.args...)
 		require.NoError(t, err)
 	}
-	backend, err := storage.NewLocalBackend(t.TempDir(), "")
-	require.NoError(t, err)
+	backend, _ := storage.NewTestJetStream(t)
 	transfer := NewWorkspaceTransferService(repository.NewWorkspaceTransferRepository(db), backend)
 	archive, err := transfer.Export(ctx, &domain.Workspace{ID: workspaceID, Name: "Source", Slug: "identifier-source", OwnerID: userID}, userID)
 	require.NoError(t, err)

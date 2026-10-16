@@ -25,7 +25,6 @@ func TestParseSysadmins(t *testing.T) {
 
 func TestLoadBindAddress(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/fixture")
-	t.Setenv("REDIS_URL", "redis://localhost:6379")
 	t.Setenv("JWT_SECRET", strings.Repeat("fixture", 8))
 	t.Setenv("DEV_MACHINES_ENABLED", "false")
 	t.Setenv("SYSADMINS", "")
@@ -45,7 +44,6 @@ func TestLoadBindAddress(t *testing.T) {
 
 func TestLoadAIProviderNetworkPolicy(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/fixture")
-	t.Setenv("REDIS_URL", "redis://localhost:6379")
 	t.Setenv("JWT_SECRET", strings.Repeat("fixture", 8))
 	t.Setenv("DEV_MACHINES_ENABLED", "false")
 	t.Setenv("SYSADMINS", "")
@@ -127,19 +125,17 @@ func TestGatewayValidationDoesNotRequireControlPlaneSecrets(t *testing.T) {
 	require.NoError(t, config.ValidateGateway("https://app.example.com"))
 }
 
-func TestLoadMachineGatewayDoesNotRequireJWTOrRedis(t *testing.T) {
+func TestLoadMachineGatewayDoesNotRequireJWT(t *testing.T) {
 	setMachineGatewayEnv(t)
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("DEV_MACHINE_GATEWAY_DATABASE_URL", "postgres://gateway-db/strifira?sslmode=disable")
 	t.Setenv("JWT_SECRET", "")
-	t.Setenv("REDIS_URL", "")
 
 	cfg, err := LoadMachineGateway()
 
 	require.NoError(t, err)
 	require.Equal(t, "postgres://gateway-db/strifira?sslmode=disable", cfg.DatabaseURL)
 	require.Empty(t, cfg.JWTSecret)
-	require.Empty(t, cfg.RedisURL)
 	require.Equal(t, "https://app.example.com", cfg.FrontendURL)
 	require.Equal(t, "machines.example.net", cfg.DevMachine.Domain)
 }

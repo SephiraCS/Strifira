@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/SephiraCS/strifira-backend/internal/bus"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 )
@@ -14,20 +15,42 @@ import (
 var Version = "dev"
 
 type HealthHandler struct {
-	db *sqlx.DB
+	db  *sqlx.DB
+	bus *bus.Bus
 }
 
-func NewHealthHandler(db *sqlx.DB) *HealthHandler {
-	return &HealthHandler{db: db}
+func NewHealthHandler(db *sqlx.DB, clusterBus *bus.Bus) *HealthHandler {
+	return &HealthHandler{db: db, bus: clusterBus}
 }
 
 func (h *HealthHandler) Health(c echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"status": "ok", "version": Version})
+	return c.JSON(http.StatusOK, echo.Map{
+		"status":  "ok",
+		"version": Version,
+		"cluster": h.clusterInfo(),
+	})
 }
 
 func (h *HealthHandler) Ready(c echo.Context) error {
 	if err := h.db.Ping(); err != nil {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "not ready"})
 	}
-	return c.JSON(http.StatusOK, map[string]string{"status": "ready", "version": Version})
+	if !h.bus.Ready() {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "bus not ready"})
+	}
+	return c.JSON(http.StatusOK, echo.Map{
+		"status":  "ready",
+		"version": Version,
+		"cluster": h.clusterInfo(),
+	})
+}
+
+// clusterInfo reports this node's identity and cluster size: the
+// operator-facing view of the NATS cluster the node joined.
+func (h *HealthHandler) clusterInfo() echo.Map {
+	return echo.Map{
+		"node":  h.bus.NodeID(),
+		"name":  h.bus.ClusterName(),
+		"peers": h.bus.ClusterPeers(),
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
 	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -91,12 +92,25 @@ type docRoom struct {
 	persistMu sync.Mutex
 }
 
+type docRemoteEditor struct {
+	payload  map[string]any
+	lastSeen time.Time
+}
+
 type DocSyncService struct {
 	mu         sync.RWMutex
 	rooms      map[uuid.UUID]*docRoom
 	docRepo    repository.DocumentRepo
 	updateRepo repository.DocumentUpdateRepo
 	closing    bool
+	// fanout, when set, relays every room broadcast to the other cluster
+	// nodes editing the same document and feeds this service the frames
+	// from remote editors. Nil keeps doc-sync single-node (tests).
+	fanout *realtime.Fanout
+	// remote caches the editor peers other nodes announced for one
+	// document, so joins show every editor cluster-wide. Entries refresh on
+	// cursor traffic and are pruned when stale.
+	remote map[uuid.UUID]map[string]*docRemoteEditor
 }
 
 func NewDocSyncService(docRepo repository.DocumentRepo, updateRepo repository.DocumentUpdateRepo) *DocSyncService {
@@ -104,8 +118,21 @@ func NewDocSyncService(docRepo repository.DocumentRepo, updateRepo repository.Do
 		rooms:      make(map[uuid.UUID]*docRoom),
 		docRepo:    docRepo,
 		updateRepo: updateRepo,
+		remote:     make(map[uuid.UUID]map[string]*docRemoteEditor),
 	}
 }
+
+// SetFanout wires the cluster relay before the service starts serving.
+func (s *DocSyncService) SetFanout(f *realtime.Fanout) {
+	s.fanout = f
+	f.SetDocHandler(s.deliverRemote)
+	f.SetDocHistoryResponder(s.historySnapshot)
+}
+
+// docRemotePeerTTL bounds how long a remote editor stays listed without
+// cursor/join traffic; a dead node's editors vanish from the peer lists
+// without explicit cleanup.
+const docRemoteEditorTTL = 2 * time.Minute
 
 // Join loads (or reuses) the document's room, hands the client the full
 // update log and current peers, and announces it to the other editors.
@@ -138,6 +165,11 @@ func (s *DocSyncService) Join(ctx context.Context, docID, userID uuid.UUID, name
 	}
 	room := s.rooms[docID]
 	if room == nil {
+		// The database log may lag the live rooms on the other nodes by one
+		// flush interval; catch up from them before the room exists.
+		remoteUpdates, remotePeers := s.collectRemoteState(ctx, docID)
+		updates = mergeDocUpdates(updates, remoteUpdates)
+		s.remote[docID] = docRemoteEditorsFromPayloads(remotePeers)
 		room = &docRoom{
 			docID:       docID,
 			clients:     make(map[*DocSyncClient]bool),
@@ -165,6 +197,7 @@ func (s *DocSyncService) Join(ctx context.Context, docID, userID uuid.UUID, name
 			peers = append(peers, peer.peerPayload())
 		}
 	}
+	peers = append(peers, s.remoteEditors(docID)...)
 	room.mu.Unlock()
 
 	join, _ := json.Marshal(docSyncEnvelope{Type: "peer.join", Payload: mustDocSyncJSON(client.peerPayload())})
@@ -183,6 +216,84 @@ func (s *DocSyncService) Join(ctx context.Context, docID, userID uuid.UUID, name
 	})
 	s.Send(client, "peers", map[string]any{"peers": peers})
 	return client, history, peers, nil
+}
+
+// collectRemoteState asks the cluster's live rooms for their update log and
+// editor peers of a document (no-op without a fanout).
+func (s *DocSyncService) collectRemoteState(ctx context.Context, docID uuid.UUID) ([][]byte, []map[string]any) {
+	if s.fanout == nil {
+		return nil, nil
+	}
+	updates, peers := s.fanout.DocHistory(ctx, docID)
+	s.pruneRemoteEditors(docID)
+	return updates, peers
+}
+
+// mergeDocUpdates appends unseen updates to the database log. Yjs applies
+// updates in any order (duplicate content is a no-op), so concatenation
+// preserves the primary log's order and grafts the rest.
+func mergeDocUpdates(primary, extras [][]byte) [][]byte {
+	if len(extras) == 0 {
+		return primary
+	}
+	seen := make(map[string]bool, len(primary)+len(extras))
+	merged := make([][]byte, 0, len(primary)+len(extras))
+	for _, update := range primary {
+		seen[string(update)] = true
+		merged = append(merged, update)
+	}
+	for _, update := range extras {
+		if !seen[string(update)] {
+			seen[string(update)] = true
+			merged = append(merged, update)
+		}
+	}
+	return merged
+}
+
+// docRemoteEditorsFromPayloads builds the remote editor cache from history
+// replies.
+func docRemoteEditorsFromPayloads(payloads []map[string]any) map[string]*docRemoteEditor {
+	editors := make(map[string]*docRemoteEditor, len(payloads))
+	now := time.Now()
+	for _, payload := range payloads {
+		if id, ok := payload["client_id"].(string); ok && id != "" {
+			editors[id] = &docRemoteEditor{payload: payload, lastSeen: now}
+		}
+	}
+	return editors
+}
+
+// remoteEditors snapshots the cached remote editors of a document.
+func (s *DocSyncService) remoteEditors(docID uuid.UUID) []map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	peers := make([]map[string]any, 0, len(s.remote[docID]))
+	for _, editor := range s.remote[docID] {
+		peers = append(peers, editor.payload)
+	}
+	return peers
+}
+
+// pruneRemoteEditors drops cache entries past the TTL and whole caches for
+// documents nobody edits locally.
+func (s *DocSyncService) pruneRemoteEditors(docID uuid.UUID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, editors := range s.remote {
+		if s.rooms[id] == nil && id != docID {
+			delete(s.remote, id)
+			continue
+		}
+		for peer, editor := range editors {
+			if time.Since(editor.lastSeen) > docRemoteEditorTTL {
+				delete(editors, peer)
+			}
+		}
+		if len(editors) == 0 {
+			delete(s.remote, id)
+		}
+	}
 }
 
 // Leave removes the client, tells the room's peers, and tears the room down
@@ -213,6 +324,7 @@ func (s *DocSyncService) Leave(client *DocSyncClient) {
 		if s.rooms[client.docID] == room {
 			delete(s.rooms, client.docID)
 		}
+		delete(s.remote, client.docID)
 		s.mu.Unlock()
 		s.stopRoom(room)
 	}
@@ -355,6 +467,17 @@ func (s *DocSyncService) handleSnapshot(ctx context.Context, client *DocSyncClie
 }
 
 func (s *DocSyncService) broadcast(room *docRoom, exclude *DocSyncClient, data []byte) {
+	if s.fanout != nil {
+		// Cluster path: every node — this one included — receives the frame
+		// and relays it to its local room (deliverRemote); local membership
+		// state was already updated synchronously above.
+		excludePeer := ""
+		if exclude != nil {
+			excludePeer = exclude.peerID.String()
+		}
+		s.fanout.PublishDoc(room.docID, data, excludePeer)
+		return
+	}
 	room.mu.RLock()
 	defer room.mu.RUnlock()
 	for client := range room.clients {
@@ -509,12 +632,43 @@ func (s *DocSyncService) Shutdown(ctx context.Context) error {
 // socket close — clients reconnect with a fresh Y.Doc seeded from the
 // restored content_html. The log wipe happens after the room's flusher has
 // drained, so a final (stale) flush cannot resurrect rows afterwards.
+// Cluster nodes without the originating request tear their rooms down the
+// same way (without touching the shared database a second time).
 func (s *DocSyncService) ResetDocument(docID uuid.UUID) {
+	s.resetRoomLocalAndNotify(docID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := s.updateRepo.DeleteByDocument(ctx, docID); err != nil {
+		log.WithError(err).WithField("document_id", docID).Warn("doc sync reset failed to clear update log")
+	}
+
+	if s.fanout != nil {
+		reset, _ := json.Marshal(docSyncEnvelope{Type: "reset", Payload: mustDocSyncJSON(map[string]any{})})
+		s.fanout.PublishDoc(docID, reset, "")
+	}
+}
+
+// resetRoomLocalAndNotify tears this node's room down without flushing and
+// sends its clients the reset frame before closing them.
+func (s *DocSyncService) resetRoomLocalAndNotify(docID uuid.UUID) {
+	for _, client := range s.resetRoomLocal(docID) {
+		s.Send(client, "reset", map[string]any{})
+		if client.close != nil {
+			client.close()
+		}
+	}
+}
+
+// resetRoomLocal tears the document's room down without flushing its
+// buffer and returns the affected clients.
+func (s *DocSyncService) resetRoomLocal(docID uuid.UUID) []*DocSyncClient {
 	s.mu.Lock()
 	room := s.rooms[docID]
 	if room != nil {
 		delete(s.rooms, docID)
 	}
+	delete(s.remote, docID)
 	s.mu.Unlock()
 
 	var clients []*DocSyncClient
@@ -534,19 +688,132 @@ func (s *DocSyncService) ResetDocument(docID uuid.UUID) {
 		}
 		room.mu.Unlock()
 	}
+	return clients
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := s.updateRepo.DeleteByDocument(ctx, docID); err != nil {
-		log.WithError(err).WithField("document_id", docID).Warn("doc sync reset failed to clear update log")
+// deliverRemote processes one relayed doc-sync frame from the cluster:
+// remote editor bookkeeping plus local relay. The origin's own deliveries
+// ride the same path — its local relay excludes the origin editor, and the
+// history/peer bookkeeping for its own editors already happened
+// synchronously in the originating call.
+func (s *DocSyncService) deliverRemote(env *realtime.DocEnvelope) {
+	var frame docSyncEnvelope
+	if json.Unmarshal(env.Frame, &frame) != nil {
+		return
+	}
+	fromSelf := s.fanout != nil && env.Node == s.fanout.Self()
+
+	s.mu.RLock()
+	room := s.rooms[env.DocID]
+	s.mu.RUnlock()
+
+	switch frame.Type {
+	case "peer.join":
+		if !fromSelf {
+			var payload map[string]any
+			if json.Unmarshal(frame.Payload, &payload) == nil {
+				s.trackRemoteEditor(env.DocID, payload)
+			}
+		}
+	case "peer.leave":
+		var payload struct {
+			ClientID string `json:"client_id"`
+		}
+		if json.Unmarshal(frame.Payload, &payload) == nil {
+			s.forgetRemoteEditor(env.DocID, payload.ClientID)
+		}
+	case "cursor":
+		if !fromSelf {
+			var payload map[string]any
+			if json.Unmarshal(frame.Payload, &payload) == nil {
+				s.trackRemoteEditor(env.DocID, payload)
+			}
+		}
+	case "update":
+		if !fromSelf && room != nil {
+			// Remember relayed updates so later joins on this node replay
+			// them without waiting for the origin's database flush. The
+			// origin node persists; relays never write.
+			var payload struct {
+				Update string `json:"update"`
+			}
+			if json.Unmarshal(frame.Payload, &payload) == nil {
+				if update, err := base64.StdEncoding.DecodeString(payload.Update); err == nil && len(update) > 0 {
+					room.mu.Lock()
+					room.history = append(room.history, update)
+					room.mu.Unlock()
+				}
+			}
+		}
+	case "reset":
+		s.resetRoomLocalAndNotify(env.DocID)
+		return
 	}
 
-	for _, client := range clients {
-		s.Send(client, "reset", map[string]any{})
-		if client.close != nil {
-			client.close()
+	// Relay the frame to the local room, excluding the origin editor.
+	s.mu.RLock()
+	room = s.rooms[env.DocID]
+	s.mu.RUnlock()
+	if room == nil {
+		return
+	}
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+	for client := range room.clients {
+		if client.peerID.String() == env.ExcludePeer {
+			continue
+		}
+		select {
+		case client.send <- env.Frame:
+		default:
 		}
 	}
+}
+
+func (s *DocSyncService) trackRemoteEditor(docID uuid.UUID, payload map[string]any) {
+	id, _ := payload["client_id"].(string)
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	if s.remote[docID] == nil {
+		s.remote[docID] = make(map[string]*docRemoteEditor)
+	}
+	s.remote[docID][id] = &docRemoteEditor{payload: payload, lastSeen: time.Now()}
+	s.mu.Unlock()
+}
+
+func (s *DocSyncService) forgetRemoteEditor(docID uuid.UUID, clientID string) {
+	if clientID == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.remote[docID], clientID)
+	if len(s.remote[docID]) == 0 {
+		delete(s.remote, docID)
+	}
+	s.mu.Unlock()
+}
+
+// historySnapshot is the fanout responder callback: this node's live log
+// and editor peers for a document.
+func (s *DocSyncService) historySnapshot(docID uuid.UUID) ([][]byte, []map[string]any) {
+	s.mu.RLock()
+	room := s.rooms[docID]
+	s.mu.RUnlock()
+	if room == nil {
+		return nil, nil
+	}
+	room.mu.RLock()
+	history := make([][]byte, len(room.history))
+	copy(history, room.history)
+	peers := make([]map[string]any, 0, len(room.clients))
+	for client := range room.clients {
+		peers = append(peers, client.peerPayload())
+	}
+	room.mu.RUnlock()
+	peers = append(peers, s.remoteEditors(docID)...)
+	return history, peers
 }
 
 func truncateDocSyncName(name string) string {

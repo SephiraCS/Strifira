@@ -389,8 +389,6 @@ if (isMain) {
         PORT: String(apiPort),
         BIND_ADDRESS: "127.0.0.1",
         DATABASE_URL: databaseURL,
-        // Config reserves Redis; the current server never uses it.
-        REDIS_URL: "redis://127.0.0.1:1",
         JWT_SECRET: randomUUID() + randomUUID(),
         FRONTEND_URL: baseURL,
         ENVIRONMENT: "development",

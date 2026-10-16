@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/SephiraCS/strifira-backend/internal/bus"
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/internal/mcpserver"
 	mw "github.com/SephiraCS/strifira-backend/internal/middleware"
@@ -149,7 +150,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	sharedLinkSvc := service.NewSharedLinkService(repository.NewSharedLinkRepository(db), workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, repository.NewDocumentRepository(db), integrationJWTSecret)
 
 	authH := NewAuthHandler(authSvc, false, nil).
-		WithLoginThrottle(mw.NewLoginThrottle(integrationLoginMaxFailures, integrationLoginLockout))
+		WithLoginThrottle(mw.NewLoginThrottle(bus.NewTestKV(env.t, "login-throttle-test", 2*integrationLoginLockout), integrationLoginMaxFailures, integrationLoginLockout))
 	teamH := NewTeamHandler(teamSvc)
 	issueH := NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	relationH := NewIssueRelationHandler(relationSvc)

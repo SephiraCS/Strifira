@@ -109,6 +109,27 @@ type Hub struct {
 	// upgrading counts admitted upgrades that have not registered (or
 	// failed) yet; Shutdown waits for them as well as for clients.
 	upgrading int
+
+	// fanout, when set, carries events to the other nodes of the cluster and
+	// makes issue presence and share membership cluster-wide. A nil fanout
+	// (tests, single-node) keeps every path local.
+	fanout *Fanout
+	// stopHeartbeat/heartbeatDone bound the goroutine refreshing this
+	// node's viewers' presence keys for the whole cluster.
+	stopHeartbeat chan struct{}
+	heartbeatDone chan struct{}
+}
+
+// SetFanout wires the cluster fan-out before the hub starts serving. The
+// hub then delivers local clients through received envelopes (its own
+// publications included) and answers presence queries from the replicated
+// index instead of its local client tables.
+func (h *Hub) SetFanout(f *Fanout) {
+	h.fanout = f
+	f.SetHubHandler(h)
+	h.stopHeartbeat = make(chan struct{})
+	h.heartbeatDone = make(chan struct{})
+	go h.presenceHeartbeat()
 }
 
 func NewHub() *Hub {
@@ -180,6 +201,13 @@ func (h *Hub) BeginUpgrade() (done func(), ok bool) {
 // this explicitly to let clients reconnect elsewhere and to run the
 // per-connection cleanup before the process exits.
 func (h *Hub) Shutdown(ctx context.Context) error {
+	if h.stopHeartbeat != nil {
+		close(h.stopHeartbeat)
+		select {
+		case <-h.heartbeatDone:
+		case <-time.After(5 * time.Second):
+		}
+	}
 	h.mu.Lock()
 	h.closing = true
 	conns := make([]*websocket.Conn, 0)
@@ -265,6 +293,13 @@ func (h *Hub) Broadcast(workspaceID uuid.UUID, event Event) {
 		h.OnBroadcast(workspaceID, event)
 	}
 
+	if h.fanout != nil {
+		// Cluster path: every node — this one included — receives the
+		// envelope and delivers to its local clients (deliverEvent).
+		h.fanout.publishEvent(workspaceID, event, "", "")
+		return
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		log.WithError(err).Error("failed to marshal event")
@@ -292,6 +327,11 @@ func (h *Hub) Broadcast(workspaceID uuid.UUID, event Event) {
 func (h *Hub) BroadcastToUser(workspaceID, userID uuid.UUID, event Event) {
 	event.Timestamp = time.Now()
 
+	if h.fanout != nil {
+		h.fanout.publishEvent(workspaceID, event, "", userID.String())
+		return
+	}
+
 	data, err := json.Marshal(event)
 	if err != nil {
 		log.WithError(err).Error("failed to marshal event")
@@ -307,6 +347,32 @@ func (h *Hub) BroadcastToUser(workspaceID, userID uuid.UUID, event Event) {
 			case client.send <- data:
 			default:
 			}
+		}
+	}
+}
+
+// deliverEvent fans a received cluster envelope out to this node's local
+// clients, honoring the origin's target/exclusion selectors.
+func (h *Hub) deliverEvent(env *wireEnvelope) {
+	if env.Event == nil {
+		return
+	}
+	data, err := json.Marshal(*env.Event)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.clients[env.WorkspaceID] {
+		if env.TargetUser != "" && client.userID.String() != env.TargetUser {
+			continue
+		}
+		if env.ExcludePeer != "" && client.peerID.String() == env.ExcludePeer {
+			continue
+		}
+		select {
+		case client.send <- data:
+		default:
 		}
 	}
 }
@@ -526,6 +592,34 @@ func (h *Hub) handleShareSignal(client *Client, p ShareSignalPayload) {
 	if p.ToPeer != "" && peerErr != nil {
 		return
 	}
+
+	if h.fanout != nil {
+		// The sender's membership and role are only knowable on this node,
+		// so the route is validated here; every node then delivers to the
+		// opposite-role peers it holds (deliverShareSignal).
+		role := h.localShareRole(shareID, client)
+		if role == "" {
+			return
+		}
+		if role == "presenter" && (signal.Type == "offer" || p.ToPeer == "") {
+			return
+		}
+		if role == "viewer" && (signal.Type == "answer" || (p.ToPeer == "" && userErr != nil)) {
+			return
+		}
+		h.fanout.PublishShareSignal(client.workspaceID, &signalEnvelope{
+			ShareID:       shareID.String(),
+			From:          client.userID.String(),
+			FromPeer:      client.peerID.String(),
+			FromRole:      role,
+			NegotiationID: p.NegotiationID,
+			To:            p.To,
+			ToPeer:        p.ToPeer,
+			Data:          p.Data,
+		})
+		return
+	}
+
 	event := Event{
 		Type:      "share.signal",
 		Timestamp: time.Now(),
@@ -575,22 +669,134 @@ func (h *Hub) handleShareSignal(client *Client, p ShareSignalPayload) {
 	}
 }
 
-// broadcastSharePresence announces the share's live membership summary.
-func (h *Hub) broadcastSharePresence(workspaceID, shareID uuid.UUID) {
+// localShareRole reports the sender's role in the share when its socket is
+// a live member on this node, or "" when it is not a member at all.
+func (h *Hub) localShareRole(shareID uuid.UUID, client *Client) string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	viewerPeers := make([]string, 0)
-	viewerUsers := make(map[uuid.UUID]bool)
-	presenterPeer := ""
-	if state := h.shares[shareID]; state != nil && state.workspaceID == workspaceID {
-		for client := range state.viewers {
-			viewerPeers = append(viewerPeers, client.peerID.String())
-			viewerUsers[client.userID] = true
+	state := h.shares[shareID]
+	if state == nil || state.workspaceID != client.workspaceID || !h.clients[client.workspaceID][client] {
+		return ""
+	}
+	if state.presenters[client] {
+		return "presenter"
+	}
+	if state.viewers[client] {
+		return "viewer"
+	}
+	return ""
+}
+
+// deliverShareSignal routes a cluster relayed signaling message to this
+// node's opposite-role members, honoring the sender's addressing.
+func (h *Hub) deliverShareSignal(env *wireEnvelope) {
+	sig := env.Signal
+	if sig == nil {
+		return
+	}
+	shareID, err := uuid.Parse(sig.ShareID)
+	if err != nil || len(sig.Data) == 0 {
+		return
+	}
+	toPeer, peerErr := uuid.Parse(sig.ToPeer)
+	toUser, userErr := uuid.Parse(sig.To)
+	event := Event{
+		Type:      "share.signal",
+		Timestamp: time.Now(),
+		Payload: map[string]any{
+			"share_id":       shareID.String(),
+			"from":           sig.From,
+			"from_peer":      sig.FromPeer,
+			"negotiation_id": sig.NegotiationID,
+			"data":           sig.Data,
+		},
+	}
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	state := h.shares[shareID]
+	if state == nil || state.workspaceID != env.WorkspaceID {
+		return
+	}
+	var recipients map[*Client]bool
+	switch sig.FromRole {
+	case "presenter":
+		if sig.ToPeer == "" || peerErr != nil {
+			return
 		}
-		for client := range state.presenters {
-			presenterPeer = client.peerID.String()
+		recipients = state.viewers
+	case "viewer":
+		if sig.ToPeer == "" && (userErr != nil || sig.To == "") {
+			return
+		}
+		recipients = state.presenters
+	default:
+		return
+	}
+	for recipient := range recipients {
+		if !h.clients[env.WorkspaceID][recipient] {
+			continue
+		}
+		if (sig.ToPeer != "" && (peerErr != nil || recipient.peerID != toPeer)) ||
+			(sig.ToPeer == "" && (userErr != nil || recipient.userID != toUser)) {
+			continue
+		}
+		select {
+		case recipient.send <- data:
+		default:
 		}
 	}
+}
+
+// localShareSummary builds this node's local membership summary of one
+// share; nil when no member is connected here.
+func (h *Hub) localShareSummary(shareID uuid.UUID) *shareSummary {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	state := h.shares[shareID]
+	if state == nil {
+		return nil
+	}
+	summary := &shareSummary{ShareID: shareID.String()}
+	for client := range state.viewers {
+		summary.ViewerPeers = append(summary.ViewerPeers, client.peerID.String())
+		summary.ViewerUsers = append(summary.ViewerUsers, client.userID.String())
+	}
+	for client := range state.presenters {
+		summary.PresenterPeer = client.peerID.String()
+		summary.PresenterUser = client.userID.String()
+	}
+	return summary
+}
+
+// broadcastSharePresence announces the share's live membership summary:
+// this node's local view goes to the cluster, and every local client
+// receives the cluster-merged view.
+func (h *Hub) broadcastSharePresence(workspaceID, shareID uuid.UUID) {
+	summary := h.localShareSummary(shareID)
+	if h.fanout != nil {
+		if summary != nil {
+			h.fanout.PublishShareSummary(workspaceID, summary)
+		}
+		summary = h.fanout.MergedShare(shareID, summary)
+	}
+	if summary == nil {
+		return
+	}
+	viewerPeers := summary.ViewerPeers
+	if viewerPeers == nil {
+		viewerPeers = make([]string, 0)
+	}
+	viewerUsers := make(map[uuid.UUID]bool)
+	for _, user := range summary.ViewerUsers {
+		if id, err := uuid.Parse(user); err == nil {
+			viewerUsers[id] = true
+		}
+	}
+	presenterPeer := summary.PresenterPeer
 	data, err := json.Marshal(Event{
 		Type:      "share.presence",
 		Timestamp: time.Now(),
@@ -607,6 +813,8 @@ func (h *Hub) broadcastSharePresence(workspaceID, shareID uuid.UUID) {
 	}
 	// Snapshot and delivery share the lock so concurrent disconnect/join
 	// summaries cannot arrive out of order and retire a newly joined peer.
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	for client := range h.clients[workspaceID] {
 		select {
 		case client.send <- data:
@@ -615,24 +823,36 @@ func (h *Hub) broadcastSharePresence(workspaceID, shareID uuid.UUID) {
 	}
 }
 
-func (h *Hub) shareStateLocked(shareID uuid.UUID) (viewers int, presenterOnline bool) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	state := h.shares[shareID]
-	if state == nil {
-		return 0, false
+// rebroadcastShare re-announces the merged membership when a remote node's
+// summary changed (fanout callback).
+func (h *Hub) rebroadcastShare(shareID uuid.UUID) {
+	if h.fanout == nil {
+		return
 	}
-	seen := make(map[uuid.UUID]bool)
-	for c := range state.viewers {
-		seen[c.userID] = true
+	workspaceID := h.fanout.ShareWorkspace(shareID)
+	if workspaceID == uuid.Nil {
+		return
 	}
-	return len(seen), len(state.presenters) > 0
+	h.broadcastSharePresence(workspaceID, shareID)
 }
 
 // ShareState reports the share's live membership: distinct viewing users
 // and whether any presenter connection is online.
+// ShareState reports the share's live membership: distinct viewing users
+// and whether any presenter connection is online, merged cluster-wide.
 func (h *Hub) ShareState(shareID uuid.UUID) (viewers int, presenterOnline bool) {
-	return h.shareStateLocked(shareID)
+	summary := h.localShareSummary(shareID)
+	if h.fanout != nil {
+		summary = h.fanout.MergedShare(shareID, summary)
+	}
+	if summary == nil {
+		return 0, false
+	}
+	seen := make(map[string]bool)
+	for _, user := range summary.ViewerUsers {
+		seen[user] = true
+	}
+	return len(seen), summary.PresenterPeer != ""
 }
 
 // PresenterSeenAt reports when a presenter last announced for the share in
@@ -653,14 +873,23 @@ func (h *Hub) StartedAt() time.Time {
 }
 
 // ClearShare drops all membership state for the share (the share ended).
+// The cluster is told with an empty summary so the other nodes stop
+// counting its members.
 func (h *Hub) ClearShare(shareID uuid.UUID) {
 	h.mu.Lock()
 	if h.shareLocks[shareID] != nil {
 		h.shareEpoch[shareID]++
 	}
+	var workspace uuid.UUID
+	if state := h.shares[shareID]; state != nil {
+		workspace = state.workspaceID
+	}
 	delete(h.shares, shareID)
 	delete(h.presenterSeen, shareID)
 	h.mu.Unlock()
+	if h.fanout != nil && workspace != uuid.Nil {
+		h.fanout.PublishShareSummary(workspace, &shareSummary{ShareID: shareID.String()})
+	}
 }
 
 func (h *Hub) handlePresenceJoin(client *Client, issueID string) {
@@ -670,6 +899,12 @@ func (h *Hub) handlePresenceJoin(client *Client, issueID string) {
 	}
 
 	client.viewingIssue = issueID
+
+	// Publish the viewer to the cluster before the sync below reads it, so
+	// this client's own key is already in the replicated index.
+	if h.fanout != nil {
+		h.fanout.PutPresence(client.workspaceID.String(), issueID, client.peerID, client.userID)
+	}
 
 	// Broadcast join to workspace (excluding sender)
 	h.BroadcastExcluding(client.workspaceID, client, Event{
@@ -702,6 +937,10 @@ func (h *Hub) handlePresenceLeave(client *Client) {
 	}
 	client.viewingIssue = ""
 
+	if h.fanout != nil {
+		h.fanout.DropPresence(client.workspaceID.String(), issueID, client.peerID)
+	}
+
 	h.BroadcastExcluding(client.workspaceID, client, Event{
 		Type: "presence.leave",
 		Payload: map[string]any{
@@ -713,6 +952,11 @@ func (h *Hub) handlePresenceLeave(client *Client) {
 
 func (h *Hub) BroadcastExcluding(workspaceID uuid.UUID, exclude *Client, event Event) {
 	event.Timestamp = time.Now()
+
+	if h.fanout != nil {
+		h.fanout.publishEvent(workspaceID, event, exclude.peerID.String(), "")
+		return
+	}
 
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -735,6 +979,17 @@ func (h *Hub) BroadcastExcluding(workspaceID uuid.UUID, exclude *Client, event E
 }
 
 func (h *Hub) GetIssueViewers(workspaceID uuid.UUID, issueID string, exclude *Client) []uuid.UUID {
+	if h.fanout != nil {
+		users := h.fanout.IssueViewers(workspaceID.String(), issueID, exclude.peerID)
+		viewers := make([]uuid.UUID, 0, len(users))
+		for _, user := range users {
+			if id, err := uuid.Parse(user); err == nil {
+				viewers = append(viewers, id)
+			}
+		}
+		return viewers
+	}
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
@@ -745,6 +1000,43 @@ func (h *Hub) GetIssueViewers(workspaceID uuid.UUID, issueID string, exclude *Cl
 		}
 	}
 	return viewers
+}
+
+// presenceHeartbeat refreshes the presence keys of this node's viewers so
+// they outlive the bucket TTL while their sockets are alive.
+func (h *Hub) presenceHeartbeat() {
+	defer close(h.heartbeatDone)
+	ticker := time.NewTicker(presenceHeartbeat)
+	defer ticker.Stop()
+	type activeViewer struct {
+		workspace, issue string
+		peer, user       uuid.UUID
+	}
+	for {
+		select {
+		case <-h.stopHeartbeat:
+			return
+		case <-ticker.C:
+			h.mu.RLock()
+			active := make([]activeViewer, 0)
+			for workspaceID, clients := range h.clients {
+				for client := range clients {
+					if client.viewingIssue != "" {
+						active = append(active, activeViewer{
+							workspace: workspaceID.String(),
+							issue:     client.viewingIssue,
+							peer:      client.peerID,
+							user:      client.userID,
+						})
+					}
+				}
+			}
+			h.mu.RUnlock()
+			for _, viewer := range active {
+				h.fanout.PutPresence(viewer.workspace, viewer.issue, viewer.peer, viewer.user)
+			}
+		}
+	}
 }
 
 func (h *Hub) sendToClient(client *Client, event Event) {

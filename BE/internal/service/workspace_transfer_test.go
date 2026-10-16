@@ -273,9 +273,7 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	_, err = db.ExecContext(ctx, `INSERT INTO dev_machine_scope_settings(id,workspace_id,team_id,github_repo_id,base_branch) VALUES(gen_random_uuid(),$1,$2,$3,'main')`, workspaceID, teamID, githubRepoID)
 	require.NoError(t, err)
 
-	storageDir := t.TempDir()
-	backend, err := storage.NewLocalBackend(storageDir, "")
-	require.NoError(t, err)
+	backend, transferStore := storage.NewTestJetStream(t)
 	assetKey := assetID.String() + ".txt"
 	assetBody := "portable asset bytes"
 	_, err = backend.Put(ctx, assetKey, strings.NewReader(assetBody), "text/plain")
@@ -431,13 +429,13 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 		data.Tables["teams"] = append(data.Tables["teams"], duplicate)
 		manifest.Counts["teams"]++
 	})
-	filesBefore := regularFileCount(t, storageDir)
+	filesBefore := storage.CountObjects(t, transferStore)
 	_, err = transferService.Import(ctx, rollbackArchive, "Rollback", rollbackSlug, userID)
 	require.Error(t, err)
 	var rollbackCount int
 	require.NoError(t, db.Get(&rollbackCount, `SELECT COUNT(*) FROM workspaces WHERE slug=$1`, rollbackSlug))
 	require.Zero(t, rollbackCount)
-	require.Equal(t, filesBefore, regularFileCount(t, storageDir), "staged asset must be removed after transaction rollback")
+	require.Equal(t, filesBefore, storage.CountObjects(t, transferStore), "staged asset must be removed after transaction rollback")
 
 	missingSlug := "transfer-missing-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:8]
 	missingEmail := "missing-" + uuid.New().String() + "@example.test"
@@ -518,16 +516,4 @@ func mutateWorkspaceArchive(t *testing.T, sourcePath string, mutate func(*dto.Wo
 	require.NoError(t, writer.Close())
 	require.NoError(t, file.Close())
 	return path
-}
-
-func regularFileCount(t *testing.T, root string) int {
-	t.Helper()
-	count := 0
-	require.NoError(t, filepath.WalkDir(root, func(_ string, entry os.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() {
-			count++
-		}
-		return err
-	}))
-	return count
 }

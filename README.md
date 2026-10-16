@@ -31,7 +31,7 @@ Strifira's published releases are runnable MVPs, not a mature enterprise platfor
 | **API & automation** | Available: personal API keys with read/write scopes, a streamable HTTP MCP endpoint (`/mcp`) with tools for GitHub, GitHub Actions, Dev Boxes and workspace management, and a published OpenAPI document with an interactive reference at `/docs`. |
 | **Dev Machines** | Unreleased development-branch functionality with a multi-container runtime, authenticated routing, agent providers, collector, and UI. The production contract requires always-on availability; existing deployment gates remain migration debt. See [`TECHNICAL.md`](TECHNICAL.md). |
 | **Dev Boxes**    | Unreleased development-branch subsystem: members register their own development VM, run the persistent `dev-box-worker`, and queue issue jobs that execute local coding CLIs and return reviewable patches. See [`BE/docs/dev-box-worker.md`](BE/docs/dev-box-worker.md). |
-| **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, Redis, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/).                                                                                                       |
+| **Self-hosting** | Reference Docker Compose stack with Caddy, PostgreSQL, backend, frontend, an update script, and dedicated config in [`selfhosting/`](selfhosting/); a `cluster` profile runs three load-balanced instances.                                                                              |
 
 ## Production operating contract
 
@@ -180,12 +180,12 @@ Here's what Strifira runs on and what each piece does:
 | ----------------- | ------------------------------------ | --------------------------------------------------------------------- |
 | **API**           | Go + Echo                            | High-performance HTTP server with middleware, routing, JWT auth       |
 | **Database**      | PostgreSQL 17                        | Primary data store, raw SQL via sqlx/pgx, no ORM                      |
-| **Redis**         | Redis 7                              | Required configuration; reserved for future cache and job use         |
+| **Embedded NATS**  | NATS Server 2.15 (embedded)          | Cluster messaging and JetStream (files, presence, KV) — runs in-process, no external service |
 | **Frontend**      | SvelteKit + Svelte 5                 | SPA with TypeScript, runes-based reactivity, static adapter           |
 | **UI**            | Tailwind CSS + shadcn-svelte         | Utility-first styling with accessible component primitives            |
 | **Editor**        | Tiptap v3 + Yjs                      | Rich text with code blocks, mentions, slash commands, task lists      |
 | **Real-time**     | WebSocket (nhooyr.io) + WebRTC      | Workspace events, issue presence, targeted notifications, per-document collaborative editing, and screen-share signaling (media is peer-to-peer) |
-| **Storage**       | Local FS or S3-compatible            | AWS S3, Cloudflare R2, MinIO, SeaweedFS                               |
+| **File storage**   | JetStream Object Store               | Replicated across the cluster; any node serves any file               |
 | **Reverse Proxy** | Caddy                                | Production HTTPS and routing                                          |
 | **Automation**    | MCP + OpenAPI                        | Streamable HTTP MCP tools at `/mcp`; OpenAPI document rendered at `/docs` |
 | **Dev Machines**  | Docker + Caddy + Go gateway/manager + code-server + ttyd/xterm + Chrome/KasmVNC | Unreleased multi-container development environments with issue worktrees and provider abstraction |
@@ -214,7 +214,7 @@ make dev-reset
 
 `make dev` runs migrations and then the Go backend on `localhost:8080` and Vite on
 `localhost:5173` directly on the host for hot reload. The root Compose stack is
-for supporting services only during local development: Postgres, Redis, the Dev
+for supporting services only during local development: Postgres, the Dev
 Machine gateway/manager, runtime image builds, and the Caddy wildcard TLS proxy
 for `https://*.machines.localhost`. The dev proxy binds `127.0.0.1:80` and
 `127.0.0.1:443`; stop the selfhosting stack first if it is using those ports.
@@ -232,7 +232,7 @@ The `STRIFIRA_DEV_` settings can also be supplied through the process environmen
 | ---------------------- | ------------------------------------- |
 | `make dev`             | Apply migrations, then run backend + frontend on the host |
 | `make dev-all`         | Start supporting services (incl. Dev Machine control plane), then `make dev` |
-| `make dev-start-services` | Start Postgres, Redis, and Dev Machine infrastructure |
+| `make dev-start-services` | Start Postgres and Dev Machine infrastructure |
 | `make dev-reset`       | Reset, seed, start infrastructure, then run host dev |
 | `make dev-backend`     | Backend only                          |
 | `make dev-frontend`    | Frontend only                         |
@@ -251,7 +251,7 @@ The `STRIFIRA_DEV_` settings can also be supplied through the process environmen
 
 ## 🏠 Self-Hosting
 
-Strifira is designed to be self-hosted. The reference stack in [`selfhosting/`](selfhosting/) includes Caddy, PostgreSQL, Redis, the backend, the frontend, and an update script. Review secrets, backups, monitoring, and host security before production use.
+Strifira is designed to be self-hosted. The reference stack in [`selfhosting/`](selfhosting/) includes Caddy, PostgreSQL, the backend, the frontend, and an update script. Review secrets, backups, monitoring, and host security before production use.
 
 ### Portable workspace transfer
 
@@ -295,7 +295,7 @@ commit generated credentials.
 docker compose up --build -d
 ```
 
-This starts 5 containers: Caddy (auto TLS), PostgreSQL, Redis, backend API, and frontend. Optional Compose profiles add the Dev Machines control plane and runtime image builds (`dev-machines`, `dev-machine-images`) and the updater sidecar (`updater`).
+This starts 4 containers: Caddy (auto TLS), PostgreSQL, backend API, and frontend. Optional Compose profiles add the Dev Machines control plane and runtime image builds (`dev-machines`, `dev-machine-images`) and the updater sidecar (`updater`).
 
 ### 3. Run migrations and seed
 
@@ -355,15 +355,26 @@ endpoint; its profile-based setup remains migration debt. It must remain
 internal-only and run the same reviewed update flow. Back up application data,
 assets and required environment images before updating.
 
-### Storage contract and current prerequisites
+### Storage contract
 
-Production storage uses the fixed service setting and automatically delivered
-credentials. Vendor-issued storage keys are stored once in OCI Vault. The
-current reference stack still selects local or S3-compatible storage through
-environment inputs; those backend-selection and tuning inputs are inventory
-for later COS work. This documentation change does not migrate uploaded data
-or implement automatic discovery. Verify access permissions, public URL
-behavior and signed downloads before accepting a storage deployment.
+Files (uploads, avatars, workspace exports) live in the embedded NATS
+JetStream object store, persisted under `uploads/.jetstream` on the uploads
+volume and replicated across every cluster node, so any node serves any
+file and no backend selection exists. Back up the uploads volume as before;
+verify access permissions, public URL behavior and signed downloads before
+accepting a storage deployment.
+
+### Multi-node deployments
+
+Every node embeds its own NATS server. `NATS_SEED_URLS` (the cluster
+addresses of the other nodes) is all it takes to join: NATS gossip shares
+the route table after the first connection, and JetStream replicates the
+file store, issue presence, login-throttle and cluster-membership buckets.
+Any node answers any request — the HTTP API is stateless (JWT
+authentication, PostgreSQL-backed data, cluster-wide login throttling), and
+websocket traffic is fanned out through NATS, so a load balancer may
+round-robin freely. `docker compose --profile cluster` runs a
+three-instance reference deployment behind a health-checking load balancer.
 
 ### GitHub integration
 
@@ -440,7 +451,7 @@ Pull requests are welcome. Keep changes focused, explain the behavior being chan
 
 ### CI and deployment
 
-Every push to `main` runs CI: the zero-configuration guard, svelte-check for UI and WEB, the fast backend suite (PostgreSQL and Redis as service containers), and the fast browser suite in three shards. In parallel, Coolify deploys the commit itself: it watches the repository webhook, builds the root Dockerfile (baking the commit into the binary, reported by `/health`), and health-gates the new instance with rollback. The Release job polls `/health` until alpha serves the pushed commit, then bumps the version (`UI/package.json` and the OpenAPI `info.version`) in a `[skip ci]` commit, tags `vX.Y.Z`, and creates the GitHub release; the release commit is rolled to alpha via the Coolify deployment API. Pull requests run the checks and tests only; versions are never edited by hand.
+Every push to `main` runs CI: the zero-configuration guard, svelte-check for UI and WEB, the fast backend suite (PostgreSQL as a service container), and the fast browser suite in three shards. In parallel, Coolify deploys the commit itself: it watches the repository webhook, builds the root Dockerfile (baking the commit into the binary, reported by `/health`), and health-gates the new instance with rollback. The Release job polls `/health` until alpha serves the pushed commit, then bumps the version (`UI/package.json` and the OpenAPI `info.version`) in a `[skip ci]` commit, tags `vX.Y.Z`, and creates the GitHub release; the release commit is rolled to alpha via the Coolify deployment API. Pull requests run the checks and tests only; versions are never edited by hand.
 
 Pull requests run only the CI jobs their changes touch (a `changes` job uses `dorny/paths-filter`): `BE/`, `devmachine/` and the `Makefile` run the backend suite; `UI/` and `WEB/` run svelte-check; `UI/` and the `Makefile` run the browser shards. The guard always runs. The `test` job aggregates them and is the check to wait for: it passes when every job passed or was skipped as unaffected, and fails when any failed or was cancelled. Pushes to `main` and manual runs always run everything. The security scan runs on pull requests that touch `BE/` or the UI npm dependencies; it also runs nightly.
 

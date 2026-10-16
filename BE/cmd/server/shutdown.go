@@ -19,6 +19,9 @@ type shutdownSteps struct {
 	drainWebSocket func(context.Context) error
 	// closeWebhooks flushes the outgoing webhook delivery pool.
 	closeWebhooks func(context.Context) error
+	// closeBus stops the embedded NATS server after every consumer of it
+	// (websocket drains, doc-sync rooms, background producers) is done.
+	closeBus func()
 }
 
 // gracefulShutdown stops the server within ctx's deadline:
@@ -27,7 +30,9 @@ type shutdownSteps struct {
 //     cannot eat the sockets' grace period;
 //   - the webhook pool is closed only after both HTTP draining and the
 //     producers have finished, so events emitted by drained requests and by
-//     a producer's last iteration are still delivered rather than dropped.
+//     a producer's last iteration are still delivered rather than dropped;
+//   - the embedded NATS server shuts down last, once nothing publishes to
+//     or reads from it anymore.
 func gracefulShutdown(ctx context.Context, steps shutdownSteps) {
 	steps.stopBackground()
 	var wg sync.WaitGroup
@@ -45,6 +50,7 @@ func gracefulShutdown(ctx context.Context, steps shutdownSteps) {
 		if err := steps.closeWebhooks(ctx); err != nil {
 			log.WithError(err).Warn("webhook delivery queue did not drain")
 		}
+		steps.closeBus()
 	})
 	wg.Go(func() {
 		if err := steps.drainWebSocket(ctx); err != nil {

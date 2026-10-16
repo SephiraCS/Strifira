@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,10 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLocalBackend_PutGetDeleteURL(t *testing.T) {
-	dir := t.TempDir()
-	b, err := NewLocalBackend(dir, "/uploads")
-	require.NoError(t, err)
+func TestJetStreamBackend_PutGetDeleteURL(t *testing.T) {
+	b, _ := NewTestJetStream(t)
 
 	ctx := context.Background()
 	key := "test-image.png"
@@ -40,29 +39,17 @@ func TestLocalBackend_PutGetDeleteURL(t *testing.T) {
 	err = b.Delete(ctx, key)
 	assert.NoError(t, err)
 	_, err = b.Get(ctx, key)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestLocalBackend_CreatesDir(t *testing.T) {
-	dir := t.TempDir() + "/nested/uploads"
-	b, err := NewLocalBackend(dir, "/uploads")
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	_, err = b.Put(ctx, "test.png", strings.NewReader("data"), "image/png")
-	assert.NoError(t, err)
-}
-
-func TestLocalBackend_PutCreatesNamespacedSubdirs(t *testing.T) {
-	dir := t.TempDir()
-	b, err := NewLocalBackend(dir, "/uploads")
-	require.NoError(t, err)
+func TestJetStreamBackend_NamespacedKeys(t *testing.T) {
+	b, _ := NewTestJetStream(t)
 
 	ctx := context.Background()
 	key := "avatars/0d0f4d88-b3ec-4c4e-a1e6-2ac08d4ba63e.png"
 	content := "avatar bytes"
 
-	_, err = b.Put(ctx, key, strings.NewReader(content), "image/png")
+	_, err := b.Put(ctx, key, strings.NewReader(content), "image/png")
 	require.NoError(t, err)
 
 	rc, err := b.Get(ctx, key)
@@ -73,42 +60,50 @@ func TestLocalBackend_PutCreatesNamespacedSubdirs(t *testing.T) {
 
 	require.NoError(t, b.Delete(ctx, key))
 	_, err = b.Get(ctx, key)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestLocalBackend_RejectsPathTraversal(t *testing.T) {
-	b, err := NewLocalBackend(t.TempDir(), "/uploads")
+func TestJetStreamBackend_MissingObjectIsNotExist(t *testing.T) {
+	b, _ := NewTestJetStream(t)
+
+	_, err := b.Get(context.Background(), "missing.bin")
+	assert.ErrorIs(t, err, os.ErrNotExist)
+	// Deleting a missing object is not an error: handlers log-and-continue.
+	assert.NoError(t, b.Delete(context.Background(), "missing.bin"))
+}
+
+func TestJetStreamBackend_PutOverwrites(t *testing.T) {
+	b, store := NewTestJetStream(t)
+
+	ctx := context.Background()
+	_, err := b.Put(ctx, "doc.txt", strings.NewReader("first"), "text/plain")
+	require.NoError(t, err)
+	_, err = b.Put(ctx, "doc.txt", strings.NewReader("second version"), "text/plain")
 	require.NoError(t, err)
 
-	_, err = b.Put(context.Background(), "../secret.txt", strings.NewReader("data"), "text/plain")
-	assert.Error(t, err)
+	rc, err := b.Get(ctx, "doc.txt")
+	require.NoError(t, err)
+	data, _ := io.ReadAll(rc)
+	rc.Close()
+	assert.Equal(t, "second version", string(data))
 
-	_, err = b.Get(context.Background(), "../secret.txt")
-	assert.Error(t, err)
-
-	err = b.Delete(context.Background(), "../secret.txt")
-	assert.Error(t, err)
+	assert.Equal(t, 1, CountObjects(t, store))
 }
 
-func TestNewConfig_DefaultsToLocal(t *testing.T) {
-	cfg := Config{}
-	assert.Equal(t, Type(""), cfg.Type)
+// The chunked object encoding keeps large payloads intact end to end.
+func TestJetStreamBackend_LargePayload(t *testing.T) {
+	b, _ := NewTestJetStream(t)
 
-	// Empty type should select local backend
-	dir := t.TempDir()
-	cfg.LocalDir = dir
-	cfg.LocalURL = "/uploads"
-	b, err := New(cfg)
+	ctx := context.Background()
+	content := strings.Repeat("x", 512*1024) + strings.Repeat("y", 512*1024)
+
+	_, err := b.Put(ctx, "large.bin", strings.NewReader(content), "application/octet-stream")
 	require.NoError(t, err)
 
-	url, err := b.URL(context.Background(), "file.png")
-	assert.NoError(t, err)
-	assert.Equal(t, "/uploads/file.png", url)
-}
-
-func TestNewConfig_UnsupportedType(t *testing.T) {
-	cfg := Config{Type: "gcs"}
-	_, err := New(cfg)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported storage type")
+	rc, err := b.Get(ctx, "large.bin")
+	require.NoError(t, err)
+	data, err := io.ReadAll(rc)
+	rc.Close()
+	require.NoError(t, err)
+	assert.Equal(t, content, string(data))
 }

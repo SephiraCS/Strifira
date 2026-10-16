@@ -83,8 +83,7 @@ func TestWorkspaceTransferExportReturnsZIPWithOrphanedSharedLink(t *testing.T) {
 	_, err = db.Exec(`INSERT INTO shared_links(id,token,workspace_id,created_by,scope,scope_id,filters,include_description,is_active) VALUES($1,$2,$3,$4,'team',$5,'{}',true,true)`, uuid.New(), uuid.NewString(), workspaceID, userID, uuid.New())
 	require.NoError(t, err)
 
-	backend, err := storage.NewLocalBackend(t.TempDir(), "")
-	require.NoError(t, err)
+	backend, _ := storage.NewTestJetStream(t)
 	handler := NewWorkspaceTransferHandler(service.NewWorkspaceTransferService(repository.NewWorkspaceTransferRepository(db), backend))
 	e := echo.New()
 	recorder := httptest.NewRecorder()

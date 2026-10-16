@@ -13,8 +13,8 @@ dev:
 dev-all: dev-start-services dev
 
 dev-start-services:
-	@echo "Starting Postgres and Redis..."
-	$(DEV_MACHINE_COMPOSE) up -d --wait postgres redis
+	@echo "Starting Postgres..."
+	$(DEV_MACHINE_COMPOSE) up -d --wait postgres
 	@echo "Applying migrations required by the Dev Machine gateway role..."
 	$(MAKE) migrate-up
 	@echo "Ensuring local Dev Machine runtime images exist..."
@@ -63,7 +63,7 @@ reset-dev:
 #   Playwright  FAST_SPECS in UI/playwright.config.ts; other specs are slow.
 #   Live checks scripts/check-*-live.* are slow.
 #
-# Backend suites need PostgreSQL and Redis (TEST_DATABASE_URL, REDIS_URL;
+# Backend suites need PostgreSQL (TEST_DATABASE_URL;
 # `make dev-start-services` locally). TEST_DATABASE_URL must name a separate
 # test database (in the environment or .env); it is migrated first, the
 # targets refuse to run without it or when it names the .env DATABASE_URL

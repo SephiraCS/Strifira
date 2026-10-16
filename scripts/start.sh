@@ -19,9 +19,9 @@ fi
 # Load env vars
 set -a && source .env && set +a
 
-# 2. Start Postgres and Redis
-echo "Starting Postgres and Redis..."
-docker compose up postgres redis -d --wait
+# 2. Start Postgres
+echo "Starting Postgres..."
+docker compose up postgres -d --wait
 
 # 3. Install dependencies
 echo "Installing backend dependencies..."

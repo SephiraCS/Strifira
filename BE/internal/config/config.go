@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/SephiraCS/strifira-backend/internal/aiegress"
-	"github.com/SephiraCS/strifira-backend/pkg/storage"
 	"github.com/google/uuid"
 	"github.com/kelseyhightower/envconfig"
 	"golang.org/x/net/publicsuffix"
@@ -33,20 +32,23 @@ func (f GitHubConfig) NormalizedURL() string {
 }
 
 type Config struct {
-	Port                    int    `envconfig:"PORT" default:"8080"`
-	BindAddress             string `envconfig:"BIND_ADDRESS"`
-	DatabaseURL             string `envconfig:"DATABASE_URL" required:"true"`
-	RedisURL                string `envconfig:"REDIS_URL" required:"true"`
-	JWTSecret               string `envconfig:"JWT_SECRET" required:"true"`
-	FrontendURL             string `envconfig:"FRONTEND_URL" default:"http://localhost:5173"`
-	Environment             string `envconfig:"ENVIRONMENT" default:"development"`
-	Storage                 storage.Config
+	Port                    int             `envconfig:"PORT" default:"8080"`
+	BindAddress             string          `envconfig:"BIND_ADDRESS"`
+	DatabaseURL             string          `envconfig:"DATABASE_URL" required:"true"`
+	JWTSecret               string          `envconfig:"JWT_SECRET" required:"true"`
+	FrontendURL             string          `envconfig:"FRONTEND_URL" default:"http://localhost:5173"`
+	Environment             string          `envconfig:"ENVIRONMENT" default:"development"`
 	Sysadmins               string          `envconfig:"SYSADMINS"`
 	PublicDemoMode          bool            `envconfig:"PUBLIC_DEMO_MODE"`
 	AIProviderNetworkPolicy aiegress.Policy `envconfig:"AI_PROVIDER_TRUSTED_ORIGINS"`
 
 	SystemUpdaterURL   string `envconfig:"SYSTEM_UPDATER_URL"`
 	SystemUpdaterToken string `envconfig:"SYSTEM_UPDATER_TOKEN"`
+
+	// NatsSeedURLs are the cluster addresses of the other nodes
+	// (NATS_SEED_URLS). The embedded NATS server joins the cluster through
+	// any one of them and gossips the rest; empty means a single-node cluster.
+	NatsSeedURLs string `envconfig:"NATS_SEED_URLS"`
 
 	sysadminIDs map[uuid.UUID]struct{}
 

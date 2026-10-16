@@ -57,19 +57,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
-      redis:
-        image: docker.io/library/redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
       DATABASE_URL: postgres://strifira:strifira@localhost:5432/strifira_test?sslmode=disable
       TEST_DATABASE_URL: postgres://strifira:strifira@localhost:5432/strifira_test?sslmode=disable
-      REDIS_URL: redis://localhost:6379
       JWT_SECRET: test-secret-that-is-at-least-32-characters-long
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -220,7 +210,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPORT_TITLE: 'Slow test suite failed'
           REPRO: |
-            # PostgreSQL and Redis first: make dev-start-services
+            # PostgreSQL first: make dev-start-services
             make test-slow
             # or one part: make test-slow-backend | test-slow-frontend | test-slow-live
         run: scripts/ci/report-failure.sh

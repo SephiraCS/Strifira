@@ -25,6 +25,7 @@ import (
 
 	"github.com/SephiraCS/strifira-backend/internal/agent"
 	"github.com/SephiraCS/strifira-backend/internal/apidocs"
+	"github.com/SephiraCS/strifira-backend/internal/bus"
 	"github.com/SephiraCS/strifira-backend/internal/config"
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/internal/handler"
@@ -62,8 +63,23 @@ func main() {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	// Realtime hub
+	// Embedded NATS bus: cluster messaging (realtime fan-out, doc-sync
+	// relay, share signaling) and the JetStream buckets backing files,
+	// issue presence and the login throttle. Joining the cluster only
+	// needs the seed URLs; with none of them reachable this node is a
+	// fully functional single-node cluster.
+	clusterBus, err := bus.New(bus.Config{
+		SeedURLs: cfg.NatsSeedURLs,
+		StoreDir: bus.DefaultStoreDir,
+	})
+	if err != nil {
+		log.Fatalf("Failed to start embedded nats bus: %v", err)
+	}
+
+	// Realtime hub, fanned out across the cluster nodes.
 	hub := realtime.NewHub()
+	fanout := realtime.NewFanout(clusterBus.Conn(), clusterBus.NodeID(), clusterBus.Presence)
+	hub.SetFanout(fanout)
 
 	// Background producers (sweepers, reconcilers, archivers) run on this
 	// lifecycle context and are tracked by background, so shutdown can stop
@@ -146,10 +162,10 @@ func main() {
 	)
 
 	// Handlers
-	healthH := handler.NewHealthHandler(db)
+	healthH := handler.NewHealthHandler(db, clusterBus)
 	// Per-email lockout (never per IP; see the /api/auth note below).
 	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin).
-		WithLoginThrottle(mw.NewLoginThrottle(loginMaxFailures, loginLockout))
+		WithLoginThrottle(mw.NewLoginThrottle(clusterBus.Throttle(), loginMaxFailures, loginLockout))
 	workspaceH := handler.NewWorkspaceHandler(workspaceSvc)
 	teamH := handler.NewTeamHandler(teamSvc)
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
@@ -190,6 +206,7 @@ func main() {
 	sharedLinkSvc := service.NewSharedLinkService(sharedLinkRepo, workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, documentRepo, cfg.JWTSecret)
 	sharedLinkH := handler.NewSharedLinkHandler(sharedLinkSvc, cfg.FrontendURL)
 	docSyncSvc := service.NewDocSyncService(documentRepo, documentUpdateRepo)
+	docSyncSvc.SetFanout(fanout)
 	documentSvc := service.NewDocumentService(documentRepo, hub, notifSvc, docSyncSvc)
 	docSyncH := handler.NewDocSyncHandler(docSyncSvc, documentSvc, handler.WebSocketOriginPatterns([]string{cfg.FrontendURL}, cfg.Environment == "development"))
 	documentH := handler.NewDocumentHandler(documentSvc, userRepo)
@@ -204,10 +221,7 @@ func main() {
 		})
 	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
-	store, err := storage.New(cfg.Storage)
-	if err != nil {
-		log.Fatalf("Failed to initialize storage: %v", err)
-	}
+	store := storage.New(clusterBus.Files())
 	uploadH := handler.NewUploadHandler(store, assetRepo, issueRepo, cfg.JWTSecret)
 	userAvatarRepo := repository.NewUserAvatarRepository(db)
 	workspaceAvatarRepo := repository.NewWorkspaceAvatarRepository(db)
@@ -688,6 +702,7 @@ func main() {
 				return errors.Join(hub.Shutdown(ctx), docSyncSvc.Shutdown(ctx))
 			},
 			closeWebhooks: webhookSvc.Close,
+			closeBus:      clusterBus.Close,
 		})
 	}
 }

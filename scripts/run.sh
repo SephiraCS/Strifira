@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 echo "=== Strifira - Run ==="
 
-# Start services (postgres, redis, backend, frontend)
+# Start services (postgres, backend, frontend)
 ./scripts/start.sh &
 START_PID=$!
 

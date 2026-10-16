@@ -35,3 +35,7 @@ coverage/
 .vscode/
 /.claude/settings.local.json
 test-results/
+
+# Local builds
+BE/multinodecheck
+BE/server

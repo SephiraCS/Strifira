@@ -1,0 +1,13 @@
+# Load balancer for a multi-node Strifira deployment (docker compose
+# --profile cluster). Round-robins every request — HTTP, WebSocket and
+# uploads alike — across the nodes, which is safe because every node holds
+# the full replicated state (JetStream files/KV) and any node answers any
+# request. The health check pulls dead nodes out of the rotation.
+:8080 {
+	reverse_proxy strifira-1:3000 strifira-2:3000 strifira-3:3000 {
+		lb_policy round_robin
+		health_uri /health
+		health_interval 5s
+		health_timeout 3s
+	}
+}
