@@ -1665,6 +1665,14 @@
 		padding: 4px;
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 	}
+	/* The plugin's wrapper sits hidden in document flow (inline absolute) and,
+	   after long content, inflates documentElement.scrollHeight — a second,
+	   body-wide scrollbar on the issue page. Take it out of the flow while
+	   hidden; showing flips visibility and the plugin's inline position and
+	   offsets take over from there. */
+	:global(div[style*='visibility: hidden']:has(> .bubble-toolbar)) {
+		display: none;
+	}
 	:global(.bubble-separator) {
 		width: 1px;
 		height: 16px;
