@@ -15,15 +15,17 @@ import (
 // Objects are replicated across the cluster nodes, so every node serves any
 // file and no node-local filesystem state exists.
 type JetStreamBackend struct {
-	store   jetstream.ObjectStore
-	urlBase string
+	// getStore resolves the bucket on every use: the bus provisions it in
+	// the background shortly after startup.
+	getStore func() jetstream.ObjectStore
+	urlBase  string
 }
 
-// NewJetStream wraps an object store bucket as the file storage backend.
-// Files are fetched through the API handlers, so the URL base is the same
-// public path the uploads tree was served under.
-func NewJetStream(store jetstream.ObjectStore) *JetStreamBackend {
-	return &JetStreamBackend{store: store, urlBase: "/uploads"}
+// NewJetStream wraps the object store bucket resolved by getStore as the
+// file storage backend. Files are fetched through the API handlers, so the
+// URL base is the same public path the uploads tree was served under.
+func NewJetStream(getStore func() jetstream.ObjectStore) *JetStreamBackend {
+	return &JetStreamBackend{getStore: getStore, urlBase: "/uploads"}
 }
 
 // errStorageNotReady marks the seconds between process start and the bus
@@ -31,14 +33,15 @@ func NewJetStream(store jetstream.ObjectStore) *JetStreamBackend {
 var errStorageNotReady = errors.New("file storage is not ready yet")
 
 func (b *JetStreamBackend) Put(ctx context.Context, key string, r io.Reader, contentType string) (int64, error) {
-	if b.store == nil {
+	store := b.getStore()
+	if store == nil {
 		return 0, errStorageNotReady
 	}
 	meta := jetstream.ObjectMeta{Name: key}
 	if contentType != "" {
 		meta.Headers = nats.Header{"Content-Type": []string{contentType}}
 	}
-	info, err := b.store.Put(ctx, meta, r)
+	info, err := store.Put(ctx, meta, r)
 	if err != nil {
 		return 0, fmt.Errorf("object store put: %w", err)
 	}
@@ -46,10 +49,11 @@ func (b *JetStreamBackend) Put(ctx context.Context, key string, r io.Reader, con
 }
 
 func (b *JetStreamBackend) Get(ctx context.Context, key string) (io.ReadCloser, error) {
-	if b.store == nil {
+	store := b.getStore()
+	if store == nil {
 		return nil, errStorageNotReady
 	}
-	result, err := b.store.Get(ctx, key)
+	result, err := store.Get(ctx, key)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrObjectNotFound) {
 			return nil, os.ErrNotExist
@@ -60,10 +64,11 @@ func (b *JetStreamBackend) Get(ctx context.Context, key string) (io.ReadCloser, 
 }
 
 func (b *JetStreamBackend) Delete(ctx context.Context, key string) error {
-	if b.store == nil {
+	store := b.getStore()
+	if store == nil {
 		return errStorageNotReady
 	}
-	if err := b.store.Delete(ctx, key); err != nil {
+	if err := store.Delete(ctx, key); err != nil {
 		if errors.Is(err, jetstream.ErrObjectNotFound) {
 			return nil
 		}

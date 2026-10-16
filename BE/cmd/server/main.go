@@ -165,7 +165,7 @@ func main() {
 	healthH := handler.NewHealthHandler(db, clusterBus)
 	// Per-email lockout (never per IP; see the /api/auth note below).
 	authH := handler.NewAuthHandler(authSvc, cfg.Environment != "development", cfg.IsSysAdmin).
-		WithLoginThrottle(mw.NewLoginThrottle(clusterBus.Throttle(), loginMaxFailures, loginLockout))
+		WithLoginThrottle(mw.NewLoginThrottle(clusterBus.Throttle, loginMaxFailures, loginLockout))
 	workspaceH := handler.NewWorkspaceHandler(workspaceSvc)
 	teamH := handler.NewTeamHandler(teamSvc)
 	issueH := handler.NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
@@ -221,7 +221,7 @@ func main() {
 		})
 	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
-	store := storage.New(clusterBus.Files())
+	store := storage.New(clusterBus.Files)
 	uploadH := handler.NewUploadHandler(store, assetRepo, issueRepo, cfg.JWTSecret)
 	userAvatarRepo := repository.NewUserAvatarRepository(db)
 	workspaceAvatarRepo := repository.NewWorkspaceAvatarRepository(db)

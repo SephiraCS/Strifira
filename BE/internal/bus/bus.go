@@ -297,6 +297,9 @@ func ensureKV(ctx context.Context, js jetstream.JetStream, bucket string, ttl ti
 // loop takes over replication upkeep.
 func (b *Bus) provision() {
 	defer close(b.done)
+	if b.server.JetStreamIsClustered() && !b.awaitRouteStability() {
+		return
+	}
 	for {
 		select {
 		case <-b.stopping:
@@ -381,6 +384,38 @@ func (b *Bus) beat() {
 	}
 	if live != int64(b.ClusterPeers()) {
 		log.WithField("nodes", live).Info("bus: cluster size changed")
+	}
+}
+
+// awaitRouteStability blocks until the route table has been non-empty and
+// unchanged for several samples, so the JetStream meta layer has settled
+// into one leader. Bucket creation must never happen under a transient
+// split-brain leader: each island would happily create its own copy of a
+// bucket and the merged cluster would inherit divergent state. A clustered
+// node that never reaches a peer never provisions — its /ready stays down
+// and the load balancer keeps it out of rotation, which is the honest
+// behavior for a node that cannot reach its cluster.
+func (b *Bus) awaitRouteStability() bool {
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
+	stable := 0
+	last := -1
+	for {
+		select {
+		case <-b.stopping:
+			return false
+		case <-tick.C:
+		}
+		routes := b.server.NumRoutes()
+		if routes > 0 && routes == last {
+			stable++
+			if stable >= 5 {
+				return true
+			}
+		} else {
+			stable = 0
+		}
+		last = routes
 	}
 }
 

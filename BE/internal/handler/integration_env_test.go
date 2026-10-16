@@ -22,6 +22,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 
@@ -35,6 +36,13 @@ import (
 	jwtpkg "github.com/SephiraCS/strifira-backend/pkg/jwt"
 	"github.com/SephiraCS/strifira-backend/pkg/validate"
 )
+
+// testKVGetter resolves the integration throttle bucket through a getter,
+// mirroring the production wiring where the bus provisions lazily.
+func testKVGetter(t *testing.T) func() jetstream.KeyValue {
+	kv := bus.NewTestKV(t, "login-throttle-test", 2*integrationLoginLockout)
+	return func() jetstream.KeyValue { return kv }
+}
 
 // integrationJWTSecret signs tokens for the HTTP integration environment.
 const integrationJWTSecret = "integration-secret-that-is-at-least-32-characters"
@@ -150,7 +158,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	sharedLinkSvc := service.NewSharedLinkService(repository.NewSharedLinkRepository(db), workspaceRepo, teamRepo, projectRepo, viewRepo, issueRepo, userRepo, teamStatusRepo, repository.NewDocumentRepository(db), integrationJWTSecret)
 
 	authH := NewAuthHandler(authSvc, false, nil).
-		WithLoginThrottle(mw.NewLoginThrottle(bus.NewTestKV(env.t, "login-throttle-test", 2*integrationLoginLockout), integrationLoginMaxFailures, integrationLoginLockout))
+		WithLoginThrottle(mw.NewLoginThrottle(testKVGetter(env.t), integrationLoginMaxFailures, integrationLoginLockout))
 	teamH := NewTeamHandler(teamSvc)
 	issueH := NewIssueHandler(issueSvc, commentSvc, userRepo, teamStatusRepo, projectRepo, cycleRepo, relationSvc)
 	relationH := NewIssueRelationHandler(relationSvc)

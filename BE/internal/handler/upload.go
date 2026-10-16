@@ -109,7 +109,10 @@ func (h *UploadHandler) Upload(c echo.Context) error {
 	}
 
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	contentType, ok := allowedUploadType(detected.String(), ext)
+	// The detector appends "; charset=utf-8" to text types; the allowlist
+	// and the stored content type are bare media types.
+	detectedType, _, _ := strings.Cut(detected.String(), ";")
+	contentType, ok := allowedUploadType(strings.TrimSpace(detectedType), ext)
 	if !ok {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Unsupported file type")
 	}

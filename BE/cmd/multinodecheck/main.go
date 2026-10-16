@@ -24,6 +24,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -134,7 +135,10 @@ func (t *tool) email(suffix string) string {
 func (t *tool) password() string { return "cluster-check-Password123!" }
 
 // registerAndLogin creates a fresh user through the load balancer and saves
-// the access token for the following checks.
+// the access token for the following checks. The API answers the login with
+// the user payload and the token as an HttpOnly cookie, so the token is
+// read back out of the cookie jar (same host as the direct node URLs, so
+// the jar would replay it there anyway).
 func (t *tool) registerAndLogin(suffix string) error {
 	email := t.email(suffix)
 	status, err := t.api(t.lb, http.MethodPost, "/api/auth/register", "", map[string]string{
@@ -146,20 +150,26 @@ func (t *tool) registerAndLogin(suffix string) error {
 	if status != http.StatusOK && status != http.StatusCreated {
 		return fmt.Errorf("register returned %d", status)
 	}
-	var login struct {
-		AccessToken string `json:"access_token"`
-	}
 	status, err = t.api(t.lb, http.MethodPost, "/api/auth/login", "", map[string]string{
 		"email": email, "password": t.password(),
-	}, &login)
+	}, nil)
 	if err != nil {
 		return err
 	}
-	if status != http.StatusOK || login.AccessToken == "" {
+	if status != http.StatusOK {
 		return fmt.Errorf("login returned %d", status)
 	}
-	t.token = login.AccessToken
-	return nil
+	u, err := url.Parse(t.lb)
+	if err != nil {
+		return err
+	}
+	for _, cookie := range t.client.Jar.Cookies(u) {
+		if cookie.Name == "access_token" && cookie.Value != "" {
+			t.token = cookie.Value
+			return nil
+		}
+	}
+	return fmt.Errorf("login did not set the access_token cookie")
 }
 
 func checkHealth(t *tool) error {
@@ -201,10 +211,8 @@ func checkStateless(t *tool) error {
 	// The same token must work on every node, and the data written through
 	// the balancer must be visible everywhere.
 	for _, node := range t.nodes {
-		var list struct {
-			Items []struct {
-				Slug string `json:"slug"`
-			} `json:"items"`
+		var list []struct {
+			Slug string `json:"slug"`
 		}
 		status, err := t.api(node, http.MethodGet, "/api/workspaces", t.token, nil, &list)
 		if err != nil {
@@ -214,7 +222,7 @@ func checkStateless(t *tool) error {
 			return fmt.Errorf("%s: workspace list returned %d", node, status)
 		}
 		found := false
-		for _, ws := range list.Items {
+		for _, ws := range list {
 			if ws.Slug == t.slug {
 				found = true
 			}

@@ -52,7 +52,8 @@ func NewTestJetStream(t *testing.T) (Backend, jetstream.ObjectStore) {
 	if err != nil {
 		t.Fatalf("creating test object store: %v", err)
 	}
-	return New(store), store
+	storeRef := store
+	return New(func() jetstream.ObjectStore { return storeRef }), store
 }
 
 // CountObjects reports how many objects currently exist in the store — the

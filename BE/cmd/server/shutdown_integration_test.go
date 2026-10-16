@@ -135,13 +135,22 @@ func TestGracefulShutdownDeliversEventsFromProducersAndDrainedRequests(t *testin
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	busClosed := make(chan struct{})
 	gracefulShutdown(ctx, shutdownSteps{
 		stopBackground: stopBackground,
 		waitBackground: background.Wait,
 		drainHTTP:      e.Shutdown,
 		drainWebSocket: hub.Shutdown,
 		closeWebhooks:  webhookSvc.Close,
+		closeBus: func() {
+			close(busClosed)
+		},
 	})
+	select {
+	case <-busClosed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the embedded bus was not stopped")
+	}
 
 	assert.Equal(t, http.StatusOK, <-requestDone, "the in-flight request is drained, not cut")
 	mu.Lock()

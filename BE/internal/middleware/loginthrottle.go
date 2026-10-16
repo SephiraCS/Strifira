@@ -20,7 +20,9 @@ import (
 // concurrent requests cannot test more passwords than a sequential attacker
 // could.
 type LoginThrottle struct {
-	kv          jetstream.KeyValue
+	// getKV resolves the bucket on every use: the bus provisions its
+	// buckets in the background shortly after startup.
+	getKV       func() jetstream.KeyValue
 	maxFailures int
 	lockoutTime time.Duration
 }
@@ -48,9 +50,9 @@ const (
 
 // NewLoginThrottle builds the throttle on the cluster's login-throttle
 // bucket.
-func NewLoginThrottle(kv jetstream.KeyValue, maxFailures int, lockoutTime time.Duration) *LoginThrottle {
+func NewLoginThrottle(getKV func() jetstream.KeyValue, maxFailures int, lockoutTime time.Duration) *LoginThrottle {
 	return &LoginThrottle{
-		kv:          kv,
+		getKV:       getKV,
 		maxFailures: maxFailures,
 		lockoutTime: lockoutTime,
 	}
@@ -78,7 +80,7 @@ func throttleKey(email string) string {
 // attempts already in flight could, if they all failed, reach the lockout.
 // Every admitted attempt must be finished with Finish.
 func (lt *LoginThrottle) Admit(email string) (admitted bool, retryAfter time.Duration) {
-	if lt.kv == nil {
+	if lt.getKV() == nil {
 		// The bucket is provisioned seconds after startup; until then do
 		// not turn a bus hiccup into an auth outage.
 		return true, 0
@@ -121,7 +123,7 @@ func (lt *LoginThrottle) Admit(email string) (admitted bool, retryAfter time.Dur
 // Finish releases the slot reserved by Admit and records its outcome. It
 // returns true when this failure locked the email.
 func (lt *LoginThrottle) Finish(email string, outcome LoginOutcome) bool {
-	if lt.kv == nil {
+	if lt.getKV() == nil {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -150,7 +152,7 @@ func (lt *LoginThrottle) Finish(email string, outcome LoginOutcome) bool {
 			entry.LockedAt = time.Time{}
 		}
 		if entry.Failures == 0 && entry.InFlight == 0 {
-			if err := lt.kv.Delete(ctx, key, jetstream.LastRevision(revision)); err == nil {
+			if err := lt.getKV().Delete(ctx, key, jetstream.LastRevision(revision)); err == nil {
 				return locked
 			}
 			continue
@@ -163,7 +165,7 @@ func (lt *LoginThrottle) Finish(email string, outcome LoginOutcome) bool {
 }
 
 func (lt *LoginThrottle) load(ctx context.Context, key string) (throttleEntry, uint64, error) {
-	entry, err := lt.kv.Get(ctx, key)
+	entry, err := lt.getKV().Get(ctx, key)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
 			return throttleEntry{}, 0, nil
@@ -183,9 +185,9 @@ func (lt *LoginThrottle) store(ctx context.Context, key string, entry throttleEn
 		return err
 	}
 	if revision == 0 {
-		_, err = lt.kv.Create(ctx, key, data)
+		_, err = lt.getKV().Create(ctx, key, data)
 		return err
 	}
-	_, err = lt.kv.Update(ctx, key, data, revision)
+	_, err = lt.getKV().Update(ctx, key, data, revision)
 	return err
 }

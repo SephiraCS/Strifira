@@ -50,7 +50,9 @@ func gracefulShutdown(ctx context.Context, steps shutdownSteps) {
 		if err := steps.closeWebhooks(ctx); err != nil {
 			log.WithError(err).Warn("webhook delivery queue did not drain")
 		}
-		steps.closeBus()
+		if steps.closeBus != nil {
+			steps.closeBus()
+		}
 	})
 	wg.Go(func() {
 		if err := steps.drainWebSocket(ctx); err != nil {
