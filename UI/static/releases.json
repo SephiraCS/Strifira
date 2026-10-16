@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.38",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.38",
+    "body": "Deployed to alpha as fc7df7956aeb90a819a82d01e33f43273a45322a.\n\n- fix(ui): issue page grew a second, body-wide scrollbar",
+    "published_at": "2026-10-16T21:55:12Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.38",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.37",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.37",
     "body": "Deployed to alpha as b235c7956256e98ecfca017d1fa20ec9e2081a57.\n\n- fix(cluster): resolve buckets lazily and gate provisioning on route stability\n- feat(cluster): replace Redis with embedded NATS and JetStream",
