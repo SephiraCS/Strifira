@@ -22,17 +22,25 @@
 	}
 </script>
 
-<ToggleGroup.Root
-	type="single"
-	value={layout}
-	onValueChange={handleChange}
-	variant="outline"
-	size="sm"
->
-	<ToggleGroup.Item value="list" aria-label={m['sharedComponents.view_switcher.list_view']()}>
-		<List size={14} />
-	</ToggleGroup.Item>
-	<ToggleGroup.Item value="board" aria-label={m['sharedComponents.view_switcher.board_view']()}>
-		<LayoutGrid size={14} />
-	</ToggleGroup.Item>
-</ToggleGroup.Root>
+	<ToggleGroup.Root
+		type="single"
+		value={layout}
+		onValueChange={handleChange}
+		variant="outline"
+		size="sm"
+	>
+		<ToggleGroup.Item
+			value="list"
+			aria-label={m['sharedComponents.view_switcher.list_view']()}
+			aria-pressed={layout === 'list'}
+		>
+			<List size={14} />
+		</ToggleGroup.Item>
+		<ToggleGroup.Item
+			value="board"
+			aria-label={m['sharedComponents.view_switcher.board_view']()}
+			aria-pressed={layout === 'board'}
+		>
+			<LayoutGrid size={14} />
+		</ToggleGroup.Item>
+	</ToggleGroup.Root>

@@ -2039,5 +2039,16 @@
 	"login.title.register": "Crea account · Strifira",
 	"login.title.signin": "Accedi · Strifira",
 	"password.hide": "Nascondi password",
-	"password.show": "Mostra password"
+	"password.show": "Mostra password",
+	"board.column.empty": "Trascina qui le issue",
+	"issues.empty.adjust_filters": "Prova a modificare i filtri",
+	"issues.empty.first_issue": "Crea la tua prima issue per iniziare",
+	"onboarding.cta_issue": "Vai alle issue",
+	"onboarding.cta_members": "Invita membri",
+	"onboarding.cta_team": "Crea team",
+	"onboarding.description": "Prepara il tuo workspace in tre passaggi.",
+	"onboarding.step_issue": "Crea la tua prima issue",
+	"onboarding.step_members": "Invita i tuoi colleghi",
+	"onboarding.step_team": "Crea il tuo primo team",
+	"onboarding.title": "Inizia da qui"
 }

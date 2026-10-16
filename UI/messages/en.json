@@ -2039,5 +2039,16 @@
 	"login.title.register": "Create account · Strifira",
 	"login.title.signin": "Sign in · Strifira",
 	"password.hide": "Hide password",
-	"password.show": "Show password"
+	"password.show": "Show password",
+	"board.column.empty": "Drop issues here",
+	"issues.empty.adjust_filters": "Try adjusting your filters",
+	"issues.empty.first_issue": "Create your first issue to get started",
+	"onboarding.cta_issue": "Go to issues",
+	"onboarding.cta_members": "Invite members",
+	"onboarding.cta_team": "Create team",
+	"onboarding.description": "Set up your workspace in three steps.",
+	"onboarding.step_issue": "Create your first issue",
+	"onboarding.step_members": "Invite your teammates",
+	"onboarding.step_team": "Create your first team",
+	"onboarding.title": "Get started"
 }

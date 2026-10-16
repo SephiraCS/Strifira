@@ -43,7 +43,6 @@
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
-	import { IsMobile } from '$lib/hooks/is-mobile.svelte';
 	import type { Issue } from '$lib/types/issue';
 	import type { IssueStatus, IssuePriority, RelationType } from '$lib/types/issue';
 	import AddRelationDialog from '$lib/features/issues/AddRelationDialog.svelte';
@@ -85,27 +84,18 @@
 	let relationDialogOpen = $state(false);
 	let relationIssue = $state<Issue | null>(null);
 	let relationDefaultType = $state<RelationType>('related');
-	const isMobile = new IsMobile();
 
 	function handleAddRelation(issue: Issue, type: RelationType) {
 		relationIssue = issue;
 		relationDefaultType = type;
 		relationDialogOpen = true;
-	}
-
-	const groupByOptions = $derived<{ value: GroupByField; label: string }[]>([
+	}	const groupByOptions = $derived<{ value: GroupByField; label: string }[]>([
 		{ value: 'status', label: m['common.group_by.status']() },
 		{ value: 'priority', label: m['common.group_by.priority']() },
 		{ value: 'assignee', label: m['common.group_by.assignee']() },
 		{ value: 'project', label: m['common.group_by.project']() },
 		{ value: null, label: m['common.group_by.no_grouping']() }
 	]);
-
-	$effect(() => {
-		if (isMobile.current && layout === 'board') {
-			layout = 'list';
-		}
-	});
 
 	$effect(() => {
 		const s = slug;
@@ -547,9 +537,7 @@
 				</Popover.Root>
 			{/if}
 
-			<div class="hidden sm:block">
-				<ViewSwitcher bind:layout onchange={handleLayoutChange} />
-			</div>
+			<ViewSwitcher bind:layout onchange={handleLayoutChange} />
 			{#if hasActiveFilters}
 				<SaveViewDialog {filters} {slug} {teams} defaultTeamId={teamId} defaultScope="team" />
 			{/if}
@@ -564,9 +552,11 @@
 		<div class="relative flex-1 overflow-y-auto">
 			{#if !issuesState.loading && issuesState.issues.length === 0}
 				<EmptyState
-					title="No issues found"
-					description={hasActiveFilters ? 'Try adjusting your filters' : 'Create your first issue to get started'}
-					action={{ label: 'New Issue', onclick: openCreateIssue }}
+					title={m['sidebar.no_issues_found']()}
+					description={hasActiveFilters
+						? m['issues.empty.adjust_filters']()
+						: m['issues.empty.first_issue']()}
+					action={{ label: m['sidebar.create_issue'](), onclick: openCreateIssue }}
 				/>
 			{:else if issuesState.groupBy}
 				{#each issuesState.groupedIssues as group (group.key)}

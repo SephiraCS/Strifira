@@ -9,10 +9,12 @@
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
 	import IssueContextMenu from './IssueContextMenu.svelte';
+	import StatusSelector from './selectors/StatusSelector.svelte';
 	import { AssigneeSelector } from './selectors';
 	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { issuesState } from './issues.state.svelte';
 	import { appToast } from '$lib/features/toast/toast';
+	import { getLocale } from '$lib/paraglide/runtime.js';
 	import { COLUMN_SORT_KEYS, type ColumnSortKey } from './column-sort';
 	import {
 		dndzone,
@@ -25,6 +27,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import Archive from '@lucide/svelte/icons/archive';
 	import ArrowDownUp from '@lucide/svelte/icons/arrow-down-up';
+	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Check from '@lucide/svelte/icons/check';
 	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -39,6 +42,7 @@
 		slug = '',
 		members = [],
 		labels = [],
+		statuses = [],
 		onissueclick,
 		onconsider,
 		onfinalize,
@@ -57,6 +61,7 @@
 		slug?: string;
 		members?: WorkspaceMember[];
 		labels?: Label[];
+		statuses?: TeamStatus[];
 		onissueclick: (issue: Issue) => void;
 		onconsider?: (statusId: string, items: Issue[], info: DndEventInfo) => void;
 		onfinalize?: (statusId: string, items: Issue[], info: DndEventInfo) => void;
@@ -143,6 +148,24 @@
 		} catch {
 			appToast.error(m['issue.toast.failed_assignees']());
 		}
+	}
+
+	async function updateStatus(issue: Issue, newStatusId: string) {
+		try {
+			await issuesState.update(slug, issue.identifier, { status_id: newStatusId });
+		} catch {
+			appToast.error(m['common.context_menu.failed_update']({ field: m['common.context_menu.status']() }));
+		}
+	}
+
+	function dueDateLabel(due: string): string {
+		return new Date(`${due}T00:00:00`).toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' });
+	}
+
+	function isOverdue(due: string): boolean {
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		return new Date(`${due}T00:00:00`) < today;
 	}
 </script>
 
@@ -236,6 +259,11 @@
 		onconsider={handleConsider}
 		onfinalize={handleFinalize}
 	>
+		{#if issues.length === 0}
+			<div class="pointer-events-none rounded-md border border-dashed border-[var(--app-border)] px-3 py-4 text-center text-xs text-[var(--color-text-tertiary)]">
+				{m['board.column.empty']()}
+			</div>
+		{/if}
 		{#each issues as issue (issue.id)}
 			{@const assignees = displayAssignees(issue)}
 			<div
@@ -246,17 +274,69 @@
 			>
 				<IssueContextMenu {issue} {slug} {members} {labels}>
 					<button
-						class="relative w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 pt-3 pb-7 text-left transition-colors duration-100 motion-reduce:transition-none hover:border-[var(--app-border-hover)]"
+						class="group relative w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-secondary)] px-3 pt-3 pb-7 text-left transition-colors duration-100 motion-reduce:transition-none hover:border-[var(--app-border-hover)]"
 						onclick={() => onissueclick(issue)}
 					>
 						<div class="flex items-center gap-2">
-							<span class="text-xs text-[var(--color-text-tertiary)]">{issue.identifier}</span>
-							<IssuePriorityIcon priority={issue.priority} size={14} />
+							<span class="whitespace-nowrap text-xs text-[var(--color-text-tertiary)]">{issue.identifier}</span>
+							{#if issue.priority !== 0}
+								<IssuePriorityIcon priority={issue.priority} size={14} />
+							{/if}
+							{#if statuses.length > 0}
+								<!-- svelte-ignore a11y_click_events_have_key_events -->
+								<!-- svelte-ignore a11y_no_static_element_interactions -->
+								<span
+									class="pointer-events-none ml-auto opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
+									onclick={(e) => e.stopPropagation()}
+									onkeydown={(e) => e.stopPropagation()}
+									role="presentation"
+								>
+									<StatusSelector
+										statuses={statuses}
+										value={issue.status_id ?? issue.status}
+										onchange={(newStatusId) => updateStatus(issue, newStatusId)}
+									>
+										{#snippet trigger()}
+											<span
+												class="flex cursor-pointer items-center rounded p-0.5 hover:bg-[var(--color-bg-tertiary)]"
+												title={m['common.context_menu.status']()}
+											>
+												<IssueStatusIcon
+													status={issue.status}
+													category={issue.status_info?.category}
+													color={issue.status_info?.color}
+													size={14}
+												/>
+											</span>
+										{/snippet}
+									</StatusSelector>
+								</span>
+							{/if}
 						</div>
 						<div class="mt-1 flex items-start gap-2">
 							<p class="line-clamp-2 min-w-0 flex-1 text-sm text-[var(--color-text-primary)]">{issue.title}</p>
 							<SubIssueCounterTag {issue} {slug} {members} onclickissue={onissueclick} compact />
 						</div>
+
+						<!-- Labels and due date (bottom-left) -->
+						{#if (issue.labels?.length ?? 0) > 0 || issue.due_date}
+							<div class="absolute bottom-1.5 left-3 flex max-w-[60%] items-center gap-1.5">
+								{#each issue.labels ?? [] as label (label.id)}
+									<span class="h-2 w-2 shrink-0 rounded-full" style="background-color: {label.color}" title={label.name}></span>
+								{/each}
+								{#if issue.due_date}
+									<span
+										class="flex items-center gap-1 whitespace-nowrap text-[10px] {isOverdue(issue.due_date)
+											? 'text-[var(--color-error)]'
+											: 'text-[var(--color-text-tertiary)]'}"
+										title={m['common.context_menu.due_date']()}
+									>
+										<CalendarDays size={10} />
+										{dueDateLabel(issue.due_date)}
+									</span>
+								{/if}
+							</div>
+						{/if}
 
 						<!-- Assignee (bottom-right) -->
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -288,7 +368,9 @@
 												{/each}
 											</span>
 										{:else}
-											<UserCircle size={16} />
+											<span class="flex h-4 w-4 items-center justify-center rounded-full border border-dashed border-[var(--app-border-hover)] opacity-80">
+												<UserCircle size={12} />
+											</span>
 										{/if}
 									</span>
 								{/snippet}

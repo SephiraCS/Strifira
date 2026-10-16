@@ -211,7 +211,7 @@
 		</span>
 
 		<!-- Identifier -->
-		<span class="w-auto shrink-0 text-xs tabular-nums text-[var(--color-text-tertiary)] sm:w-[3.75rem]">{issue.identifier}</span>
+		<span class="w-auto shrink-0 whitespace-nowrap text-xs tabular-nums text-[var(--color-text-tertiary)]">{issue.identifier}</span>
 
 		<!-- Status -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->

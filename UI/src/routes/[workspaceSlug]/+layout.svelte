@@ -383,7 +383,7 @@
 		try {
 			const team = await createTeam(slug, data);
 			teams = [...teams, team];
-			sidebarState.teams = teams;
+			sidebarState.addTeam(team);
 			appToast.success(m['sidebar.team_created']());
 		} catch (err: any) {
 			appToast.apiError(err, m['sidebar.failed_create_team']());
@@ -847,7 +847,7 @@
 						>
 							<Search size={18} />
 						</Button>
-						<Button variant="ghost" size="icon-lg" onclick={openCreateIssue} aria-label={m['sidebar.create_issue']()}>
+						<Button variant="ghost" size="icon-lg" onclick={openCreateIssue} aria-label="{m['sidebar.create_issue']()} (C)" title="{m['sidebar.create_issue']()} (C)">
 							<SquarePen size={18} />
 						</Button>
 					</div>

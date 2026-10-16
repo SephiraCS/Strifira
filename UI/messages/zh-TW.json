@@ -2039,5 +2039,16 @@
 	"login.title.register": "建立帳戶 · Strifira",
 	"login.title.signin": "登入 · Strifira",
 	"password.hide": "隱藏密碼",
-	"password.show": "顯示密碼"
+	"password.show": "顯示密碼",
+	"board.column.empty": "將 issue 拖到這裡",
+	"issues.empty.adjust_filters": "嘗試調整篩選條件",
+	"issues.empty.first_issue": "建立你的第一張 issue 即可開始",
+	"onboarding.cta_issue": "前往 issue",
+	"onboarding.cta_members": "邀請成員",
+	"onboarding.cta_team": "建立團隊",
+	"onboarding.description": "三步驟設定你的工作區。",
+	"onboarding.step_issue": "建立你的第一張 issue",
+	"onboarding.step_members": "邀請你的同事",
+	"onboarding.step_team": "建立你的第一個團隊",
+	"onboarding.title": "開始使用"
 }

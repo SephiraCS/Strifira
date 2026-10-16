@@ -455,6 +455,7 @@
 				{slug}
 				{members}
 				{labels}
+				statuses={columns}
 				{onissueclick}
 				onconsider={handleConsider}
 				onfinalize={handleFinalize}

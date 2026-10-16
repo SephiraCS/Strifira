@@ -277,6 +277,7 @@
 					description={activeTab === 'assigned'
 						? m['my_issues.empty.assigned.description']()
 						: m['my_issues.empty.created.description']()}
+					action={{ label: m['sidebar.create_issue'](), onclick: () => (showCreateIssue = true) }}
 				/>
 			{:else if issuesState.groupBy}
 				{#each issuesState.groupedIssues as group (group.key)}

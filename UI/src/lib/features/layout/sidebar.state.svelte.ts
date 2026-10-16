@@ -73,6 +73,10 @@ class SidebarState {
 		this.projects = [...this.projects, project];
 	}
 
+	addTeam(team: Team) {
+		this.teams = [...this.teams, team];
+	}
+
 	private persist() {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem(STORAGE_KEY, String(this.collapsed));

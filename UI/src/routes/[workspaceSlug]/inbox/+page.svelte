@@ -19,6 +19,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
+import WelcomeOnboarding from '$lib/features/onboarding/WelcomeOnboarding.svelte';
 	import FullPageIssueView from '$lib/features/issues/FullPageIssueView.svelte';
 	import DueDatePickerPanel from '$lib/components/shared/DueDatePickerPanel.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -26,6 +27,7 @@
 	import * as ContextMenu from '$lib/components/ui/context-menu';
 	import { Badge } from '$lib/components/ui/badge';
 	import { appToast } from '$lib/features/toast/toast';
+import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import Inbox from '@lucide/svelte/icons/inbox';
 	import Clock from '@lucide/svelte/icons/clock';
 	import Archive from '@lucide/svelte/icons/archive';
@@ -518,6 +520,8 @@
 					<p class="text-sm">{selectedNotification.title}</p>
 					<p class="text-xs">{m['inbox.detail.not_linked']()}</p>
 				</div>
+			{:else if sidebarState.teams.length === 0}
+				<WelcomeOnboarding {slug} />
 			{:else}
 				<div class="flex h-full items-center justify-center">
 					<p class="text-sm text-[var(--color-text-tertiary)]">{m['inbox.detail.select']()}</p>

@@ -39,7 +39,11 @@ class ApiClient {
 			}
 			// The refresh cookie is dead, so any cached user is no longer real.
 			authState.clear();
-			goto('/login');
+			// The auth pages are where dead sessions land anyway; bouncing
+			// /register to /login only breaks its deep link.
+			if (!['/login', '/register'].includes(window.location.pathname)) {
+				goto('/login');
+			}
 			throw new Error('Unauthorized');
 		}
 

@@ -8,7 +8,7 @@
 		"build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy localStorage cookie baseLocale --output-structure locale-modules --emit-ts-declarations && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy localStorage cookie preferredLanguage baseLocale --output-structure locale-modules --emit-ts-declarations && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"check:locales": "node scripts/check-locales.mjs",
 		"test:unit": "node --test tests/unit/*.test.mjs",

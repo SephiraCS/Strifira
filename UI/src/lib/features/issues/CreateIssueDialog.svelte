@@ -118,6 +118,7 @@
 	let dueDate = $state<string | null>(null);
 	let cycleId = $state<string | null>(null);
 	let createMore = $state(false);
+	const submitShortcutLabel = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform) ? '⌘↵' : 'Ctrl+↵';
 
 	let templates = $state<IssueTemplate[]>([]);
 	let selectedTemplate = $state<IssueTemplate | null>(null);
@@ -407,7 +408,7 @@
 						>
 							{selectedTeam?.key?.charAt(0) ?? 'T'}
 						</span>
-						{selectedTeam?.key ?? m['sharedComponents.create_issue.team']()}
+						{selectedTeam?.name ?? m['sharedComponents.create_issue.team']()}
 					</button>
 				{/snippet}
 			</TeamSelector>
@@ -718,6 +719,7 @@
 					<Switch bind:checked={createMore} size="sm" />
 					{m['sharedComponents.create_issue.create_more']()}
 				</label>
+				<kbd class="hidden text-[10px] text-[var(--color-text-tertiary)] sm:inline">{submitShortcutLabel}</kbd>
 				<Button
 					class="max-sm:w-full"
 					size="sm"
