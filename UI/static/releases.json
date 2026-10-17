@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.42",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.42",
+    "body": "Deployed to alpha as 66f182d86094958aeda595132945f5d2c222b676.\n\n- feat(shares): spotlight focus mode, layout toggle and drag-to-reorder on the share wall (#13)",
+    "published_at": "2026-10-17T03:13:36Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.42",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.41",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.41",
     "body": "Deployed to alpha as ef57a5e02262d37b501498502c674b387aa6dae1.\n\n- docs: adopt PR-based git workflow and translate AGENTS.md to pt-BR",
