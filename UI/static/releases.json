@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.41",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.41",
+    "body": "Deployed to alpha as ef57a5e02262d37b501498502c674b387aa6dae1.\n\n- docs: adopt PR-based git workflow and translate AGENTS.md to pt-BR",
+    "published_at": "2026-10-17T01:08:19Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.41",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.40",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.40",
     "body": "Deployed to alpha as eb6bddebf64c460e21fd47122c5a604e3f3a576b.\n\n- fix(ui): bubble menu clipped when selection sits near the editor edge",
