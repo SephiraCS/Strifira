@@ -12,7 +12,12 @@
 	} from './signaling';
 	import { presenterSession } from './presenter.session.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { anchoredOffset, formatZoomPercent, zoomScale } from '$lib/components/shared/image-viewer/image-viewer';
+	import { SHARE_ZOOM_STEP, autoZoomScale, clampPan, panBounds } from './share-zoom';
 	import Maximize2 from '@lucide/svelte/icons/maximize-2';
+	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import ZoomIn from '@lucide/svelte/icons/zoom-in';
+	import ZoomOut from '@lucide/svelte/icons/zoom-out';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
@@ -28,7 +33,9 @@
 		shareId,
 		mode,
 		presenterName,
-		presenterUserId
+		presenterUserId,
+		variant = 'grid',
+		onactivate
 	}: {
 		workspaceSlug: string;
 		shareId: string;
@@ -41,6 +48,14 @@
 		presenterName: string;
 		/** The share's started_by user id — viewers address offers to them. */
 		presenterUserId?: string;
+		/**
+		 * Layout role on the wall: 'grid' is a full grid tile, 'stage' is
+		 * the focused share (zoom/pan enabled), 'mini' is a minimized
+		 * thumbnail in the spotlight rail.
+		 */
+		variant?: 'grid' | 'stage' | 'mini';
+		/** Click on the tile body (outside its controls) — click-to-focus. */
+		onactivate?: () => void;
 	} = $props();
 
 	let videoEl = $state<HTMLVideoElement | null>(null);
@@ -61,6 +76,25 @@
 	// dropped). Media may still flow — the share gets a grace window
 	// before it is treated as source-less.
 	let presenterOffline = $state(false);
+
+	// ---- Stage zoom (the focused tile) ----
+
+	let stageEl = $state<HTMLDivElement | null>(null);
+	let stageScale = $state(1);
+	let stageOffsetX = $state(0);
+	let stageOffsetY = $state(0);
+	let stagePanning = $state(false);
+	let videoAspect = $state(0);
+
+	const stageActive = $derived(variant === 'stage');
+
+	const videoStyle = $derived(
+		stageActive
+			? `transform: translate3d(${stageOffsetX}px, ${stageOffsetY}px, 0) scale(${stageScale}); transition: ${
+					stagePanning ? 'none' : 'transform 180ms ease-out'
+				};`
+			: undefined
+	);
 
 	// ---- Peer plumbing (P2P WebRTC over the workspace WS) ----
 
@@ -527,44 +561,193 @@
 			void videoEl.parentElement?.requestFullscreen();
 		}
 	}
+
+	function handleVideoMetadata() {
+		if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) return;
+		videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+	}
+
+	function stageSize() {
+		const rect = stageEl?.getBoundingClientRect();
+		return { width: rect?.width ?? 0, height: rect?.height ?? 0 };
+	}
+
+	function clampStagePan() {
+		const { width, height } = stageSize();
+		const clamped = clampPan(stageOffsetX, stageOffsetY, panBounds(width, height, videoAspect, stageScale));
+		stageOffsetX = clamped.x;
+		stageOffsetY = clamped.y;
+	}
+
+	/** The automatic legibility zoom applied when a share takes the stage. */
+	function applyAutoZoom() {
+		const { width, height } = stageSize();
+		stageScale = autoZoomScale(width / height, videoAspect);
+		stageOffsetX = 0;
+		stageOffsetY = 0;
+	}
+
+	function zoomStageBy(delta: number, anchor?: { x: number; y: number }) {
+		const rect = stageEl?.getBoundingClientRect();
+		const nextScale = zoomScale(stageScale, delta);
+		if (!rect) {
+			stageScale = nextScale;
+			return;
+		}
+		const centerX = rect.left + rect.width / 2;
+		const centerY = rect.top + rect.height / 2;
+		const anchored = anchoredOffset({
+			offsetX: stageOffsetX,
+			offsetY: stageOffsetY,
+			scale: stageScale,
+			nextScale,
+			pointerX: anchor?.x ?? centerX,
+			pointerY: anchor?.y ?? centerY,
+			centerX,
+			centerY
+		});
+		stageScale = nextScale;
+		stageOffsetX = anchored.x;
+		stageOffsetY = anchored.y;
+		clampStagePan();
+	}
+
+	function resetStageZoom() {
+		stageScale = 1;
+		stageOffsetX = 0;
+		stageOffsetY = 0;
+	}
+
+	function handleActivate(event: MouseEvent) {
+		if (!onactivate) return;
+		if ((event.target as HTMLElement).closest('button, a, input, textarea, select, label, [role="button"]')) return;
+		onactivate();
+	}
+
+	function handleDoubleClick(event: MouseEvent) {
+		if (!stageActive) return;
+		if ((event.target as HTMLElement).closest('button, a')) return;
+		event.preventDefault();
+		resetStageZoom();
+	}
+
+	function handleStagePointerDown(event: PointerEvent) {
+		if (!stageActive || event.button !== 0) return;
+		if ((event.target as HTMLElement).closest('button, a')) return;
+		const el = event.currentTarget as HTMLElement;
+		const startX = event.clientX;
+		const startY = event.clientY;
+		const baseOffsetX = stageOffsetX;
+		const baseOffsetY = stageOffsetY;
+		stagePanning = true;
+		el.setPointerCapture(event.pointerId);
+		const move = (e: PointerEvent) => {
+			stageOffsetX = baseOffsetX + (e.clientX - startX);
+			stageOffsetY = baseOffsetY + (e.clientY - startY);
+			clampStagePan();
+		};
+		const end = () => {
+			stagePanning = false;
+			el.removeEventListener('pointermove', move);
+			el.removeEventListener('pointerup', end);
+			el.removeEventListener('pointercancel', end);
+		};
+		el.addEventListener('pointermove', move);
+		el.addEventListener('pointerup', end);
+		el.addEventListener('pointercancel', end);
+	}
+
+	// Auto-zoom when the share takes the stage (or once the video's real
+	// aspect arrives after the focus).
+	$effect(() => {
+		if (!stageActive) return;
+		void videoAspect;
+		applyAutoZoom();
+	});
+
+	// Wheel zoom needs a non-passive listener to be able to preventDefault.
+	$effect(() => {
+		if (!stageActive || !stageEl) return;
+		const el = stageEl;
+		const onWheel = (event: WheelEvent) => {
+			event.preventDefault();
+			zoomStageBy(event.deltaY < 0 ? SHARE_ZOOM_STEP : -SHARE_ZOOM_STEP, {
+				x: event.clientX,
+				y: event.clientY
+			});
+		};
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	});
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
 <div
-	class="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black"
+	bind:this={stageEl}
+	class="relative flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-lg border border-[var(--color-border)] bg-black {onactivate
+		? 'cursor-pointer'
+		: ''}"
+	onclick={handleActivate}
+	ondblclick={handleDoubleClick}
+	onpointerdown={handleStagePointerDown}
 >
 	<!-- svelte-ignore a11y_media_has_caption -->
-	<video class="h-full w-full object-contain" playsinline autoplay bind:this={videoEl}></video>
+	<video
+		class="h-full w-full object-contain"
+		style={videoStyle}
+		onloadedmetadata={handleVideoMetadata}
+		playsinline
+		autoplay
+		bind:this={videoEl}
+	></video>
 
-	{#if mode === 'view' && connecting && !streamEnded}
-		<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
-			<LoaderCircle size={24} class="animate-spin" />
-			<p class="text-sm">{m['shares.connecting_viewer']()}</p>
-		</div>
+	{#if variant === 'mini'}
+		{#if mode === 'view' && connecting && !streamEnded}
+			<div class="absolute inset-0 flex items-center justify-center bg-black/70 text-white">
+				<LoaderCircle size={14} class="animate-spin" />
+			</div>
+		{/if}
+	{:else}
+		{#if mode === 'view' && connecting && !streamEnded}
+			<div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 text-white">
+				<LoaderCircle size={24} class="animate-spin" />
+				<p class="text-sm">{m['shares.connecting_viewer']()}</p>
+			</div>
+		{/if}
+
+		{#if mode === 'view' && presenterOffline && !streamEnded}
+			<div
+				class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black"
+			>
+				<LoaderCircle size={12} class="animate-spin" />
+				{m['shares.presenter_reconnecting']()}
+			</div>
+		{:else if reconnecting && !streamEnded && !presentEnded}
+			<div
+				class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black"
+			>
+				<LoaderCircle size={12} class="animate-spin" />
+				{m['shares.reconnecting']()}
+			</div>
+		{/if}
 	{/if}
 
-	{#if mode === 'view' && presenterOffline && !streamEnded}
+	{#if variant === 'mini'}
 		<div
-			class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black"
+			class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1 pt-4 text-[10px] font-medium text-white"
 		>
-			<LoaderCircle size={12} class="animate-spin" />
-			{m['shares.presenter_reconnecting']()}
+			{#if live && !connecting}
+				<span class="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-red-500"></span>
+			{/if}
+			<span class="truncate">{presenterName}</span>
 		</div>
-	{:else if reconnecting && !streamEnded && !presentEnded}
-		<div
-			class="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-medium text-black"
-		>
-			<LoaderCircle size={12} class="animate-spin" />
-			{m['shares.reconnecting']()}
-		</div>
-	{/if}
-
-	{#if !(live && !connecting) && presenterName}
+	{:else if !(live && !connecting) && presenterName}
 		<div class="pointer-events-none absolute left-3 top-3">
 			<span class="truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
 		</div>
 	{/if}
 
-	{#if live && !connecting}
+	{#if variant !== 'mini' && live && !connecting}
 		<div class="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
 			<span
 				class="flex max-w-[50%] items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white"
@@ -658,6 +841,31 @@
 					<MonitorUp size={14} />
 					{m['shares.stop']()}
 				</Button>
+			</div>
+		{/if}
+
+		{#if stageActive}
+			<div
+				class="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-1 text-xs text-white"
+			>
+				<button
+					class="rounded-full p-1 hover:bg-white/10"
+					title={m['shares.zoom_out']()}
+					onclick={() => zoomStageBy(-SHARE_ZOOM_STEP)}
+				>
+					<ZoomOut size={13} />
+				</button>
+				<span class="min-w-[3rem] text-center tabular-nums">{formatZoomPercent(stageScale)}</span>
+				<button
+					class="rounded-full p-1 hover:bg-white/10"
+					title={m['shares.zoom_in']()}
+					onclick={() => zoomStageBy(SHARE_ZOOM_STEP)}
+				>
+					<ZoomIn size={13} />
+				</button>
+				<button class="rounded-full p-1 hover:bg-white/10" title={m['shares.zoom_reset']()} onclick={resetStageZoom}>
+					<RotateCcw size={13} />
+				</button>
 			</div>
 		{/if}
 	{/if}
