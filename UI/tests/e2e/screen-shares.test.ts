@@ -1286,3 +1286,163 @@ test('a connected viewer peer survives a presence cull and is reaped once dead',
 		.poll(() => page.evaluate(() => (window as any).__shareRig.peers[0].closed))
 		.toBe(true);
 });
+
+async function stubThreeShares(page: Page) {
+	await stubCommon(page, true);
+	const others = [1, 2].map((n) => ({
+		...activeShare,
+		id: `00000000-0000-0000-0000-00000000009${n}`,
+		started_by: `00000000-0000-0000-0000-0000000000${10 + n}`,
+		started_by_user: {
+			...presenter,
+			id: `00000000-0000-0000-0000-0000000000${10 + n}`,
+			name: `Sharer ${n}`,
+			display_name: `Sharer ${n}`
+		}
+	}));
+	await page.route('**/api/workspaces/test/shares', (route) =>
+		route.fulfill({ json: { active: [activeShare, ...others], recent: [endedShare] } })
+	);
+	return others;
+}
+
+test('clicking a tile spotlights it and escape returns to the grid', async ({ page }) => {
+	const others = await stubThreeShares(page);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+
+	// The toggle only exists with more than one share, and starts in grid.
+	const wall = page.locator('[data-layout]');
+	await expect(wall).toHaveAttribute('data-layout', 'grid');
+	await expect(page.locator('[data-stage]')).toHaveCount(0);
+
+	// Click a tile: the wall takes the spotlight with it on stage and the
+	// other two minimized in the rail.
+	await page.locator(`[data-share-id="${others[0].id}"]`).click();
+	await expect(wall).toHaveAttribute('data-layout', 'spotlight');
+	await expect(page.locator(`[data-share-id="${others[0].id}"]`)).toHaveAttribute('data-stage', 'true');
+	await expect(page.locator('[data-stage]')).toHaveCount(1);
+	// The choice persists for the session.
+	await expect(page.evaluate(() => localStorage.getItem('shares_wall_layout'))).resolves.toBe('spotlight');
+
+	// Escape drops the spotlight.
+	await page.keyboard.press('Escape');
+	await expect(wall).toHaveAttribute('data-layout', 'grid');
+	await expect(page.locator('[data-stage]')).toHaveCount(0);
+});
+
+test('arrow keys cycle the spotlight across the minimized tiles', async ({ page }) => {
+	const others = await stubThreeShares(page);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+
+	await page.locator(`[data-share-id="${shareId}"]`).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveAttribute('data-stage', 'true');
+
+	// Wall order is arrival order: presenter share, then the two others.
+	// ArrowRight moves the stage to the next tile, wrapping around.
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator(`[data-share-id="${others[0].id}"]`)).toHaveAttribute('data-stage', 'true');
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator(`[data-share-id="${others[1].id}"]`)).toHaveAttribute('data-stage', 'true');
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveAttribute('data-stage', 'true');
+
+	// And ArrowLeft walks back.
+	await page.keyboard.press('ArrowLeft');
+	await expect(page.locator(`[data-share-id="${others[1].id}"]`)).toHaveAttribute('data-stage', 'true');
+});
+
+test('arrows do not hijack the grid and one share hides the layout toggle', async ({ page }) => {
+	await stubCommon(page, true);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(1);
+	await expect(page.getByRole('radio', { name: 'Grid view' })).toHaveCount(0);
+	await expect(page.getByRole('radio', { name: 'Spotlight view' })).toHaveCount(0);
+	// Escape is a no-op in grid: the wall stays in grid layout.
+	await page.keyboard.press('Escape');
+	await expect(page.locator('[data-layout]')).toHaveAttribute('data-layout', 'grid');
+});
+
+test('the layout toggle switches between grid and spotlight', async ({ page }) => {
+	const others = await stubThreeShares(page);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+
+	await page.getByRole('radio', { name: 'Spotlight view' }).click();
+	const wall = page.locator('[data-layout]');
+	await expect(wall).toHaveAttribute('data-layout', 'spotlight');
+	// Without an explicit focus the first tile takes the stage.
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveAttribute('data-stage', 'true');
+	await expect(page.locator(`[data-share-id="${others[0].id}"]`)).not.toHaveAttribute('data-stage');
+
+	await page.getByRole('radio', { name: 'Grid view' }).click();
+	await expect(wall).toHaveAttribute('data-layout', 'grid');
+	await expect(page.locator('[data-stage]')).toHaveCount(0);
+});
+
+test('clicking a minimized tile moves it to the stage', async ({ page }) => {
+	const others = await stubThreeShares(page);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+
+	await page.getByRole('radio', { name: 'Spotlight view' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveAttribute('data-stage', 'true');
+
+	await page.locator(`[data-share-id="${others[1].id}"]`).click();
+	await expect(page.locator(`[data-share-id="${others[1].id}"]`)).toHaveAttribute('data-stage', 'true');
+});
+
+test('dragging a grid tile reorders the wall', async ({ page }) => {
+	const others = await stubThreeShares(page);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+
+	// Drag the third tile onto the first slot.
+	const third = page.locator('[data-share-id]').nth(2);
+	const first = page.locator('[data-share-id]').nth(0);
+	const draggedId = (await third.getAttribute('data-share-id'))!;
+	const from = await third.boundingBox();
+	const to = await first.boundingBox();
+	if (!from || !to) throw new Error('Missing tile bounds');
+	const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+	await page.mouse.move(start.x, start.y);
+	await page.mouse.down();
+	await page.mouse.move(start.x + 8, start.y);
+	await page.waitForTimeout(130);
+	await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2);
+	await page.waitForTimeout(35);
+	await page.mouse.up();
+	await expect(page.locator('#dnd-action-dragged-el')).toHaveCount(0);
+	console.log('ORDER:', await page.locator('[data-layout]').evaluate((el) => Array.from(el.children).map((c) => c.getAttribute('data-share-id')).join(',')));
+	await expect(page.locator('[data-share-id]').first()).toHaveAttribute('data-share-id', draggedId);
+	await expect(page.evaluate(() => localStorage.getItem('shares_wall_layout'))).resolves.toBe(null);
+});
+
+test('dragging in the spotlight rail reorders the rail and keeps the stage', async ({ page }) => {
+	const others = await stubThreeShares(page);
+	await page.goto('/test/shares');
+	await expect(page.locator('[data-share-id]')).toHaveCount(3);
+
+	await page.getByRole('radio', { name: 'Spotlight view' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveAttribute('data-stage', 'true');
+
+	// Rail order is [others[0], others[1]] under the stage. Reorder with
+	// dnd-action's keyboard drag — grab the last rail tile, move it up one
+	// slot, drop — same finalize path as a pointer drag, no pointer-timing
+	// races, and it proves the reorder works without a mouse too.
+	const railLast = page.locator(`[data-share-id="${others[1].id}"]`);
+	await railLast.focus();
+	await page.keyboard.press('Enter');
+	await page.keyboard.press('ArrowUp');
+	await page.keyboard.press('Enter');
+	await expect(page.locator('#dnd-action-dragged-el')).toHaveCount(0);
+
+	// The stage is untouched and the dragged tile now leads the rail.
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toHaveAttribute('data-stage', 'true');
+	// The first press arms the focus on the current stage; the second moves
+	// to the next wall tile — the dragged tile now leads the rail.
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('ArrowRight');
+	await expect(page.locator(`[data-share-id="${others[1].id}"]`)).toHaveAttribute('data-stage', 'true');
+});
