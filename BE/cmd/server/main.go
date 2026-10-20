@@ -69,8 +69,9 @@ func main() {
 	// needs the seed URLs; with none of them reachable this node is a
 	// fully functional single-node cluster.
 	clusterBus, err := bus.New(bus.Config{
-		SeedURLs: cfg.NatsSeedURLs,
-		StoreDir: bus.DefaultStoreDir,
+		SeedURLs:         cfg.NatsSeedURLs,
+		StoreDir:         bus.DefaultStoreDir,
+		LegacyUploadsDir: bus.DefaultLegacyUploadsDir,
 	})
 	if err != nil {
 		log.Fatalf("Failed to start embedded nats bus: %v", err)

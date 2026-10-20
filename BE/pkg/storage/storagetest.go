@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -57,13 +58,17 @@ func NewTestJetStream(t *testing.T) (Backend, jetstream.ObjectStore) {
 }
 
 // CountObjects reports how many objects currently exist in the store — the
-// object-store analogue of counting files in a directory tree.
+// object-store analogue of counting files in a directory tree. An empty
+// bucket is zero objects, not an error.
 func CountObjects(t *testing.T, store jetstream.ObjectStore) int {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	infos, err := store.List(ctx)
 	if err != nil {
+		if errors.Is(err, jetstream.ErrNoObjectsFound) {
+			return 0
+		}
 		t.Fatalf("listing objects: %v", err)
 	}
 	count := 0

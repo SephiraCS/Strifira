@@ -155,6 +155,12 @@
 	let loadedCollapsedTeamsSlug = '';
 	let pendingDeleteView = $state<View | null>(null);
 	let deleteViewOpen = $state(false);
+	let avatarFailed = $state(false);
+
+	$effect(() => {
+		authState.user?.avatar_url;
+		avatarFailed = false;
+	});
 
 	function collapsedTeamsStorageKey() {
 		return `sidebar_collapsed_teams_${slug}`;
@@ -1339,11 +1345,12 @@
 	<div class="flex items-center gap-2 px-2 py-2">
 		<Popover.Root>
 			<Popover.Trigger>
-				{#if authState.user?.avatar_url}
+				{#if authState.user?.avatar_url && !avatarFailed}
 					<img
 						src={authState.user.avatar_url}
 						alt=""
 						class="h-7 w-7 shrink-0 cursor-pointer rounded-full transition-[filter] hover:brightness-125"
+						onerror={() => (avatarFailed = true)}
 					/>
 				{:else}
 					<div

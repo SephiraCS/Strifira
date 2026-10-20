@@ -13,10 +13,21 @@
 		lg: 'h-10 w-10 text-base'
 	};
 	const initial = $derived(name.charAt(0).toUpperCase());
+
+	let failed = $state(false);
+	$effect(() => {
+		avatarUrl;
+		failed = false;
+	});
 </script>
 
-{#if avatarUrl}
-	<img src={avatarUrl} alt={name} class="rounded-full object-cover {sizes[size]}" />
+{#if avatarUrl && !failed}
+	<img
+		src={avatarUrl}
+		alt={name}
+		class="rounded-full object-cover {sizes[size]}"
+		onerror={() => (failed = true)}
+	/>
 {:else}
 	<div
 		class="flex items-center justify-center rounded-full bg-[var(--app-accent)] font-medium text-[var(--app-accent-foreground)] {sizes[

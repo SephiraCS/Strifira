@@ -78,27 +78,38 @@ const (
 // volume, where every deployment already mounts durable disk.
 const DefaultStoreDir = "./uploads/.jetstream"
 
+// DefaultLegacyUploadsDir is the uploads root the pre-JetStream
+// LocalBackend wrote to; on startup its tree is imported into the object
+// store. It is the parent of DefaultStoreDir, but is configured
+// separately: the import must only ever sweep the legacy tree, never
+// whatever directory happens to hold the object store.
+const DefaultLegacyUploadsDir = "./uploads"
+
 // Config wires the bus to its environment. SeedURLs is the raw
 // comma-separated list of the other nodes' cluster addresses
-// (NATS_SEED_URLS); StoreDir is where JetStream persists file storage.
-// ClientPort/ClusterPort are internal-API overrides for tests hosting
-// several nodes in one process; zero selects the production defaults.
+// (NATS_SEED_URLS); StoreDir is where JetStream persists file storage and
+// LegacyUploadsDir the local-filesystem tree imported into it on startup
+// (empty disables the import). ClientPort/ClusterPort are internal-API
+// overrides for tests hosting several nodes in one process; zero selects
+// the production defaults.
 type Config struct {
-	SeedURLs    string
-	StoreDir    string
-	ClientPort  int
-	ClusterPort int
+	SeedURLs         string
+	StoreDir         string
+	LegacyUploadsDir string
+	ClientPort       int
+	ClusterPort      int
 }
 
 // Bus owns the embedded NATS server, its client connection and the shared
 // JetStream buckets.
 type Bus struct {
-	server   *server.Server
-	conn     *nats.Conn
-	js       jetstream.JetStream
-	storeDir string
-	stopping chan struct{}
-	done     chan struct{}
+	server           *server.Server
+	conn             *nats.Conn
+	js               jetstream.JetStream
+	storeDir         string
+	legacyUploadsDir string
+	stopping         chan struct{}
+	done             chan struct{}
 
 	// The buckets are provisioned in the background: in a cluster, any
 	// JetStream API request waits for the meta-layer leader, which only
@@ -185,12 +196,13 @@ func New(cfg Config) (*Bus, error) {
 	}
 
 	b := &Bus{
-		server:   srv,
-		conn:     nc,
-		js:       js,
-		storeDir: cfg.StoreDir,
-		stopping: make(chan struct{}),
-		done:     make(chan struct{}),
+		server:           srv,
+		conn:             nc,
+		js:               js,
+		storeDir:         cfg.StoreDir,
+		legacyUploadsDir: cfg.LegacyUploadsDir,
+		stopping:         make(chan struct{}),
+		done:             make(chan struct{}),
 	}
 
 	log.WithFields(log.Fields{
@@ -323,6 +335,7 @@ func (b *Bus) provision() {
 			b.clusterKV.Store(cluster)
 			b.clusterN.Store(1)
 			log.WithField("replicas", replicas).Info("jetstream buckets provisioned")
+			go b.importLegacyFiles(files)
 			go b.membership()
 			return
 		}
