@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.43",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.43",
+    "body": "Deployed to alpha as 559c75f3712cd0cbdeac7dd3dc6907128490984f.\n\n- fix(storage): recover uploads orphaned by the JetStream storage migration (#14)",
+    "published_at": "2026-10-20T16:45:00Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.43",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.42",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.42",
     "body": "Deployed to alpha as 66f182d86094958aeda595132945f5d2c222b676.\n\n- feat(shares): spotlight focus mode, layout toggle and drag-to-reorder on the share wall (#13)",
