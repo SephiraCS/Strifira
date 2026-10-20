@@ -180,6 +180,7 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	memoryTargetSlug := "transfer-memory-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:8]
 	foreignWorkspaceID := uuid.New()
 	foreignSlug := "transfer-foreign-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:8]
+	var importedProjectFavoriteTarget uuid.UUID
 
 	_, err = db.ExecContext(ctx, `INSERT INTO users(id,email,name,display_name,password_hash) VALUES($1,$2,'Transfer User','Transfer User','unusable')`, userID, "transfer-"+userID.String()+"@example.test")
 	require.NoError(t, err)
@@ -242,6 +243,15 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO favorites(id,workspace_id,user_id,entity_type,entity_id,position) VALUES(gen_random_uuid(),$1,$2,'project',$3,2)`, workspaceID, userID, projectID)
 	require.NoError(t, err)
+	documentID := uuid.New()
+	documentSharedLinkID := uuid.New()
+	documentFavoriteID := uuid.New()
+	_, err = db.ExecContext(ctx, `INSERT INTO documents(id,workspace_id,title,content_html,content_text,created_by,updated_by) VALUES($1,$2,'Portable page','<p>Page</p>','Page',$3,$3)`, documentID, workspaceID, userID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO favorites(id,workspace_id,user_id,entity_type,entity_id,position) VALUES($1,$2,$3,'document',$4,3)`, documentFavoriteID, workspaceID, userID, documentID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO shared_links(id,token,workspace_id,created_by,scope,scope_id,filters,include_description,is_active) VALUES($1,$2,$3,$4,'document',$5,'{}',true,true)`, documentSharedLinkID, randomTransferToken(32), workspaceID, userID, documentID)
+	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO shared_links(id,token,workspace_id,created_by,scope,scope_id,filters,include_description,is_active) VALUES(gen_random_uuid(),$1,$2,$3,'project',$4,'{}',true,true)`, randomTransferToken(32), workspaceID, userID, projectID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `INSERT INTO shared_links(id,token,workspace_id,created_by,scope,scope_id,filters,include_description,is_active) VALUES($1,$2,$3,$4,'team',$5,'{}',true,true)`, validTeamSharedLinkID, validTeamSharedLinkToken, workspaceID, userID, teamID)
@@ -295,16 +305,29 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 	require.Contains(t, exported.manifest.Omitted, "refresh_tokens")
 	require.Len(t, exported.data.Tables["teams"], 1, "rows from another workspace must not enter the archive")
 	require.Len(t, exported.data.Tables["shared_links"], 2, "only links with valid scope targets should be exported")
-	require.Contains(t, exported.manifest.Warnings, "Omitted 1 shared link with a missing scope target.")
+	require.Len(t, exported.data.Tables["favorites"], 1, "only favorites with transferable targets should be exported")
+	require.Contains(t, exported.manifest.Warnings, "Omitted 2 shared links with a missing scope target or a document scope (document pages are not included in the archive).")
+	require.Contains(t, exported.manifest.Warnings, "Omitted 1 favorite of document pages or removed targets (document pages are not included in the archive).")
 	for _, row := range exported.data.Tables["shared_links"] {
 		require.NotEqual(t, orphanedTeamSharedLinkID.String(), transferString(row["id"]))
+		require.NotEqual(t, documentSharedLinkID.String(), transferString(row["id"]))
 		require.NotContains(t, row, "token")
+	}
+	for _, row := range exported.data.Tables["favorites"] {
+		require.NotEqual(t, documentFavoriteID.String(), transferString(row["id"]))
+		require.Equal(t, "project", transferString(row["entity_type"]))
 	}
 	require.NoError(t, exported.zip.Close())
 
 	result, err := transferService.Import(ctx, archive.Path, "Transfer Target", targetSlug, userID)
 	require.NoError(t, err)
 	require.Equal(t, targetSlug, result.Slug)
+
+	cleanPreview, err := transferService.Preview(ctx, archive.Path, userID)
+	require.NoError(t, err)
+	cleanPreviewJSON, err := json.Marshal(cleanPreview)
+	require.NoError(t, err)
+	require.Contains(t, string(cleanPreviewJSON), `"missing_users":[]`, "null missing_users crashes the import dialog")
 
 	var targetWorkspaceID uuid.UUID
 	require.NoError(t, db.Get(&targetWorkspaceID, `SELECT id FROM workspaces WHERE slug=$1`, targetSlug))
@@ -396,6 +419,12 @@ func TestWorkspaceTransferRoundTrip(t *testing.T) {
 
 	var importedTeamID uuid.UUID
 	require.NoError(t, db.Get(&importedTeamID, `SELECT id FROM teams WHERE workspace_id=$1 AND key='ENG'`, targetWorkspaceID))
+	var importedFavoriteType string
+	var importedFavoriteEntityID uuid.UUID
+	require.NoError(t, db.QueryRow(`SELECT entity_type, entity_id FROM favorites WHERE workspace_id=$1`, targetWorkspaceID).Scan(&importedFavoriteType, &importedFavoriteEntityID))
+	require.Equal(t, "project", importedFavoriteType)
+	require.NotEqual(t, projectID, importedFavoriteEntityID)
+	require.NoError(t, db.Get(&importedProjectFavoriteTarget, `SELECT id FROM projects WHERE id=$1`, importedFavoriteEntityID))
 	var importedValidTeamSharedLinkID, importedSharedLinkScopeID uuid.UUID
 	var importedSharedLinkActive bool
 	var importedSharedLinkToken string

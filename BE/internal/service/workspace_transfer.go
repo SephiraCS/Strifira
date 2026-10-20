@@ -92,6 +92,7 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 		data.Tables[spec.Name] = rows
 	}
 	omittedSharedLinks := omitInvalidSharedLinks(data)
+	omittedFavorites := omitInvalidFavorites(data)
 	collectUserID(userIDs, workspaceRow["owner_id"])
 	for _, spec := range repository.WorkspaceTransferTableSpecs() {
 		for _, row := range data.Tables[spec.Name] {
@@ -139,7 +140,10 @@ func (s *WorkspaceTransferService) Export(ctx context.Context, workspace *domain
 		"Dev Machine policy is imported disabled; environment references are removed from scope settings.",
 	}
 	if omittedSharedLinks > 0 {
-		warnings = append(warnings, fmt.Sprintf("Omitted %d shared link%s with a missing scope target.", omittedSharedLinks, pluralSuffix(omittedSharedLinks)))
+		warnings = append(warnings, fmt.Sprintf("Omitted %d shared link%s with a missing scope target or a document scope (document pages are not included in the archive).", omittedSharedLinks, pluralSuffix(omittedSharedLinks)))
+	}
+	if omittedFavorites > 0 {
+		warnings = append(warnings, fmt.Sprintf("Omitted %d favorite%s of document pages or removed targets (document pages are not included in the archive).", omittedFavorites, pluralSuffix(omittedFavorites)))
 	}
 	manifest := dto.WorkspaceExportManifest{
 		Format:              dto.WorkspaceExportFormat,
@@ -261,6 +265,41 @@ func validSharedLinkScopeTarget(link dto.WorkspaceTransferRow, targets map[strin
 	return targets[scope][targetID]
 }
 
+// omitInvalidFavorites removes favorites whose polymorphic target is absent
+// from this workspace export. Favorites have no database foreign key for
+// their target, and favorites of document pages always point outside the
+// archive because page content is not transferred; without this, any
+// workspace with a favorited page would fail export reference validation.
+func omitInvalidFavorites(data dto.WorkspaceTransferData) int {
+	targets := map[string]map[string]bool{
+		"project": transferRowIDs(data.Tables["projects"]),
+		"view":    transferRowIDs(data.Tables["views"]),
+		"team":    transferRowIDs(data.Tables["teams"]),
+		"cycle":   transferRowIDs(data.Tables["cycles"]),
+		"label":   transferRowIDs(data.Tables["labels"]),
+	}
+	favorites := data.Tables["favorites"]
+	kept := make([]dto.WorkspaceTransferRow, 0, len(favorites))
+	omitted := 0
+	for _, favorite := range favorites {
+		if validFavoriteTarget(favorite, targets) {
+			kept = append(kept, favorite)
+			continue
+		}
+		omitted++
+	}
+	data.Tables["favorites"] = kept
+	return omitted
+}
+
+func validFavoriteTarget(favorite dto.WorkspaceTransferRow, targets map[string]map[string]bool) bool {
+	targetID := transferString(favorite["entity_id"])
+	if _, err := uuid.Parse(targetID); err != nil {
+		return false
+	}
+	return targets[transferString(favorite["entity_type"])][targetID]
+}
+
 func pluralSuffix(count int) string {
 	if count == 1 {
 		return ""
@@ -377,6 +416,17 @@ func parseWorkspaceArchive(path string) (*parsedWorkspaceArchive, error) {
 	if err := dto.DecodeTransferJSON(manifestBytes, &manifest); err != nil {
 		return fail("manifest is invalid JSON", err)
 	}
+	// The import dialog renders these lists unconditionally; a nil slice
+	// would marshal as null and crash the client rendering the preview.
+	if manifest.Warnings == nil {
+		manifest.Warnings = []string{}
+	}
+	if manifest.RequiresReconfiguration == nil {
+		manifest.RequiresReconfiguration = []string{}
+	}
+	if manifest.Omitted == nil {
+		manifest.Omitted = []string{}
+	}
 	if manifest.Format != dto.WorkspaceExportFormat || manifest.Version != dto.WorkspaceExportVersion {
 		_ = zr.Close()
 		return nil, &WorkspaceTransferError{Code: "UNSUPPORTED_WORKSPACE_ARCHIVE", Message: "This workspace archive version is not supported", Cause: ErrUnsupportedArchive}
@@ -477,6 +527,9 @@ func (s *WorkspaceTransferService) Preview(ctx context.Context, path string, imp
 	_, missing, err := s.userMapping(ctx, parsed, importerID)
 	if err != nil && !errors.Is(err, ErrWorkspaceImportUsers) {
 		return nil, err
+	}
+	if missing == nil {
+		missing = []string{}
 	}
 	return &dto.WorkspaceImportPreview{
 		Manifest: parsed.manifest, Name: parsed.manifest.SourceWorkspaceName,
