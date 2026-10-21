@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.44",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.44",
+    "body": "Deployed to alpha as 4aebe01a56ac7d43477977eca3bc4a7573545d10.\n\n- fix(transfer): tolerate document favorites at export and null lists at import (#15)",
+    "published_at": "2026-10-21T00:27:35Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.44",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.43",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.43",
     "body": "Deployed to alpha as 559c75f3712cd0cbdeac7dd3dc6907128490984f.\n\n- fix(storage): recover uploads orphaned by the JetStream storage migration (#14)",
@@ -8,6 +19,17 @@
     "force_upgrade": false,
     "minimum_supported_version": null,
     "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.43",
+    "upgrade_message": null
+  },
+  {
+    "tag_name": "evidence/transfer-fix-657a7c2",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/evidence/transfer-fix-657a7c2",
+    "body": "Evidence attachments for the workspace transfer import/export fix PR. Referenced from the PR body; not part of the repository tree.",
+    "published_at": "2026-10-20T17:03:37Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/evidence/transfer-fix-657a7c2",
     "upgrade_message": null
   },
   {
