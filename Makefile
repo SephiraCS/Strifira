@@ -132,7 +132,7 @@ test-slow-live:
 
 lint:
 	cd BE && golangci-lint run ./...
-	cd UI && npm run lint
+	cd UI && npm run check
 
 docker-up:
 	docker compose --profile app up --build -d
