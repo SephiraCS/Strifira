@@ -1,9 +1,20 @@
 [
   {
+    "tag_name": "v0.3.46",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.46",
+    "body": "Deployed to alpha as 0c1118dd5ff965b012d4d5541b563293dc1f9aaf.\n\n- docs: sync with origin/main and detect duplicate work before starting (#18)",
+    "published_at": "2026-10-21T01:53:43Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.46",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.45",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.45",
     "body": "Deployed to alpha as c96ba3bdc2b16ccaf10d8236c59bc58eedf2aca0.\n\n- fix(repo): point make lint at svelte-check and ignore .zcode (#17)\n- docs: merging is done by Filippo or Mario only, never auto-merge (#16)",
-    "published_at": "2026-10-21T01:40:51Z",
+    "published_at": "2026-10-21T01:40:52Z",
     "prerelease": false,
     "force_upgrade": false,
     "minimum_supported_version": null,
