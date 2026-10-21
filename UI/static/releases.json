@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.45",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.45",
+    "body": "Deployed to alpha as c96ba3bdc2b16ccaf10d8236c59bc58eedf2aca0.\n\n- fix(repo): point make lint at svelte-check and ignore .zcode (#17)\n- docs: merging is done by Filippo or Mario only, never auto-merge (#16)",
+    "published_at": "2026-10-21T01:40:51Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.45",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.44",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.44",
     "body": "Deployed to alpha as 4aebe01a56ac7d43477977eca3bc4a7573545d10.\n\n- fix(transfer): tolerate document favorites at export and null lists at import (#15)",
