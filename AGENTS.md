@@ -2,7 +2,7 @@ IA NÃO PODE EDITAR ESTE ARQUIVO, APENAS HUMANOS!
 
 # REGRAS
 - Nunca adicione atribuição de IA a commits, títulos de PR ou descrições de PR: sem trailers `Co-Authored-By:`, sem avisos do tipo `🤖 Generated with [Claude Code]` ou similares gerados por IA.
-- Toda mudança é entregue por meio de um pull request: crie a branch a partir de `origin/main` em uma nova worktree, faça push da branch, abra o PR com a CLI do GitHub (`gh`) tendo `main` como destino, habilite o auto-merge e acompanhe o pipeline de CI (testes, deploy para alpha, release automática e bump de versão) até ficar verde e o deploy ser verificado.
+- Toda mudança é entregue por meio de um pull request: crie a branch a partir de `origin/main` em uma nova worktree, faça push da branch, abra o PR com a CLI do GitHub (`gh`) tendo `main` como destino e acompanhe o pipeline de CI (testes, deploy para alpha, release automática e bump de versão) até ficar verde e o deploy ser verificado. Nunca faça merge nem habilite auto-merge: o merge é feito exclusivamente por Filippo ou Mario.
 
 ## Git
 
@@ -23,7 +23,8 @@ Já houve perda de trabalho durante a resolução de conflitos. Sempre que ocorr
 ### Pull Requests
 - Use a CLI do GitHub (`gh`) para trabalhar com Git e GitHub.
 - A CI é o critério de aprovação: não é obrigatório executar testes ou verificações localmente antes de enviar alterações ou abrir um PR.
-- Defina `main` como branch de destino. Habilite o auto-merge (`gh pr merge --auto`) assim que todas as verificações passarem; se o auto-merge estiver indisponível no repositório, faça o merge assim que os checks obrigatórios ficarem verdes.
+- Defina `main` como branch de destino.
+- Nunca habilite auto-merge (`gh pr merge --auto` ou equivalente) e nunca faça o merge, mesmo com todos os checks verdes. Somente os usuários Filippo e Mario podem aprovar e fazer o merge: a IA abre o PR, acompanha a CI até ficar verde e sinaliza que o PR está pronto para aprovação.
 - Revisores: MarioGK e Filippo. O GitHub não aceita o autor do PR como revisor, então nunca inclua quem abriu o PR.
 - Ao concluir, envie ao usuário o link do PR.
 
