@@ -6,6 +6,13 @@ IA NÃO PODE EDITAR ESTE ARQUIVO, APENAS HUMANOS!
 
 ## Git
 
+### Sincronização e detecção de duplicados
+
+- Antes de analisar o repositório, avaliar mudanças pendentes ou escrever código, execute `git fetch origin` e avance a `main` local com `git merge --ff-only origin/main`. O working tree de uma `main` desatualizada não é trabalho pendente: pode ser resquício de PRs já mergeados por outra sessão ou worktree.
+- Mudanças não commitadas só contam como trabalho novo depois de comparadas byte a byte com `origin/main` (`git show origin/main:<arquivo> | cmp -s - <arquivo>`). Conteúdo idêntico ao da main é resquício de merge, não trabalho a entregar — restaure o arquivo e siga adiante.
+- Antes de criar branch, commit ou PR, confira os PRs abertos (`gh pr list --state open`) e os mergeados recentemente (`gh pr list --state merged --limit 10`). O repositório usa squash merge: `git branch --merged` NÃO detecta branches cujo conteúdo já está na `main` — confie no estado do PR, não na ancestralidade.
+- Ao abrir um PR ou mergeá-lo, apague a branch (local e remota) e remova a worktree associada; branch mergeada que sobra é isca de duplicação.
+
 ### Branches
 - Crie branches a partir de `origin/main`, nunca da `main` local — ela frequentemente está desatualizada. Execute `git fetch origin` primeiro, depois crie a branch em uma nova worktree usando os prefixos `feat/…`, `fix/…`, `hotfix/…` ou `refactor/…`, e compare suas alterações com `origin/main`.
 - Antes de enviar (push), atualize as referências remotas e faça rebase sobre a `origin/main` mais recente, para que o PR nunca contenha código desatualizado.
