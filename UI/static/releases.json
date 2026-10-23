@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.47",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.47",
+    "body": "Deployed to alpha as ae2a882bee4f95559cd34aff553e85521a569f6a.\n\n- docs: treat every change as potentially concurrent with other agents (#20)\n- docs: require Strifira card, before/after screenshots and ticket ID in PR titles (#19)",
+    "published_at": "2026-10-23T19:27:34Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.47",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.46",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.46",
     "body": "Deployed to alpha as 0c1118dd5ff965b012d4d5541b563293dc1f9aaf.\n\n- docs: sync with origin/main and detect duplicate work before starting (#18)",
