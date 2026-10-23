@@ -31,6 +31,7 @@ Já houve perda de trabalho durante a resolução de conflitos. Sempre que ocorr
 - Use a CLI do GitHub (`gh`) para trabalhar com Git e GitHub.
 - A CI é o critério de aprovação: não é obrigatório executar testes ou verificações localmente antes de enviar alterações ou abrir um PR.
 - Defina `main` como branch de destino.
+- Título do PR no formato `<identificador do ticket> - <título do ticket>` (exemplo: `STR-10 - Verificar o export e import de workspaces`).
 - Nunca habilite auto-merge (`gh pr merge --auto` ou equivalente) e nunca faça o merge, mesmo com todos os checks verdes. Somente os usuários Filippo e Mario podem aprovar e fazer o merge: a IA abre o PR, acompanha a CI até ficar verde e sinaliza que o PR está pronto para aprovação.
 - Revisores: MarioGK e Filippo. O GitHub não aceita o autor do PR como revisor, então nunca inclua quem abriu o PR.
 - Ao concluir, envie ao usuário o link do PR.
@@ -43,12 +44,13 @@ Já houve perda de trabalho durante a resolução de conflitos. Sempre que ocorr
 
 Para cada fluxo da aplicação visível ao usuário que um PR alterar, anexe capturas de tela reais e vídeos curtos da aplicação em execução. Execute-a localmente com `nice -n 19 make dev-reset` (ou `nice -n 19 make dev`); a aplicação serve em `http://localhost:5173`.
 
+- Todo PR contém capturas de tela do sistema antes e depois da alteração, para comparação.
 - Capture as evidências na versão do PR que foi efetivamente testada — o commit que passou nas verificações.
 - Mostre a navegação e as interações que demonstram a alteração, incluindo os estados de sucesso, erro e vazio, quando aplicável.
 - Identifique cada captura com o fluxo correspondente e o SHA do commit testado.
 - Antes de anexar, oculte segredos e dados pessoais, como tokens, chaves, e-mails, nomes de clientes e informações de pagamento.
 - Incorpore ou anexe as evidências no PR com texto alternativo ou uma descrição textual; envie-as como anexos do PR e nunca as versione no repositório. Para alterações visuais, inclua várias capturas de antes e depois.
-- Gere novas evidências sempre que o commit mais recente do PR mudar. Nunca fabrique evidências nem apresente capturas antigas ou simuladas como comprovação de funcionamento. Se não for possível obtê-las, explique o motivo no PR. Para alterações exclusivamente documentais, explique por que capturas da aplicação em execução não se aplicam.
+- Gere novas evidências sempre que o commit mais recente do PR mudar. Nunca fabrique evidências nem apresente capturas antigas ou simuladas como comprovação de funcionamento. Se não for possível obtê-las, explique o motivo no PR.
 
 ## Prioridade de CPU local
 
