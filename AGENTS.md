@@ -3,6 +3,7 @@ IA NÃO PODE EDITAR ESTE ARQUIVO, APENAS HUMANOS!
 # REGRAS
 - Nunca adicione atribuição de IA a commits, títulos de PR ou descrições de PR: sem trailers `Co-Authored-By:`, sem avisos do tipo `🤖 Generated with [Claude Code]` ou similares gerados por IA.
 - Toda mudança é entregue por meio de um pull request: crie a branch a partir de `origin/main` em uma nova worktree, faça push da branch, abra o PR com a CLI do GitHub (`gh`) tendo `main` como destino e acompanhe o pipeline de CI (testes, deploy para alpha, release automática e bump de versão) até ficar verde e o deploy ser verificado. Nunca faça merge nem habilite auto-merge: o merge é feito exclusivamente por Filippo ou Mario.
+- O agente de IA só pode executar qualquer tarefa — análise, alteração de código, commit ou PR — se houver card criado no Strifira para ela; sem card, pare e solicite a criação antes de começar. O identificador do card no Strifira é o que compõe o título do PR.
 
 ## Git
 
