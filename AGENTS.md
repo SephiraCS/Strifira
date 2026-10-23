@@ -9,6 +9,7 @@ IA NÃO PODE EDITAR ESTE ARQUIVO, APENAS HUMANOS!
 
 ### Sincronização e detecção de duplicados
 
+- Mais de um agente pode estar trabalhando no repositório ao mesmo tempo. Trate toda alteração como concorrente: confine cada mudança à própria branch e worktree, reavalie o estado remoto antes de começar e antes de cada push (`git fetch origin`, PRs abertos e mergeados) e nunca toque em branches, worktrees ou PRs de outra sessão. Ao detectar sobreposição com trabalho de outro agente, pare e alinhe com o usuário antes de continuar.
 - Antes de analisar o repositório, avaliar mudanças pendentes ou escrever código, execute `git fetch origin` e avance a `main` local com `git merge --ff-only origin/main`. O working tree de uma `main` desatualizada não é trabalho pendente: pode ser resquício de PRs já mergeados por outra sessão ou worktree.
 - Mudanças não commitadas só contam como trabalho novo depois de comparadas byte a byte com `origin/main` (`git show origin/main:<arquivo> | cmp -s - <arquivo>`). Conteúdo idêntico ao da main é resquício de merge, não trabalho a entregar — restaure o arquivo e siga adiante.
 - Antes de criar branch, commit ou PR, confira os PRs abertos (`gh pr list --state open`) e os mergeados recentemente (`gh pr list --state merged --limit 10`). O repositório usa squash merge: `git branch --merged` NÃO detecta branches cujo conteúdo já está na `main` — confie no estado do PR, não na ancestralidade.
