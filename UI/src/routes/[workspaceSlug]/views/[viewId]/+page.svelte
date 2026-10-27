@@ -33,6 +33,7 @@
 	import FilterBuilder from '$lib/components/shared/FilterBuilder.svelte';
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
+	import { CaptureButton } from '$lib/features/screenshot';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
 	import { workspaceLabels, workspaceMembers, workspaceProjects, workspaceTeams } from '$lib/features/layout/workspace-resources';
 
@@ -219,6 +220,7 @@
 				{/if}
 			</div>
 			<div class="flex items-center gap-2">
+				<CaptureButton />
 				{#if owner}
 					<Tooltip.Root>
 						<Tooltip.Trigger>

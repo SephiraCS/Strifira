@@ -35,6 +35,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 	import { workspaceTeams } from '$lib/features/layout/workspace-resources';
+	import { CaptureButton } from '$lib/features/screenshot';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	type Tab = 'overview' | 'explore';
@@ -204,6 +205,7 @@
 		<SidebarToggle />
 		<BarChart3 size={16} class="text-[var(--color-text-secondary)]" />
 		<h1 class="text-sm font-medium text-[var(--color-text-primary)]">{m['insights.title']()}</h1>
+		<CaptureButton class="ml-auto" />
 	</header>
 
 	<Tabs.Root value={activeTab} onValueChange={(value) => { if (value === 'overview' || value === 'explore') activeTab = value; }}>
