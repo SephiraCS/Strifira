@@ -46,6 +46,7 @@
 	import TerminalDock from '$lib/features/dev-machines/TerminalDock.svelte';
 	import { setTerminalDock } from '$lib/features/dev-machines/terminal-dock-context.svelte';
 	import { presenterSession } from '$lib/features/shares/presenter.session.svelte';
+	import { CaptureDialog } from '$lib/features/screenshot';
 
 	let { children } = $props();
 	let workspace = $state<Workspace | null>(null);
@@ -863,6 +864,8 @@
 	{#if showCommandPalette}
 		<CommandPalette {slug} {teams} onclose={() => (showCommandPalette = false)} oncreateissue={openCreateIssue} />
 	{/if}
+
+	<CaptureDialog />
 
 	<CreateIssueDialog
 		bind:open={showCreateIssue}

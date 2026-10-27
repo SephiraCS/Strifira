@@ -45,6 +45,7 @@
 		CycleSelector
 	} from './selectors';
 	import { createKeyboardHandler } from '$lib/utils/keyboard';
+	import { CaptureButton } from '$lib/features/screenshot';
 	import ChevronUp from '@lucide/svelte/icons/chevron-up';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -1212,6 +1213,7 @@
 		</div>
 		<div class="no-scrollbar flex shrink-0 items-center gap-0.5 overflow-x-auto">
 			<!-- Actions -->
+			<CaptureButton />
 			<button
 				onclick={toggleSubscription}
 				disabled={subscriptionBusy}

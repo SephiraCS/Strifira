@@ -35,6 +35,7 @@
 	import ChevronRight from '@lucide/svelte/icons/chevron-right';
 	import Share2 from '@lucide/svelte/icons/share-2';
 	import Settings2 from '@lucide/svelte/icons/settings-2';
+	import { CaptureButton } from '$lib/features/screenshot';
 	import ShareLinkDialog from '$lib/components/shared/ShareLinkDialog.svelte';
 	import TeamRenameDialog from '$lib/features/teams/TeamRenameDialog.svelte';
 	import { hasPermission } from '$lib/security/permissions';
@@ -483,6 +484,7 @@
 			>
 				<Share2 size={14} />
 			</button>
+			<CaptureButton />
 			{#if canManageTeam}
 				<button
 					onclick={() => (showRenameTeam = true)}

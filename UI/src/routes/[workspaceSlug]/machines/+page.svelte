@@ -17,6 +17,7 @@
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import ErrorState from '$lib/components/shared/ErrorState.svelte';
 	import SidebarToggle from '$lib/components/layout/SidebarToggle.svelte';
+	import { CaptureButton } from '$lib/features/screenshot';
 	import CreateMachineDialog from '$lib/features/dev-machines/CreateMachineDialog.svelte';
 	import MachineStatusBadge from '$lib/features/dev-machines/MachineStatusBadge.svelte';
 	import { appToast } from '$lib/features/toast/toast';
@@ -97,7 +98,10 @@
 			<h1 class="text-sm font-medium">{m['machines.title']()}</h1>
 			{#if issueId}<span class="ml-2 text-[10px] text-[var(--color-text-tertiary)]">{m['machines.filtered_by_issue']()}</span>{/if}
 		</div>
-		<div class="flex gap-2">{#if canAdminDevMachines}<Button size="sm" variant="outline" onclick={() => (cleanupConfirm = true)}><Trash2 size={14} />{m['machines.delete_old']()}</Button>{/if}<Button size="sm" onclick={() => (createOpen = true)}><Plus size={14} />{m['machines.new_machine']()}</Button></div>
+		<div class="flex gap-2">
+			<CaptureButton />
+			{#if canAdminDevMachines}<Button size="sm" variant="outline" onclick={() => (cleanupConfirm = true)}><Trash2 size={14} />{m['machines.delete_old']()}</Button>{/if}<Button size="sm" onclick={() => (createOpen = true)}><Plus size={14} />{m['machines.new_machine']()}</Button>
+		</div>
 	</header>
 
 	<div class="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
