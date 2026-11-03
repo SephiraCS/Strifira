@@ -575,7 +575,7 @@ func registerIssueExtraTools(s *mcp.Server, deps Deps) {
 			}
 			out = append(out, entry)
 		}
-		return nil, out, nil
+		return nil, map[string]any{"history": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -595,7 +595,7 @@ func registerIssueExtraTools(s *mcp.Server, deps Deps) {
 			return nil, nil, err
 		}
 		if deps.RelationSvc == nil {
-			return nil, []map[string]any{}, nil
+			return nil, map[string]any{"relations": []map[string]any{}}, nil
 		}
 		relations, err := deps.RelationSvc.ListByIssue(ctx, w.workspace.ID, in.Identifier)
 		if err != nil {
@@ -616,7 +616,7 @@ func registerIssueExtraTools(s *mcp.Server, deps Deps) {
 			}
 			out = append(out, entry)
 		}
-		return nil, out, nil
+		return nil, map[string]any{"relations": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -759,7 +759,7 @@ func registerMiscTools(s *mcp.Server, deps Deps) {
 				"status": string(c.Status), "start_date": c.StartDate, "end_date": c.EndDate,
 			})
 		}
-		return nil, out, nil
+		return nil, map[string]any{"cycles": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -788,7 +788,7 @@ func registerMiscTools(s *mcp.Server, deps Deps) {
 				"status": t.Status, "priority": t.Priority, "is_active": t.IsActive,
 			})
 		}
-		return nil, out, nil
+		return nil, map[string]any{"templates": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

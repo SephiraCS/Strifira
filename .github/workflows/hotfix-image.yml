@@ -1,0 +1,49 @@
+name: Hotfix image
+
+# Builds and pushes an image for a hotfix branch without running the full
+# main pipeline. The homelab-deployer can roll the resulting commit tag with
+# `homelab-deployer roll ku <sha>`; the instance reports the sha from /health.
+on:
+  push:
+    branches: ['hotfix/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - name: Log in to Harbor
+        env:
+          HARBOR_USER: ${{ secrets.HARBOR_USER }}
+          HARBOR_TOKEN: ${{ secrets.HARBOR_TOKEN }}
+        run: printf '%s' "$HARBOR_TOKEN" | docker login registry.mariogk.com --username "$HARBOR_USER" --password-stdin
+
+      - name: Compute the short commit
+        id: sha
+        shell: bash
+        run: echo "sha12=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          driver: docker-container
+
+      - name: Build and push the image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          push: true
+          provenance: false
+          build-args: KU_VERSION=${{ github.sha }}
+          tags: |
+            registry.mariogk.com/homelab/ku:${{ github.sha }}
+            registry.mariogk.com/homelab/ku:${{ steps.sha.outputs.sha12 }}
+          cache-from: type=gha,scope=ci-build
+          cache-to: type=gha,mode=max,scope=ci-build
