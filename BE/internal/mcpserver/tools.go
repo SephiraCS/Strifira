@@ -62,7 +62,7 @@ func registerIdentityTools(s *mcp.Server, deps Deps) {
 			}
 			out = append(out, workspaceOut{Slug: ws.Slug, Name: ws.Name, ID: ws.ID.String(), Role: role, OwnerID: ws.OwnerID.String()})
 		}
-		return nil, out, nil
+		return nil, map[string]any{"workspaces": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -113,7 +113,7 @@ func registerIdentityTools(s *mcp.Server, deps Deps) {
 				Role: m.Role, CreatedAt: m.CreatedAt,
 			})
 		}
-		return nil, out, nil
+		return nil, map[string]any{"members": out}, nil
 	})
 }
 
@@ -141,7 +141,7 @@ func registerCatalogTools(s *mcp.Server, deps Deps) {
 		for _, t := range teams {
 			out = append(out, teamOut{ID: t.ID.String(), Key: t.Key, Name: t.Name, Description: t.Description})
 		}
-		return nil, out, nil
+		return nil, map[string]any{"teams": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -181,7 +181,7 @@ func registerCatalogTools(s *mcp.Server, deps Deps) {
 				Category: string(st.Category), IsDefault: st.IsDefault, Position: st.Position,
 			})
 		}
-		return nil, out, nil
+		return nil, map[string]any{"states": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -214,7 +214,7 @@ func registerCatalogTools(s *mcp.Server, deps Deps) {
 			}
 			out = append(out, po)
 		}
-		return nil, out, nil
+		return nil, map[string]any{"projects": out}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -240,7 +240,7 @@ func registerCatalogTools(s *mcp.Server, deps Deps) {
 		for _, l := range labels {
 			out = append(out, toLabelOut(l))
 		}
-		return nil, out, nil
+		return nil, map[string]any{"labels": out}, nil
 	})
 }
 
@@ -742,7 +742,7 @@ func registerIssueTools(s *mcp.Server, deps Deps) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to list comments")
 		}
-		return nil, deps.commentTree(ctx, comments), nil
+		return nil, map[string]any{"comments": deps.commentTree(ctx, comments)}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
