@@ -33,7 +33,7 @@ docker compose exec backend /app/server seed`;
 			<p class="text-sm font-semibold tracking-widest text-brand-300 uppercase">Self-host</p>
 			<h2 class="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Deploy with Docker Compose</h2>
 			<p class="mt-4 text-lg text-muted-foreground">
-				The self-hosting stack runs Caddy, PostgreSQL 17, Redis 7, the Go API and the SvelteKit app.
+				The self-hosting stack runs Caddy, PostgreSQL 17, the Go API and the SvelteKit app, with NATS embedded in the backend.
 				Set the required secrets, start the services, then run the database migration and seed commands.
 			</p>
 		</div>

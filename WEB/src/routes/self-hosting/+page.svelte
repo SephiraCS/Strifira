@@ -31,7 +31,7 @@
 			<div use:reveal>
 				<h1 class="text-4xl font-bold tracking-tight">Self-Hosting Strifira</h1>
 				<p class="mt-4 text-lg leading-relaxed text-muted-foreground">
-					The reference Docker Compose stack runs Caddy, PostgreSQL 17, Redis 7, the Go API and the SvelteKit frontend.
+					The reference Docker Compose stack runs Caddy, PostgreSQL 17, the Go API and the SvelteKit frontend, with an embedded NATS server for cluster messaging and file storage.
 					These guides cover configuration, storage, updates, GitHub webhook delivery and the {DEV_MACHINES_RELEASE_STATUS.toLowerCase()}
 					opt-in Dev Machines subsystem—including the work that remains with the operator.
 				</p>

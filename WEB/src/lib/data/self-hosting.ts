@@ -12,18 +12,18 @@ export const selfHosting: ContentRegistry = {
 		slug: 'docker-compose',
 		title: 'Docker Compose Setup — Self-Hosting Strifira',
 		description:
-			'Deploy Strifira with the reference Docker Compose stack: Caddy, PostgreSQL 17, Redis 7, the Go API, and the SvelteKit frontend.',
+			'Deploy Strifira with the reference Docker Compose stack: Caddy, PostgreSQL 17, the Go API, and the SvelteKit frontend.',
 		heading: 'Docker Compose Setup',
 		intro:
-			'The `selfhosting/` directory contains Strifira’s reference deployment. It runs five services behind Caddy and supports automatic TLS when DNS and network access are configured correctly.',
+			'The `selfhosting/` directory contains Strifira’s reference deployment. It runs four services behind Caddy — the backend embeds its own NATS server, so no external messaging service is required — and supports automatic TLS when DNS and network access are configured correctly.',
 		sections: [
 			{
 				heading: 'Architecture overview',
-				body: 'The Compose file defines Caddy, PostgreSQL 17, Redis 7, the Go API and the SvelteKit frontend. Caddy terminates HTTPS and sends application and API requests to the appropriate container.',
+				body: 'The Compose file defines Caddy, PostgreSQL 17, the Go API and the SvelteKit frontend. The backend embeds a NATS server whose JetStream store handles cluster messaging, file storage and presence. Caddy terminates HTTPS and sends application and API requests to the appropriate container.',
 				list: [
 					"Caddy — reverse proxy with automatic Let's Encrypt TLS",
 					'PostgreSQL 17 — primary data store',
-					'Redis 7 — required configuration value, reserved for future cache and job use',
+					'Embedded NATS — NATS Server 2.15 runs in-process in the backend; JetStream stores files, presence and cluster state',
 					'Backend — Go API server on port 8080',
 					'Frontend — SvelteKit static app served behind Caddy'
 				]
@@ -46,10 +46,10 @@ export const selfHosting: ContentRegistry = {
 			},
 			{
 				heading: 'Volumes and data persistence',
-				body: 'Named volumes persist PostgreSQL data, local uploads and Caddy state across container recreation. Persistence is not a backup: copy and test restores for each volume before relying on the deployment.',
+				body: 'Named volumes persist PostgreSQL data, the JetStream file store and Caddy state across container recreation. Persistence is not a backup: copy and test restores for each volume before relying on the deployment.',
 				list: [
 					'pgdata — PostgreSQL data directory',
-					'uploads — user-uploaded files and assets',
+					'uploads — JetStream object store files (uploads, avatars, workspace exports)',
 					'caddy_data / caddy_config — TLS certificates and Caddy state'
 				]
 			}
@@ -76,10 +76,10 @@ export const selfHosting: ContentRegistry = {
 			},
 			{
 				heading: 'Capacity planning',
-				body: 'Capacity depends on concurrent users, issue volume, uploads, integrations, and backup retention. Start with enough headroom for PostgreSQL, Redis, image builds, and the application containers, then monitor CPU, memory, and disk use before scaling.',
+				body: 'Capacity depends on concurrent users, issue volume, uploads, integrations, and backup retention. Start with enough headroom for PostgreSQL, image builds, and the application containers, then monitor CPU, memory, and disk use before scaling.',
 				list: [
 					'Allow temporary CPU and disk headroom for container builds and updates',
-					'Monitor PostgreSQL, Redis, and application memory after launch',
+					'Monitor PostgreSQL and application memory after launch',
 					'Allocate storage for uploads, database growth, and backups'
 				]
 			},
@@ -114,12 +114,12 @@ export const selfHosting: ContentRegistry = {
 				]
 			},
 			{
-				heading: 'Database and cache',
-				body: 'The Compose service names are used by the default connection settings. Change these values only when you also change the corresponding database or Redis deployment.',
+				heading: 'Database and cluster settings',
+				body: 'The Compose service names are used by the default connection settings. Change these values only when you also change the corresponding database deployment.',
 				list: [
 					'POSTGRES_USER — database user (default: strifira)',
 					'POSTGRES_DB — database name (default: strifira)',
-					'REDIS_URL — Redis connection string (default: redis://redis:6379)'
+					'NATS_SEED_URLS — cluster addresses of the other nodes when running more than one instance (empty keeps the instance standalone)'
 				]
 			},
 			{
@@ -173,12 +173,12 @@ export const selfHosting: ContentRegistry = {
 			},
 			{
 				heading: 'What happens during an update',
-				body: 'The script leaves the PostgreSQL and Redis services running while it recreates Caddy, the backend and the frontend. Application requests receive a maintenance page during the refresh.',
+				body: 'The script leaves the PostgreSQL service running while it recreates Caddy, the backend and the frontend. Application requests receive a maintenance page during the refresh.',
 				list: [
 					'Maintenance page served during update',
 					'Backend and frontend images rebuilt',
 					'Pending migrations applied after container recreation',
-					'PostgreSQL and Redis are not recreated by the script'
+					'PostgreSQL is not recreated by the script'
 				]
 			}
 		]
@@ -188,41 +188,38 @@ export const selfHosting: ContentRegistry = {
 		slug: 'storage',
 		title: 'Storage — Self-Hosting Strifira',
 		description:
-			'Configure Strifira storage: local filesystem (default) or S3-compatible backends including AWS S3, Cloudflare R2, MinIO, and SeaweedFS.',
+			'How Strifira stores uploads: the embedded NATS JetStream object store persisted on the uploads Docker volume and replicated across cluster nodes.',
 		heading: 'Storage Configuration',
 		intro:
-			'Strifira stores uploads either in a local Docker volume or through an S3-compatible API. Choose based on your backup, access-control and deployment requirements.',
+			'Strifira stores uploads, avatars and workspace exports in the embedded NATS JetStream object store. Files persist on the uploads Docker volume, so backup and restore procedures treat that volume as the source of truth.',
 		sections: [
 			{
-				heading: 'Local filesystem (default)',
-				body: 'By default, the backend writes uploads to `/app/uploads`, persisted by the `uploads` Docker volume. Include that volume in backup and restore procedures.',
+				heading: 'JetStream object store (default)',
+				body: 'Files are written to the JetStream object store embedded in the backend and persisted under `/app/uploads/.jetstream`, backed by the `uploads` Docker volume. Include that volume in backup and restore procedures.',
 				list: [
-					'STORAGE_TYPE=local (default)',
-					'Files stored in /app/uploads inside the backend container',
+					'No storage configuration required — files always live in JetStream',
+					'Files stored under /app/uploads/.jetstream inside the backend container',
 					'Persisted via the uploads Docker volume',
-					'Simple — no external services needed'
+					'No external object-storage service needed'
 				]
 			},
 			{
-				heading: 'S3-compatible storage',
-				body: 'The S3 backend uses the AWS SDK with a configurable endpoint and path-style requests. It is intended for AWS S3 and compatible services, but provider behavior should be tested with your chosen endpoint.',
+				heading: 'Multi-node replication',
+				body: 'In a multi-node deployment, JetStream replicates the file store across every node, so any node can serve any file. Join nodes by setting NATS_SEED_URLS; replication follows automatically.',
 				list: [
-					'STORAGE_TYPE=s3',
-					'S3_ENDPOINT — your storage endpoint URL',
-					'S3_BUCKET — bucket name for uploads',
-					'S3_REGION — e.g. us-east-1',
-					'S3_ACCESS_KEY and S3_SECRET_KEY — credentials',
-					'S3_PUBLIC=true — generate public URLs for images',
-					'S3_CDN_BASE_URL — optional CDN base for public files'
+					'Set NATS_SEED_URLS on each node to form the cluster',
+					'JetStream replicates the file store, presence and cluster state',
+					'Any node answers any request — the HTTP API is stateless',
+					'A load balancer may round-robin freely across nodes'
 				]
 			},
 			{
-				heading: 'SeaweedFS template',
-				body: 'The Compose file includes a commented SeaweedFS service as a starting point. Enabling it also requires bucket, credentials, persistence and backup configuration; the commented block is not a complete production storage setup.',
+				heading: 'Backup and restore',
+				body: 'The JetStream store lives inside the uploads volume, so backing up that volume covers all uploaded files. Verify access permissions, public URL behavior and signed downloads before accepting a storage deployment.',
 				list: [
-					'SeaweedFS service included in docker-compose.yml (commented out)',
-					'Set STORAGE_TYPE=s3 and S3_ENDPOINT=http://seaweedfs:8333',
-					'Configure and test the bucket before enabling uploads'
+					'Back up the uploads volume (includes the JetStream store)',
+					'Volume-level restore recovers all uploaded files together',
+					'Test restores before relying on the deployment'
 				]
 			}
 		]

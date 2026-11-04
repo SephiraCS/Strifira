@@ -33,7 +33,7 @@
 			list: [
 				'Keyboard shortcuts for issue creation, search, navigation and issue updates',
 				'Multiple assignees on one issue',
-				'Self-hosted deployment with PostgreSQL and Redis',
+				'Self-hosted deployment with PostgreSQL and embedded NATS',
 				'Public source under Apache 2.0'
 			]
 		},
@@ -48,11 +48,11 @@
 		},
 		{
 			heading: 'How it is built',
-			body: 'The application uses a Go API with SQL repositories, a SvelteKit frontend, PostgreSQL for application data and Redis as a required service reserved for cache and job use. The self-hosting configuration adds Caddy for reverse proxying and TLS; the opt-in Dev Machines profile adds a Go gateway and manager for container runtimes.',
+			body: 'The application uses a Go API with SQL repositories, a SvelteKit frontend, PostgreSQL for application data and an embedded NATS server whose JetStream store handles cluster messaging, files, presence and KV state. The self-hosting configuration adds Caddy for reverse proxying and TLS; the opt-in Dev Machines profile adds a Go gateway and manager for container runtimes.',
 			list: [
 				'Go API and explicit SQL migrations',
 				'SvelteKit user interface',
-				'PostgreSQL and Redis',
+				'PostgreSQL and embedded NATS',
 				'Docker Compose deployment with Caddy'
 			]
 		},
