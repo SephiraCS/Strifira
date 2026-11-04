@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.49",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.49",
+    "body": "Deployed to alpha as 5d1e8c1e4be1c72d760b356f16827bfe872c7aff.\n\n- fix(web): replace stale Redis/S3 self-hosting docs with the embedded NATS stack (#23)\n- fix(mcp): return objects from list tool outputs (#22)",
+    "published_at": "2026-11-04T20:12:25Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.49",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.48",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.48",
     "body": "Deployed to alpha as 3c34f73909a4ee2a388e8e7a90bf212cebe2507f.\n\n- feat(ui): screenshot capture with screen, window, full-page and area modes (#21)",
