@@ -205,6 +205,44 @@ func (stubIssueRepo) GetByIdentifier(ctx context.Context, workspaceID uuid.UUID,
 	return nil, nil
 }
 
+// stubs for the catalog list tools: each embeds the repository interface and
+// implements only the lookup the list tests exercise.
+type stubTeamRepo struct {
+	repository.TeamRepo
+	teams []domain.Team
+}
+
+func (s stubTeamRepo) ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Team, error) {
+	return s.teams, nil
+}
+
+type stubTeamStatusRepo struct {
+	repository.TeamStatusRepo
+	statuses []domain.TeamStatus
+}
+
+func (s stubTeamStatusRepo) ListByTeam(ctx context.Context, teamID uuid.UUID) ([]domain.TeamStatus, error) {
+	return s.statuses, nil
+}
+
+type stubProjectRepo struct {
+	repository.ProjectRepo
+	projects []domain.Project
+}
+
+func (s stubProjectRepo) ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Project, error) {
+	return s.projects, nil
+}
+
+type stubLabelRepo struct {
+	repository.LabelRepo
+	labels []domain.Label
+}
+
+func (s stubLabelRepo) ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Label, error) {
+	return s.labels, nil
+}
+
 // --- Test fixture ---
 
 type mcpTestEnv struct {
@@ -225,6 +263,10 @@ func newMCPTestEnv(t *testing.T) *mcpTestEnv {
 	user := &domain.User{ID: uuid.New(), Email: "owner@example.test", Name: "Owner", DisplayName: "Owner", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	ws := &domain.Workspace{ID: uuid.New(), Name: "Acme", Slug: "acme", OwnerID: user.ID, CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	member := &domain.WorkspaceMember{WorkspaceID: ws.ID, UserID: user.ID, Role: domain.RoleOwner, CreatedAt: time.Now()}
+	team := domain.Team{ID: uuid.New(), WorkspaceID: ws.ID, Name: "Engineering", Key: "ENG", CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	state := domain.TeamStatus{ID: uuid.New(), TeamID: team.ID, Name: "Todo", Slug: "todo", Category: domain.StatusCategoryUnstarted, Position: 0, IsDefault: true}
+	project := domain.Project{ID: uuid.New(), WorkspaceID: ws.ID, Name: "Launch", Status: domain.ProjectStatusPlanned, CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	label := domain.Label{ID: uuid.New(), WorkspaceID: ws.ID, Name: "bug", Color: "#ff0000", CreatedAt: time.Now(), UpdatedAt: time.Now()}
 
 	users := &mcpUserRepo{}
 	users.On("GetByID", mock.Anything, user.ID).Return(user, nil).Maybe()
@@ -249,12 +291,16 @@ func newMCPTestEnv(t *testing.T) *mcpTestEnv {
 	require.NoError(t, err)
 
 	handler := NewHTTPHandler(Deps{
-		Version:     "test",
-		Users:       users,
-		Workspaces:  workspaces,
-		IssueSvc:    service.NewIssueService(stubIssueRepo{}, nil, nil, nil, nil, nil),
-		CommentSvc:  service.NewCommentService(nil, nil, nil, nil),
-		RelationSvc: service.NewIssueRelationService(nil, nil),
+		Version:      "test",
+		Users:        users,
+		Workspaces:   workspaces,
+		Teams:        stubTeamRepo{teams: []domain.Team{team}},
+		TeamStatuses: stubTeamStatusRepo{statuses: []domain.TeamStatus{state}},
+		Projects:     stubProjectRepo{projects: []domain.Project{project}},
+		Labels:       stubLabelRepo{labels: []domain.Label{label}},
+		IssueSvc:     service.NewIssueService(stubIssueRepo{}, nil, nil, nil, nil, nil),
+		CommentSvc:   service.NewCommentService(nil, nil, nil, nil),
+		RelationSvc:  service.NewIssueRelationService(nil, nil),
 	})
 
 	e := echo.New()
@@ -364,15 +410,16 @@ func TestMCPListAndGetWorkspace(t *testing.T) {
 	env := newMCPTestEnv(t)
 	session := connectMCP(t, env, env.fullToken)
 
-	list, ok := callTool(t, session, "list_workspaces", map[string]any{}).StructuredContent.([]any)
-	require.True(t, ok, "list_workspaces returns an array")
+	out := structured(t, callTool(t, session, "list_workspaces", map[string]any{}))
+	list, ok := out["workspaces"].([]any)
+	require.True(t, ok, "list_workspaces returns an object with a workspaces array")
 	require.Len(t, list, 1)
 	first, _ := list[0].(map[string]any)
 	assert.Equal(t, "acme", first["slug"])
 	assert.Equal(t, domain.RoleOwner, first["role"])
 
-	out := structured(t, callTool(t, session, "get_workspace", map[string]any{"workspace": "acme"}))
-	assert.Equal(t, "acme", out["slug"])
+	wsOut := structured(t, callTool(t, session, "get_workspace", map[string]any{"workspace": "acme"}))
+	assert.Equal(t, "acme", wsOut["slug"])
 
 	// Non-member workspaces read as errors, not leaks
 	res := callTool(t, session, "get_workspace", map[string]any{"workspace": "nope"})
@@ -383,12 +430,40 @@ func TestMCPListMembers(t *testing.T) {
 	env := newMCPTestEnv(t)
 	session := connectMCP(t, env, env.fullToken)
 
-	list, ok := callTool(t, session, "list_members", map[string]any{"workspace": "acme"}).StructuredContent.([]any)
-	require.True(t, ok)
+	out := structured(t, callTool(t, session, "list_members", map[string]any{"workspace": "acme"}))
+	list, ok := out["members"].([]any)
+	require.True(t, ok, "list_members returns an object with a members array")
 	require.Len(t, list, 1)
 	member, _ := list[0].(map[string]any)
 	assert.Equal(t, domain.RoleOwner, member["role"])
 	assert.Equal(t, env.user.Email, member["email"])
+}
+
+// Every catalog list tool must return a JSON object in structuredContent:
+// the MCP spec rejects a bare array there, which broke validating clients.
+func TestMCPCatalogListsReturnObjects(t *testing.T) {
+	env := newMCPTestEnv(t)
+	session := connectMCP(t, env, env.fullToken)
+
+	teams := structured(t, callTool(t, session, "list_teams", map[string]any{"workspace": "acme"}))
+	teamList, ok := teams["teams"].([]any)
+	require.True(t, ok, "list_teams returns an object with a teams array")
+	require.Len(t, teamList, 1)
+	team, _ := teamList[0].(map[string]any)
+	assert.Equal(t, "ENG", team["key"])
+
+	states := structured(t, callTool(t, session, "list_team_states", map[string]any{"workspace": "acme", "team": "ENG"}))
+	stateList, ok := states["states"].([]any)
+	require.True(t, ok, "list_team_states returns an object with a states array")
+	require.Len(t, stateList, 1)
+
+	projects := structured(t, callTool(t, session, "list_projects", map[string]any{"workspace": "acme"}))
+	_, ok = projects["projects"].([]any)
+	require.True(t, ok, "list_projects returns an object with a projects array")
+
+	labels := structured(t, callTool(t, session, "list_labels", map[string]any{"workspace": "acme"}))
+	_, ok = labels["labels"].([]any)
+	require.True(t, ok, "list_labels returns an object with a labels array")
 }
 
 func TestMCPReadOnlyKeyCannotWrite(t *testing.T) {
