@@ -35,20 +35,20 @@
 		},
 		{
 			heading: 'Transport security',
-			body: 'The reference deployment exposes Caddy on ports 80 and 443. Caddy obtains and renews TLS certificates when DOMAIN points to the server and the host is reachable. PostgreSQL, Redis and the application containers remain on the internal Compose network unless you alter the configuration.',
+			body: 'The reference deployment exposes Caddy on ports 80 and 443. Caddy obtains and renews TLS certificates when DOMAIN points to the server and the host is reachable. PostgreSQL and the application containers remain on the internal Compose network unless you alter the configuration.',
 			list: [
 				'Caddy reverse proxy with automatic Let\'s Encrypt TLS',
 				'Public ingress through Caddy on ports 80 and 443',
-				'PostgreSQL and Redis have no published host ports in the reference Compose file',
+				'PostgreSQL and the backend, including the embedded NATS ports, publish no host ports in the reference Compose file',
 				'TLS depends on correct DNS and network configuration'
 			]
 		},
 		{
 			heading: 'Stored data and credentials',
-			body: 'Application records are stored in PostgreSQL. Uploads use either a Docker volume or an S3-compatible backend. Per-workspace GitHub App credentials are encrypted with AES-256-GCM using a key derived from the configured secret. Disk-level encryption and backup encryption are operator decisions.',
+			body: 'Application records are stored in PostgreSQL. Uploads live in the embedded NATS JetStream object store, persisted on the uploads Docker volume. Per-workspace GitHub App credentials are encrypted with AES-256-GCM using a key derived from the configured secret. Disk-level encryption and backup encryption are operator decisions.',
 			list: [
 				'PostgreSQL for application records and token hashes',
-				'Local volume or S3-compatible storage for uploads',
+				'JetStream object store persisted on the uploads volume',
 				'AES-256-GCM for stored GitHub App credentials',
 				'No built-in backup scheduler: back up the database, uploads and Caddy state externally'
 			]

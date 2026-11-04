@@ -98,11 +98,11 @@ export const HUBS: Record<string, Hub> = {
 		label: 'Self-Hosting',
 		href: '/self-hosting',
 		children: [
-			{ slug: 'docker-compose', label: 'Docker Compose', href: '/self-hosting/docker-compose', description: 'Reference stack with Caddy, PostgreSQL, Redis, API and frontend.' },
+			{ slug: 'docker-compose', label: 'Docker Compose', href: '/self-hosting/docker-compose', description: 'Reference stack with Caddy, PostgreSQL, API and frontend.' },
 			{ slug: 'requirements', label: 'Requirements', href: '/self-hosting/requirements', description: 'Server prerequisites and deployment dependencies.' },
 			{ slug: 'configuration', label: 'Configuration', href: '/self-hosting/configuration', description: 'Environment variables, secrets, and deployment settings.' },
 			{ slug: 'updating', label: 'Updating', href: '/self-hosting/updating', description: 'Rebuild containers and apply migrations with the supplied update script.' },
-			{ slug: 'storage', label: 'Storage', href: '/self-hosting/storage', description: 'Local filesystem and S3-compatible storage backends.' },
+			{ slug: 'storage', label: 'Storage', href: '/self-hosting/storage', description: 'JetStream object store persisted on the uploads volume, replicated across cluster nodes.' },
 			{ slug: 'github-app', label: 'GitHub App', href: '/self-hosting/github-app', description: 'Set up and configure the GitHub integration.' },
 			{ slug: 'dev-machines', label: 'Dev Machines', href: '/self-hosting/dev-machines', description: `Prepare the ${DEV_MACHINES_RELEASE_STATUS.toLowerCase()} opt-in agentic coding subsystem with wildcard TLS.` }
 		]
@@ -140,7 +140,7 @@ export interface StandalonePage {
 export const STANDALONE_PAGES: StandalonePage[] = [
 	{ slug: '', title: '', description: '', canonical: url('/'), inSitemap: true },
 	{ slug: 'features', title: 'Strifira Features — Issues, Cycles, Projects and GitHub', description: `Review released issue tracking, cycle, project, GitHub and analytics features alongside ${DEV_MACHINES_RELEASE_STATUS.toLowerCase()} Dev Machine development.`, canonical: url('/features'), inSitemap: true },
-	{ slug: 'self-hosting', title: 'Self-Host Strifira With Docker Compose', description: 'Deploy Strifira with Caddy, PostgreSQL, Redis, the Go API and SvelteKit frontend; configure storage, updates and GitHub webhooks.', canonical: url('/self-hosting'), inSitemap: true },
+	{ slug: 'self-hosting', title: 'Self-Host Strifira With Docker Compose', description: 'Deploy Strifira with Caddy, PostgreSQL, the Go API and SvelteKit frontend; configure storage, updates and GitHub webhooks.', canonical: url('/self-hosting'), inSitemap: true },
 	{ slug: 'compare', title: 'Compare Strifira — Issue Tracker Comparisons', description: 'Compare Strifira with Linear and Plane by hosting model, license, workflow coverage, product maturity and operating cost.', canonical: url('/compare'), inSitemap: true },
 	{ slug: 'alternatives', title: 'Issue Tracker Alternatives — Strifira', description: 'Compare open-source and self-hosted issue trackers by license, edition model, product scope, deployment footprint and operator responsibility.', canonical: url('/alternatives'), inSitemap: true },
 	{ slug: 'open-source', title: 'Strifira Open-Source Model — Apache 2.0, One Edition', description: 'Understand Strifira’s Apache 2.0 license, single public repository, ungated feature model and self-hosting costs.', canonical: url('/open-source'), inSitemap: true },
