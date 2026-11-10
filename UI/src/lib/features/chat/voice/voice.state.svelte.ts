@@ -386,7 +386,10 @@ class VoiceState {
 				});
 			}
 		};
-		pc.ontrack = (e) => this.attachRemoteAudio(peerId, e.streams[0]);
+		// The offerer's track event carries no stream id (the answerer's msid
+		// differs from the offer's), so fall back to wrapping the bare track —
+		// otherwise only one side would ever hear the other.
+		pc.ontrack = (e) => this.attachRemoteAudio(peerId, e.streams[0] ?? new MediaStream([e.track]));
 		pc.onconnectionstatechange = () => {
 			if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
 				if (this.peers.get(peerId) === pc) this.dropPeer(peerId, pc);
