@@ -138,6 +138,62 @@ type ChatMessageRepo interface {
 	SoftDeleteMessage(ctx context.Context, id uuid.UUID) error
 }
 
+type MailAccountRepo interface {
+	Create(ctx context.Context, account *domain.MailAccount) error
+	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*domain.MailAccount, error)
+	ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.MailAccount, error)
+	ListAll(ctx context.Context) ([]domain.MailAccount, error)
+	Update(ctx context.Context, account *domain.MailAccount) error
+	Delete(ctx context.Context, workspaceID, id uuid.UUID) error
+}
+
+type MailMessageRepo interface {
+	// SyncState returns the persisted INBOX cursor (UIDVALIDITY + highest
+	// UID) so the syncer resumes incrementally.
+	SyncState(ctx context.Context, accountID uuid.UUID) (uint32, int64, error)
+	// InsertInboxMessages stores fetched messages; rows whose
+	// (account_id, message_id) already exist are skipped. It returns the
+	// newly inserted messages, with IDs set.
+	InsertInboxMessages(ctx context.Context, messages []MailInboxMessage) ([]domain.MailMessage, error)
+	// UpdateSyncState persists the cursor after a successful (or failed,
+	// lastError non-empty) sync.
+	UpdateSyncState(ctx context.Context, accountID uuid.UUID, uidValidity uint32, lastUID int64, lastError string, syncedAt time.Time) error
+	ListByFolder(ctx context.Context, workspaceID uuid.UUID, accountID *uuid.UUID, folder string, q string, filters MailFilters, limit, offset int) ([]domain.MailMessage, error)
+	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*domain.MailMessage, error)
+	GetByAccountAndMessageID(ctx context.Context, accountID uuid.UUID, messageID string) (*domain.MailMessage, error)
+	// SetFlags toggles unread/starred/archived/spam; nil leaves a flag as is.
+	SetFlags(ctx context.Context, workspaceID, id uuid.UUID, unread, starred, archived, spam *bool) (*domain.MailMessage, error)
+	Delete(ctx context.Context, workspaceID, id uuid.UUID) error
+	// FinalizeSentMessage stores a composed message, its attachments and
+	// (when a draft) re-points the draft's staged attachments and drops the
+	// draft, all atomically.
+	FinalizeSentMessage(ctx context.Context, message *domain.MailMessage, stagedAttachments []domain.MailAttachment, draftID *uuid.UUID) error
+	ListAttachmentsByMessage(ctx context.Context, messageID uuid.UUID) ([]domain.MailAttachment, error)
+	GetAttachment(ctx context.Context, workspaceID, attachmentID uuid.UUID) (*domain.MailAttachment, error)
+}
+
+type MailDraftRepo interface {
+	Create(ctx context.Context, draft *domain.MailDraft) error
+	GetByID(ctx context.Context, workspaceID, userID, id uuid.UUID) (*domain.MailDraft, error)
+	ListByUser(ctx context.Context, workspaceID, userID uuid.UUID) ([]domain.MailDraft, error)
+	Update(ctx context.Context, draft *domain.MailDraft) error
+	Delete(ctx context.Context, workspaceID, userID, id uuid.UUID) error
+	AddAttachment(ctx context.Context, att *domain.MailAttachment) error
+	DeleteAttachment(ctx context.Context, draftID, attachmentID uuid.UUID) error
+	ListAttachments(ctx context.Context, draftID uuid.UUID) ([]domain.MailAttachment, error)
+	// GetAttachment returns one draft attachment (bytes included); the
+	// caller checks draft ownership before offering a download.
+	GetAttachment(ctx context.Context, draftID, attachmentID uuid.UUID) (*domain.MailAttachment, error)
+}
+
+// MailFilters are the label states the message list can filter on.
+type MailFilters struct {
+	Unread   *bool
+	Starred  *bool
+	Archived *bool
+	Spam     *bool
+}
+
 type DocumentRepo interface {
 	Create(ctx context.Context, doc *domain.Document) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Document, error)

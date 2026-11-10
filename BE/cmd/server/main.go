@@ -126,6 +126,11 @@ func main() {
 	chatChannelRepo := repository.NewChatChannelRepository(db)
 	chatMessageRepo := repository.NewChatMessageRepository(db)
 
+	// Mail: native e-mail client accounts and message cache
+	mailAccountRepo := repository.NewMailAccountRepository(db)
+	mailMessageRepo := repository.NewMailMessageRepository(db)
+	mailDraftRepo := repository.NewMailDraftRepository(db)
+
 	// Services
 	authSvc := service.NewAuthService(userRepo, refreshRepo, cfg.JWTSecret)
 	workspaceSvc := service.NewWorkspaceService(workspaceRepo, userRepo)
@@ -146,6 +151,7 @@ func main() {
 	chatSvc := service.NewChatService(chatChannelRepo, chatMessageRepo, workspaceRepo, hub, notifSvc)
 	// Typing relays resolve channel membership through the chat service.
 	hub.ChatTypingAudience = chatSvc.TypingAudience
+	mailSvc := service.NewMailService(mailAccountRepo, mailMessageRepo, mailDraftRepo, hub, crypto.DeriveKey(cfg.JWTSecret+":mail"))
 
 	// Dev Machine agent registry
 	devMachineAgentReg := agent.NewRegistry(
@@ -230,6 +236,7 @@ func main() {
 	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
 	chatH := handler.NewChatHandler(chatSvc)
+	mailH := handler.NewMailHandler(mailSvc)
 	store := storage.New(clusterBus.Files)
 	uploadH := handler.NewUploadHandler(store, assetRepo, issueRepo, cfg.JWTSecret)
 	userAvatarRepo := repository.NewUserAvatarRepository(db)
@@ -321,6 +328,12 @@ func main() {
 				log.Info("expired refresh tokens cleaned up")
 			}
 		})
+	})
+
+	// Background: poll every mail account's INBOX so new mail shows up
+	// without user action.
+	background.Go("mail inbox syncer", func() {
+		mailSvc.StartSyncer(bgCtx)
 	})
 
 	// Echo
@@ -673,6 +686,27 @@ func main() {
 	ws.PATCH("/chat/messages/:messageId", chatH.UpdateMessage)
 	ws.DELETE("/chat/messages/:messageId", chatH.DeleteMessage)
 	ws.GET("/chat/presence", wsH.Presence)
+
+	// Mail: native e-mail client (accounts, inbox cache, drafts, send)
+	ws.GET("/mail/accounts", mailH.ListAccounts)
+	ws.POST("/mail/accounts", mailH.CreateAccount)
+	ws.PATCH("/mail/accounts/:accountId", mailH.UpdateAccount)
+	ws.DELETE("/mail/accounts/:accountId", mailH.DeleteAccount)
+	ws.POST("/mail/accounts/:accountId/sync", mailH.SyncAccount)
+	ws.GET("/mail/messages", mailH.ListMessages)
+	ws.GET("/mail/messages/:messageId", mailH.GetMessage)
+	ws.PATCH("/mail/messages/:messageId", mailH.UpdateMessage)
+	ws.DELETE("/mail/messages/:messageId", mailH.DeleteMessage)
+	ws.GET("/mail/attachments/:attachmentId", mailH.GetMessageAttachment)
+	ws.GET("/mail/drafts", mailH.ListDrafts)
+	ws.POST("/mail/drafts", mailH.CreateDraft)
+	ws.GET("/mail/drafts/:draftId", mailH.GetDraft)
+	ws.PATCH("/mail/drafts/:draftId", mailH.UpdateDraft)
+	ws.DELETE("/mail/drafts/:draftId", mailH.DeleteDraft)
+	ws.POST("/mail/drafts/:draftId/send", mailH.SendDraft)
+	ws.POST("/mail/drafts/:draftId/attachments", mailH.UploadDraftAttachment)
+	ws.GET("/mail/drafts/:draftId/attachments/:attachmentId", mailH.GetDraftAttachment)
+	ws.DELETE("/mail/drafts/:draftId/attachments/:attachmentId", mailH.DeleteDraftAttachment)
 
 	// WebSocket
 	ws.GET("/ws", wsH.Handle)

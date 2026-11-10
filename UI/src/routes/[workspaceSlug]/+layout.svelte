@@ -739,6 +739,11 @@
 				window.dispatchEvent(new CustomEvent(`ws:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
+			// Mail: inbox sync / sent messages arrive from the backend syncer.
+			case 'mail.updated': {
+				window.dispatchEvent(new CustomEvent('ws:mail.updated', { detail: msg.payload }));
+				break;
+			}
 			case 'presence.join':
 			case 'presence.leave':
 			case 'presence.sync':
