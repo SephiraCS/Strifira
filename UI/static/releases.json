@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.50",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.50",
+    "body": "Deployed to alpha as 687f921e19ed19935aa21436e2f26aed43272036.\n\n- fix(migrations): resolve 000065/000066 collisions left by concurrent fixes (#28)\n- fix(migrations): renumber duplicate kanban migration 000064 to 000065 (#27)\n- STR-14 - Criar um chat no estilo Discord/Slack (#26)\n- feat(kanban): column rename, color, icon, WIP limit and archiving (#25)\n- feat(docs): folders, document-issue links and editor integration (#24)",
+    "published_at": "2026-11-10T02:33:01Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.50",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.49",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.49",
     "body": "Deployed to alpha as 5d1e8c1e4be1c72d760b356f16827bfe872c7aff.\n\n- fix(web): replace stale Redis/S3 self-hosting docs with the embedded NATS stack (#23)\n- fix(mcp): return objects from list tool outputs (#22)",
