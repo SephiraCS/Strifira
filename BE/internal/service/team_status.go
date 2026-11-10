@@ -5,9 +5,11 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/internal/dto"
+	"github.com/SephiraCS/strifira-backend/internal/realtime"
 	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/google/uuid"
 )
@@ -21,10 +23,26 @@ type TeamStatusService struct {
 	visibilityRepo repository.ProjectStatusVisibilityRepo
 	teamRepo       repository.TeamRepo
 	projectRepo    repository.ProjectRepo
+	hub            *realtime.Hub
 }
 
-func NewTeamStatusService(statusRepo repository.TeamStatusRepo, visibilityRepo repository.ProjectStatusVisibilityRepo, teamRepo repository.TeamRepo, projectRepo repository.ProjectRepo) *TeamStatusService {
-	return &TeamStatusService{statusRepo: statusRepo, visibilityRepo: visibilityRepo, teamRepo: teamRepo, projectRepo: projectRepo}
+func NewTeamStatusService(statusRepo repository.TeamStatusRepo, visibilityRepo repository.ProjectStatusVisibilityRepo, teamRepo repository.TeamRepo, projectRepo repository.ProjectRepo, hub *realtime.Hub) *TeamStatusService {
+	return &TeamStatusService{statusRepo: statusRepo, visibilityRepo: visibilityRepo, teamRepo: teamRepo, projectRepo: projectRepo, hub: hub}
+}
+
+// broadcast tells every workspace client a column changed so open boards
+// pick up the new name, color, icon, WIP limit or archived flag live.
+func (s *TeamStatusService) broadcast(eventType string, workspaceID, teamID, statusID uuid.UUID) {
+	if s.hub == nil {
+		return
+	}
+	s.hub.Broadcast(workspaceID, realtime.Event{
+		Type: eventType,
+		Payload: map[string]string{
+			"team_id":   teamID.String(),
+			"status_id": statusID.String(),
+		},
+	})
 }
 
 // requireTeam reports ErrTeamNotFound unless teamID is a team of workspaceID.
@@ -112,7 +130,9 @@ func (s *TeamStatusService) Create(ctx context.Context, workspaceID, teamID uuid
 		Slug:      slug,
 		Category:  domain.StatusCategory(req.Category),
 		Color:     req.Color,
+		Icon:      req.Icon,
 		Position:  pos,
+		WipLimit:  req.WipLimit,
 		IsDefault: false,
 	}
 
@@ -122,6 +142,7 @@ func (s *TeamStatusService) Create(ctx context.Context, workspaceID, teamID uuid
 		return nil, err
 	}
 
+	s.broadcast("team_status.created", workspaceID, teamID, status.ID)
 	return status, nil
 }
 
@@ -142,11 +163,35 @@ func (s *TeamStatusService) Update(ctx context.Context, workspaceID, teamID, id 
 	if req.Name != nil {
 		status.Name = *req.Name
 	}
+	// An empty string clears the value (the codebase's nullable convention).
 	if req.Color != nil {
-		status.Color = req.Color
+		status.Color = nil
+		if *req.Color != "" {
+			status.Color = req.Color
+		}
+	}
+	if req.Icon != nil {
+		status.Icon = nil
+		if *req.Icon != "" {
+			status.Icon = req.Icon
+		}
 	}
 	if req.Position != nil {
 		status.Position = *req.Position
+	}
+	if req.WipLimit != nil {
+		status.WipLimit = nil
+		if *req.WipLimit > 0 {
+			status.WipLimit = req.WipLimit
+		}
+	}
+	if req.Archived != nil {
+		if *req.Archived {
+			now := time.Now()
+			status.ArchivedAt = &now
+		} else {
+			status.ArchivedAt = nil
+		}
 	}
 
 	// The status edit and the visibility replacement commit together.
@@ -158,6 +203,7 @@ func (s *TeamStatusService) Update(ctx context.Context, workspaceID, teamID, id 
 		return nil, err
 	}
 
+	s.broadcast("team_status.updated", workspaceID, status.TeamID, status.ID)
 	return status, nil
 }
 
@@ -179,5 +225,9 @@ func (s *TeamStatusService) Delete(ctx context.Context, workspaceID, teamID, id 
 	if status.IsDefault {
 		return errors.New("cannot delete the default status")
 	}
-	return s.statusRepo.Delete(ctx, id)
+	if err := s.statusRepo.Delete(ctx, id); err != nil {
+		return err
+	}
+	s.broadcast("team_status.deleted", workspaceID, status.TeamID, status.ID)
+	return nil
 }

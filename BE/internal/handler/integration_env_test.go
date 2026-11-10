@@ -142,7 +142,7 @@ func (env *integrationEnv) buildServer() *echo.Echo {
 	relationSvc := service.NewIssueRelationService(relationRepo, issueRepo)
 	templateSvc := service.NewIssueTemplateService(templateRepo)
 	cycleSvc := service.NewCycleService(cycleRepo, teamRepo, hub, notifSvc)
-	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo, teamRepo, projectRepo)
+	teamStatusSvc := service.NewTeamStatusService(teamStatusRepo, visibilityRepo, teamRepo, projectRepo, hub)
 	// Receivers in these tests are loopback httptest servers, which the
 	// production delivery guard refuses; everything else stays blocked.
 	webhookSvc := service.NewWebhookService(repository.NewWebhookRepository(db), integrationJWTSecret).

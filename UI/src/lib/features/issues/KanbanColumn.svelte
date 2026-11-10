@@ -6,6 +6,7 @@
 	import { visibleFlip } from './visible-flip';
 	import { cubicOut } from 'svelte/easing';
 	import IssueStatusIcon from './IssueStatusIcon.svelte';
+	import { columnIcon } from './column-icons';
 	import IssuePriorityIcon from './IssuePriorityIcon.svelte';
 	import SubIssueCounterTag from './SubIssueCounterTag.svelte';
 	import IssueContextMenu from './IssueContextMenu.svelte';
@@ -176,9 +177,34 @@
 			use:dragHandle
 			aria-label="Reorder {teamStatus.name} column"
 		>
-			<IssueStatusIcon category={teamStatus.category} color={teamStatus.color} />
+			{#if columnIcon(teamStatus.icon)}
+				{@const HeaderIcon = columnIcon(teamStatus.icon)}
+				<span class="flex shrink-0" style={teamStatus.color ? `color: ${teamStatus.color}` : ''}>
+					<HeaderIcon size={16} />
+				</span>
+			{:else}
+				<IssueStatusIcon category={teamStatus.category} color={teamStatus.color} />
+			{/if}
 			<span class="text-sm font-medium text-[var(--color-text-primary)]">{teamStatus.name}</span>
-			<span class="text-xs text-[var(--color-text-tertiary)]">{issues.length}</span>
+			{#if teamStatus.wip_limit != null}
+				<!-- WIP indicator: amber at the limit, red past it. -->
+				{@const over = issues.length > teamStatus.wip_limit}
+				{@const atLimit = issues.length === teamStatus.wip_limit}
+				<span
+					class="text-xs tabular-nums {over
+						? 'font-medium text-[var(--color-error)]'
+						: atLimit
+							? 'font-medium text-[var(--color-warning)]'
+							: 'text-[var(--color-text-tertiary)]'}"
+					title={over
+						? m['board.column.wip_over_title']({ count: issues.length, limit: teamStatus.wip_limit })
+						: m['board.column.wip_title']({ limit: teamStatus.wip_limit })}
+				>
+					{issues.length}/{teamStatus.wip_limit}
+				</span>
+			{:else}
+				<span class="text-xs text-[var(--color-text-tertiary)]">{issues.length}</span>
+			{/if}
 		</div>
 		{#if onquickadd}
 			<button
