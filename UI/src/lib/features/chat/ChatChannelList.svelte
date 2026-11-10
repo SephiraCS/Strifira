@@ -4,9 +4,11 @@
 	import Lock from '@lucide/svelte/icons/lock';
 	import Plus from '@lucide/svelte/icons/plus';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import Waveform from '@lucide/svelte/icons/audio-waveform';
 	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { chatState } from './chat.state.svelte';
+	import { voiceState } from './voice/voice.state.svelte';
 	import CreateChannelDialog from './CreateChannelDialog.svelte';
 	import NewDMDialog from './NewDMDialog.svelte';
 	import type { ChatChannel } from '$lib/types/chat';
@@ -34,6 +36,10 @@
 			return channel.dm_peer?.display_name || channel.dm_peer?.name || '—';
 		}
 		return channel.name;
+	}
+
+	function voiceCount(channelId: string): number {
+		return voiceState.roomActivity(channelId);
 	}
 </script>
 
@@ -83,6 +89,16 @@
 							class="flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-[var(--app-accent)] px-1 text-[10px] font-medium text-[var(--app-accent-foreground)]"
 						>
 							{Math.min(chatState.unread.get(channel.id) ?? 0, 99)}
+						</span>
+					{/if}
+					{#if voiceCount(channel.id) > 0}
+						<span
+							class="flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--color-success)]/15 px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-success)]"
+							title={m['voice.rail_count']({ count: voiceCount(channel.id) })}
+							data-testid="channel-voice-count"
+						>
+							<Waveform size={10} />
+							{voiceCount(channel.id)}
 						</span>
 					{/if}
 				</a>

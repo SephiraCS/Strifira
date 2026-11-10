@@ -4,7 +4,8 @@ import type {
 	ChatChannelListResponse,
 	ChatMessage,
 	ChatMessageListResponse,
-	ChatPresenceResponse
+	ChatPresenceResponse,
+	VoiceRoomListResponse
 } from '$lib/types/chat';
 
 export function listChatChannels(slug: string): Promise<ChatChannelListResponse> {
@@ -57,4 +58,8 @@ export function deleteChatMessage(slug: string, messageId: string): Promise<void
 
 export function getChatPresence(slug: string): Promise<ChatPresenceResponse> {
 	return api.get<ChatPresenceResponse>(`/api/workspaces/${slug}/chat/presence`);
+}
+
+export function listVoiceRooms(slug: string): Promise<VoiceRoomListResponse> {
+	return api.get<VoiceRoomListResponse>(`/api/workspaces/${slug}/chat/voice/rooms`);
 }

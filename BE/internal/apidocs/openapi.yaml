@@ -102,6 +102,8 @@ tags:
     description: "P2P WebRTC screen-share sessions signaled over the workspace WebSocket."
   - name: Chat
     description: "Discord/Slack-style channels and direct messages with realtime fan-out over the workspace WebSocket (chat.* and presence.* events)."
+  - name: Voice Rooms
+    description: "Per-channel voice rooms: P2P WebRTC audio mesh signaled over the workspace WebSocket (voice.* events). Membership is live hub state — nothing is persisted."
   - name: Analytics
     description: "Workspace analytics: overview, distribution, insights, burnup."
   - name: Webhooks
@@ -2701,6 +2703,28 @@ paths:
                   online:
                     type: array
                     items: { type: string, format: uuid }
+
+  /api/workspaces/{slug}/chat/voice/rooms:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listVoiceRooms
+      tags: [Voice Rooms]
+      summary: List the workspace's live voice rooms
+      description: |
+        Ephemeral hub state: rooms exist while at least one socket has joined
+        and nothing is persisted. Rooms of channels the caller cannot see
+        (private channels, DMs of other pairs) are omitted. Live updates
+        arrive as voice.presence roster snapshots over the workspace socket,
+        which also carry the WebRTC signaling relay (voice.signal); media is
+        a peer-to-peer audio mesh and never transits the server.
+      responses:
+        "200":
+          description: Rooms with their connected participants.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceRoomList"
 
   /api/workspaces/{slug}/shares:
     parameters:
@@ -6148,6 +6172,36 @@ components:
         created_at: { type: string, format: date-time }
         edited_at: { type: string, format: date-time, nullable: true }
         deleted_at: { type: string, format: date-time, nullable: true }
+
+    VoiceRoomList:
+      type: object
+      properties:
+        rooms:
+          type: array
+          items: { $ref: "#/components/schemas/VoiceRoom" }
+
+    VoiceRoom:
+      type: object
+      properties:
+        channel_id: { type: string, format: uuid }
+        channel_name: { type: string }
+        channel_type:
+          type: string
+          enum: [public, private, dm]
+        participants:
+          type: array
+          items: { $ref: "#/components/schemas/VoiceParticipant" }
+
+    VoiceParticipant:
+      type: object
+      description: One connected tab. The hub retires a user's earlier
+        connections when they rejoin from a new session.
+      properties:
+        peer_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        user: { $ref: "#/components/schemas/ChatUser" }
+        muted: { type: boolean }
+        deafened: { type: boolean }
 
     CreateWebhookRequest:
       type: object

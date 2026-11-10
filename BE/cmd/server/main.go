@@ -152,6 +152,10 @@ func main() {
 	// Typing relays resolve channel membership through the chat service.
 	hub.ChatTypingAudience = chatSvc.TypingAudience
 	mailSvc := service.NewMailService(mailAccountRepo, mailMessageRepo, mailDraftRepo, hub, crypto.DeriveKey(cfg.JWTSecret+":mail"))
+	// Voice room joins and roster audiences resolve channel visibility and
+	// fan-out through the same rules as the channel's messages.
+	hub.AuthorizeVoicePresence = chatSvc.VoiceAuthorize
+	hub.VoiceAudience = chatSvc.VoiceAudience
 
 	// Dev Machine agent registry
 	devMachineAgentReg := agent.NewRegistry(
@@ -685,6 +689,7 @@ func main() {
 	ws.POST("/chat/channels/:channelId/messages", chatH.CreateMessage)
 	ws.PATCH("/chat/messages/:messageId", chatH.UpdateMessage)
 	ws.DELETE("/chat/messages/:messageId", chatH.DeleteMessage)
+	ws.GET("/chat/voice/rooms", chatH.ListVoiceRooms)
 	ws.GET("/chat/presence", wsH.Presence)
 
 	// Mail: native e-mail client (accounts, inbox cache, drafts, send)

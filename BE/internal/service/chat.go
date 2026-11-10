@@ -309,6 +309,71 @@ func (s *ChatService) TypingAudience(ctx context.Context, workspaceID, userID, c
 	return recipients, workspaceWide, true
 }
 
+// VoiceAuthorize reports whether the user may join the channel's voice
+// room: the same visibility rule as the channel's messages (workspace
+// members for public channels, membership for private channels and DMs).
+func (s *ChatService) VoiceAuthorize(ctx context.Context, workspaceID, userID, channelID uuid.UUID) bool {
+	_, visible, err := s.visibleChannel(ctx, workspaceID, userID, channelID)
+	return err == nil && visible
+}
+
+// VoiceAudience resolves who a room's roster events reach, mirroring the
+// channel's message fan-out: public channels broadcast workspace-wide,
+// private channels and DMs target their members individually. Unknown or
+// unreadable channels return no audience so the hub keeps rosters off the
+// wire.
+func (s *ChatService) VoiceAudience(ctx context.Context, workspaceID, channelID uuid.UUID) (recipients []uuid.UUID, workspaceWide bool) {
+	channel, err := s.channelRepo.GetChannelByID(ctx, channelID)
+	if err != nil || channel == nil || channel.WorkspaceID != workspaceID {
+		return nil, false
+	}
+	recipients, workspaceWide, err = s.audience(ctx, channel)
+	if err != nil {
+		return nil, false
+	}
+	return recipients, workspaceWide
+}
+
+// VoiceRooms decorates the hub's live rooms with channel visibility and
+// participant identities. Rooms the user cannot see are omitted entirely —
+// a private channel's voice room is as invisible as its messages.
+func (s *ChatService) VoiceRooms(ctx context.Context, workspaceID, userID uuid.UUID) ([]dto.VoiceRoomResponse, error) {
+	rooms := s.hub.VoiceRoomsForWorkspace(workspaceID)
+	resp := make([]dto.VoiceRoomResponse, 0, len(rooms))
+	for _, room := range rooms {
+		channel, visible, err := s.visibleChannel(ctx, workspaceID, userID, room.ChannelID)
+		if err != nil || !visible {
+			continue
+		}
+		participants := make([]dto.VoiceParticipantResponse, 0, len(room.Participants))
+		for _, p := range room.Participants {
+			participant := dto.VoiceParticipantResponse{
+				PeerID:   p.PeerID.String(),
+				UserID:   p.UserID.String(),
+				Muted:    p.Muted,
+				Deafened: p.Deafened,
+			}
+			if user, err := s.channelRepo.UserByID(ctx, p.UserID); err == nil && user != nil {
+				participant.User = &dto.ChatUser{
+					ID:          user.ID.String(),
+					Name:        user.Name,
+					DisplayName: user.DisplayName,
+					Email:       user.Email,
+					AvatarURL:   user.AvatarURL,
+				}
+			}
+			participants = append(participants, participant)
+		}
+		resp = append(resp, dto.VoiceRoomResponse{
+			ChannelID:    channel.ID.String(),
+			ChannelName:  channel.Name,
+			ChannelType:  channel.Type,
+			Participants: participants,
+		})
+	}
+	return resp, nil
+}
+
 // ownMessage loads a live message and verifies the actor can see its channel
 // and wrote the message.
 func (s *ChatService) ownMessage(ctx context.Context, workspaceID, userID, messageID uuid.UUID) (*domain.ChatMessage, *domain.ChatChannel, error) {
