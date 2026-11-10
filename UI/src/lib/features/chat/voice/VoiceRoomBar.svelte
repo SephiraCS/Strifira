@@ -7,11 +7,13 @@
 	import Settings2 from '@lucide/svelte/icons/settings-2';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Waveform from '@lucide/svelte/icons/audio-waveform';
+	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import * as Switch from '$lib/components/ui/switch';
 	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { chatState } from '../chat.state.svelte';
 	import { voiceState, type VoiceInputMode } from './voice.state.svelte';
+	import { movableVoicePanel } from './movable-panel';
 
 	const session = $derived(voiceState.session);
 	const channel = $derived(session ? chatState.channelById(session.channelId) : undefined);
@@ -55,25 +57,38 @@
 
 {#if session}
 	<div
+		use:movableVoicePanel
 		data-testid="voice-room-bar"
-		class="fixed bottom-4 left-4 z-50 w-72 overflow-hidden rounded-xl border border-[var(--app-border)] bg-[var(--color-bg-secondary)] shadow-lg"
+		class="fixed bottom-4 left-4 z-50 w-72 overflow-y-auto overscroll-contain rounded-xl border border-[var(--app-border)] bg-[var(--color-bg-secondary)] shadow-lg"
 	>
 		<div class="flex items-center gap-2 border-b border-[var(--app-border)] px-3 py-2">
-			{#if session.connecting}
-				<LoaderCircle size={15} class="animate-spin text-[var(--color-text-tertiary)]" />
-				<span class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-secondary)]">
-					{m['voice.connecting']()}
-				</span>
-			{:else if session.error}
-				<span class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-error)]">
-					{session.error === 'mic' ? m['voice.mic_failed']() : m['voice.join_failed']()}
-				</span>
-			{:else}
-				<Waveform size={15} class="text-[var(--color-success)]" />
-				<span class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">
-					{roomName}
-				</span>
-			{/if}
+			<button
+				type="button"
+				data-voice-drag-handle
+				data-testid="voice-move"
+				class="flex min-w-0 flex-1 touch-none select-none items-center gap-2 rounded-md py-1 text-left cursor-grab focus-visible:outline-2 focus-visible:outline-[var(--app-accent)]"
+				aria-label={`${m['voice.move_panel']()} ${roomName}`}
+				aria-describedby="voice-move-instructions"
+				title={m['voice.move_hint']()}
+			>
+				<GripVertical size={15} class="shrink-0 text-[var(--color-text-tertiary)]" />
+				{#if session.connecting}
+					<LoaderCircle size={15} class="animate-spin text-[var(--color-text-tertiary)]" />
+					<span class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-secondary)]">
+						{m['voice.connecting']()}
+					</span>
+				{:else if session.error}
+					<span class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-error)]">
+						{session.error === 'mic' ? m['voice.mic_failed']() : m['voice.join_failed']()}
+					</span>
+				{:else}
+					<Waveform size={15} class="text-[var(--color-success)]" />
+					<span class="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--color-text-primary)]">
+						{roomName}
+					</span>
+				{/if}
+			</button>
+			<span id="voice-move-instructions" class="sr-only">{m['voice.move_hint']()}</span>
 			<button
 				type="button"
 				class="rounded-md p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"

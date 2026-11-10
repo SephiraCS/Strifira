@@ -384,6 +384,8 @@
 	"voice.connecting": "Connessione vocale…",
 	"voice.mic_failed": "Microfono non disponibile — permesso negato o nessun dispositivo",
 	"voice.join_failed": "Impossibile entrare nella stanza vocale",
+	"voice.move_panel": "Sposta il pannello vocale",
+	"voice.move_hint": "Trascina per spostare o usa i tasti freccia. Tieni premuto Shift per passi più grandi. Home torna in basso a sinistra.",
 	"voice.settings": "Impostazioni vocali",
 	"voice.leave": "Esci dalla voce",
 	"voice.input_mode": "Modalità di input",

@@ -300,3 +300,173 @@ test('a roster snapshot from another participant updates the overlay', async ({ 
 	// Alice's muted flag renders the mute icon on her row.
 	await expect(bar.locator('[data-testid="voice-participant-muted-icon"]').first()).toBeVisible();
 });
+
+async function joinMovableCall(page: Page) {
+	const stub = await stubChat(page);
+	await page.addInitScript(() => {
+		const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+		(window as any).__micTracks = [];
+		navigator.mediaDevices.getUserMedia = async (constraints) => {
+			const stream = await original(constraints);
+			(window as any).__micTracks.push(...stream.getAudioTracks());
+			return stream;
+		};
+	});
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	await page.getByTestId('voice-join').click();
+	await expect(page.getByTestId('voice-mute')).toBeEnabled();
+	await expect(page.getByTestId('voice-participant')).toHaveCount(1);
+	return stub;
+}
+
+async function expectPanelInViewport(page: Page) {
+	await expect
+		.poll(async () =>
+			page.getByTestId('voice-room-bar').evaluate((node) => {
+				const rect = node.getBoundingClientRect();
+				return rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+			})
+		)
+		.toBe(true);
+}
+
+test('dragging preserves the microphone, roster and controls, including across navigation', async ({ page }) => {
+	await page.setViewportSize({ width: 1100, height: 800 });
+	await joinMovableCall(page);
+	const panel = page.getByTestId('voice-room-bar');
+	const handle = page.getByTestId('voice-move');
+	const before = (await panel.boundingBox())!;
+	const grip = (await handle.boundingBox())!;
+	await page.mouse.move(grip.x + 10, grip.y + 10);
+	await page.mouse.down();
+	await page.mouse.move(grip.x + 410, grip.y - 290, { steps: 10 });
+	await page.mouse.up();
+	await expect.poll(async () => (await panel.boundingBox())!.x).toBe(before.x + 400);
+	await expect.poll(async () => (await panel.boundingBox())!.y).toBe(before.y - 300);
+	await expectPanelInViewport(page);
+	await expect(panel).toContainText('#general');
+	await expect(page.getByTestId('voice-mute')).toContainText('Mute');
+	await expect(page.getByTestId('voice-deafen')).toContainText('Deafen');
+	await expect(page.getByRole('button', { name: 'Voice settings', exact: true })).toBeVisible();
+	await expect(page.getByTestId('voice-mode-vad')).toHaveCount(0);
+	await expect(page.getByTestId('voice-speaking-dot')).toBeVisible({ timeout: 15000 });
+	await expect
+		.poll(() => page.evaluate(() => (window as any).__micTracks.map((t: MediaStreamTrack) => t.readyState)))
+		.toEqual(['live']);
+	await expect
+		.poll(() =>
+			page.evaluate(
+				() =>
+					(window as any).__voiceFrames.filter((f: any) => f.type === 'voice.presence' && f.payload.action === 'join')
+						.length
+			)
+		)
+		.toBe(1);
+
+	const moved = (await panel.boundingBox())!;
+	// Client-side navigation keeps the same workspace call panel mounted.
+	await page.locator('a[href="/test/my-issues"]').first().click();
+	await expect(page).toHaveURL(/\/test\/my-issues/);
+	await expect.poll(async () => (await panel.boundingBox())!.x).toBe(moved.x);
+	await expect.poll(async () => (await panel.boundingBox())!.y).toBe(moved.y);
+	await expect(page.getByTestId('voice-participant')).toHaveCount(1);
+
+	// Releasing a captured drag over another control must not click it.
+	const start = (await handle.boundingBox())!;
+	await page.mouse.move(start.x + 8, start.y + 8);
+	await page.mouse.down();
+	await page.mouse.move(1099, 0, { steps: 10 });
+	const leave = (await page.getByTestId('voice-leave').boundingBox())!;
+	await page.mouse.move(leave.x + 5, leave.y + 5);
+	await page.mouse.up();
+	await expect(panel).toBeVisible();
+	await expectPanelInViewport(page);
+
+	await page.getByRole('button', { name: 'Voice settings', exact: true }).click();
+	await expect(page.getByTestId('voice-mode-vad')).toBeVisible();
+	await expectPanelInViewport(page);
+	await page.getByTestId('voice-mute').click();
+	await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
+	await page.getByTestId('voice-deafen').click();
+	await expect(page.getByTestId('voice-deafen')).toContainText('Undeafen');
+	await page.getByTestId('voice-leave').click();
+	await expect(panel).toHaveCount(0);
+	await expect
+		.poll(() => page.evaluate(() => (window as any).__micTracks.map((t: MediaStreamTrack) => t.readyState)))
+		.toEqual(['ended']);
+});
+
+test('keyboard movement, content growth and resizing keep the panel reachable', async ({ page }) => {
+	await page.setViewportSize({ width: 1000, height: 800 });
+	await joinMovableCall(page);
+	const panel = page.getByTestId('voice-room-bar');
+	const handle = page.getByTestId('voice-move');
+	await handle.focus();
+	const before = (await panel.boundingBox())!;
+	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press('Shift+ArrowUp');
+	await expect.poll(async () => (await panel.boundingBox())!.x).toBe(before.x + 12);
+	await expect.poll(async () => (await panel.boundingBox())!.y).toBe(before.y - 48);
+	await expect(handle).toBeFocused();
+	for (let i = 0; i < 30; i++) await page.keyboard.press('Shift+ArrowRight');
+	await expectPanelInViewport(page);
+	await page.getByRole('button', { name: 'Voice settings', exact: true }).click();
+	await expectPanelInViewport(page);
+	await page.setViewportSize({ width: 280, height: 240 });
+	await expectPanelInViewport(page);
+	// At very small heights, the panel scrolls so both settings and controls remain usable.
+	await page.getByTestId('voice-mode-ptt').click();
+	await page.getByTestId('voice-mute').click();
+	await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
+	await page.setViewportSize({ width: 740, height: 360 });
+	await expectPanelInViewport(page);
+	await handle.focus();
+	await page.keyboard.press('Home');
+	await expect.poll(async () => (await panel.boundingBox())!.x).toBe(16);
+	await page.getByRole('button', { name: 'Voice settings', exact: true }).click();
+	await handle.focus();
+	await page.keyboard.press('Home');
+	await expect
+		.poll(async () => {
+			const box = (await panel.boundingBox())!;
+			return box.y + box.height;
+		})
+		.toBe(344);
+	await page.getByTestId('voice-leave').click();
+});
+
+test.describe('touch panel movement', () => {
+	test.use({ hasTouch: true, viewport: { width: 390, height: 700 } });
+
+	test('touch capture moves the panel and releases cleanly', async ({ page, context }) => {
+		await joinMovableCall(page);
+		const panel = page.getByTestId('voice-room-bar');
+		const handle = page.getByTestId('voice-move');
+		const grip = (await handle.boundingBox())!;
+		const before = (await panel.boundingBox())!;
+		const cdp = await context.newCDPSession(page);
+		await cdp.send('Input.dispatchTouchEvent', {
+			type: 'touchStart',
+			touchPoints: [{ x: grip.x + 10, y: grip.y + 10 }]
+		});
+		await cdp.send('Input.dispatchTouchEvent', {
+			type: 'touchMove',
+			touchPoints: [{ x: grip.x + 50, y: grip.y - 190 }]
+		});
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		await expect.poll(async () => (await panel.boundingBox())!.x).toBe(before.x + 40);
+		await expect.poll(async () => (await panel.boundingBox())!.y).toBe(before.y - 200);
+		await expectPanelInViewport(page);
+		await expect(page.getByTestId('voice-participant')).toHaveCount(1);
+		await page.getByTestId('voice-mute').tap();
+		await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
+		await page.setViewportSize({ width: 700, height: 390 });
+		await expectPanelInViewport(page);
+		await page.getByTestId('voice-leave').tap();
+		await expect(panel).toHaveCount(0);
+		await page.getByTestId('voice-join').tap();
+		await expect(panel).toBeVisible();
+		await expect.poll(async () => (await panel.boundingBox())!.x).toBe(16);
+		await cdp.detach();
+	});
+});
