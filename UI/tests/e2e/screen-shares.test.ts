@@ -114,6 +114,7 @@ async function stubCommon(page: import('@playwright/test').Page, enabled: boolea
 		if (path === '/api/workspaces/test/views') {
 			return route.fulfill({ json: [] });
 		}
+		if (/\/chat\/channels$/.test(path)) return route.fulfill({ json: { channels: [] } });
 		if (path === '/api/notifications') {
 			return route.fulfill({ json: { unread_count: 0, notifications: [] } });
 		}
@@ -139,7 +140,7 @@ test('shares module hidden when the workspace disables it', async ({ page }) => 
 test('shares module visible when enabled', async ({ page }) => {
 	await stubCommon(page, true);
 	await page.goto('/test/inbox');
-	await expect(page.getByRole('link', { name: 'Screen sharing' })).toBeVisible();
+	await expect(page.getByRole('link', { name: 'Chat, voice & screens' })).toBeVisible();
 });
 
 test('wall renders the presenter-named viewer tile', async ({ page }) => {
@@ -234,7 +235,7 @@ test('share survives in-app navigation and stops from the sidebar', async ({ pag
 	await expect(page.locator('button[title="Stop sharing"]')).toBeVisible();
 
 	// Return to the wall: the share is still live without a second create.
-	await page.locator('a[href="/test/shares"]').first().click();
+	await page.locator('a[href="/test/chat"]').first().click();
 	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
 	expect(createCalls).toBe(1);
 
@@ -796,6 +797,7 @@ test('workspace navigation invalidates a pending picker and allows capture befor
 			}
 			return route.fulfill({ json: { active: [], recent: [] } });
 		}
+		if (path === '/api/workspaces/other/chat/channels') return route.fulfill({ json: { channels: [] } });
 		if (path === '/api/workspaces/other/issues') {
 			return route.fulfill({ json: { data: [], total_count: 0, page: 1, per_page: 50, has_more: false } });
 		}
@@ -835,7 +837,7 @@ test('workspace navigation invalidates a pending picker and allows capture befor
 	await page.getByText('Test Workspace', { exact: true }).first().click();
 	await page.getByText('Other Workspace', { exact: true }).click();
 	await expect(page).toHaveURL(/\/other\/my-issues$/);
-	await page.locator('a[href="/other/shares"]').first().click();
+	await page.locator('a[href="/other/chat"]').first().click();
 	const start = page.getByRole('button', { name: 'Share my screen', exact: true });
 	await expect(start).toBeEnabled();
 	await page.evaluate(() => {
@@ -1445,4 +1447,59 @@ test('dragging in the spotlight rail reorders the rail and keeps the stage', asy
 	await page.keyboard.press('ArrowRight');
 	await page.keyboard.press('ArrowRight');
 	await expect(page.locator(`[data-share-id="${others[1].id}"]`)).toHaveAttribute('data-stage', 'true');
+});
+
+async function integratedChannels(page: Page) {
+	const channels = ['project', 'design'].map((name, index) => ({ id: `00000000-0000-0000-0000-00000000001${index+1}`, type: 'public', name, topic: '', created_by: presenter.id }));
+	await page.route('**/api/workspaces/test/chat/channels', (route) => route.fulfill({ json: { channels } }));
+	await page.route('**/api/workspaces/test/chat/channels/*/messages', (route) => route.fulfill({ json: { messages: [], has_more: false } }));
+	return channels;
+}
+
+test('the integrated page presents and sends messages without leaving the channel', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	const requests = await stubOwnShare(page);
+	const channels = await integratedChannels(page);
+	await page.route('**/api/workspaces/test/chat/channels/*/messages', (route) => route.request().method() === 'POST'
+		? route.fulfill({ json: { id: 'message-1', channel_id: channels[0].id, user_id: '00000000-0000-0000-0000-000000000001', body: route.request().postDataJSON().body, created_at: '2026-01-01T00:00:00Z' } })
+		: route.fulfill({ json: { messages: [], has_more: false } }));
+	await page.goto(`/test/chat/${channels[0].id}`);
+	await page.getByRole('button', { name: 'Share my screen', exact: true }).click();
+	const tile = page.locator(`[data-share-id="${shareId}"]`);
+	await expect(tile).toContainText('Sharing');
+	await page.getByRole('textbox', { name: 'Message #project' }).fill('Message during presentation');
+	await page.getByRole('button', { name: 'Send', exact: true }).click();
+	await expect(page.getByText('Message during presentation')).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(channels[0].id+'$'));
+	const wallBox = (await tile.boundingBox())!;
+	const chatBox = (await page.getByTestId('communication-conversation').boundingBox())!;
+	expect(wallBox.x + wallBox.width).toBeLessThanOrEqual(chatBox.x + 1);
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await expect(tile).toContainText('Sharing');
+	expect(requests.creates).toBe(1);
+	expect(requests.ends).toEqual([]);
+	expect(await page.evaluate(() => (window as any).__shareRig.streams[0].getVideoTracks()[0].readyState)).toBe('live');
+	expect(await page.evaluate(() => (window as any).__shareRig.stops[0])).toBe(0);
+	await tile.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+	await expect.poll(() => requests.ends.length).toBe(1);
+	await expect(page.getByRole('textbox', { name: 'Message #design' })).toBeVisible();
+});
+
+test('the integrated viewer keeps its peer while changing channels and composing', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	await stubCommon(page, true);
+	await installPeerRig(page);
+	const channels = await integratedChannels(page);
+	await page.goto(`/test/chat/${channels[0].id}`);
+	await expect.poll(async () => (await sentSignals(page, 'offer')).length).toBe(1);
+	await page.evaluate(() => (window as any).__shareRig.peers[0].setConnectionState('connected'));
+	const tile = page.locator(`[data-share-id="${shareId}"]`);
+	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
+	await page.getByRole('textbox', { name: 'Message #project' }).fill('A draft next to the live screen');
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[0].id);
+	await expect(page.getByRole('textbox', { name: 'Message #project' })).toHaveValue('A draft next to the live screen');
+	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
+	expect(await page.evaluate(() => (window as any).__shareRig.peers.length)).toBe(1);
+	expect(await page.evaluate(() => (window as any).__shareRig.peers[0].closed)).toBe(false);
 });

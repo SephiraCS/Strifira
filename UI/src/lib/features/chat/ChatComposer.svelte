@@ -7,6 +7,9 @@
 	let { channel }: { channel: ChatChannel } = $props();
 
 	let body = $state('');
+	$effect(() => {
+		body = chatState.drafts.get(channel.id) ?? '';
+	});
 	let sending = $state(false);
 
 	function channelLabel(): string {
@@ -18,14 +21,16 @@
 
 	async function submit() {
 		const text = body;
+		const channelId = channel.id;
 		if (!text.trim() || sending) return;
 		sending = true;
+		chatState.drafts = new Map(chatState.drafts).set(channel.id, '');
 		body = '';
-		const ok = await chatState.send(channel.id, text);
+		const ok = await chatState.send(channelId, text);
 		sending = false;
-		if (!ok) {
+		if (!ok && chatState.channelById(channelId) && !chatState.drafts.get(channelId)) {
 			// Restore the draft so nothing the user typed is lost.
-			body = text;
+			chatState.drafts = new Map(chatState.drafts).set(channelId, text);
 		}
 	}
 
@@ -36,7 +41,9 @@
 		}
 	}
 
-	function handleInput() {
+	function handleInput(event: Event) {
+		const value = (event.currentTarget as HTMLTextAreaElement).value;
+		chatState.drafts = new Map(chatState.drafts).set(channel.id, value);
 		chatState.sendTyping(channel.id);
 	}
 </script>

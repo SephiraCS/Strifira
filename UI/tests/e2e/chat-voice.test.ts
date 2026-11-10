@@ -470,3 +470,106 @@ test.describe('touch panel movement', () => {
 		await cdp.detach();
 	});
 });
+
+async function communicationRoutes(page: Page) {
+	await stubChat(page);
+	await page.route('**/api/workspaces/test', (route) => route.fulfill({ json: {
+		id: '00000000-0000-0000-0000-000000000002', name: 'Test Workspace', slug: 'test',
+		owner_id: SELF.id, current_user_role: 'member', screen_sharing_enabled: true
+	} }));
+	await page.route('**/api/workspaces/test/shares', (route) => route.fulfill({ json: { active: [], recent: [] } }));
+	const channels = ['general', 'project'].map((name, index) => ({
+		id: index ? '00000000-0000-0000-0000-000000000012' : CHANNEL_ID,
+		workspace_id: '00000000-0000-0000-0000-000000000002', type: 'public', name, topic: '',
+		created_by: SELF.id, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
+	}));
+	await page.route('**/api/workspaces/test/chat/channels', (route) => route.fulfill({ json: { channels } }));
+	return channels;
+}
+
+test('the integrated page preserves channel, draft and voice while screens stay visible', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
+	const channels = await communicationRoutes(page);
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	await expect(page.getByTestId('communication-category').getByRole('link')).toHaveCount(2);
+	await page.getByTestId('voice-join').click();
+	await expect(page.getByTestId('voice-mute')).toBeEnabled();
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await page.getByRole('textbox', { name: 'Message #project' }).fill('Keep this draft');
+	await expect(page.getByTestId('communication-screens')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Share my screen', exact: true })).toBeVisible();
+	await expect(page.getByTestId('voice-room-bar')).toContainText('#general');
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(CHANNEL_ID);
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await expect(page.getByRole('textbox', { name: 'Message #project' })).toHaveValue('Keep this draft');
+	await page.getByTestId('voice-mute').click();
+	await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
+	await expect(page.getByTestId('voice-participant')).toHaveCount(1);
+	expect(await page.evaluate(() => (window as any).__voiceFrames.filter((f: any) => f.type === 'voice.presence').map((f: any) => f.payload.action))).toEqual(['join']);
+});
+
+test('the phone layout keeps screens and conversation on the same page', async ({ page }) => {
+	await page.setViewportSize({ width: 390, height: 844 });
+	const channels = await communicationRoutes(page);
+	await page.goto(`/test/chat/${channels[1].id}`);
+	await expect(page.getByRole('textbox', { name: 'Message #project' })).toBeVisible();
+	await expect(page.getByTestId('communication-screens')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Share my screen', exact: true })).toBeVisible();
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	const screens = (await page.getByTestId('communication-screens').boundingBox())!;
+	const conversation = (await page.getByTestId('communication-conversation').boundingBox())!;
+	expect(screens.y + screens.height).toBeLessThanOrEqual(conversation.y + 1);
+	await page.getByRole('button', { name: 'Open navigation' }).click();
+	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat, voice & screens' }).click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page).toHaveURL(new RegExp(channels[1].id+'$'));
+});
+
+test('chat access errors can be retried and an empty workspace is explicit', async ({ page }) => {
+	await communicationRoutes(page);
+	let denied = true;
+	await page.route('**/api/workspaces/test/chat/channels', (route) => denied
+		? route.fulfill({ status: 403, json: { error: { code: 'FORBIDDEN' } } })
+		: route.fulfill({ json: { channels: [] } }));
+	await page.goto('/test/chat');
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toContainText('Check your access');
+	denied = false;
+	await page.getByRole('button', { name: 'Retry', exact: true }).click();
+	await expect(page.getByText('No channels yet')).toBeVisible();
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toHaveCount(0);
+});
+
+test('a failed wall load is retryable and does not appear as an empty result', async ({ page }) => {
+	await communicationRoutes(page);
+	let failed = true;
+	await page.route('**/api/workspaces/test/shares', (route) => failed
+		? route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } })
+		: route.fulfill({ json: { active: [], recent: [] } }));
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	await expect(page.getByRole('textbox', { name: 'Message #general' })).toBeVisible();
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toContainText('Could not load');
+	await expect(page.getByText('No one is sharing right now')).toHaveCount(0);
+	failed = false;
+	await page.getByRole('button', { name: 'Retry', exact: true }).click();
+	await expect(page.getByText('No one is sharing right now')).toBeVisible();
+});
+
+test('changing workspace clears remembered channels and drafts', async ({ page }) => {
+	const channels = await communicationRoutes(page);
+	const other = { id: '00000000-0000-0000-0000-000000000003', name: 'Other Workspace', slug: 'other', owner_id: SELF.id, current_user_role: 'guest', screen_sharing_enabled: true };
+	await page.route('**/api/workspaces', (route) => route.fulfill({ json: [other] }));
+	await page.route('**/api/workspaces/other', (route) => route.fulfill({ json: other }));
+	await page.route('**/api/workspaces/other/chat/channels', (route) => route.fulfill({ json: { channels: [] } }));
+	await page.route('**/api/workspaces/other/shares', (route) => route.fulfill({ json: { active: [], recent: [] } }));
+	await page.route('**/api/workspaces/other/issues?**', (route) => route.fulfill({ json: { data: [], total_count: 0, has_more: false, page: 1, per_page: 50 } }));
+	await page.goto(`/test/chat/${channels[1].id}`);
+	await page.getByRole('textbox', { name: 'Message #project' }).fill('Private draft');
+	await page.getByRole('button', { name: /Test Workspace/ }).first().click();
+	await page.getByRole('button', { name: /Other Workspace/ }).click();
+	await expect(page).toHaveURL(/\/other\/my-issues$/);
+	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat, voice & screens' }).click();
+	await expect(page).toHaveURL(/\/other\/chat$/);
+	await expect(page.getByText('No channels yet')).toBeVisible();
+	await expect(page.getByTestId('communication-workspace')).not.toContainText('#project');
+	await expect(page.getByText('Private draft')).toHaveCount(0);
+});

@@ -49,6 +49,8 @@ interface TypingPayload {
 class ChatState {
 	channels = $state<ChatChannel[]>([]);
 	loading = $state(false);
+	loadError = $state(false);
+	drafts = $state<Map<string, string>>(new Map());
 	loadedFor = $state('');
 	activeChannelId = $state<string | null>(null);
 	messages = $state<Map<string, ChatMessage[]>>(new Map());
@@ -109,6 +111,19 @@ class ChatState {
 	async ensureWorkspace(slug: string) {
 		if (!slug || this.loadedFor === slug) return;
 		if (this.slug === slug && this.loadInFlight) return this.loadInFlight;
+		if (this.slug !== slug) {
+			// A remembered channel and its cached content belong to one workspace.
+			this.channels = [];
+			this.loadedFor = '';
+			this.activeChannelId = null;
+			this.messages = new Map();
+			this.hasMore = new Map();
+			this.unread = new Map();
+			this.drafts = new Map();
+			this.typing = new Map();
+			this.onlineUsers = new Set();
+			this.channelSeq++;
+		}
 		this.slug = slug;
 		this.loadInFlight = this.reload().finally(() => {
 			if (this.slug === slug) this.loadInFlight = null;
@@ -121,6 +136,7 @@ class ChatState {
 		const seq = ++this.loadSeq;
 		const slug = this.slug;
 		this.loading = !this.loadedFor;
+		this.loadError = false;
 		try {
 			const [list, presence] = await Promise.all([
 				listChatChannels(slug),
@@ -128,10 +144,11 @@ class ChatState {
 			]);
 			if (seq !== this.loadSeq || slug !== this.slug) return;
 			this.channels = list.channels;
+			if (this.activeChannelId && !this.channelById(this.activeChannelId)) this.activeChannelId = null;
 			if (presence) this.onlineUsers = new Set(presence.online);
 			this.loadedFor = slug;
 		} catch {
-			// Keep whatever we had; navigation or the next WS event retries.
+			if (seq === this.loadSeq && slug === this.slug) this.loadError = true;
 		} finally {
 			if (seq === this.loadSeq) this.loading = false;
 		}

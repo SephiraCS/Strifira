@@ -34,6 +34,7 @@
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
+	import CommunicationWorkspace from '$lib/features/communication/CommunicationWorkspace.svelte';
 	import { chatState } from '$lib/features/chat/chat.state.svelte';
 	import { createShortcutEngine, type ShortcutDef } from '$lib/utils/keyboard';
 	import { inAppNavigation } from '$lib/features/layout/in-app-navigation.state.svelte';
@@ -902,7 +903,15 @@
 				</div>
 			{/if}
 			<div class="min-h-0 flex-1 overflow-auto">
-				{@render children()}
+				{#if page.url.pathname === `/${slug}/chat` || page.url.pathname.startsWith(`/${slug}/chat/`)}
+					{#key slug}
+						<CommunicationWorkspace {slug} screenSharing={workspace.screen_sharing_enabled}>
+							{@render children()}
+						</CommunicationWorkspace>
+					{/key}
+				{:else}
+					{@render children()}
+				{/if}
 			</div>
 			<TerminalDock />
 		</main>

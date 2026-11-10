@@ -2,6 +2,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { chatState } from '$lib/features/chat/chat.state.svelte';
+	import CommunicationError from '$lib/features/communication/CommunicationError.svelte';
+	import ChatChannelList from '$lib/features/chat/ChatChannelList.svelte';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -9,14 +11,12 @@
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const ready = $derived(chatState.loadedFor === slug);
 
-	// The chat entry picks the most recent channel; the rail lives in the
-	// [channelId] page. Redirect as soon as the channel list is available —
-	// whether this page triggered the load or the workspace layout already
-	// did.
+	// Return to the selected channel while it is still accessible. A fresh
+	// workspace falls back to its most recent channel.
 	$effect(() => {
-		if (!slug) return;
+		if (!slug || chatState.loadError) return;
 		if (ready) {
-			const first = chatState.channels[0];
+			const first = chatState.channelById(chatState.activeChannelId) ?? chatState.channels[0];
 			if (first) goto(`/${slug}/chat/${first.id}`, { replaceState: true });
 			return;
 		}
@@ -25,11 +25,13 @@
 </script>
 
 <div class="flex h-full">
-	<div class="hidden w-60 shrink-0 md:block">
-		<LoadingState />
+	<div class="hidden w-60 shrink-0 2xl:block">
+		{#if ready}<ChatChannelList {slug} activeChannelId={null} />{:else}<LoadingState />{/if}
 	</div>
 	<div class="flex min-w-0 flex-1 items-center justify-center">
-		{#if ready && chatState.channels.length === 0}
+		{#if chatState.loadError}
+			<CommunicationError onretry={() => void chatState.ensureWorkspace(slug)} />
+		{:else if ready && chatState.channels.length === 0}
 			<EmptyState title={m['chat.empty_workspace_title']()} description={m['chat.empty_workspace_desc']()} />
 		{:else}
 			<LoadingState />

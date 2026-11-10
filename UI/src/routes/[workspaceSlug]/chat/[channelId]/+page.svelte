@@ -6,6 +6,7 @@
 	import ChatChannelList from '$lib/features/chat/ChatChannelList.svelte';
 	import ChatMessages from '$lib/features/chat/ChatMessages.svelte';
 	import ChatComposer from '$lib/features/chat/ChatComposer.svelte';
+	import CommunicationError from '$lib/features/communication/CommunicationError.svelte';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import Hash from '@lucide/svelte/icons/hash';
@@ -75,20 +76,24 @@
 </script>
 
 <div class="flex h-full min-h-0">
-	<div class="hidden w-60 shrink-0 md:block">
+	<div class="hidden w-60 shrink-0 2xl:block">
 		<ChatChannelList {slug} activeChannelId={channelId} />
 	</div>
 
 	<div class="flex min-w-0 flex-1 flex-col">
-		{#if !ready || !channel}
+		{#if chatState.loadError}
+			<CommunicationError onretry={() => void chatState.reload()} />
+		{:else if ready && !channel}
+			<CommunicationError message={m['communication.channel_unavailable']()} onretry={() => void chatState.reload()} />
+		{:else if !ready || !channel}
 			<div class="flex h-full items-center justify-center">
 				<LoadingState />
 			</div>
 		{:else}
 			<div
-				class="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--app-border)] px-4"
+				class="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--app-border)] px-3 py-2"
 			>
-				<span class="flex items-center gap-1.5 text-sm font-semibold text-[var(--color-text-primary)]">
+				<span class="flex min-w-0 max-w-full items-center gap-1.5 break-all text-sm font-semibold text-[var(--color-text-primary)]">
 					{#if channel.type === 'private'}
 						<Lock size={14} class="text-[var(--color-text-tertiary)]" />
 					{:else if channel.type !== 'dm'}
@@ -144,7 +149,7 @@
 
 				<!-- Mobile-only channel switcher (the rail is md+) -->
 				<select
-					class="rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] md:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
+					class="min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] 2xl:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
 					value={channelId}
 					onchange={handleMobileSwitch}
 					aria-label={m['chat.switch_channel']()}

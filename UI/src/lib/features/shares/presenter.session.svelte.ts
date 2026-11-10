@@ -86,6 +86,10 @@ class PresenterSession {
 		return this.share !== null && this.live && !this.ended;
 	}
 
+	belongsToWorkspace(slug: string): boolean {
+		return this.slug === slug;
+	}
+
 	/** Route ownership changes even while the workspace socket is unavailable. */
 	setWorkspace(workspaceSlug: string): void {
 		if (workspaceSlug === this.currentWorkspaceSlug) return;
