@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.53",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.53",
+    "body": "Deployed to alpha as beb81ddeba66ce1611f2959fa8f279eba6ffe523.\n\n- STR-17 - Adicionar canais de voz ao chat (#31)",
+    "published_at": "2026-11-10T12:05:31Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.53",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.52",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.52",
     "body": "Deployed to alpha as 0c677504308f009d74fe034941f1e6cd8cdb40c4.\n\n- STR-15 - Criar um cliente de e-mail (#30)",
