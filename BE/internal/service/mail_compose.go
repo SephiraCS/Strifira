@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -259,7 +260,7 @@ func (s *MailService) SendDraft(ctx context.Context, workspaceID, userID, draftI
 	if err != nil {
 		return nil, err
 	}
-	password, err := s.decryptPassword(account)
+	password, err := s.credential(ctx, account)
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +340,9 @@ func (s *MailService) SendDraft(ctx context.Context, workspaceID, userID, draftI
 	raw, err := mailclient.SendMessage(s.sendOptions(account, password), outgoing)
 	if err != nil {
 		log.WithField("account_id", account.ID).Warn("mail send failed")
+		if errors.Is(err, mailclient.ErrAuthentication) {
+			return nil, accountConnectionError(account, err)
+		}
 		return nil, ErrMailSendFailed
 	}
 

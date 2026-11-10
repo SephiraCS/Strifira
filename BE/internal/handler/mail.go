@@ -13,6 +13,7 @@ import (
 	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/SephiraCS/strifira-backend/internal/service"
 	"github.com/SephiraCS/strifira-backend/pkg/mailconfig"
+	"github.com/SephiraCS/strifira-backend/pkg/mailoauth"
 	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/SephiraCS/strifira-backend/pkg/validate"
 	"github.com/google/uuid"
@@ -59,6 +60,16 @@ func (h *MailHandler) DiscoverAccount(c echo.Context) error {
 
 func mailAccountError(c echo.Context, err error) error {
 	switch {
+	case errors.Is(err, repository.ErrMailAccountConflict):
+		return response.Error(c, 409, "MAIL_ACCOUNT_CHANGED", repository.ErrMailAccountConflict.Error())
+	case errors.Is(err, mailoauth.ErrRegistration):
+		return response.Error(c, 503, "MAIL_OAUTH_REGISTRATION", mailoauth.ErrRegistration.Error())
+	case errors.Is(err, mailoauth.ErrUnsupported):
+		return response.Error(c, 422, "MAIL_OAUTH_UNSUPPORTED", mailoauth.ErrUnsupported.Error())
+	case errors.Is(err, mailoauth.ErrAuthorization), errors.Is(err, repository.ErrMailOAuthSession):
+		return response.Error(c, 422, "MAIL_OAUTH_AUTHORIZATION", mailoauth.ErrAuthorization.Error())
+	case errors.Is(err, mailoauth.ErrUnavailable):
+		return response.Error(c, 503, "MAIL_OAUTH_UNAVAILABLE", mailoauth.ErrUnavailable.Error())
 	case errors.Is(err, mailconfig.ErrAddress):
 		return response.Error(c, 422, "MAIL_ADDRESS_INVALID", "Informe um endereço de e-mail válido.")
 	case errors.Is(err, mailconfig.ErrNotFound):
@@ -130,10 +141,7 @@ func (h *MailHandler) DeleteAccount(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid account ID")
 	}
 	if err := h.mailSvc.DeleteAccount(c.Request().Context(), ws.ID, id); err != nil {
-		if errors.Is(err, repository.ErrMailAccountNotFound) {
-			return response.NotFound(c, "Account")
-		}
-		return response.InternalErrorErr(c, err)
+		return mailAccountError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]bool{"deleted": true})
 }
@@ -145,10 +153,7 @@ func (h *MailHandler) SyncAccount(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid account ID")
 	}
 	if err := h.mailSvc.SyncNow(c.Request().Context(), ws.ID, id); err != nil {
-		if errors.Is(err, repository.ErrMailAccountNotFound) {
-			return response.NotFound(c, "Account")
-		}
-		return response.InternalErrorErr(c, err)
+		return mailAccountError(c, err)
 	}
 	return response.Success(c, http.StatusOK, map[string]bool{"synced": true})
 }
@@ -495,7 +500,7 @@ func (h *MailHandler) SendDraft(c echo.Context) error {
 		case errors.Is(err, service.ErrMailSendFailed):
 			return response.Error(c, http.StatusBadGateway, "MAIL_SEND_FAILED", err.Error())
 		}
-		return response.InternalErrorErr(c, err)
+		return mailAccountError(c, err)
 	}
 	return response.Success(c, http.StatusOK, dto.SendDraftResponse{MessageID: sent.ID.String()})
 }
@@ -503,10 +508,16 @@ func (h *MailHandler) SendDraft(c echo.Context) error {
 // --- Mappers and helpers ---
 
 func mailAccountResponse(account domain.MailAccount) dto.MailAccountResponse {
-	if account.LastSyncError != "" && account.LastSyncError != service.ErrMailAuthentication.Error() {
+	provider := account.OAuthProvider
+	if provider == "" {
+		provider = mailoauth.ProviderFor(&mailconfig.Config{Incoming: mailconfig.Server{Host: account.IMAPHost}, Outgoing: mailconfig.Server{Host: account.SMTPHost}})
+	}
+	if account.LastSyncError != "" && account.LastSyncError != service.ErrMailAuthentication.Error() && account.LastSyncError != mailoauth.ErrAuthorization.Error() && account.LastSyncError != mailoauth.ErrRegistration.Error() && account.LastSyncError != mailoauth.ErrUnavailable.Error() {
 		account.LastSyncError = service.ErrMailConnectionFailed.Error()
 	}
 	return dto.MailAccountResponse{
+		AuthMethod:    account.AuthMethod,
+		OAuthProvider: provider,
 		ID:            account.ID.String(),
 		EmailAddress:  account.EmailAddress,
 		DisplayName:   account.DisplayName,

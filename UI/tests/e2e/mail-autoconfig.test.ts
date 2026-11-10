@@ -108,18 +108,72 @@ test('requires provider authorization and clears discovery when the address chan
 	const dialog = await mailPage(page);
 	let created = false;
 	await page.route('**/mail/accounts/discover', (route) =>
-		route.fulfill({ json: { ...discovered, provider: 'Microsoft', authentication: 'oauth2' } })
+		route.fulfill({
+			json: { ...discovered, provider: 'Microsoft', authentication: 'oauth2', oauth_provider: 'microsoft' }
+		})
 	);
 	await page.route('**/mail/accounts', (route) => {
 		if (route.request().method() === 'POST') created = true;
 		return route.fulfill({ json: { accounts: [] } });
 	});
 	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
-	await expect(dialog.getByRole('alert')).toContainText('requires OAuth authorization');
+	await expect(dialog.getByText('You will authorize access at your provider.', { exact: false })).toBeVisible();
+	await page.route('**/mail/oauth/start', (route) =>
+		route.fulfill({
+			status: 503,
+			json: { error: { code: 'MAIL_OAUTH_REGISTRATION', message: 'OAuth registration unavailable.' } }
+		})
+	);
+	await dialog.getByRole('button', { name: 'Authorize account', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('OAuth registration unavailable.');
 	await expect(dialog.getByLabel('Password', { exact: true })).toHaveCount(0);
 	await expect(dialog.getByRole('button', { name: 'Connect account' })).toHaveCount(0);
 	await dialog.getByLabel('E-mail address').fill('another@example.test');
 	await expect(dialog.getByText('Microsoft identified')).toHaveCount(0);
 	await expect(dialog.getByRole('button', { name: 'Continue', exact: true })).toBeVisible();
 	expect(created).toBe(false);
+});
+
+test('OAuth callback consumes state, scrubs codes and retains the address after refusal', async ({ page }) => {
+	await mailPage(page);
+	const state = 'state-fixture-at-least-thirty-two-characters';
+	await page.evaluate(
+		({ state }) =>
+			sessionStorage.setItem(
+				'strifira:mail-oauth',
+				JSON.stringify({ workspace: 'test', state, email_address: 'retained@example.test' })
+			),
+		{ state }
+	);
+	let attempts = 0;
+	await page.route('**/mail/oauth/complete', (route) => {
+		attempts++;
+		expect(route.request().postDataJSON()).toEqual({ state, code: 'private-code', provider_error: '' });
+		return route.fulfill({
+			status: 422,
+			json: { error: { code: 'MAIL_OAUTH_AUTHORIZATION', message: 'Provider authorization refused.' } }
+		});
+	});
+	await page.goto(`/mail/oauth/callback?state=${state}&code=private-code`);
+	await expect(page.getByRole('alert')).toHaveText('Provider authorization refused.');
+	await expect(page).toHaveURL('/mail/oauth/callback');
+	await expect(page.locator('body')).not.toContainText('private-code');
+	await page.getByRole('button', { name: 'Back to Mail', exact: true }).click();
+	await expect(page.getByRole('dialog', { name: 'Add account' }).getByLabel('E-mail address')).toHaveValue(
+		'retained@example.test'
+	);
+	expect(attempts).toBe(1);
+});
+
+test('OAuth callback rejects unrelated state without exchanging the code', async ({ page }) => {
+	let exchanged = false;
+	await page.route('**/mail/oauth/complete', (route) => {
+		exchanged = true;
+		return route.fulfill({ json: {} });
+	});
+	await page.goto('/mail/oauth/callback?state=unrelated-state&code=private-code&error_description=secret-detail');
+	await expect(page.getByRole('alert')).toBeVisible();
+	await expect(page).toHaveURL('/mail/oauth/callback');
+	await expect(page.locator('body')).not.toContainText('secret-detail');
+	expect(exchanged).toBe(false);
 });

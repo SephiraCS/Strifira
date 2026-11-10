@@ -31,6 +31,7 @@ type Server struct {
 }
 
 type Config struct {
+	OAuthProvider    string `json:"oauth_provider,omitempty"`
 	EmailAddress     string `json:"email_address"`
 	Provider         string `json:"provider"`
 	Source           string `json:"source"`

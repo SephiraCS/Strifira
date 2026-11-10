@@ -21,6 +21,7 @@ export interface MailAccountInput {
 }
 
 export interface MailDiscovery {
+	oauth_provider?: 'google' | 'microsoft';
 	email_address: string;
 	provider: string;
 	source: string;
@@ -34,6 +35,20 @@ export interface MailDiscovery {
 
 export function discoverMailAccount(slug: string, emailAddress: string): Promise<MailDiscovery> {
 	return api.post<MailDiscovery>(`/api/workspaces/${slug}/mail/accounts/discover`, { email_address: emailAddress });
+}
+
+export function startMailOAuth(
+	slug: string,
+	body: { email_address: string; account_id?: string; display_name?: string; signature?: string }
+): Promise<{ authorization_url: string; state: string }> {
+	return api.post(`/api/workspaces/${slug}/mail/oauth/start`, body);
+}
+
+export function completeMailOAuth(
+	slug: string,
+	body: { state: string; code: string; provider_error: string }
+): Promise<MailAccount> {
+	return api.post(`/api/workspaces/${slug}/mail/oauth/complete`, body);
 }
 
 export function createMailAccount(slug: string, body: MailAccountInput): Promise<MailAccount> {

@@ -19,6 +19,19 @@ type DiscoverMailAccountRequest struct {
 	EmailAddress string `json:"email_address" validate:"required,email,max=254"`
 }
 
+type StartMailOAuthRequest struct {
+	EmailAddress string `json:"email_address" validate:"required,email,max=254"`
+	AccountID    string `json:"account_id" validate:"omitempty,uuid4"`
+	DisplayName  string `json:"display_name" validate:"max=120"`
+	Signature    string `json:"signature" validate:"max=4000"`
+}
+
+type CompleteMailOAuthRequest struct {
+	State         string `json:"state" validate:"required,min=32,max=128"`
+	Code          string `json:"code" validate:"max=4096"`
+	ProviderError string `json:"provider_error" validate:"max=128"`
+}
+
 type UpdateMailAccountRequest struct {
 	EmailAddress string  `json:"email_address" validate:"omitempty,email,max=254"`
 	DisplayName  *string `json:"display_name" validate:"omitempty,max=120"`
@@ -27,6 +40,8 @@ type UpdateMailAccountRequest struct {
 }
 
 type MailAccountResponse struct {
+	AuthMethod    string     `json:"auth_method"`
+	OAuthProvider string     `json:"oauth_provider,omitempty"`
 	ID            string     `json:"id"`
 	EmailAddress  string     `json:"email_address"`
 	DisplayName   string     `json:"display_name"`

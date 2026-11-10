@@ -152,6 +152,9 @@ func main() {
 	// Typing relays resolve channel membership through the chat service.
 	hub.ChatTypingAudience = chatSvc.TypingAudience
 	mailSvc := service.NewMailService(mailAccountRepo, mailMessageRepo, mailDraftRepo, hub, crypto.DeriveKey(cfg.JWTSecret+":mail"))
+	if err := mailSvc.ConfigureOAuth(repository.NewMailOAuthRepository(db), cfg.FrontendURL); err != nil {
+		log.Fatal("Invalid frontend origin for mailbox OAuth callback")
+	}
 	// Voice room joins and roster audiences resolve channel visibility and
 	// fan-out through the same rules as the channel's messages.
 	hub.AuthorizeVoicePresence = chatSvc.VoiceAuthorize
@@ -696,6 +699,8 @@ func main() {
 	ws.GET("/mail/accounts", mailH.ListAccounts)
 	ws.POST("/mail/accounts", mailH.CreateAccount)
 	ws.POST("/mail/accounts/discover", mailH.DiscoverAccount)
+	ws.POST("/mail/oauth/start", mailH.StartOAuth)
+	ws.POST("/mail/oauth/complete", mailH.CompleteOAuth)
 	ws.PATCH("/mail/accounts/:accountId", mailH.UpdateAccount)
 	ws.DELETE("/mail/accounts/:accountId", mailH.DeleteAccount)
 	ws.POST("/mail/accounts/:accountId/sync", mailH.SyncAccount)

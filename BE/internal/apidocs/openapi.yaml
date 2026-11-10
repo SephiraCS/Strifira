@@ -4958,8 +4958,8 @@ paths:
         Only stores the account after IMAP authentication and INBOX access,
         and SMTP authentication succeed. The provider credential is encrypted
         at rest. The first INBOX sync is triggered asynchronously.
-        OAuth-only providers return MAIL_OAUTH_REQUIRED until the Strifira
-        OAuth application is registered. App passwords remain subject to the
+        OAuth-only providers return MAIL_OAUTH_REQUIRED on this password endpoint.
+        Use /mail/oauth/start and /mail/oauth/complete for delegated authorization. App passwords remain subject to the
         provider's policies and two-step verification requirements.
       requestBody:
         required: true
@@ -4984,8 +4984,9 @@ paths:
         Thunderbird ISPDB and secure IMAP/submission DNS SRV records.
         Requires workspace membership. Never accepts credentials or connects
         to a mailbox. Returns provider, source, authentication, incoming and
-        outgoing servers. OAuth-only providers are identified but cannot be
-        connected until the Strifira application is registered with the provider.
+        outgoing servers. oauth_provider identifies supported Google/Microsoft
+        authorization, independent of app-registration availability. The OAuth
+        start endpoint obtains the registered client from OCI Vault.
       requestBody:
         required: true
         content:
@@ -5003,6 +5004,70 @@ paths:
               schema: { type: object }
         "422": { description: MAIL_ADDRESS_INVALID or MAIL_DISCOVERY_NOT_FOUND. }
         "503": { description: MAIL_DISCOVERY_UNAVAILABLE. }
+  /api/workspaces/{slug}/mail/oauth/start:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: startMailOAuth
+      tags: [Mail]
+      summary: Begin delegated mailbox authorization
+      description: |
+        Requires the authenticated user and workspace membership. Discovers the
+        provider and its trusted OAuth metadata, obtains app credentials from
+        OCI Vault using the instance principal, and returns authorization_url
+        and a random state. Stores a hashed, single-use state bound to this
+        user/workspace and an encrypted PKCE verifier for ten minutes.
+        account_id reconnects or upgrades an existing account owned by this user
+        without discarding cached mail. No client-supplied redirect URI is used.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address]
+              properties:
+                email_address: { type: string, format: email, maxLength: 254 }
+                account_id: { type: string, format: uuid }
+                display_name: { type: string, maxLength: 120 }
+                signature: { type: string, maxLength: 4000 }
+      responses:
+        "200": { description: Authorization URL and state. No account is connected yet. }
+        "422": { description: Unsupported provider or invalid mailbox address. }
+        "503": { description: MAIL_OAUTH_REGISTRATION or MAIL_OAUTH_UNAVAILABLE. }
+  /api/workspaces/{slug}/mail/oauth/complete:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: completeMailOAuth
+      tags: [Mail]
+      summary: Validate authorization and connect the mailbox
+      description: |
+        The frontend at /mail/oauth/callback posts state, code and provider_error
+        using the same Strifira session. Consumes state atomically, exchanges
+        code with PKCE, then validates IMAP INBOX access and SMTP authentication
+        using XOAUTH2 before atomically saving the account and encrypted tokens.
+        Failed or denied authorization never modifies an existing mailbox.
+        Access tokens are refreshed under a PostgreSQL row lock; rotating refresh
+        tokens are persisted before use. Codes, tokens and vendor response bodies
+        are never returned or logged. The response contains auth_method and
+        oauth_provider, without credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, minLength: 32, maxLength: 128 }
+                code: { type: string, maxLength: 4096 }
+                provider_error: { type: string, maxLength: 128 }
+      responses:
+        "201": { description: Mailbox connected or reauthorized. }
+        "409": { description: MAIL_ACCOUNT_CHANGED; a concurrent edit was preserved. }
+        "422": { description: MAIL_OAUTH_AUTHORIZATION or MAIL_CONNECTION_FAILED. }
+        "503": { description: MAIL_OAUTH_REGISTRATION or MAIL_OAUTH_UNAVAILABLE. }
   /api/workspaces/{slug}/mail/accounts/{accountId}:
     parameters:
       - $ref: "#/components/parameters/Slug"
@@ -5031,7 +5096,13 @@ paths:
       operationId: deleteMailAccount
       tags: [Mail]
       summary: Remove a mail account
-      description: Deletes the account and its cached messages and drafts.
+      description: |
+        Deletes the account and its cached messages and drafts. For Google OAuth,
+        revokes the grant at the provider before deleting local tokens. A failed
+        revocation preserves the account for retry. Microsoft has no individual
+        RFC 7009 endpoint; disconnect destroys local tokens, and the owner can
+        also remove consent at the Microsoft account portal. No administrative
+        permission to revoke all of the user's sessions is requested.
       responses:
         "200": { description: Account removed. }
         "404": { description: Account not found. }

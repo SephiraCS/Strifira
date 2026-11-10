@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailAccountMessage } from './autoconfig.messages';
+	import { authorizeMailbox, mailOAuthStorageKey } from './oauth';
 	import { createMailAccount, discoverMailAccount, updateMailAccount, type MailDiscovery } from '$lib/api/mail';
 	import { mailState } from '$lib/features/mail/mail.state.svelte';
 	import { authState } from '$lib/features/auth/auth.state.svelte';
@@ -21,25 +22,39 @@
 	let submitting = $state(false);
 	let error = $state('');
 	let discovery = $state<MailDiscovery | null>(null);
+	let useAppPassword = $state(false);
 	let requestSerial = 0;
 	const changedAddress = $derived(!!account && emailAddress.trim() !== account.email_address);
 	const needsDiscovery = $derived(!discovery && (!account || changedAddress));
-	const needsOAuth = $derived(discovery?.authentication === 'oauth2');
+	const editingOAuth = $derived(account?.auth_method === 'oauth2');
+	const needsOAuth = $derived(
+		!useAppPassword && (!!discovery?.oauth_provider || discovery?.authentication === 'oauth2')
+	);
 
 	$effect(() => {
 		if (open) {
 			emailAddress = account?.email_address ?? authState.user?.email ?? '';
+			if (!account) {
+				try {
+					const retry = JSON.parse(sessionStorage.getItem(`${mailOAuthStorageKey}:retry`) ?? 'null');
+					if (retry?.workspace === slug) emailAddress = retry.email_address;
+				} catch {
+					/* A missing or invalid retry never blocks the dialog. */
+				}
+			}
 			displayName = account?.display_name ?? '';
 			signature = account?.signature ?? '';
 			password = '';
 			submitting = false;
 			discovery = null;
+			useAppPassword = false;
 			error = '';
 		}
 	});
 
 	function addressChanged(): void {
 		discovery = null;
+		useAppPassword = false;
 		password = '';
 		error = '';
 	}
@@ -58,11 +73,15 @@
 		submitting = true;
 		error = '';
 		try {
-			if (needsDiscovery || needsOAuth) {
+			if (needsDiscovery) {
 				const result = await discoverMailAccount(slug, emailAddress.trim());
 				if (!open || serial !== requestSerial) return;
 				discovery = result;
 				emailAddress = result.email_address;
+				return;
+			}
+			if (needsOAuth) {
+				await authorize();
 				return;
 			}
 			const body = {
@@ -88,6 +107,27 @@
 			if (serial === requestSerial) submitting = false;
 		}
 	}
+
+	async function authorize(): Promise<void> {
+		await authorizeMailbox(slug, {
+			email_address: emailAddress.trim(),
+			account_id: account?.id,
+			display_name: displayName.trim(),
+			signature
+		});
+	}
+
+	async function reconnect(): Promise<void> {
+		submitting = true;
+		error = '';
+		try {
+			await authorize();
+		} catch (err) {
+			error = getErrorMessage(err, mailAccountMessage('oauth_failed'));
+		} finally {
+			submitting = false;
+		}
+	}
 </script>
 
 <Dialog.Root {open} onOpenChange={(v) => (v ? undefined : close())}>
@@ -109,16 +149,25 @@
 					autocomplete="email"
 					placeholder="voce@exemplo.com"
 					required
-					disabled={submitting}
+					disabled={submitting || editingOAuth}
 				/>
 			</div>
 			{#if discovery}
 				<div class="rounded-md border border-[var(--app-border)] p-3 text-sm" aria-live="polite">
 					<p class="font-medium">{mailAccountMessage('found', discovery.provider)}</p>
 					{#if needsOAuth}
-						<p class="mt-2 text-[var(--color-text-secondary)]" role="alert">
-							{mailAccountMessage('oauth_required')}
+						<p class="mt-2 text-[var(--color-text-secondary)]">
+							{mailAccountMessage('oauth_consent')}
 						</p>
+						{#if discovery.authentication === 'app_password'}
+							<Button
+								type="button"
+								variant="outline"
+								class="mt-2"
+								disabled={submitting}
+								onclick={() => (useAppPassword = true)}>{mailAccountMessage('use_app_password')}</Button
+							>
+						{/if}
 					{:else}
 						<p class="mt-1 text-[var(--color-text-secondary)]">{mailAccountMessage('secure')}</p>
 						{#if discovery.authentication === 'app_password'}
@@ -135,26 +184,49 @@
 					{/if}
 				</div>
 			{/if}
-			{#if !needsDiscovery && !needsOAuth}
-				<div class="flex flex-col gap-1.5">
-					<Label for="mail-account-password"
-						>{account && !changedAddress
-							? m['mail.account.password.keep']()
-							: discovery?.authentication === 'app_password'
-								? mailAccountMessage('password_label')
-								: m['mail.account.password']()}</Label
+			{#if !needsDiscovery}
+				{#if editingOAuth || account?.oauth_provider}
+					<p class="text-sm text-[var(--color-text-secondary)]">{mailAccountMessage('oauth_consent')}</p>
+					<Button type="button" variant="outline" onclick={reconnect} disabled={submitting}
+						>{mailAccountMessage(editingOAuth ? 'reauthorize' : 'authorize')}</Button
 					>
-					<Input
-						id="mail-account-password"
-						type="password"
-						bind:value={password}
-						autocomplete="new-password"
-						required={!account || changedAddress}
-						disabled={submitting}
-						maxlength={1024}
-					/>
-					<p class="text-xs text-[var(--color-text-tertiary)]">{mailAccountMessage('credential_hint')}</p>
-				</div>
+					{#if account?.oauth_provider === 'microsoft'}
+						<p class="text-xs text-[var(--color-text-secondary)]">
+							{mailAccountMessage('microsoft_revoke')}
+							<a
+								class="underline"
+								href="https://account.live.com/consent/Manage"
+								target="_blank"
+								rel="noopener noreferrer">{mailAccountMessage('manage_consent')}</a
+							>
+							·
+							<a class="underline" href="https://myapps.microsoft.com" target="_blank" rel="noopener noreferrer"
+								>Microsoft 365</a
+							>
+						</p>
+					{/if}
+				{/if}
+				{#if !needsOAuth && !editingOAuth}
+					<div class="flex flex-col gap-1.5">
+						<Label for="mail-account-password"
+							>{account && !changedAddress
+								? m['mail.account.password.keep']()
+								: discovery?.authentication === 'app_password'
+									? mailAccountMessage('password_label')
+									: m['mail.account.password']()}</Label
+						>
+						<Input
+							id="mail-account-password"
+							type="password"
+							bind:value={password}
+							autocomplete="new-password"
+							required={!account || changedAddress}
+							disabled={submitting}
+							maxlength={1024}
+						/>
+						<p class="text-xs text-[var(--color-text-tertiary)]">{mailAccountMessage('credential_hint')}</p>
+					</div>
+				{/if}
 				<div class="flex flex-col gap-1.5">
 					<Label for="mail-account-name">{m['mail.account.display_name']()}</Label>
 					<Input id="mail-account-name" bind:value={displayName} maxlength={120} disabled={submitting} />
@@ -181,7 +253,7 @@
 							? mailAccountMessage('discovering')
 							: mailAccountMessage('validating')
 						: needsOAuth
-							? mailAccountMessage('retry')
+							? mailAccountMessage('authorize')
 							: needsDiscovery
 								? mailAccountMessage('continue')
 								: account

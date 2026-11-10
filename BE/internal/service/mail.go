@@ -13,6 +13,7 @@ import (
 	"github.com/SephiraCS/strifira-backend/pkg/crypto"
 	"github.com/SephiraCS/strifira-backend/pkg/mailclient"
 	"github.com/SephiraCS/strifira-backend/pkg/mailconfig"
+	"github.com/SephiraCS/strifira-backend/pkg/mailoauth"
 	"github.com/SephiraCS/strifira-backend/pkg/safego"
 	"github.com/SephiraCS/strifira-backend/pkg/sanitize"
 	mailaddress "github.com/emersion/go-message/mail"
@@ -27,7 +28,7 @@ var (
 	ErrMailAttachmentTooBig = errors.New("attachment is too large")
 	ErrMailConnectionFailed = errors.New("Não foi possível conectar ao provedor com segurança. Tente novamente em instantes.")
 	ErrMailAuthentication   = errors.New("O provedor recusou a autenticação. Confira o endereço e a senha da caixa ou senha de aplicativo.")
-	ErrMailOAuthRequired    = errors.New("Este provedor exige OAuth. O aplicativo Strifira ainda precisa ser registrado no provedor para permitir a autorização. Nenhuma conta foi conectada.")
+	ErrMailOAuthRequired    = errors.New("Esta conta exige autorização no provedor. Use Autorizar conta para conectar ou renovar o acesso, sem informar uma senha.")
 	ErrMailSendFailed       = errors.New("the server refused the message")
 )
 
@@ -47,12 +48,15 @@ type mailDiscoverer interface {
 
 // MailService owns mailbox accounts, the INBOX cache and compose/send flows.
 type MailService struct {
-	accountRepo repository.MailAccountRepo
-	messageRepo repository.MailMessageRepo
-	draftRepo   repository.MailDraftRepo
-	hub         *realtime.Hub
-	encryptKey  []byte
-	discovery   mailDiscoverer
+	accountRepo          repository.MailAccountRepo
+	messageRepo          repository.MailMessageRepo
+	draftRepo            repository.MailDraftRepo
+	hub                  *realtime.Hub
+	encryptKey           []byte
+	discovery            mailDiscoverer
+	oauthRepo            *repository.MailOAuthRepository
+	oauth                mailOAuthClient
+	validateOAuthMailbox func(*domain.MailAccount, string) error
 }
 
 func NewMailService(
@@ -62,7 +66,7 @@ func NewMailService(
 	hub *realtime.Hub,
 	encryptKey []byte,
 ) *MailService {
-	return &MailService{
+	s := &MailService{
 		accountRepo: accountRepo,
 		messageRepo: messageRepo,
 		draftRepo:   draftRepo,
@@ -70,6 +74,8 @@ func NewMailService(
 		encryptKey:  encryptKey,
 		discovery:   mailconfig.NewDiscoverer(),
 	}
+	s.validateOAuthMailbox = s.testOAuthConnections
+	return s
 }
 
 // StartSyncer runs the periodic INBOX poller until ctx is cancelled.
@@ -103,23 +109,9 @@ func (s *MailService) CreateAccount(ctx context.Context, workspaceID, userID uui
 	if err != nil {
 		return nil, err
 	}
-	account := &domain.MailAccount{
-		ID:                uuid.New(),
-		WorkspaceID:       workspaceID,
-		CreatedBy:         userID,
-		EmailAddress:      config.EmailAddress,
-		DisplayName:       strings.TrimSpace(req.DisplayName),
-		IMAPHost:          config.Incoming.Host,
-		IMAPPort:          config.Incoming.Port,
-		IMAPSecurity:      config.Incoming.Security,
-		SMTPHost:          config.Outgoing.Host,
-		SMTPPort:          config.Outgoing.Port,
-		SMTPSecurity:      config.Outgoing.Security,
-		Username:          config.Incoming.Username,
-		SMTPUsername:      config.Outgoing.Username,
-		PasswordEncrypted: encrypted,
-		Signature:         req.Signature,
-	}
+	account := accountFromConfig(workspaceID, userID, config, req.DisplayName, req.Signature)
+	account.AuthMethod = "password"
+	account.PasswordEncrypted = encrypted
 	if err := s.accountRepo.Create(ctx, account); err != nil {
 		return nil, err
 	}
@@ -133,7 +125,13 @@ func (s *MailService) CreateAccount(ctx context.Context, workspaceID, userID uui
 
 // DiscoverAccount returns only public connection metadata, never credentials.
 func (s *MailService) DiscoverAccount(ctx context.Context, address string) (*mailconfig.Config, error) {
-	return s.discovery.Discover(ctx, address)
+	config, err := s.discovery.Discover(ctx, address)
+	if err != nil {
+		return nil, err
+	}
+	copy := *config
+	copy.OAuthProvider = mailoauth.ProviderFor(config)
+	return &copy, nil
 }
 
 func (s *MailService) UpdateAccount(ctx context.Context, workspaceID, id uuid.UUID, req dto.UpdateMailAccountRequest) (*domain.MailAccount, error) {
@@ -143,6 +141,9 @@ func (s *MailService) UpdateAccount(ctx context.Context, workspaceID, id uuid.UU
 	}
 	// Validate a copy; failed rediscovery/authentication must not mutate a linked account.
 	account := *stored
+	if account.AuthMethod == "oauth2" && (req.EmailAddress != "" && req.EmailAddress != account.EmailAddress || req.Password != nil && *req.Password != "") {
+		return nil, ErrMailOAuthRequired
+	}
 	changedAddress := req.EmailAddress != "" && req.EmailAddress != account.EmailAddress
 	if changedAddress {
 		if req.Password == nil || *req.Password == "" {
@@ -191,6 +192,13 @@ func (s *MailService) UpdateAccount(ctx context.Context, workspaceID, id uuid.UU
 }
 
 func (s *MailService) DeleteAccount(ctx context.Context, workspaceID, id uuid.UUID) error {
+	account, err := s.accountRepo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return err
+	}
+	if account.AuthMethod == "oauth2" {
+		return s.disconnectOAuth(ctx, account)
+	}
 	return s.accountRepo.Delete(ctx, workspaceID, id)
 }
 
@@ -230,10 +238,14 @@ func (s *MailService) decryptPassword(account *domain.MailAccount) (string, erro
 }
 
 func (s *MailService) fetchOptions(account *domain.MailAccount, password string) mailclient.FetchOptions {
-	return mailclient.FetchOptions{
+	options := mailclient.FetchOptions{
 		Host: account.IMAPHost, Port: account.IMAPPort, Security: account.IMAPSecurity,
 		Username: account.Username, Password: password,
 	}
+	if account.AuthMethod == "oauth2" {
+		options.Password, options.AccessToken = "", password
+	}
+	return options
 }
 
 func smtpUsername(account *domain.MailAccount) string {
@@ -244,10 +256,14 @@ func smtpUsername(account *domain.MailAccount) string {
 }
 
 func (s *MailService) sendOptions(account *domain.MailAccount, password string) mailclient.SendOptions {
-	return mailclient.SendOptions{
+	options := mailclient.SendOptions{
 		Host: account.SMTPHost, Port: account.SMTPPort, Security: account.SMTPSecurity,
 		Username: smtpUsername(account), Password: password,
 	}
+	if account.AuthMethod == "oauth2" {
+		options.Password, options.AccessToken = "", password
+	}
+	return options
 }
 
 // --- Sync ---
@@ -275,22 +291,26 @@ func (s *MailService) SyncDueAccounts(ctx context.Context) {
 // syncAccount pulls new INBOX messages into the local cache and broadcasts
 // mail.updated so open clients refresh. Errors persist on the account.
 func (s *MailService) syncAccount(ctx context.Context, account domain.MailAccount) error {
-	password, err := s.decryptPassword(&account)
+	uidValidity, lastUID, err := s.messageRepo.SyncState(ctx, account.ID)
 	if err != nil {
 		return err
 	}
-
-	uidValidity, lastUID, err := s.messageRepo.SyncState(ctx, account.ID)
+	password, err := s.credential(ctx, &account)
 	if err != nil {
+		msg := ErrMailConnectionFailed.Error()
+		if errors.Is(err, mailoauth.ErrAuthorization) || errors.Is(err, mailoauth.ErrRegistration) || errors.Is(err, mailoauth.ErrUnavailable) {
+			msg = err.Error()
+		}
+		_ = s.messageRepo.UpdateSyncState(ctx, account.ID, uidValidity, lastUID, msg, time.Now())
 		return err
 	}
 	result, err := mailclient.FetchNewMessages(s.fetchOptions(&account, password), uint64(lastUID), uidValidity)
 	now := time.Now()
 	if err != nil {
-		msg := mailConnectionError(err).Error()
+		msg := accountConnectionError(&account, err).Error()
 		_ = s.messageRepo.UpdateSyncState(ctx, account.ID, uidValidity, lastUID, msg, now)
 		log.WithField("account_id", account.ID).Warn("mail sync failed")
-		return err
+		return accountConnectionError(&account, err)
 	}
 
 	messages := make([]repository.MailInboxMessage, 0, len(result.Messages))
