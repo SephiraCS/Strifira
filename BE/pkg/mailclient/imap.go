@@ -17,11 +17,12 @@ var ErrAuthentication = errors.New("mail authentication refused")
 
 // FetchOptions are the IMAP connection parameters of an account.
 type FetchOptions struct {
-	Host     string
-	Port     int
-	Security string // none | starttls | tls
-	Username string
-	Password string
+	Host        string
+	Port        int
+	Security    string // none | starttls | tls
+	Username    string
+	Password    string
+	AccessToken string
 }
 
 // FetchedMessage is one new INBOX message ready for storage.
@@ -64,7 +65,7 @@ func FetchNewMessages(opts FetchOptions, afterUID uint64, uidValidity uint32) (*
 		_ = c.Logout()
 	}()
 
-	if err := c.Login(opts.Username, opts.Password); err != nil {
+	if err := authenticateIMAP(c, opts); err != nil {
 		return nil, authenticationFailure(err)
 	}
 	status, err := c.Select("INBOX", true)
@@ -136,7 +137,7 @@ func TestIMAPConnection(opts FetchOptions) error {
 	}
 	c := conn
 	defer func() { _ = c.Logout() }()
-	if err := c.Login(opts.Username, opts.Password); err != nil {
+	if err := authenticateIMAP(c, opts); err != nil {
 		return authenticationFailure(err)
 	}
 	_, err = c.Select("INBOX", true)

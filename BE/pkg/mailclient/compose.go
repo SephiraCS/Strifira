@@ -28,11 +28,12 @@ type OutgoingMessage struct {
 
 // SendOptions are the SMTP connection parameters of an account.
 type SendOptions struct {
-	Host     string
-	Port     int
-	Security string // none | starttls | tls
-	Username string
-	Password string
+	Host        string
+	Port        int
+	Security    string // none | starttls | tls
+	Username    string
+	Password    string
+	AccessToken string
 }
 
 // SendMessage opens an SMTP connection, transmits msg and returns the raw
@@ -54,7 +55,7 @@ func SendMessage(opts SendOptions, msg *OutgoingMessage) ([]byte, error) {
 	}
 	defer client.Close()
 
-	if err := client.Auth(smtp.PlainAuth("", opts.Username, opts.Password, opts.Host)); err != nil {
+	if err := client.Auth(smtpAuth(opts)); err != nil {
 		return nil, authenticationFailure(err)
 	}
 	if err := client.Mail(msg.From.Address); err != nil {
@@ -89,7 +90,7 @@ func TestSMTPConnection(opts SendOptions) error {
 		return err
 	}
 	defer client.Close()
-	if err := client.Auth(smtp.PlainAuth("", opts.Username, opts.Password, opts.Host)); err != nil {
+	if err := client.Auth(smtpAuth(opts)); err != nil {
 		return authenticationFailure(err)
 	}
 	return client.Quit()
