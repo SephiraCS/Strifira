@@ -285,3 +285,70 @@ test('preserves a failed description draft across reconnect and blur, then retri
 	await expect(description).toHaveText('Unsaved local description');
 	expect(state.issue.description).toBe('<p>Unsaved local description</p>');
 });
+
+test('description exposes file controls and persists an uploaded image after reopening', async ({ page }) => {
+	test.setTimeout(60_000);
+	const { state } = await mockIssue(page);
+	const png = Buffer.from(
+		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
+		'base64'
+	);
+	const asset = '/api/workspaces/test/assets/00000000-0000-0000-0000-000000000027';
+	await page.route('**/api/workspaces/test/upload', (route) => {
+		expect(route.request().headers()['content-type']).toContain('multipart/form-data');
+		expect(route.request().postDataBuffer()?.includes(png)).toBe(true);
+		return route.fulfill({ json: { url: asset, filename: 'task.png', content_type: 'image/png' } });
+	});
+	await page.route(`**${asset}`, (route) => route.fulfill({ contentType: 'image/png', body: png }));
+	const description = await openIssue(page);
+	const controls = page.locator('.rich-editor').first().locator('..');
+	await expect(controls.getByRole('button', { name: 'Attach files', exact: true })).toBeVisible();
+	const chooser = page.waitForEvent('filechooser');
+	await controls.getByRole('button', { name: 'Upload image', exact: true }).click();
+	await (await chooser).setFiles({ name: 'task.png', mimeType: 'image/png', buffer: png });
+	const image = description.locator('img.image-viewer-trigger');
+	await expect(image).toHaveAttribute('src', asset);
+	await expect
+		.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth > 0 && img.naturalHeight > 0))
+		.toBe(true);
+	await page.clock.fastForward(2100);
+	await expect.poll(() => state.issue.description).toContain(asset);
+	expect(state.issue.description).toContain('Short description');
+	await page.clock.resume();
+	await page.reload();
+	await description.waitFor();
+	await expect(page.locator('.rich-editor .tiptap').first().locator('img.image-viewer-trigger')).toHaveAttribute(
+		'src',
+		asset
+	);
+});
+
+test('unavailable upload preserves the description draft and allows retry', async ({ page }) => {
+	const { state } = await mockIssue(page);
+	await page.route('**/api/workspaces/test/upload', (route) =>
+		route.fulfill({
+			status: 503,
+			json: {
+				error: {
+					code: 'STORAGE_UNAVAILABLE',
+					message: 'File storage is temporarily unavailable. Please try again shortly.'
+				}
+			}
+		})
+	);
+	const description = await openIssue(page);
+	await description.fill('Keep this draft');
+		const controls = page.locator('.rich-editor').first().locator('..');
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const chooser = page.waitForEvent('filechooser');
+		await controls.getByRole('button', { name: 'Attach files', exact: true }).click();
+		await (await chooser).setFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('notes') });
+		await expect(
+			page.getByText('File storage is temporarily unavailable. Please try again shortly.').last()
+		).toBeVisible();
+		await expect(description).toHaveText('Keep this draft');
+		await expect(description.locator('img, [data-type="attachment"]')).toHaveCount(0);
+	}
+	await page.clock.fastForward(2100);
+	await expect.poll(() => state.issue.description).toBe('<p>Keep this draft</p>');
+});

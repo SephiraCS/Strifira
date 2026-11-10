@@ -3,6 +3,8 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -14,11 +16,76 @@ import (
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/pkg/assettoken"
+	"github.com/SephiraCS/strifira-backend/pkg/storage"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUploadJetStreamAvailabilityAndProtectedRead(t *testing.T) {
+	_, readyStore := storage.NewTestJetStream(t)
+	var bucket jetstream.ObjectStore
+	store := storage.NewJetStream(func() jetstream.ObjectStore { return bucket })
+	repo := &memoryAssetRepo{}
+	h := NewUploadHandler(store, repo, nil, "secret-32-characters-minimum-value")
+	e := echo.New()
+	ws := &domain.Workspace{ID: uuid.New(), Slug: "acme"}
+	userID := uuid.New()
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=")
+	require.NoError(t, err)
+	upload := func() *httptest.ResponseRecorder {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, err := writer.CreateFormFile("file", "screenshot.png")
+		require.NoError(t, err)
+		_, err = part.Write(png)
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/acme/upload", body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.Set("workspace", ws)
+		c.Set("user_id", userID)
+		require.NoError(t, h.Upload(c))
+		return rec
+	}
+
+	// A node waiting for cluster routes must not create an asset row or claim
+	// success. Recovery uses the same handler and backend, without a restart.
+	rec := upload()
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Contains(t, rec.Body.String(), `"code":"STORAGE_UNAVAILABLE"`)
+	assert.Equal(t, "3", rec.Header().Get("Retry-After"))
+	assert.Empty(t, repo.assets)
+	bucket = readyStore
+	rec = upload()
+	require.Equal(t, http.StatusOK, rec.Code)
+	var result map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+	require.Len(t, repo.assets, 1)
+	assert.Equal(t, "/api/workspaces/acme/assets/"+result["asset_id"], result["url"])
+
+	read := func(workspace *domain.Workspace) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		c := e.NewContext(httptest.NewRequest(http.MethodGet, result["url"], nil), rec)
+		c.Set("workspace", workspace)
+		c.SetParamNames("assetId")
+		c.SetParamValues(result["asset_id"])
+		require.NoError(t, h.GetAsset(c))
+		return rec
+	}
+	for range 2 {
+		rec = read(ws)
+		require.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, png, rec.Body.Bytes())
+		assert.Equal(t, "image/png", rec.Header().Get("Content-Type"))
+		assert.Contains(t, rec.Header().Get("Cache-Control"), "private")
+	}
+	assert.Equal(t, http.StatusNotFound, read(&domain.Workspace{ID: uuid.New(), Slug: "other"}).Code)
+}
 
 type memoryStorage struct {
 	files map[string]string

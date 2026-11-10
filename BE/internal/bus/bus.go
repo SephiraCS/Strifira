@@ -4,21 +4,17 @@
 // store), issue presence and the login throttle (KV).
 //
 // Every node runs an identical configuration, so a node discovers the rest
-// of the cluster through the seed URLs alone: NATS gossip propagates the
-// full route table after the first successful connection, which makes
-// scaling the deployment a matter of pointing the new node at any peer.
+// of the cluster through the seed URLs alone. Route advertising is disabled,
+// so every node receives the complete list of stable peer addresses.
 // With no seed URLs the node forms a fully functional single-node cluster,
 // which is how development and single-instance deployments run.
 package bus
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -138,6 +134,13 @@ func (logrusNATS) Tracef(format string, v ...any)  {}
 // buckets. It fails fast: a node that cannot serve the bus cannot serve
 // files, presence or realtime fan-out.
 func New(cfg Config) (*Bus, error) {
+	if cfg.StoreDir == "" {
+		cfg.StoreDir = DefaultStoreDir
+	}
+	name, err := persistentServerName(cfg.StoreDir)
+	if err != nil {
+		return nil, fmt.Errorf("loading embedded nats identity: %w", err)
+	}
 	clientPort := cfg.ClientPort
 	if clientPort == 0 {
 		clientPort = ClientPort
@@ -147,10 +150,9 @@ func New(cfg Config) (*Bus, error) {
 		clusterPort = ClusterPort
 	}
 	opts := &server.Options{
-		// The JetStream cluster layer requires an explicit, unique server
-		// name; the hostname plus a fresh suffix keeps instances on one
-		// host distinct.
-		ServerName: fmt.Sprintf("%s-%s", shortHostName(), newSuffix()),
+		// JetStream raft membership is derived from the server name. It
+		// must survive container replacement together with the node's disk.
+		ServerName: name,
 		Host:       "0.0.0.0",
 		Port:       clientPort,
 		// Files and KV are durable state: file storage, in the persistent
@@ -221,33 +223,6 @@ func New(cfg Config) (*Bus, error) {
 // the TTL and an email must not be re-admitted before its lockout expires.
 const loginLockoutTTL = 30 * time.Minute
 
-// shortHostName is the machine hostname, sanitized to a NATS-safe token.
-func shortHostName() string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		return "node"
-	}
-	var b strings.Builder
-	for _, r := range host {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		}
-	}
-	if b.Len() == 0 {
-		return "node"
-	}
-	return b.String()
-}
-
-// newSuffix makes concurrent instances on one host distinct.
-func newSuffix() string {
-	buf := make([]byte, 4)
-	if _, err := rand.Read(buf); err != nil {
-		return strconv.FormatInt(time.Now().UnixNano(), 36)
-	}
-	return hex.EncodeToString(buf)
-}
-
 // splitSeedURLs splits the comma-separated NATS_SEED_URLS value.
 func splitSeedURLs(raw string) []string {
 	return strings.Split(raw, ",")
@@ -280,25 +255,44 @@ func replicaCount(srv *server.Server) int {
 }
 
 func ensureObjectStore(ctx context.Context, js jetstream.JetStream, replicas int) (jetstream.ObjectStore, error) {
-	os, err := js.CreateOrUpdateObjectStore(ctx, jetstream.ObjectStoreConfig{
+	// Reopening an existing bucket must not reset its replication to the
+	// bootstrap count. Only the reconciler grows replication after startup.
+	if store, err := js.ObjectStore(ctx, FilesBucket); err == nil {
+		return store, nil
+	} else if !errors.Is(err, jetstream.ErrBucketNotFound) {
+		return nil, err
+	}
+	os, err := js.CreateObjectStore(ctx, jetstream.ObjectStoreConfig{
 		Bucket:   FilesBucket,
 		Storage:  jetstream.FileStorage,
 		Replicas: replicas,
 	})
 	if err != nil {
+		// Another node may have created it after the lookup.
+		if store, lookupErr := js.ObjectStore(ctx, FilesBucket); lookupErr == nil {
+			return store, nil
+		}
 		return nil, fmt.Errorf("provisioning %s object store: %w", FilesBucket, err)
 	}
 	return os, nil
 }
 
 func ensureKV(ctx context.Context, js jetstream.JetStream, bucket string, ttl time.Duration, replicas int) (jetstream.KeyValue, error) {
-	kv, err := js.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{
+	if kv, err := js.KeyValue(ctx, bucket); err == nil {
+		return kv, nil
+	} else if !errors.Is(err, jetstream.ErrBucketNotFound) {
+		return nil, err
+	}
+	kv, err := js.CreateKeyValue(ctx, jetstream.KeyValueConfig{
 		Bucket:   bucket,
 		TTL:      ttl,
 		Storage:  jetstream.FileStorage,
 		Replicas: replicas,
 	})
 	if err != nil {
+		if kv, lookupErr := js.KeyValue(ctx, bucket); lookupErr == nil {
+			return kv, nil
+		}
 		return nil, fmt.Errorf("provisioning %s kv bucket: %w", bucket, err)
 	}
 	return kv, nil
@@ -474,7 +468,7 @@ func (b *Bus) reconcileObjectStore(ctx context.Context, desired int) {
 		log.WithError(err).Debug("bus reconcile: object store status failed")
 		return
 	}
-	if info.Replicas() == desired {
+	if info.Replicas() >= desired {
 		return
 	}
 	if _, err := b.js.UpdateObjectStore(ctx, jetstream.ObjectStoreConfig{
@@ -497,7 +491,7 @@ func (b *Bus) reconcileKV(ctx context.Context, bucket string, ttl time.Duration,
 		log.WithError(err).WithField("bucket", bucket).Debug("bus reconcile: kv status failed")
 		return
 	}
-	if status.Config().Replicas == desired {
+	if status.Config().Replicas >= desired {
 		return
 	}
 	if _, err := b.js.UpdateKeyValue(ctx, jetstream.KeyValueConfig{

@@ -366,15 +366,20 @@ accepting a storage deployment.
 
 ### Multi-node deployments
 
-Every node embeds its own NATS server. `NATS_SEED_URLS` (the cluster
-addresses of the other nodes) is all it takes to join: NATS gossip shares
-the route table after the first connection, and JetStream replicates the
-file store, issue presence, login-throttle and cluster-membership buckets.
+Every node embeds its own NATS server. `NATS_SEED_URLS` lists the stable,
+mutually resolvable cluster addresses of all the other nodes. The embedded
+server does not advertise routes, so each node needs the complete peer list.
+JetStream replicates the file store, issue presence, login-throttle and
+cluster-membership buckets. Give each node its own persistent uploads volume
+and stop its previous process before reusing that volume during a deployment.
 Any node answers any request — the HTTP API is stateless (JWT
 authentication, PostgreSQL-backed data, cluster-wide login throttling), and
 websocket traffic is fanned out through NATS, so a load balancer may
 round-robin freely. `docker compose --profile cluster` runs a
 three-instance reference deployment behind a health-checking load balancer.
+For production Coolify deployments, use the reviewed
+[cluster configuration and recovery procedure](selfhosting/coolify-cluster-recovery.md)
+to retain stable DNS aliases, per-node storage and readiness checks across rollouts.
 
 ### GitHub integration
 
