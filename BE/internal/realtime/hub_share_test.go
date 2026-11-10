@@ -62,15 +62,71 @@ func TestHub_SharePresenceBroadcastsSummary(t *testing.T) {
 
 	h.SharePresence(t.Context(), presenter, shareID, "presenter", "join", "")
 
+	// The observer also receives the presenter's registration-time
+	// presence.online announcement; the share summary rides behind it.
 	events := drainEvents(t, observer)
-	if assert.Len(t, events, 1) {
-		assert.Equal(t, "share.presence", events[0].Type)
-		payload, ok := events[0].Payload.(map[string]interface{})
+	if assert.Len(t, events, 2) {
+		assert.Equal(t, "share.presence", events[1].Type)
+		payload, ok := events[1].Payload.(map[string]interface{})
 		assert.True(t, ok)
 		assert.Equal(t, shareID.String(), payload["share_id"])
 		assert.Equal(t, true, payload["presenter_online"])
 		assert.Equal(t, float64(0), payload["viewers"])
 	}
+}
+
+func TestHub_UserPresenceAnnouncesFirstAndLastSocket(t *testing.T) {
+	h := newShareTestHub()
+	wsID := uuid.New()
+	user := uuid.New()
+
+	// The observer stays connected the whole time, so it can witness the
+	// user's presence transitions.
+	observer := h.Register(nil, wsID, uuid.New())
+	first := h.Register(nil, wsID, user)
+	second := h.Register(nil, wsID, user)
+
+	// observer saw its own online announcement plus the user's first socket.
+	events := drainEvents(t, observer)
+	if assert.Len(t, events, 2) {
+		assert.Equal(t, "presence.online", events[0].Type)
+		assert.Equal(t, "presence.online", events[1].Type)
+		assert.Equal(t, map[string]interface{}{"user_id": user.String()}, events[1].Payload)
+	}
+	// The user's own sockets each received one online announcement.
+	assert.Len(t, drainEvents(t, first), 1)
+	assert.Empty(t, drainEvents(t, second), "same-user socket does not re-announce")
+
+	h.Unregister(second)
+	assert.Empty(t, drainEvents(t, observer), "user is still online with one socket left")
+
+	h.Unregister(first)
+	events = drainEvents(t, observer)
+	if assert.Len(t, events, 1) {
+		assert.Equal(t, "presence.offline", events[0].Type)
+		assert.Equal(t, map[string]interface{}{"user_id": user.String()}, events[0].Payload)
+	}
+}
+
+func TestHub_ConnectedUsersListsDistinctUsers(t *testing.T) {
+	h := newShareTestHub()
+	wsID := uuid.New()
+	userA := uuid.New()
+	userB := uuid.New()
+
+	a1 := h.Register(nil, wsID, userA)
+	h.Register(nil, wsID, userA)
+	h.Register(nil, wsID, userB)
+
+	users := h.ConnectedUsers(wsID)
+	assert.Len(t, users, 2)
+	assert.ElementsMatch(t, []uuid.UUID{userA, userB}, users)
+
+	other := h.ConnectedUsers(uuid.New())
+	assert.Empty(t, other)
+
+	h.Unregister(a1)
+	assert.Len(t, h.ConnectedUsers(wsID), 2)
 }
 
 func TestHub_UnregisterEndsPresenterPresence(t *testing.T) {

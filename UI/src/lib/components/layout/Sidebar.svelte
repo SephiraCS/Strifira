@@ -68,6 +68,7 @@
 	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import Server from '@lucide/svelte/icons/server';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
 
 	let {
 		workspace,
@@ -76,6 +77,7 @@
 		favorites = [],
 		projects = [],
 		unreadCount = 0,
+		chatUnreadCount = 0,
 		slug,
 		mobile = false,
 		oncreateissue,
@@ -92,6 +94,7 @@
 		favorites?: Favorite[];
 		projects?: Project[];
 		unreadCount?: number;
+		chatUnreadCount?: number;
 		slug: string;
 		mobile?: boolean;
 		oncreateissue?: () => void;
@@ -753,6 +756,22 @@
 				>
 					<CircleUser size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.my_issues']()}</span>
+				</a>
+				<a
+					href="/{slug}/chat"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/chat`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<MessageSquare size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.chat']()}</span>
+					{#if chatUnreadCount > 0}
+						<span
+							class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--app-accent)] px-1 text-[10px] font-medium text-[var(--app-accent-foreground)]"
+						>
+							{chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+						</span>
+					{/if}
 				</a>
 				<a
 					href="/{slug}/archived-issues"
