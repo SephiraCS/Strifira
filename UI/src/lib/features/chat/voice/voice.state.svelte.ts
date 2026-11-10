@@ -86,6 +86,7 @@ class VoiceState {
 
 	// Plain bookkeeping — mirrors the presenter session's structure.
 	private slug = '';
+	private loadedFor = '';
 	private wired = false;
 	private stream: MediaStream | null = null;
 	private outboundTrack: MediaStreamTrack | null = null;
@@ -139,17 +140,24 @@ class VoiceState {
 
 	// ---- membership ----------------------------------------------------------
 
-	/** Loads the workspace's rosters once per slug (snapshots follow live). */
+	/** Tracks the workspace so workspace switches tear the session down.
+	 * Rosters are fetched lazily by the chat UI (ensureRooms) — pages that
+	 * never show voice badges make no voice requests. */
 	async ensureWorkspace(slug: string) {
-		if (!slug) return;
-		if (this.slug === slug) return;
+		if (!slug || this.slug === slug) return;
 		this.handleWorkspaceChange(slug);
 		this.slug = slug;
+	}
+
+	/** Loads the rosters once per slug; snapshots keep them fresh after. */
+	async ensureRooms() {
+		if (!this.slug || this.loadedFor === this.slug) return;
+		this.loadedFor = this.slug;
 		await this.reloadRooms();
 	}
 
 	async reloadRooms() {
-		if (!this.slug) return;
+		if (!this.slug || !this.loadedFor) return;
 		try {
 			const list = await listVoiceRooms(this.slug);
 			this.rooms = new Map(list.rooms.map((room) => [room.channel_id, room.participants]));

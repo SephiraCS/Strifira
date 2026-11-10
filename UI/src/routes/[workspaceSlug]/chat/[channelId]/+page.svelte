@@ -22,6 +22,10 @@
 	// (marks it read, loads its timeline).
 	$effect(() => {
 		if (!slug || !channelId) return;
+		void chatState.ensureWorkspace(slug);
+		// The header shows the live voice count even on mobile (the rail is
+		// hidden there), so the rosters load with the page too.
+		void voiceState.ensureRooms();
 		void chatState.ensureWorkspace(slug).then(() => {
 			if (chatState.loadedFor !== slug) return;
 			if (!chatState.channelById(channelId)) {

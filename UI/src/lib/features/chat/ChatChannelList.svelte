@@ -41,6 +41,12 @@
 	function voiceCount(channelId: string): number {
 		return voiceState.roomActivity(channelId);
 	}
+
+	// The rail is what renders voice badges: fetch the rosters here (lazy —
+	// no voice requests from pages that never show them).
+	$effect(() => {
+		void voiceState.ensureRooms();
+	});
 </script>
 
 <div class="flex h-full flex-col border-r border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
