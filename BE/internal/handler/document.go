@@ -248,6 +248,90 @@ func (h *DocumentHandler) Graph(c echo.Context) error {
 	return response.Success(c, http.StatusOK, graph)
 }
 
+// ListIssues lists the cards linked from a document.
+func (h *DocumentHandler) ListIssues(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	docID, err := uuid.Parse(c.Param("docId"))
+	if err != nil {
+		return response.NotFound(c, "Document")
+	}
+	issues, err := h.docSvc.IssuesForDocument(c.Request().Context(), ws.ID, docID)
+	if err != nil {
+		return docErrorResponse(c, err)
+	}
+	resp := make([]dto.DocumentIssueResponse, len(issues))
+	for i := range issues {
+		resp[i] = toDocumentIssueResponse(&issues[i])
+	}
+	return response.Success(c, http.StatusOK, resp)
+}
+
+// LinkIssue attaches a card to a document by the card's identifier.
+func (h *DocumentHandler) LinkIssue(c echo.Context) error {
+	var req dto.LinkIssueRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := validate.Struct(&req); err != nil {
+		return response.ValidationError(c, formatDocValidationErrors(err))
+	}
+	ws := c.Get("workspace").(*domain.Workspace)
+	userID := middleware.GetUserID(c)
+	docID, err := uuid.Parse(c.Param("docId"))
+	if err != nil {
+		return response.NotFound(c, "Document")
+	}
+	issues, err := h.docSvc.LinkIssue(c.Request().Context(), ws.ID, docID, userID, req.Identifier)
+	if err != nil {
+		return docErrorResponse(c, err)
+	}
+	resp := make([]dto.DocumentIssueResponse, len(issues))
+	for i := range issues {
+		resp[i] = toDocumentIssueResponse(&issues[i])
+	}
+	return response.Success(c, http.StatusOK, resp)
+}
+
+// UnlinkIssue detaches a card from a document by the card's identifier.
+func (h *DocumentHandler) UnlinkIssue(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	docID, err := uuid.Parse(c.Param("docId"))
+	if err != nil {
+		return response.NotFound(c, "Document")
+	}
+	issues, err := h.docSvc.UnlinkIssue(c.Request().Context(), ws.ID, docID, c.Param("identifier"))
+	if err != nil {
+		return docErrorResponse(c, err)
+	}
+	resp := make([]dto.DocumentIssueResponse, len(issues))
+	for i := range issues {
+		resp[i] = toDocumentIssueResponse(&issues[i])
+	}
+	return response.Success(c, http.StatusOK, resp)
+}
+
+// ListForIssue lists the documents linked from a card.
+func (h *DocumentHandler) ListForIssue(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	docs, err := h.docSvc.DocumentsForIssue(c.Request().Context(), ws.ID, c.Param("identifier"))
+	if err != nil {
+		return docErrorResponse(c, err)
+	}
+	resp := make([]dto.IssueDocumentResponse, len(docs))
+	for i := range docs {
+		resp[i] = dto.IssueDocumentResponse{
+			ID:        docs[i].ID.String(),
+			Title:     docs[i].Title,
+			IsFolder:  docs[i].IsFolder,
+			UpdatedAt: docs[i].UpdatedAt,
+		}
+		if docs[i].Icon != nil {
+			resp[i].Icon = docs[i].Icon
+		}
+	}
+	return response.Success(c, http.StatusOK, resp)
+}
+
 func (h *DocumentHandler) ListTags(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	tags, err := h.docSvc.ListTags(c.Request().Context(), ws.ID)
@@ -411,6 +495,9 @@ func docErrorResponse(c echo.Context, err error) error {
 	if errors.Is(err, service.ErrDocumentNotFound) {
 		return response.NotFound(c, "Document")
 	}
+	if errors.Is(err, service.ErrLinkedIssueNotFound) {
+		return response.NotFound(c, "Issue")
+	}
 	if errors.Is(err, service.ErrDocumentCycle) {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Cannot move a document under itself")
 	}
@@ -437,6 +524,7 @@ func toDocumentResponse(doc *domain.Document, tags []string) dto.DocumentRespons
 		ContentText: doc.ContentText,
 		Position:    doc.Position,
 		IsTemplate:  doc.IsTemplate,
+		IsFolder:    doc.IsFolder,
 		CreatedBy:   doc.CreatedBy.String(),
 		CreatedAt:   doc.CreatedAt,
 		UpdatedAt:   doc.UpdatedAt,
@@ -472,6 +560,7 @@ func toDocumentTreeResponse(doc *domain.Document, tags []string) dto.DocumentTre
 		Title:      doc.Title,
 		Position:   doc.Position,
 		IsTemplate: doc.IsTemplate,
+		IsFolder:   doc.IsFolder,
 		UpdatedAt:  doc.UpdatedAt,
 		Tags:       tags,
 	}
@@ -505,4 +594,16 @@ func toDocumentRevisionResponse(rev *domain.DocumentRevision) dto.DocumentRevisi
 		resp.EditedBy = &uid
 	}
 	return resp
+}
+
+func toDocumentIssueResponse(issue *domain.Issue) dto.DocumentIssueResponse {
+	return dto.DocumentIssueResponse{
+		ID:         issue.ID.String(),
+		Identifier: issue.Identifier,
+		Title:      issue.Title,
+		Status:     string(issue.Status),
+		Priority:   int(issue.Priority),
+		CreatedAt:  issue.CreatedAt,
+		UpdatedAt:  issue.UpdatedAt,
+	}
 }

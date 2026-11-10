@@ -5,6 +5,7 @@ export interface DocTreeNode {
 	icon?: string;
 	position: number;
 	is_template: boolean;
+	is_folder?: boolean;
 	updated_at: string;
 	tags: string[];
 }
@@ -19,6 +20,7 @@ export interface Doc {
 	content_text: string;
 	position: number;
 	is_template: boolean;
+	is_folder?: boolean;
 	created_by: string;
 	updated_by?: string;
 	created_at: string;
@@ -54,6 +56,26 @@ export interface DocTag {
 	name: string;
 }
 
+/** One issue (card) linked from a document. */
+export interface DocIssueLink {
+	id: string;
+	identifier: string;
+	title: string;
+	status: string;
+	priority: number;
+	created_at: string;
+	updated_at: string;
+}
+
+/** One document linked from an issue (card). */
+export interface IssueDocSummary {
+	id: string;
+	title: string;
+	icon?: string;
+	is_folder?: boolean;
+	updated_at: string;
+}
+
 export interface DocComment {
 	id: string;
 	document_id: string;
@@ -72,6 +94,7 @@ export interface CreateDocRequest {
 	parent_id?: string;
 	content_md?: string;
 	is_template?: boolean;
+	is_folder?: boolean;
 	tags?: string[];
 }
 

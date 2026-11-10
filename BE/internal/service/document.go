@@ -26,20 +26,28 @@ const (
 )
 
 var (
-	ErrDocumentNotFound   = errors.New("document not found")
-	ErrDocumentCycle      = errors.New("cannot move a document under itself")
-	ErrDocumentNotTrashed = errors.New("document must be in trash before permanent delete")
+	ErrDocumentNotFound    = errors.New("document not found")
+	ErrDocumentCycle       = errors.New("cannot move a document under itself")
+	ErrDocumentNotTrashed  = errors.New("document must be in trash before permanent delete")
+	ErrLinkedIssueNotFound = errors.New("issue not found")
 )
 
-type DocumentService struct {
-	docRepo  repository.DocumentRepo
-	hub      *realtime.Hub
-	notifSvc *NotificationService
-	docSync  *DocSyncService
+// IssueLookupRepo is the slice of the issue repository the document service
+// needs to resolve card identifiers for document ↔ issue links.
+type IssueLookupRepo interface {
+	GetByIdentifier(ctx context.Context, workspaceID uuid.UUID, identifier string) (*domain.Issue, error)
 }
 
-func NewDocumentService(docRepo repository.DocumentRepo, hub *realtime.Hub, notifSvc *NotificationService, docSync *DocSyncService) *DocumentService {
-	return &DocumentService{docRepo: docRepo, hub: hub, notifSvc: notifSvc, docSync: docSync}
+type DocumentService struct {
+	docRepo   repository.DocumentRepo
+	issueRepo IssueLookupRepo
+	hub       *realtime.Hub
+	notifSvc  *NotificationService
+	docSync   *DocSyncService
+}
+
+func NewDocumentService(docRepo repository.DocumentRepo, issueRepo IssueLookupRepo, hub *realtime.Hub, notifSvc *NotificationService, docSync *DocSyncService) *DocumentService {
+	return &DocumentService{docRepo: docRepo, issueRepo: issueRepo, hub: hub, notifSvc: notifSvc, docSync: docSync}
 }
 
 func (s *DocumentService) Create(ctx context.Context, workspaceID, userID uuid.UUID, req dto.CreateDocumentRequest) (*domain.Document, error) {
@@ -49,10 +57,16 @@ func (s *DocumentService) Create(ctx context.Context, workspaceID, userID uuid.U
 		Title:       strings.TrimSpace(req.Title),
 		Icon:        req.Icon,
 		IsTemplate:  req.IsTemplate,
+		IsFolder:    req.IsFolder,
 		CreatedBy:   userID,
 	}
 	if req.ContentMD != "" {
 		doc.ContentHTML = sanitize.SanitizeEditorContent(req.ContentMD)
+	}
+	if req.IsFolder {
+		// Folders are pure containers: they carry no content of their own.
+		doc.ContentHTML = ""
+		doc.ContentText = ""
 	}
 	if req.ParentID != nil && *req.ParentID != "" {
 		pid, err := uuid.Parse(*req.ParentID)
@@ -292,6 +306,7 @@ func (s *DocumentService) Duplicate(ctx context.Context, workspaceID, id, userID
 		ContentHTML: src.ContentHTML,
 		ContentText: src.ContentText,
 		IsTemplate:  false,
+		IsFolder:    src.IsFolder,
 		CreatedBy:   userID,
 	}
 	position, err := s.nextPosition(ctx, workspaceID, src.ParentID)
@@ -360,6 +375,76 @@ func (s *DocumentService) Backlinks(ctx context.Context, workspaceID, id uuid.UU
 	return s.docRepo.ListBacklinks(ctx, id)
 }
 
+// resolveIssue looks a card up by its workspace identifier (ENG-42); stale
+// identifiers resolve through the identifier history like the issues API.
+func (s *DocumentService) resolveIssue(ctx context.Context, workspaceID uuid.UUID, identifier string) (*domain.Issue, error) {
+	identifier = strings.ToUpper(strings.TrimSpace(identifier))
+	if s.issueRepo == nil {
+		return nil, ErrDocumentNotFound
+	}
+	issue, err := s.issueRepo.GetByIdentifier(ctx, workspaceID, identifier)
+	if err != nil || issue == nil || issue.WorkspaceID != workspaceID {
+		return nil, ErrLinkedIssueNotFound
+	}
+	return issue, nil
+}
+
+// LinkIssue attaches a card to a document; both the card and the document
+// list the connection afterwards.
+func (s *DocumentService) LinkIssue(ctx context.Context, workspaceID, documentID, userID uuid.UUID, identifier string) ([]domain.Issue, error) {
+	if _, err := s.Get(ctx, workspaceID, documentID); err != nil {
+		return nil, err
+	}
+	issue, err := s.resolveIssue(ctx, workspaceID, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.docRepo.LinkIssue(ctx, documentID, issue.ID, userID); err != nil {
+		return nil, err
+	}
+	s.hub.Broadcast(workspaceID, realtime.Event{
+		Type:    "doc.updated",
+		Payload: map[string]any{"document_id": documentID.String()},
+	})
+	return s.docRepo.ListIssuesForDocument(ctx, documentID)
+}
+
+// UnlinkIssue detaches a card from a document by the card's identifier.
+func (s *DocumentService) UnlinkIssue(ctx context.Context, workspaceID, documentID uuid.UUID, identifier string) ([]domain.Issue, error) {
+	if _, err := s.Get(ctx, workspaceID, documentID); err != nil {
+		return nil, err
+	}
+	issue, err := s.resolveIssue(ctx, workspaceID, identifier)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.docRepo.UnlinkIssue(ctx, workspaceID, documentID, issue.ID); err != nil {
+		return nil, err
+	}
+	s.hub.Broadcast(workspaceID, realtime.Event{
+		Type:    "doc.updated",
+		Payload: map[string]any{"document_id": documentID.String()},
+	})
+	return s.docRepo.ListIssuesForDocument(ctx, documentID)
+}
+
+// IssuesForDocument lists the cards linked from a document.
+func (s *DocumentService) IssuesForDocument(ctx context.Context, workspaceID, documentID uuid.UUID) ([]domain.Issue, error) {
+	if _, err := s.Get(ctx, workspaceID, documentID); err != nil {
+		return nil, err
+	}
+	return s.docRepo.ListIssuesForDocument(ctx, documentID)
+}
+
+// DocumentsForIssue lists the live documents linked from a card.
+func (s *DocumentService) DocumentsForIssue(ctx context.Context, workspaceID uuid.UUID, identifier string) ([]domain.Document, error) {
+	issue, err := s.resolveIssue(ctx, workspaceID, identifier)
+	if err != nil {
+		return nil, err
+	}
+	return s.docRepo.ListDocumentsForIssue(ctx, workspaceID, issue.ID)
+}
+
 func (s *DocumentService) Graph(ctx context.Context, workspaceID uuid.UUID) (dto.DocumentGraphResponse, error) {
 	docs, err := s.docRepo.ListByWorkspace(ctx, workspaceID)
 	if err != nil {
@@ -374,6 +459,11 @@ func (s *DocumentService) Graph(ctx context.Context, workspaceID uuid.UUID) (dto
 		Edges: make([]dto.DocumentGraphEdge, 0, len(links)),
 	}
 	for _, d := range docs {
+		// Folders are pure containers; they never carry wiki links, so
+		// including them would only add empty nodes to the graph.
+		if d.IsFolder {
+			continue
+		}
 		graph.Nodes = append(graph.Nodes, dto.DocumentGraphNode{ID: d.ID.String(), Title: d.Title, Icon: d.Icon})
 	}
 	for _, l := range links {

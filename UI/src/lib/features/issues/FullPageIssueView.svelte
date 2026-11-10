@@ -81,6 +81,7 @@
 	import type { Cycle } from '$lib/types/cycle';
 	import IssueRelations from './IssueRelations.svelte';
 	import SubIssuesList from './SubIssuesList.svelte';
+	import IssueDocuments from './IssueDocuments.svelte';
 	import IssueGitHubActivity from './IssueGitHubActivity.svelte';
 	import { goto } from '$app/navigation';
 	import { inAppNavigation } from '$lib/features/layout/in-app-navigation.state.svelte';
@@ -1976,6 +1977,9 @@
 		>
 			<!-- GitHub code activity -->
 			<IssueGitHubActivity {slug} identifier={issue.identifier} issueId={issue.id} />
+
+			<!-- Linked documents (docs ↔ issue backlink) -->
+			<IssueDocuments {slug} identifier={issue.identifier} />
 
 			<!-- Details card -->
 			<div class="rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)]">

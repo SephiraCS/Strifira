@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { getDocument } from '$lib/api/docs';
 	import { listMembers } from '$lib/api/members';
 	import type { Doc } from '$lib/types/docs';
@@ -25,8 +26,15 @@
 		try {
 			const [loaded, mems] = await Promise.all([getDocument(slug, id), listMembers(slug).catch(() => [])]);
 			if (id !== docId) return;
-			doc = loaded;
 			members = mems;
+			// Folders are containers, not pages: land on their listing instead
+			// of ever mounting the editor.
+			if (loaded.is_folder) {
+				await docsState.load(slug);
+				goto(`/${slug}/docs?folder=${id}`, { replaceState: true });
+				return;
+			}
+			doc = loaded;
 			loadedDocId = id;
 			docsState.markOpened(slug, id);
 		} catch {

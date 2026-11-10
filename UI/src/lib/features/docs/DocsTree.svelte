@@ -15,6 +15,9 @@
 	import FilePlus from '@lucide/svelte/icons/file-plus';
 	import Copy from '@lucide/svelte/icons/copy';
 	import FolderInput from '@lucide/svelte/icons/folder-input';
+	import FolderOpen from '@lucide/svelte/icons/folder-open';
+	import FolderPlus from '@lucide/svelte/icons/folder-plus';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Self from './DocsTree.svelte';
 
@@ -24,6 +27,8 @@
 		depth = 0,
 		manage = false,
 		onnewchild,
+		onnewfolder,
+		onrename,
 		onduplicate,
 		onmove,
 		ondelete
@@ -33,6 +38,8 @@
 		depth?: number;
 		manage?: boolean;
 		onnewchild?: (parent: DocTreeEntry) => void;
+		onnewfolder?: (parent: DocTreeEntry) => void;
+		onrename?: (entry: DocTreeEntry) => void;
 		onduplicate?: (entry: DocTreeEntry) => void;
 		onmove?: (entry: DocTreeEntry) => void;
 		ondelete?: (entry: DocTreeEntry) => void;
@@ -68,6 +75,16 @@
 
 	function isActive(id: string): boolean {
 		return currentDocId === id;
+	}
+
+	function openEntry(entry: DocTreeEntry) {
+		if (entry.is_folder) goto(`/${slug}/docs?folder=${entry.id}`);
+		else goto(`/${slug}/docs/${entry.id}`);
+	}
+
+	function entryIcon(entry: DocTreeEntry): string {
+		if (entry.icon) return entry.icon;
+		return entry.is_folder ? '📁' : '📄';
 	}
 
 	type DndEvent = CustomEvent<{ items: DocTreeEntry[] }>;
@@ -108,7 +125,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="group/doc flex items-center rounded-md hover:bg-[var(--color-bg-hover)]">
 				<a
-					href="/{slug}/docs/{entry.id}"
+					href={entry.is_folder ? `/${slug}/docs?folder=${entry.id}` : `/${slug}/docs/${entry.id}`}
 					class="flex min-w-0 flex-1 items-center gap-1 px-1 py-1 text-sm {isActive(entry.id)
 						? 'bg-[var(--color-bg-hover)]/50 font-medium text-[var(--color-text-primary)]'
 						: 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}"
@@ -131,7 +148,7 @@
 					{:else}
 						<span class="w-[21px] shrink-0"></span>
 					{/if}
-					<span class="shrink-0">{entry.icon || '📄'}</span>
+					<span class="shrink-0">{entryIcon(entry)}</span>
 					<span class="truncate {entry.title ? '' : 'italic text-[var(--color-text-tertiary)]'}">
 						{entry.title || m['docs.untitled']()}
 					</span>
@@ -152,14 +169,30 @@
 							<Ellipsis size={13} />
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content side="right" align="start" class="w-44">
+							{#if entry.is_folder}
+								<DropdownMenu.Item onclick={() => openEntry(entry)}>
+									<FolderOpen size={14} class="mr-2" />
+									{m['docs.folder.open']()}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => onnewfolder?.(entry)}>
+									<FolderPlus size={14} class="mr-2" />
+									{m['docs.folder.new_subfolder']()}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => onrename?.(entry)}>
+									<Pencil size={14} class="mr-2" />
+									{m['docs.folder.rename']()}
+								</DropdownMenu.Item>
+							{/if}
 							<DropdownMenu.Item onclick={() => onnewchild?.(entry)}>
 								<FilePlus size={14} class="mr-2" />
 								{m['docs.tree.new_subpage']()}
 							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={() => onduplicate?.(entry)}>
-								<Copy size={14} class="mr-2" />
-								{m['docs.duplicate']()}
-							</DropdownMenu.Item>
+							{#if !entry.is_folder}
+								<DropdownMenu.Item onclick={() => onduplicate?.(entry)}>
+									<Copy size={14} class="mr-2" />
+									{m['docs.duplicate']()}
+								</DropdownMenu.Item>
+							{/if}
 							<DropdownMenu.Item onclick={() => onmove?.(entry)}>
 								<FolderInput size={14} class="mr-2" />
 								{m['docs.move.title']()}
@@ -175,18 +208,36 @@
 			</div>
 		</ContextMenu.Trigger>
 		<ContextMenu.Content class="w-44">
-			<ContextMenu.Item onclick={() => goto(`/${slug}/docs/${entry.id}`)}>
-				📄 {m['docs.tree.open']()}
-			</ContextMenu.Item>
+			{#if entry.is_folder}
+				<ContextMenu.Item onclick={() => openEntry(entry)}>
+					📁 {m['docs.folder.open']()}
+				</ContextMenu.Item>
+			{:else}
+				<ContextMenu.Item onclick={() => goto(`/${slug}/docs/${entry.id}`)}>
+					📄 {m['docs.tree.open']()}
+				</ContextMenu.Item>
+			{/if}
 			{#if manage}
+				{#if entry.is_folder}
+					<ContextMenu.Item onclick={() => onnewfolder?.(entry)}>
+						<FolderPlus size={13} class="mr-2" />
+						{m['docs.folder.new_subfolder']()}
+					</ContextMenu.Item>
+					<ContextMenu.Item onclick={() => onrename?.(entry)}>
+						<Pencil size={13} class="mr-2" />
+						{m['docs.folder.rename']()}
+					</ContextMenu.Item>
+				{/if}
 				<ContextMenu.Item onclick={() => onnewchild?.(entry)}>
 					<FilePlus size={13} class="mr-2" />
 					{m['docs.tree.new_subpage']()}
 				</ContextMenu.Item>
-				<ContextMenu.Item onclick={() => onduplicate?.(entry)}>
-					<Copy size={13} class="mr-2" />
-					{m['docs.duplicate']()}
-				</ContextMenu.Item>
+				{#if !entry.is_folder}
+					<ContextMenu.Item onclick={() => onduplicate?.(entry)}>
+						<Copy size={13} class="mr-2" />
+						{m['docs.duplicate']()}
+					</ContextMenu.Item>
+				{/if}
 				<ContextMenu.Item onclick={() => onmove?.(entry)}>
 					<FolderInput size={13} class="mr-2" />
 					{m['docs.move.title']()}
@@ -213,7 +264,7 @@
 			{#if !collapsed.has(entry.id)}
 				{#each [entry.children] as children (entry.id)}
 					{#if children.length > 0}
-						<Self {slug} entries={children} depth={depth + 1} {manage} {onnewchild} {onduplicate} {onmove} {ondelete} />
+						<Self {slug} entries={children} depth={depth + 1} {manage} {onnewchild} {onnewfolder} {onrename} {onduplicate} {onmove} {ondelete} />
 					{/if}
 				{/each}
 			{/if}
