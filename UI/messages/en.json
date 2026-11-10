@@ -346,6 +346,7 @@
 	"inbox.type.priority_changed": "Priority changed",
 	"inbox.type.status_changed": "Status changed",
 	"communication.live_screens": "Sharing: {count}",
+	"communication.open_chat": "Open chat",
 	"communication.title": "Communication",
 	"communication.chat_voice": "Chat, voice & screens",
 	"communication.load_failed": "Could not load this content. Check your access or try again.",

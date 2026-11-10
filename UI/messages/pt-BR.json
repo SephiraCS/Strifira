@@ -346,6 +346,7 @@
 	"inbox.type.priority_changed": "Prioridade alterada",
 	"inbox.type.status_changed": "Status alterado",
 	"communication.live_screens": "Apresentações: {count}",
+	"communication.open_chat": "Abrir chat",
 	"communication.title": "Comunicação",
 	"communication.chat_voice": "Chat, voz e telas",
 	"communication.load_failed": "Não foi possível carregar este conteúdo. Verifique seu acesso ou tente novamente.",

@@ -346,6 +346,7 @@
 	"inbox.type.priority_changed": "優先級已變更",
 	"inbox.type.status_changed": "狀態已變更",
 	"communication.live_screens": "分享中：{count}",
+	"communication.open_chat": "開啟聊天",
 	"communication.title": "通訊",
 	"communication.chat_voice": "聊天、語音與螢幕",
 	"communication.load_failed": "無法載入此內容。請檢查存取權限或重試。",

@@ -699,7 +699,7 @@ test('logging out ends voice and releases the microphone', async ({ page }) => {
 	)).toEqual(['ended']);
 });
 
-test('communication layout gives the conversation room and preserves media across responsive changes', async ({ page }, testInfo) => {
+test('communication layout expands active screens and opens chat in a dismissible modal', async ({ page }, testInfo) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await communicationRoutes(page);
 	await trackMicrophone(page);
@@ -747,12 +747,24 @@ test('communication layout gives the conversation room and preserves media acros
 	const video = tile.locator('video');
 	await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.videoWidth)).toBeGreaterThan(0);
 	const videoNode = (await video.elementHandle())!;
-	await expect(composer).toHaveValue('Keep this draft while presenting');
-	await page.screenshot({ path: testInfo.outputPath('sharing-desktop.png') });
+	await expect(composer).toHaveCount(0);
+	await expect(page.getByTestId('communication-channels')).toBeHidden();
 	const activeScreens = (await page.getByTestId('communication-screens').boundingBox())!;
-	const activeChat = (await page.getByTestId('communication-conversation').boundingBox())!;
+	await page.screenshot({ path: testInfo.outputPath('sharing-desktop.png') });
+	const trigger = page.getByTestId('communication-chat-trigger');
+	await trigger.focus();
+	await page.keyboard.press('Enter');
+	const dialog = page.getByTestId('communication-chat-dialog');
+	await expect(dialog).toBeVisible();
+	await expect(composer).toBeFocused();
+	await expect(composer).toHaveValue('Keep this draft while presenting');
+	await composer.fill('Draft kept after closing the chat');
+	await page.screenshot({ path: testInfo.outputPath('chat-modal-desktop.png'), animations: 'disabled' });
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(trigger).toBeFocused();
+	await expect(trigger).toContainText('Draft kept after closing the chat');
 	await page.setViewportSize({ width: 390, height: 844 });
-	await expect(composer).toBeVisible();
 	await page.screenshot({ path: testInfo.outputPath('sharing-mobile.png') });
 	await expectPanelInViewport(page);
 	await page.getByRole('button', { name: 'Channels', exact: true }).click();
@@ -761,9 +773,16 @@ test('communication layout gives the conversation room and preserves media acros
 	await page.screenshot({ path: testInfo.outputPath('channels-mobile.png'), animations: 'disabled' });
 	await page.getByRole('dialog').getByRole('link', { name: 'project', exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
-	await expect(page.getByRole('textbox', { name: 'Message #project' })).toBeVisible();
+	await expect(page).toHaveURL(/00000000-0000-0000-0000-000000000012$/);
+	await trigger.click();
+	await page.getByRole('textbox', { name: 'Message #project' }).fill('Project draft');
 	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(CHANNEL_ID);
-	await expect(composer).toHaveValue('Keep this draft while presenting');
+	await expect(composer).toHaveValue('Draft kept after closing the chat');
+	await expect(composer).toBeVisible();
+	await page.screenshot({ path: testInfo.outputPath('chat-modal-mobile.png'), animations: 'disabled' });
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(trigger).toBeFocused();
 	await tile.getByRole('combobox', { name: 'Presentation quality' }).selectOption('smooth');
 	await tile.getByRole('combobox', { name: 'Presentation quality' }).selectOption('sharp');
 	const fullscreen = tile.getByRole('button', { name: 'Toggle full screen' });
@@ -784,16 +803,17 @@ test('communication layout gives the conversation room and preserves media acros
 	await expect.poll(() => page.evaluate(() => (window as any).__micTracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['live']);
 	await tile.getByRole('button', { name: 'Stop sharing', exact: true }).click();
 	await expect(page.getByText('No one is sharing right now')).toBeVisible();
-	await expect(composer).toHaveValue('Keep this draft while presenting');
+	await expect(composer).toHaveValue('Draft kept after closing the chat');
+	await expect(page.getByTestId('communication-chat-trigger')).toHaveCount(0);
 	await expect(page.getByTestId('voice-room-bar')).toContainText('#general');
 	await expect.poll(() => page.evaluate(() => (window as any).__screenTracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['ended']);
 	await page.getByTestId('voice-leave').click();
 
-	// Empty screens stay compact; an active presentation and chat share the desktop.
+	// Empty screens stay compact; an active presentation fills the workspace.
 	expect(emptyScreens.height).toBeLessThan(128);
 	expect(mobileEmptyScreens.height).toBeLessThan(144);
 	expect(emptyDesktop.width).toBeGreaterThan(750);
-	expect(activeScreens.x + activeScreens.width).toBeLessThanOrEqual(activeChat.x + 1);
+	expect(activeScreens.width).toBeGreaterThan(1150);
 });
 
 test('communication loading and errors keep the conversation usable', async ({ page }, testInfo) => {

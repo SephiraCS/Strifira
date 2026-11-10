@@ -144,7 +144,7 @@
 
 				<!-- Compact channel switcher while the channel rail is hidden. -->
 				<select
-					class="min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] lg:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
+					class="communication-channel-switcher min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
 					value={channelId}
 					onchange={handleMobileSwitch}
 					aria-label={m['chat.switch_channel']()}
