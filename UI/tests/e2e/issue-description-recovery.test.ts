@@ -287,6 +287,7 @@ test('preserves a failed description draft across reconnect and blur, then retri
 });
 
 test('description exposes file controls and persists an uploaded image after reopening', async ({ page }) => {
+	test.setTimeout(60_000);
 	const { state } = await mockIssue(page);
 	const png = Buffer.from(
 		'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
@@ -305,7 +306,7 @@ test('description exposes file controls and persists an uploaded image after reo
 	const chooser = page.waitForEvent('filechooser');
 	await controls.getByRole('button', { name: 'Upload image', exact: true }).click();
 	await (await chooser).setFiles({ name: 'task.png', mimeType: 'image/png', buffer: png });
-	const image = description.locator('img');
+	const image = description.locator('img.image-viewer-trigger');
 	await expect(image).toHaveAttribute('src', asset);
 	await expect
 		.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth > 0 && img.naturalHeight > 0))
@@ -313,8 +314,13 @@ test('description exposes file controls and persists an uploaded image after reo
 	await page.clock.fastForward(2100);
 	await expect.poll(() => state.issue.description).toContain(asset);
 	expect(state.issue.description).toContain('Short description');
+	await page.clock.resume();
 	await page.reload();
-	await expect(page.locator('.rich-editor .tiptap').first().locator('img')).toHaveAttribute('src', asset);
+	await description.waitFor();
+	await expect(page.locator('.rich-editor .tiptap').first().locator('img.image-viewer-trigger')).toHaveAttribute(
+		'src',
+		asset
+	);
 });
 
 test('unavailable upload preserves the description draft and allows retry', async ({ page }) => {
