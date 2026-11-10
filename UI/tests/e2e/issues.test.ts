@@ -80,6 +80,15 @@ test('loads more on scroll without duplicating the initial request', async ({ pa
 			});
 		}
 
+		// The workspace layout keeps chat badges and presence warm from any
+		// page, not only from /chat.
+		if (path === '/api/workspaces/test/chat/channels') {
+			return route.fulfill({ json: { channels: [] } });
+		}
+		if (path === '/api/workspaces/test/chat/presence') {
+			return route.fulfill({ json: { online: [] } });
+		}
+
 		if (path === '/api/workspaces/test/teams') {
 			return route.fulfill({
 				json: [
