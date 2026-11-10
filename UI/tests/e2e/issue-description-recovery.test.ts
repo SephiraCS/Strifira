@@ -157,12 +157,12 @@ async function mockIssue(page: Page) {
 }
 
 async function openIssue(page: Page) {
+	await page.clock.install();
 	await page.goto('/test/issue/ENG-1');
 	await page.getByText('No activity yet', { exact: true }).waitFor();
 	await expect(page.getByText('No activity yet', { exact: true })).toBeVisible();
 	const description = page.locator('.rich-editor .tiptap').first();
 	await expect(description).toHaveText('Short description');
-	await page.clock.install();
 	return description;
 }
 
@@ -300,7 +300,7 @@ test('description exposes file controls and persists an uploaded image after reo
 	});
 	await page.route(`**${asset}`, (route) => route.fulfill({ contentType: 'image/png', body: png }));
 	const description = await openIssue(page);
-	const controls = description.locator('../..');
+	const controls = page.locator('.rich-editor').first().locator('..');
 	await expect(controls.getByRole('button', { name: 'Attach files', exact: true })).toBeVisible();
 	const chooser = page.waitForEvent('filechooser');
 	await controls.getByRole('button', { name: 'Upload image', exact: true }).click();
@@ -332,7 +332,7 @@ test('unavailable upload preserves the description draft and allows retry', asyn
 	);
 	const description = await openIssue(page);
 	await description.fill('Keep this draft');
-	const controls = description.locator('../..');
+		const controls = page.locator('.rich-editor').first().locator('..');
 	for (let attempt = 0; attempt < 2; attempt++) {
 		const chooser = page.waitForEvent('filechooser');
 		await controls.getByRole('button', { name: 'Attach files', exact: true }).click();
