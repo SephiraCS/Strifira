@@ -69,6 +69,7 @@
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import Server from '@lucide/svelte/icons/server';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
+	import MailIcon from '@lucide/svelte/icons/mail';
 
 	let {
 		workspace,
@@ -772,6 +773,15 @@
 							{chatUnreadCount > 99 ? '99+' : chatUnreadCount}
 						</span>
 					{/if}
+				</a>
+				<a
+					href="/{slug}/mail"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/mail`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<MailIcon size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.mail']()}</span>
 				</a>
 				<a
 					href="/{slug}/archived-issues"
