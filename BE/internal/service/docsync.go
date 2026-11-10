@@ -158,6 +158,25 @@ func (s *DocSyncService) Join(ctx context.Context, docID, userID uuid.UUID, name
 		close:    closeFn,
 	}
 
+	// The database log may lag the live rooms on the other nodes by one
+	// flush interval; catch up from them before the room exists. Collecting
+	// the remote state must happen while s.mu is NOT held: collectRemoteState
+	// locks s.mu itself (through pruneRemoteEditors), and Go mutexes are not
+	// reentrant — collecting under the lock deadlocked the goroutine, so the
+	// first join of every document never received its init replay.
+	s.mu.Lock()
+	closing := s.closing
+	roomExists := s.rooms[docID] != nil
+	s.mu.Unlock()
+	if closing {
+		return nil, nil, nil, context.Canceled
+	}
+	var remoteUpdates [][]byte
+	var remotePeers []map[string]any
+	if !roomExists {
+		remoteUpdates, remotePeers = s.collectRemoteState(ctx, docID)
+	}
+
 	s.mu.Lock()
 	if s.closing {
 		s.mu.Unlock()
@@ -165,9 +184,8 @@ func (s *DocSyncService) Join(ctx context.Context, docID, userID uuid.UUID, name
 	}
 	room := s.rooms[docID]
 	if room == nil {
-		// The database log may lag the live rooms on the other nodes by one
-		// flush interval; catch up from them before the room exists.
-		remoteUpdates, remotePeers := s.collectRemoteState(ctx, docID)
+		// A concurrent join may have created the room while the remote state
+		// was being collected; the re-check keeps it authoritative.
 		updates = mergeDocUpdates(updates, remoteUpdates)
 		s.remote[docID] = docRemoteEditorsFromPayloads(remotePeers)
 		room = &docRoom{
