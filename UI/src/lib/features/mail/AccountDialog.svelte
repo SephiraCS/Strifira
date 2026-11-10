@@ -165,7 +165,10 @@
 								variant="outline"
 								class="mt-2"
 								disabled={submitting}
-								onclick={() => (useAppPassword = true)}>{mailAccountMessage('use_app_password')}</Button
+								onclick={() => {
+									useAppPassword = true;
+									error = '';
+								}}>{mailAccountMessage('use_app_password')}</Button
 							>
 						{/if}
 					{:else}
