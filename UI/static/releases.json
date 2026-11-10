@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.58",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.58",
+    "body": "Deployed to alpha as 0464da7446d308ca3733a961ac3cb1a433b9f9c7.\n\n- fix(voice): preserve calls during internal navigation after updates (#37)",
+    "published_at": "2026-11-10T22:55:08Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.58",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.57",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.57",
     "body": "Deployed to alpha as fd41ea1b01df2bd7fc91f33e82377b90415071f8.\n\n- STR-22 - Email - Adicionar autoconfig baseado no login/dominio da conta (#35)\n- STR-27 - Investigar falha ao anexar imagens às tasks (#34)",
