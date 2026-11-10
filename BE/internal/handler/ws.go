@@ -112,6 +112,19 @@ func (h *WSHandler) Handle(c echo.Context) error {
 	return nil
 }
 
+// Presence reports the users with a live socket in the workspace — the
+// initial online snapshot the chat (and future lanes) reconcile realtime
+// presence.online/presence.offline events against.
+func (h *WSHandler) Presence(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	users := h.hub.ConnectedUsers(ws.ID)
+	ids := make([]string, 0, len(users))
+	for _, id := range users {
+		ids = append(ids, id.String())
+	}
+	return response.Success(c, http.StatusOK, map[string][]string{"online": ids})
+}
+
 // pingLoop keeps the connection honest in both directions: a peer that
 // cannot answer a ping within the deadline is closed, which unblocks the
 // ReadPump and unregisters the client. Ping writes control frames, which

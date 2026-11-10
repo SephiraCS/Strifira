@@ -122,6 +122,10 @@ func main() {
 	documentRepo := repository.NewDocumentRepository(db)
 	documentUpdateRepo := repository.NewDocumentUpdateRepository(db)
 
+	// Chat: realtime channels and direct messages
+	chatChannelRepo := repository.NewChatChannelRepository(db)
+	chatMessageRepo := repository.NewChatMessageRepository(db)
+
 	// Services
 	authSvc := service.NewAuthService(userRepo, refreshRepo, cfg.JWTSecret)
 	workspaceSvc := service.NewWorkspaceService(workspaceRepo, userRepo)
@@ -139,6 +143,9 @@ func main() {
 	favSvc := service.NewFavoriteService(favRepo)
 	prefsSvc := service.NewPreferencesService(prefsRepo)
 	aiSettingsSvc := service.NewAISettingsService(aiSettingsRepo, workspaceRepo, issueRepo, crypto.DeriveKey(cfg.JWTSecret+":ai"), cfg.AIProviderNetworkPolicy)
+	chatSvc := service.NewChatService(chatChannelRepo, chatMessageRepo, workspaceRepo, hub, notifSvc)
+	// Typing relays resolve channel membership through the chat service.
+	hub.ChatTypingAudience = chatSvc.TypingAudience
 
 	// Dev Machine agent registry
 	devMachineAgentReg := agent.NewRegistry(
@@ -222,6 +229,7 @@ func main() {
 		})
 	}
 	shareH := handler.NewScreenShareHandler(shareSvc, userRepo)
+	chatH := handler.NewChatHandler(chatSvc)
 	store := storage.New(clusterBus.Files)
 	uploadH := handler.NewUploadHandler(store, assetRepo, issueRepo, cfg.JWTSecret)
 	userAvatarRepo := repository.NewUserAvatarRepository(db)
@@ -655,6 +663,16 @@ func main() {
 	ws.DELETE("/assets/:assetId", uploadH.DeleteAsset)
 	ws.POST("/assets/:assetId/share", uploadH.ShareAsset, mw.RequirePermission(domain.PermShareCreate))
 	ws.POST("/issues/:identifier/prompt-assets", uploadH.SignIssuePromptAssets)
+
+	// Chat: realtime channels, DMs and messages
+	ws.GET("/chat/channels", chatH.ListChannels)
+	ws.POST("/chat/channels", chatH.CreateChannel)
+	ws.POST("/chat/dm", chatH.EnsureDM)
+	ws.GET("/chat/channels/:channelId/messages", chatH.ListMessages)
+	ws.POST("/chat/channels/:channelId/messages", chatH.CreateMessage)
+	ws.PATCH("/chat/messages/:messageId", chatH.UpdateMessage)
+	ws.DELETE("/chat/messages/:messageId", chatH.DeleteMessage)
+	ws.GET("/chat/presence", wsH.Presence)
 
 	// WebSocket
 	ws.GET("/ws", wsH.Handle)

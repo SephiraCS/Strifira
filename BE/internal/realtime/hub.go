@@ -102,6 +102,9 @@ type Hub struct {
 	// under the lock), e.g. to forward domain events to outgoing webhooks.
 	// It must not block; wire it before the hub starts serving.
 	OnBroadcast func(workspaceID uuid.UUID, event Event)
+	// ChatTypingAudience resolves the recipients of a chat typing relay.
+	// An unwired hub refuses chat.typing messages.
+	ChatTypingAudience ChatTypingAudience
 
 	// closing is set by Shutdown: new upgrades are refused, and connections
 	// whose upgrade was admitted earlier are closed as they register.
@@ -159,6 +162,15 @@ func (h *Hub) Register(conn *websocket.Conn, workspaceID, userID uuid.UUID) *Cli
 	}
 
 	h.mu.Lock()
+	// Presence: the user's first live socket in this workspace flips them
+	// online; announced after the lock is released.
+	firstForUser := true
+	for existing := range h.clients[workspaceID] {
+		if existing.userID == userID {
+			firstForUser = false
+			break
+		}
+	}
 	if h.clients[workspaceID] == nil {
 		h.clients[workspaceID] = make(map[*Client]bool)
 	}
@@ -168,6 +180,9 @@ func (h *Hub) Register(conn *websocket.Conn, workspaceID, userID uuid.UUID) *Cli
 
 	if closing && conn != nil {
 		go conn.Close(websocket.StatusGoingAway, "server shutting down")
+	}
+	if firstForUser {
+		h.broadcastUserPresence(workspaceID, userID, true)
 	}
 	return client
 }
@@ -250,10 +265,20 @@ func (h *Hub) Unregister(client *Client) {
 		return
 	}
 	presenterDepartures := make([]uuid.UUID, 0)
+	lastForUser := true
 	if clients, ok := h.clients[client.workspaceID]; ok {
 		delete(clients, client)
 		if len(clients) == 0 {
 			delete(h.clients, client.workspaceID)
+		}
+		// Presence: the user's last live socket closing flips them offline
+		// (multiple tabs share one presence state); announced after the
+		// lock is released.
+		for remaining := range clients {
+			if remaining.userID == client.userID {
+				lastForUser = false
+				break
+			}
 		}
 	}
 	// Leaving the socket leaves every share: broadcast the updated
@@ -284,6 +309,9 @@ func (h *Hub) Unregister(client *Client) {
 	}
 	for _, shareID := range affected {
 		h.broadcastSharePresence(client.workspaceID, shareID)
+	}
+	if lastForUser {
+		h.broadcastUserPresence(client.workspaceID, client.userID, false)
 	}
 }
 
@@ -454,6 +482,11 @@ func (h *Hub) ReadPump(ctx context.Context, client *Client) {
 			var p ShareSignalPayload
 			if json.Unmarshal(msg.Payload, &p) == nil {
 				h.handleShareSignal(client, p)
+			}
+		case "chat.typing":
+			var p ChatTypingPayload
+			if json.Unmarshal(msg.Payload, &p) == nil && p.ChannelID != "" {
+				h.ChatTyping(ctx, client, p.ChannelID)
 			}
 		}
 	}

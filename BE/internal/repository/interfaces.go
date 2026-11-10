@@ -114,6 +114,30 @@ type AssetRepo interface {
 	Delete(ctx context.Context, workspaceID, id uuid.UUID) (*domain.Asset, error)
 }
 
+type ChatChannelRepo interface {
+	// CreateChannel inserts the channel plus its membership rows atomically.
+	CreateChannel(ctx context.Context, channel *domain.ChatChannel, memberIDs []uuid.UUID) error
+	GetChannelByID(ctx context.Context, id uuid.UUID) (*domain.ChatChannel, error)
+	GetDMByUsers(ctx context.Context, workspaceID, userA, userB uuid.UUID) (*domain.ChatChannel, error)
+	ListVisibleByWorkspace(ctx context.Context, workspaceID, userID uuid.UUID) ([]domain.ChatChannel, error)
+	// EnsureDefaultChannel lazily provisions the workspace's #general channel.
+	EnsureDefaultChannel(ctx context.Context, workspaceID, userID uuid.UUID) error
+	AddChannelMember(ctx context.Context, channelID, userID uuid.UUID) error
+	IsChannelMember(ctx context.Context, channelID, userID uuid.UUID) (bool, error)
+	ChannelMemberIDs(ctx context.Context, channelID uuid.UUID) ([]uuid.UUID, error)
+	UpdateChannelTopic(ctx context.Context, channelID uuid.UUID, topic string) error
+	// UserByID resolves the chat-renderable subset of a user (DM peers).
+	UserByID(ctx context.Context, userID uuid.UUID) (*domain.ChatUser, error)
+}
+
+type ChatMessageRepo interface {
+	CreateMessage(ctx context.Context, message *domain.ChatMessage) error
+	GetMessageByID(ctx context.Context, id uuid.UUID) (*domain.ChatMessage, error)
+	ListMessages(ctx context.Context, channelID uuid.UUID, before *time.Time, limit int) ([]domain.ChatMessage, error)
+	UpdateMessageBody(ctx context.Context, id uuid.UUID, body string) (*domain.ChatMessage, error)
+	SoftDeleteMessage(ctx context.Context, id uuid.UUID) error
+}
+
 type DocumentRepo interface {
 	Create(ctx context.Context, doc *domain.Document) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Document, error)

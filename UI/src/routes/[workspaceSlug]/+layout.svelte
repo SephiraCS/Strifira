@@ -34,6 +34,7 @@
 	import { teamStatusesState } from '$lib/features/issues/team-statuses.state.svelte';
 	import { sidebarState } from '$lib/features/layout/sidebar.state.svelte';
 	import { sharesState } from '$lib/features/shares/shares.state.svelte';
+	import { chatState } from '$lib/features/chat/chat.state.svelte';
 	import { createShortcutEngine, type ShortcutDef } from '$lib/utils/keyboard';
 	import { inAppNavigation } from '$lib/features/layout/in-app-navigation.state.svelte';
 	import Menu from '@lucide/svelte/icons/menu';
@@ -88,6 +89,14 @@
 	$effect(() => {
 		terminalDock.setWorkspace(slug);
 		presenterSession.setWorkspace(slug);
+	});
+
+	// Chat keeps its rail/badges fresh from any page, not only from /chat.
+	$effect(() => {
+		if (slug) {
+			void chatState.ensureWorkspace(slug);
+			chatState.setMembers(members);
+		}
 	});
 
 	let previousAppHistoryDepth = 0;
@@ -720,6 +729,16 @@
 				window.dispatchEvent(new CustomEvent('ws:notification', { detail: msg.payload }));
 				break;
 			}
+			// Chat: message fan-out, typing hints and workspace presence.
+			case 'chat.message.created':
+			case 'chat.message.updated':
+			case 'chat.message.deleted':
+			case 'chat.typing':
+			case 'presence.online':
+			case 'presence.offline': {
+				window.dispatchEvent(new CustomEvent(`ws:${msg.type}`, { detail: msg.payload }));
+				break;
+			}
 			case 'presence.join':
 			case 'presence.leave':
 			case 'presence.sync':
@@ -769,6 +788,7 @@
 					{views}
 					{projects}
 					{unreadCount}
+					chatUnreadCount={chatState.unreadTotal}
 					{slug}
 					oncreateissue={openCreateIssue}
 					oncreateteam={() => (showCreateTeam = true)}
@@ -791,6 +811,7 @@
 						{views}
 						{projects}
 						{unreadCount}
+						chatUnreadCount={chatState.unreadTotal}
 						{slug}
 						mobile
 						oncreateissue={openCreateIssue}
