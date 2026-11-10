@@ -172,15 +172,18 @@ func (h *TeamStatusHandler) Delete(c echo.Context) error {
 
 func toTeamStatusResponse(s domain.TeamStatus) dto.TeamStatusResponse {
 	return dto.TeamStatusResponse{
-		ID:        s.ID.String(),
-		TeamID:    s.TeamID.String(),
-		Name:      s.Name,
-		Slug:      s.Slug,
-		Category:  string(s.Category),
-		Color:     s.Color,
-		Position:  s.Position,
-		IsDefault: s.IsDefault,
-		CreatedAt: s.CreatedAt,
-		UpdatedAt: s.UpdatedAt,
+		ID:         s.ID.String(),
+		TeamID:     s.TeamID.String(),
+		Name:       s.Name,
+		Slug:       s.Slug,
+		Category:   string(s.Category),
+		Color:      s.Color,
+		Icon:       s.Icon,
+		Position:   s.Position,
+		WipLimit:   s.WipLimit,
+		IsDefault:  s.IsDefault,
+		ArchivedAt: s.ArchivedAt,
+		CreatedAt:  s.CreatedAt,
+		UpdatedAt:  s.UpdatedAt,
 	}
 }

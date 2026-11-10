@@ -698,6 +698,13 @@
 				window.dispatchEvent(new CustomEvent('app:refresh', { detail: { ...msg.payload, resources: ['views'] } }));
 				break;
 			}
+			case 'team_status.created':
+			case 'team_status.updated':
+			case 'team_status.deleted': {
+				// Board columns (rename, color, icon, WIP limit, archive, order).
+				window.dispatchEvent(new CustomEvent('ws:team-status', { detail: msg.payload }));
+				break;
+			}
 			case 'app.refresh': {
 				window.dispatchEvent(new CustomEvent('app:refresh', { detail: msg.payload ?? {} }));
 				break;

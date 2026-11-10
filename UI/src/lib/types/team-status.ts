@@ -9,8 +9,14 @@ export interface TeamStatus {
 	slug: string;
 	category: StatusCategory;
 	color: string | null;
+	/** Custom column icon (lucide name); null renders the category icon. */
+	icon?: string | null;
 	position: number;
+	/** Maximum number of cards for the column; null means no limit. */
+	wip_limit?: number | null;
 	is_default: boolean;
+	/** Set when the column is archived; null/undefined means active. */
+	archived_at?: string | null;
 	project_ids?: string[];
 	created_at: string;
 	updated_at: string;

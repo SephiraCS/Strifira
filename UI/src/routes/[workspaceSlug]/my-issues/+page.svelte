@@ -348,7 +348,7 @@
 			<div class="flex-1 overflow-hidden">
 				<KanbanBoard
 					issuesByStatus={issuesByStatusForTeam(boardTeamIds[0])}
-					columns={teamStatusesState.statusesByTeam[boardTeamIds[0]] ?? []}
+					columns={teamStatusesState.activeByTeam(boardTeamIds[0])}
 					{slug}
 					{members}
 					{labels}
@@ -373,7 +373,7 @@
 						<div class="h-[60vh] min-h-[420px]">
 							<KanbanBoard
 								issuesByStatus={teamIssues}
-								columns={teamStatusesState.statusesByTeam[teamId] ?? []}
+								columns={teamStatusesState.activeByTeam(teamId)}
 								{slug}
 								{members}
 								{labels}

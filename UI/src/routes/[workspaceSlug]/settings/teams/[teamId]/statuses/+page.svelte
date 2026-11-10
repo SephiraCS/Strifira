@@ -6,6 +6,8 @@
 	import { preferencesState, type TeamWorkflowSortMode } from '$lib/features/preferences/preferences.state.svelte';
 	import { listTeamStatuses, createTeamStatus, updateTeamStatus, deleteTeamStatus } from '$lib/api/team-statuses';
 	import IssueStatusIcon from '$lib/features/issues/IssueStatusIcon.svelte';
+	import ColumnEditDialog from '$lib/features/issues/ColumnEditDialog.svelte';
+	import { columnIcon } from '$lib/features/issues/column-icons';
 	import * as Select from '$lib/components/ui/select';
 	import { appToast } from '$lib/features/toast/toast';
 	import { m } from '$lib/paraglide/messages.js';
@@ -14,10 +16,11 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import X from '@lucide/svelte/icons/x';
-	import Check from '@lucide/svelte/icons/check';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import ArchiveRestore from '@lucide/svelte/icons/archive-restore';
+	import Archive from '@lucide/svelte/icons/archive';
 
 	const slug = $derived(page.params.workspaceSlug ?? '');
 	const teamId = $derived(page.params.teamId ?? '');
@@ -29,9 +32,8 @@
 	let addName = $state('');
 	let addColor = $state('');
 
-	let editingId = $state<string | null>(null);
-	let editName = $state('');
-	let editColor = $state('');
+	let editTarget = $state<TeamStatus | null>(null);
+	let editOpen = $state(false);
 
 	let dragStatusId = $state<string | null>(null);
 	let dragOverStatusId = $state<string | null>(null);
@@ -59,7 +61,7 @@
 		const t = teamId;
 		if (!s || !t) return;
 		loading = true;
-		editingId = null;
+		editTarget = null;
 		addingCategory = null;
 		listTeamStatuses(s, t).then((st) => {
 			statuses = st;
@@ -90,24 +92,27 @@
 	}
 
 	function startEdit(status: TeamStatus) {
-		editingId = status.id;
-		editName = status.name;
-		editColor = status.color ?? '';
+		editTarget = status;
+		editOpen = true;
 	}
 
-	async function saveEdit() {
-		if (!editingId || !editName.trim()) return;
+	async function handleEdited() {
+		editTarget = null;
+		await loadStatuses();
+	}
+
+	async function restoreStatus(status: TeamStatus) {
 		try {
-			await updateTeamStatus(slug, teamId, editingId, {
-				name: editName.trim(),
-				color: editColor || undefined
-			});
-			editingId = null;
+			await updateTeamStatus(slug, teamId, status.id, { archived: false });
 			await loadStatuses();
 			appToast.success(m['team_settings.toast.status_updated']());
 		} catch (err: any) {
-			appToast.apiError(err, m['team_settings.toast.status_update_failed']());
+			appToast.apiError(err, m['team_settings.toast.column_restore_failed']());
 		}
+	}
+
+	function archivedList(): TeamStatus[] {
+		return statuses.filter((s) => s.archived_at).sort((a, b) => a.position - b.position);
 	}
 
 	async function handleDelete(statusId: string) {
@@ -121,7 +126,8 @@
 	}
 
 	function statusesByCategory(cat: StatusCategory): TeamStatus[] {
-		return statuses.filter((s) => s.category === cat).sort((a, b) => a.position - b.position);
+		// Archived columns live in their own section below the workflow.
+		return statuses.filter((s) => s.category === cat && !s.archived_at).sort((a, b) => a.position - b.position);
 	}
 
 	function startAdd(cat: StatusCategory) {
@@ -423,7 +429,7 @@
 							<div
 								class="relative flex items-center gap-1 px-1 py-0 border-t border-[var(--app-border)] transition-colors
 								{dragStatusId === status.id ? 'opacity-40' : 'hover:bg-[var(--color-bg-hover)]/50'}"
-								draggable={editingId !== status.id}
+								draggable="true"
 								ondragstart={(e) => handleDragStart(e, status)}
 								ondragover={(e) => handleDragOver(e, status)}
 								ondragleave={handleDragLeave}
@@ -447,70 +453,49 @@
 								</span>
 
 								<div class="flex flex-1 items-center gap-3 px-2 py-2.5 group">
-									<IssueStatusIcon category={status.category} color={status.color} size={18} />
-
-									{#if editingId === status.id}
-										<div class="flex flex-1 items-center gap-2">
-											<input
-												type="text"
-												bind:value={editName}
-												onkeydown={(e) => {
-													if (e.key === 'Enter') saveEdit();
-													if (e.key === 'Escape') editingId = null;
-												}}
-												class="flex-1 rounded border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-0.5 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--app-accent)]"
-											/>
-											<div class="flex items-center gap-0.5">
-												{#each PRESET_COLORS as c}
-													<button
-														onclick={() => (editColor = c)}
-														class="h-3.5 w-3.5 rounded-full {editColor === c
-															? 'ring-2 ring-[var(--app-accent)] ring-offset-1 ring-offset-[var(--color-bg)]'
-															: ''}"
-														style="background-color: {c}"
-														aria-label={m['team_settings.select_color_aria']({ color: c })}
-													></button>
-												{/each}
-											</div>
-											<button
-												onclick={saveEdit}
-												class="rounded p-0.5 text-[var(--color-success)] hover:bg-[var(--color-bg-tertiary)]"
-											>
-												<Check size={14} />
-											</button>
-											<button
-												onclick={() => (editingId = null)}
-												class="rounded p-0.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-tertiary)]"
-											>
-												<X size={14} />
-											</button>
-										</div>
+									{#if columnIcon(status.icon)}
+										{@const RowIcon = columnIcon(status.icon)}
+										<span class="flex shrink-0" style={status.color ? `color: ${status.color}` : ''}>
+											<RowIcon size={18} />
+										</span>
 									{:else}
-										<div class="flex-1 min-w-0">
-											<div class="flex items-center gap-2">
-												<span class="text-sm font-medium text-[var(--color-text-primary)]">{status.name}</span>
-												{#if status.is_default}
-													<span class="text-[10px] text-[var(--color-text-tertiary)]">· {m['team_settings.default_badge']()}</span>
-												{/if}
-											</div>
-										</div>
-										<div class="flex items-center gap-1">
-											<button
-												onclick={() => startEdit(status)}
-												class="hidden rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] group-hover:block transition-colors"
-											>
-												<Pencil size={12} />
-											</button>
-											{#if !status.is_default}
-												<button
-													onclick={() => handleDelete(status.id)}
-													class="hidden rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-error)] hover:bg-[var(--color-bg-tertiary)] group-hover:block transition-colors"
+										<IssueStatusIcon category={status.category} color={status.color} size={18} />
+									{/if}
+
+									<div class="flex-1 min-w-0">
+										<div class="flex items-center gap-2">
+											<span class="text-sm font-medium text-[var(--color-text-primary)]">{status.name}</span>
+											{#if status.is_default}
+												<span class="text-[10px] text-[var(--color-text-tertiary)]">· {m['team_settings.default_badge']()}</span>
+											{/if}
+											{#if status.wip_limit != null}
+												<span
+													class="rounded border border-[var(--app-border)] px-1.5 py-px text-[10px] text-[var(--color-text-tertiary)]"
+													title={m['team_settings.column_edit.wip_label']()}
 												>
-													<Trash2 size={12} />
-												</button>
+													{m['team_settings.column_edit.wip_label']()} {status.wip_limit}
+												</span>
 											{/if}
 										</div>
-									{/if}
+									</div>
+									<div class="flex items-center gap-1">
+										<button
+											onclick={() => startEdit(status)}
+											class="hidden rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] group-hover:block transition-colors"
+											title={m['team_settings.edit']()}
+											aria-label={m['team_settings.edit']()}
+										>
+											<Pencil size={12} />
+										</button>
+										{#if !status.is_default}
+											<button
+												onclick={() => handleDelete(status.id)}
+												class="hidden rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-error)] hover:bg-[var(--color-bg-tertiary)] group-hover:block transition-colors"
+											>
+												<Trash2 size={12} />
+											</button>
+										{/if}
+									</div>
 								</div>
 							</div>
 						{/each}
@@ -560,6 +545,55 @@
 					</div>
 				{/each}
 			</div>
+
+			<!-- Archived columns: off the board, recoverable here. -->
+			<div class="mt-4 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg-secondary)] overflow-hidden">
+				<div class="px-5 py-3">
+					<p class="text-sm font-medium text-[var(--color-text-primary)]">
+						{m['team_settings.archived_columns.title']()}
+					</p>
+					<p class="text-xs text-[var(--color-text-tertiary)]">{m['team_settings.archived_columns.desc']()}</p>
+				</div>
+				{#each archivedList() as status (status.id)}
+					<div class="flex items-center gap-3 border-t border-[var(--app-border)] px-5 py-2.5 group">
+						<span class="shrink-0 text-[var(--color-text-tertiary)]">
+							<Archive size={14} />
+						</span>
+						{#if columnIcon(status.icon)}
+							{@const RowIcon = columnIcon(status.icon)}
+							<span class="flex shrink-0 opacity-60" style={status.color ? `color: ${status.color}` : ''}>
+								<RowIcon size={18} />
+							</span>
+						{:else}
+							<span class="flex shrink-0 opacity-60">
+								<IssueStatusIcon category={status.category} color={status.color} size={18} />
+							</span>
+						{/if}
+						<span class="flex-1 min-w-0 truncate text-sm text-[var(--color-text-secondary)]">{status.name}</span>
+						<button
+							onclick={() => startEdit(status)}
+							class="hidden rounded p-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-tertiary)] group-hover:block transition-colors"
+							title={m['team_settings.edit']()}
+							aria-label={m['team_settings.edit']()}
+						>
+							<Pencil size={12} />
+						</button>
+						<button
+							onclick={() => restoreStatus(status)}
+							class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+						>
+							<ArchiveRestore size={12} />
+							{m['team_settings.archived_columns.restore']()}
+						</button>
+					</div>
+				{:else}
+					<div class="border-t border-[var(--app-border)] px-5 py-3 text-xs text-[var(--color-text-tertiary)]">
+						{m['team_settings.archived_columns.empty']()}
+					</div>
+				{/each}
+			</div>
 		{/if}
 	</div>
+
+	<ColumnEditDialog bind:open={editOpen} status={editTarget} {slug} {teamId} onsaved={handleEdited} />
 </div>

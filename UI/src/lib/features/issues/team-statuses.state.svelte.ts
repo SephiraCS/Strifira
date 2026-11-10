@@ -22,14 +22,25 @@ class TeamStatusesState {
 	statuses = $state<TeamStatus[]>([]);
 	loading = $state(false);
 	private loadedTeamId = '';
+	private loadedSlug = '';
 
 	/** Statuses for many teams at once (cross-team boards like My Issues). */
 	statusesByTeam = $state<Record<string, TeamStatus[]>>({});
 
-	/** Statuses sorted by position. */
+	/** Active statuses sorted by position (archived columns stay off boards). */
 	statusOrder = $derived(
-		[...this.statuses].sort((a, b) => a.position - b.position)
+		[...this.statuses].filter((s) => !s.archived_at).sort((a, b) => a.position - b.position)
 	);
+
+	/** Archived statuses, oldest workflow position first (settings restore). */
+	archivedStatuses = $derived(
+		this.statuses.filter((s) => s.archived_at).sort((a, b) => a.position - b.position)
+	);
+
+	/** Active columns for one team (My Issues board); archived stay off boards. */
+	activeByTeam(teamId: string): TeamStatus[] {
+		return (this.statusesByTeam[teamId] ?? []).filter((s) => !s.archived_at);
+	}
 
 	/** Lookup by status ID. */
 	statusById = $derived(
@@ -61,6 +72,7 @@ class TeamStatusesState {
 		try {
 			this.statuses = await listTeamStatuses(slug, teamId);
 			this.loadedTeamId = teamId;
+			this.loadedSlug = slug;
 			this.statusesByTeam[teamId] = [...this.statuses];
 		} catch {
 			this.statuses = [];
@@ -74,6 +86,7 @@ class TeamStatusesState {
 		const cached = this.statusesByTeam[teamId];
 		if (cached && cached.length > 0) return cached;
 		const statuses = await listTeamStatuses(slug, teamId);
+		this.loadedSlug = slug;
 		this.statusesByTeam[teamId] = statuses;
 		return statuses;
 	}
@@ -82,6 +95,29 @@ class TeamStatusesState {
 	async reload(slug: string, teamId: string) {
 		this.loadedTeamId = '';
 		await this.load(slug, teamId);
+	}
+
+	/** Reload whichever team the board is showing (after a column edit). */
+	async reloadCurrent() {
+		if (!this.loadedTeamId || !this.loadedSlug) return;
+		await this.reload(this.loadedSlug, this.loadedTeamId);
+	}
+
+	/** A `team_status.*` realtime event: refresh the affected team's columns. */
+	async handleRealtime(payload: { team_id?: string } | null) {
+		const teamId = payload?.team_id;
+		if (!teamId || !this.loadedSlug) return;
+		if (this.loadedTeamId === teamId) {
+			await this.reload(this.loadedSlug, teamId);
+			return;
+		}
+		if (this.statusesByTeam[teamId]) {
+			try {
+				this.statusesByTeam[teamId] = await listTeamStatuses(this.loadedSlug, teamId);
+			} catch {
+				// Keep the cached copy; the next reload picks the change up.
+			}
+		}
 	}
 
 	/** Persist a new column order (kanban board drag-and-drop). */
@@ -152,8 +188,19 @@ class TeamStatusesState {
 	clear() {
 		this.statuses = [];
 		this.loadedTeamId = '';
+		this.loadedSlug = '';
 		this.statusesByTeam = {};
 	}
 }
 
 export const teamStatusesState = new TeamStatusesState();
+
+// Realtime column changes (another user renamed, recolored, re-ordered,
+// re-limited or archived a column) refresh the open boards.
+if (typeof window !== 'undefined') {
+	window.addEventListener('ws:team-status', (event) => {
+		void teamStatusesState.handleRealtime(
+			(event as CustomEvent<{ team_id?: string } | null>).detail
+		);
+	});
+}
