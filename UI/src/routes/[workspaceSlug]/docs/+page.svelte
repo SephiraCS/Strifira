@@ -12,7 +12,6 @@
 	import { markdownTitle } from '$lib/features/docs/markdown';
 	import { wikiTitlesFromHtml } from '$lib/features/docs/wiki-link.extension';
 	import DocsTree from '$lib/features/docs/DocsTree.svelte';
-	import DocGraphView from '$lib/features/docs/DocGraphView.svelte';
 	import MoveDocDialog from '$lib/features/docs/MoveDocDialog.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { appToast } from '$lib/features/toast/toast';
@@ -32,6 +31,14 @@
 
 	let search = $state('');
 	let showGraph = $state(false);
+	// The graph view pulls in echarts; load it only when actually opened so
+	// the docs list route stays light.
+	let graphModule = $state<Promise<typeof import('$lib/features/docs/DocGraphView.svelte')> | null>(null);
+
+	function openGraph() {
+		showGraph = true;
+		graphModule ??= import('$lib/features/docs/DocGraphView.svelte');
+	}
 	let moveTarget = $state<string | null>(null);
 	let deleteTarget = $state<DocTreeEntry | null>(null);
 	let deleting = $state(false);
@@ -77,6 +84,24 @@
 			return null;
 		};
 		return scopedTree.map(matches).filter((e): e is DocTreeEntry => e !== null);
+	});
+
+	// Flat result list for root-level search on desktop, where the tree
+	// itself lives in the sidebar.
+	const searchMatches = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		if (!q || inFolder) return [];
+		const hits: DocTreeEntry[] = [];
+		const walk = (entries: DocTreeEntry[]) => {
+			for (const entry of entries) {
+				if (entry.title.toLowerCase().includes(q) || entry.tags.some((t) => t.toLowerCase().includes(q))) {
+					hits.push(entry);
+				}
+				walk(entry.children);
+			}
+		};
+		walk(docsState.tree);
+		return hits;
 	});
 
 	const recentDocs = $derived.by(() => {
@@ -273,7 +298,7 @@
 			<span class="rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-xs text-[var(--color-text-tertiary)]">📁</span>
 		{/if}
 		<div class="ml-auto flex items-center gap-1.5">
-			<Button variant="ghost" size="sm" onclick={() => (showGraph = true)} title={m['docs.graph.title']()}>
+			<Button variant="ghost" size="sm" onclick={() => openGraph()} title={m['docs.graph.title']()}>
 				<Network size={15} />
 			</Button>
 			<a
@@ -421,32 +446,77 @@
 			</section>
 		{/if}
 
-		<section aria-label={m['docs.all_pages']()}>
-			<DocsTree
-				{slug}
-				entries={filteredTree}
-				manage
-				onnewchild={(parent) => void newDoc(parent.id)}
-				onnewfolder={(parent) => void newFolder(parent.id)}
-				onrename={startRename}
-				onduplicate={async (entry) => {
-					const { duplicateDocument } = await import('$lib/api/docs');
-					try {
-						const copy = await duplicateDocument(slug, entry.id);
-						await docsState.load(slug, true);
-						goto(`/${slug}/docs/${copy.id}`);
-					} catch (err) {
-						appToast.apiError(err, m['docs.duplicate_failed']());
-					}
-				}}
-				onmove={(entry) => (moveTarget = entry.id)}
-				ondelete={(entry) => (deleteTarget = entry)}
-			/>
-		</section>
+		{#if !inFolder && search && searchMatches.length === 0 && !docsState.loading}
+			<EmptyState title={m['sidebar.no_results']()} description={m['docs.empty_description']()} />
+		{:else if !inFolder && search}
+			<section aria-label={m['sidebar.search']()}>
+				<div class="space-y-px">
+					{#each searchMatches as entry (entry.id)}
+						<a
+							href={entry.is_folder ? `/${slug}/docs?folder=${entry.id}` : `/${slug}/docs/${entry.id}`}
+							class="flex items-center gap-1 rounded-md px-1 py-1.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
+						>
+							<span class="shrink-0">{entry.icon || (entry.is_folder ? '📁' : '📄')}</span>
+							<span class="truncate">{entry.title || m['docs.untitled']()}</span>
+						</a>
+					{/each}
+				</div>
+			</section>
+		{:else if inFolder}
+			<section aria-label={m['docs.all_pages']()}>
+				<DocsTree
+					{slug}
+					entries={filteredTree}
+					manage
+					onnewchild={(parent) => void newDoc(parent.id)}
+					onnewfolder={(parent) => void newFolder(parent.id)}
+					onrename={startRename}
+					onduplicate={async (entry) => {
+						const { duplicateDocument } = await import('$lib/api/docs');
+						try {
+							const copy = await duplicateDocument(slug, entry.id);
+							await docsState.load(slug, true);
+							goto(`/${slug}/docs/${copy.id}`);
+						} catch (err) {
+							appToast.apiError(err, m['docs.duplicate_failed']());
+						}
+					}}
+					onmove={(entry) => (moveTarget = entry.id)}
+					ondelete={(entry) => (deleteTarget = entry)}
+				/>
+			</section>
+		{:else}
+			<section aria-label={m['docs.all_pages']()} class="md:hidden">
+				<DocsTree
+					{slug}
+					entries={filteredTree}
+					manage
+					onnewchild={(parent) => void newDoc(parent.id)}
+					onnewfolder={(parent) => void newFolder(parent.id)}
+					onrename={startRename}
+					onduplicate={async (entry) => {
+						const { duplicateDocument } = await import('$lib/api/docs');
+						try {
+							const copy = await duplicateDocument(slug, entry.id);
+							await docsState.load(slug, true);
+							goto(`/${slug}/docs/${copy.id}`);
+						} catch (err) {
+							appToast.apiError(err, m['docs.duplicate_failed']());
+						}
+					}}
+					onmove={(entry) => (moveTarget = entry.id)}
+					ondelete={(entry) => (deleteTarget = entry)}
+				/>
+			</section>
+		{/if}
 	{/if}
 </div>
 
-<DocGraphView bind:open={showGraph} {slug} />
+{#if showGraph && graphModule}
+	{#await graphModule then { default: LazyGraphView }}
+		<LazyGraphView bind:open={showGraph} {slug} />
+	{/await}
+{/if}
 <MoveDocDialog
 	open={moveTarget !== null}
 	{slug}

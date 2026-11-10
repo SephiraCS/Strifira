@@ -1996,6 +1996,8 @@
 	"docs.working": "Working…",
 	"docs.close": "Close",
 	"docs.loading": "Loading…",
+	"docs.editor.load_failed": "The editor failed to load",
+	"docs.load_failed": "Failed to load the pages",
 	"docs.not_found": "Page not found",
 	"docs.back_to_docs": "Back to docs",
 	"docs.title_placeholder": "Untitled",

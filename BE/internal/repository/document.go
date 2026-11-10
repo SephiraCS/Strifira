@@ -36,10 +36,16 @@ func (r *DocumentRepository) GetByID(ctx context.Context, id uuid.UUID) (*domain
 	return &doc, nil
 }
 
+// documentTreeColumns lists the columns the list/trash/search tree payloads
+// need. The document bodies (content_html, content_text) stay out of list
+// queries: they can dwarf everything else and are only read per document.
+const documentTreeColumns = `id, workspace_id, parent_id, title, icon, position,
+		is_template, is_folder, created_by, updated_by, created_at, updated_at, deleted_at`
+
 func (r *DocumentRepository) ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.Document, error) {
 	var docs []domain.Document
 	err := r.db.SelectContext(ctx, &docs, `
-		SELECT * FROM documents
+		SELECT `+documentTreeColumns+` FROM documents
 		WHERE workspace_id = $1 AND deleted_at IS NULL
 		ORDER BY position ASC, created_at ASC`, workspaceID)
 	return docs, err
@@ -48,7 +54,7 @@ func (r *DocumentRepository) ListByWorkspace(ctx context.Context, workspaceID uu
 func (r *DocumentRepository) ListDeleted(ctx context.Context, workspaceID uuid.UUID) ([]domain.Document, error) {
 	var docs []domain.Document
 	err := r.db.SelectContext(ctx, &docs, `
-		SELECT * FROM documents
+		SELECT `+documentTreeColumns+` FROM documents
 		WHERE workspace_id = $1 AND deleted_at IS NOT NULL
 		ORDER BY deleted_at DESC`, workspaceID)
 	return docs, err
@@ -113,7 +119,7 @@ func (r *DocumentRepository) Search(ctx context.Context, workspaceID uuid.UUID, 
 	pattern := "%" + q + "%"
 	var docs []domain.Document
 	err := r.db.SelectContext(ctx, &docs, `
-		SELECT * FROM documents
+		SELECT `+documentTreeColumns+` FROM documents
 		WHERE workspace_id = $1 AND deleted_at IS NULL AND is_template = FALSE AND is_folder = FALSE
 		  AND (title ILIKE $2 OR content_text ILIKE $2)
 		ORDER BY updated_at DESC

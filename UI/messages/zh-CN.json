@@ -1996,6 +1996,8 @@
 	"docs.working": "处理中…",
 	"docs.close": "关闭",
 	"docs.loading": "加载中…",
+	"docs.editor.load_failed": "编辑器加载失败",
+	"docs.load_failed": "页面加载失败",
 	"docs.not_found": "页面不存在",
 	"docs.back_to_docs": "返回文档",
 	"docs.title_placeholder": "无标题",
