@@ -1,7 +1,9 @@
 package mailclient
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -10,6 +12,8 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 )
+
+var ErrAuthentication = errors.New("mail authentication refused")
 
 // FetchOptions are the IMAP connection parameters of an account.
 type FetchOptions struct {
@@ -61,7 +65,7 @@ func FetchNewMessages(opts FetchOptions, afterUID uint64, uidValidity uint32) (*
 	}()
 
 	if err := c.Login(opts.Username, opts.Password); err != nil {
-		return nil, fmt.Errorf("imap login: %w", err)
+		return nil, authenticationFailure(err)
 	}
 	status, err := c.Select("INBOX", true)
 	if err != nil {
@@ -133,9 +137,10 @@ func TestIMAPConnection(opts FetchOptions) error {
 	c := conn
 	defer func() { _ = c.Logout() }()
 	if err := c.Login(opts.Username, opts.Password); err != nil {
-		return fmt.Errorf("imap login: %w", err)
+		return authenticationFailure(err)
 	}
-	return nil
+	_, err = c.Select("INBOX", true)
+	return err
 }
 
 // selectNewUIDs filters the mailbox UID list down to messages newer than
@@ -188,35 +193,21 @@ func readLiteral(msg *imap.Message, section *imap.BodySectionName) ([]byte, erro
 }
 
 func dialIMAP(opts FetchOptions) (*client.Client, error) {
-	addr := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
-	switch strings.ToLower(opts.Security) {
-	case SecurityTLS:
-		c, err := client.DialTLS(addr, &tls.Config{ServerName: opts.Host})
-		if err != nil {
-			return nil, fmt.Errorf("imap dial tls: %w", err)
-		}
-		c.Timeout = dialTimeout
-		return c, nil
-	case SecurityStartTLS:
-		c, err := client.Dial(addr)
-		if err != nil {
-			return nil, fmt.Errorf("imap dial: %w", err)
-		}
-		if err := c.StartTLS(&tls.Config{ServerName: opts.Host}); err != nil {
-			_ = c.Logout()
-			return nil, fmt.Errorf("imap starttls: %w", err)
-		}
-		c.Timeout = dialTimeout
-		return c, nil
-	default:
-		if !isLoopbackHost(opts.Host) {
-			return nil, fmt.Errorf("plaintext IMAP is only allowed to localhost; use STARTTLS or TLS")
-		}
-		c, err := client.Dial(addr)
-		if err != nil {
-			return nil, fmt.Errorf("imap dial: %w", err)
-		}
-		c.Timeout = dialTimeout
-		return c, nil
+	conn, err := dialMail(context.Background(), opts.Host, opts.Port, opts.Security)
+	if err != nil {
+		return nil, err
 	}
+	c, err := client.New(conn)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	c.Timeout = dialTimeout
+	if opts.Security == SecurityStartTLS {
+		if err := c.StartTLS(&tls.Config{ServerName: opts.Host, MinVersion: tls.VersionTLS12}); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+	}
+	return c, nil
 }

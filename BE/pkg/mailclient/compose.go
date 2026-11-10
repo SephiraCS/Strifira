@@ -2,6 +2,7 @@ package mailclient
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net/smtp"
@@ -54,7 +55,7 @@ func SendMessage(opts SendOptions, msg *OutgoingMessage) ([]byte, error) {
 	defer client.Close()
 
 	if err := client.Auth(smtp.PlainAuth("", opts.Username, opts.Password, opts.Host)); err != nil {
-		return nil, fmt.Errorf("smtp auth: %w", err)
+		return nil, authenticationFailure(err)
 	}
 	if err := client.Mail(msg.From.Address); err != nil {
 		return nil, fmt.Errorf("smtp mail from: %w", err)
@@ -89,7 +90,7 @@ func TestSMTPConnection(opts SendOptions) error {
 	}
 	defer client.Close()
 	if err := client.Auth(smtp.PlainAuth("", opts.Username, opts.Password, opts.Host)); err != nil {
-		return fmt.Errorf("smtp auth: %w", err)
+		return authenticationFailure(err)
 	}
 	return client.Quit()
 }
@@ -111,38 +112,22 @@ func addressPointers(in []messageMail.Address) []*messageMail.Address {
 }
 
 func dialSMTP(opts SendOptions) (*smtp.Client, error) {
-	addr := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
-	switch strings.ToLower(opts.Security) {
-	case SecurityTLS:
-		conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: opts.Host})
-		if err != nil {
-			return nil, fmt.Errorf("smtp dial tls: %w", err)
-		}
-		client, err := smtp.NewClient(conn, opts.Host)
-		if err != nil {
-			return nil, fmt.Errorf("smtp client: %w", err)
-		}
-		return client, nil
-	case SecurityStartTLS:
-		client, err := smtp.Dial(addr)
-		if err != nil {
-			return nil, fmt.Errorf("smtp dial: %w", err)
-		}
-		if err := client.StartTLS(&tls.Config{ServerName: opts.Host}); err != nil {
-			_ = client.Close()
-			return nil, fmt.Errorf("smtp starttls: %w", err)
-		}
-		return client, nil
-	default:
-		if !isLoopbackHost(opts.Host) {
-			return nil, fmt.Errorf("plaintext SMTP is only allowed to localhost; use STARTTLS or TLS")
-		}
-		client, err := smtp.Dial(addr)
-		if err != nil {
-			return nil, fmt.Errorf("smtp dial: %w", err)
-		}
-		return client, nil
+	conn, err := dialMail(context.Background(), opts.Host, opts.Port, opts.Security)
+	if err != nil {
+		return nil, err
 	}
+	c, err := smtp.NewClient(conn, opts.Host)
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	if opts.Security == SecurityStartTLS {
+		if err := c.StartTLS(&tls.Config{ServerName: opts.Host, MinVersion: tls.VersionTLS12}); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+	}
+	return c, nil
 }
 
 func isLoopbackHost(host string) bool {
