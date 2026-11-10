@@ -20,7 +20,8 @@
 	import Focus from '@lucide/svelte/icons/focus';
 	import { m } from '$lib/paraglide/messages.js';
 
-	let { slug }: { slug: string } = $props();
+	let { slug, variant = 'page' }: { slug: string; variant?: 'page' | 'embedded' } = $props();
+	const loading = $derived(sharesState.loading || (!sharesState.loadError && sharesState.loadedFor !== slug));
 	const activeShares = $derived(sharesState.loadedFor === slug ? sharesState.active : []);
 
 	// The wall fills the viewport: the grid keeps the squarest arrangement,
@@ -216,11 +217,18 @@
 
 <div class="flex h-full min-h-0 flex-col" data-testid="communication-screens" bind:this={wallElement}>
 	<header
-		class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-3 py-3 sm:px-6 sm:py-4"
+		class="flex shrink-0 flex-wrap items-center justify-between gap-3 px-4 py-3 {tiles.length > 0 || variant === 'page' ? 'border-b border-[var(--app-border)]' : ''}"
 	>
-		<div class="flex items-center gap-2">
-			<MonitorPlay size={18} class="text-[var(--color-text-secondary)]" />
-			<h1 class="text-base font-semibold">{m['shares.title']()}</h1>
+		<div class="flex min-w-0 flex-1 items-center gap-2.5">
+			<MonitorPlay size={18} class="shrink-0 text-[var(--color-text-tertiary)]" />
+			<div class="min-w-0">
+				<svelte:element this={variant === 'embedded' ? 'h2' : 'h1'} class="text-sm font-semibold">
+					{m['shares.title']()}
+				</svelte:element>
+				{#if variant === 'embedded' && tiles.length === 0 && !loading && !sharesState.loadError}
+					<p class="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{m['shares.empty_active_title']()}</p>
+				{/if}
+			</div>
 		</div>
 		<div class="flex items-center gap-2">
 			{#if tiles.length > 1}
@@ -260,13 +268,19 @@
 		</div>
 	</header>
 
-	<div class="min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
+	<div class="{tiles.length > 0 || variant === 'page' ? 'min-h-0 flex-1 overflow-y-auto p-2 sm:p-3' : 'shrink-0'}">
 		{#if sharesState.loadError}
 			<CommunicationError onretry={() => void sharesState.load(slug)} />
 		{/if}
-		{#if tiles.length === 0 && sharesState.loading}
-			<LoadingState />
-		{:else if tiles.length === 0 && !sharesState.loadError}
+		{#if tiles.length === 0 && loading}
+			{#if variant === 'embedded'}
+				<div role="status" class="flex items-center gap-2 px-4 pb-3 text-xs text-[var(--color-text-tertiary)]">
+					<LoaderCircle size={14} class="animate-spin" />{m['common.loading']()}
+				</div>
+			{:else}
+				<LoadingState />
+			{/if}
+		{:else if tiles.length === 0 && !sharesState.loadError && variant === 'page'}
 			<EmptyState title={m['shares.empty_active_title']()} description={m['shares.empty_active_description']()} />
 		{:else if tiles.length > 0}
 			<div

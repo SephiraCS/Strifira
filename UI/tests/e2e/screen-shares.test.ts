@@ -1474,7 +1474,7 @@ test('the integrated page presents and sends messages without leaving the channe
 	const wallBox = (await tile.boundingBox())!;
 	const chatBox = (await page.getByTestId('communication-conversation').boundingBox())!;
 	expect(wallBox.x + wallBox.width).toBeLessThanOrEqual(chatBox.x + 1);
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${channels[1].id}"]`).click();
 	await expect(tile).toContainText('Sharing');
 	expect(requests.creates).toBe(1);
 	expect(requests.ends).toEqual([]);
@@ -1496,8 +1496,8 @@ test('the integrated viewer keeps its peer while changing channels and composing
 	const tile = page.locator(`[data-share-id="${shareId}"]`);
 	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('A draft next to the live screen');
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[0].id);
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${channels[1].id}"]`).click();
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${channels[0].id}"]`).click();
 	await expect(page.getByRole('textbox', { name: 'Message #project' })).toHaveValue('A draft next to the live screen');
 	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
 	expect(await page.evaluate(() => (window as any).__shareRig.peers.length)).toBe(1);

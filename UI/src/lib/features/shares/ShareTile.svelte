@@ -626,14 +626,14 @@
 
 	function handleDoubleClick(event: MouseEvent) {
 		if (!stageActive) return;
-		if ((event.target as HTMLElement).closest('button, a')) return;
+		if ((event.target as HTMLElement).closest('button, a, input, textarea, select, label, [role="button"]')) return;
 		event.preventDefault();
 		resetStageZoom();
 	}
 
 	function handleStagePointerDown(event: PointerEvent) {
 		if (!stageActive || event.button !== 0) return;
-		if ((event.target as HTMLElement).closest('button, a')) return;
+		if ((event.target as HTMLElement).closest('button, a, input, textarea, select, label, [role="button"]')) return;
 		const el = event.currentTarget as HTMLElement;
 		const startX = event.clientX;
 		const startY = event.clientY;
@@ -743,82 +743,78 @@
 		</div>
 	{:else if !(live && !connecting) && presenterName}
 		<div class="pointer-events-none absolute left-3 top-3">
-			<span class="truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
+			<span class="max-w-full truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
 		</div>
 	{/if}
 
 	{#if variant !== 'mini' && live && !connecting}
-		<div class="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
-			<span
-				class="flex max-w-[50%] items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white"
-			>
-				<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-white"></span>
-				{mode === 'present' ? m['shares.sharing_badge']() : m['shares.live_badge']()}
-			</span>
-			{#if presenterName}
-				<span class="truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
-			{/if}
-			{#if (mode === 'present' ? presenterSession.viewerCount : viewerCount) > 0}
-				<span class="rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
-					{m['shares.viewer_count']({ count: mode === 'present' ? presenterSession.viewerCount : viewerCount })}
+		<div class="absolute inset-x-3 top-3 flex flex-wrap items-start justify-between gap-2">
+			<div class="pointer-events-none flex min-w-0 flex-1 basis-24 flex-col items-start gap-1">
+				<span
+					class="flex shrink-0 items-center gap-1.5 rounded-full bg-red-500/90 px-2.5 py-1 text-xs font-semibold text-white"
+				>
+					<span class="h-1.5 w-1.5 animate-pulse rounded-full bg-white"></span>
+					{mode === 'present' ? m['shares.sharing_badge']() : m['shares.live_badge']()}
 				</span>
-			{/if}
-			{#if mode === 'view'}
-				<span class="rounded-full bg-black/60 p-1.5 text-white" title={viewerPc?.connectionState ?? 'new'}>
-					{#if viewerPc?.connectionState === 'connected'}
-						<SignalHigh size={12} />
-					{:else if viewerPc?.connectionState === 'disconnected'}
-						<SignalLow size={12} />
-					{:else}
-						<SignalMedium size={12} />
-					{/if}
-				</span>
-			{/if}
-		</div>
+				{#if presenterName}
+					<span class="max-w-full truncate rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{presenterName}</span>
+				{/if}
+				{#if (mode === 'present' ? presenterSession.viewerCount : viewerCount) > 0}
+					<span class="rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">
+						{m['shares.viewer_count']({ count: mode === 'present' ? presenterSession.viewerCount : viewerCount })}
+					</span>
+				{/if}
+				{#if mode === 'view'}
+					<span class="rounded-full bg-black/60 p-1.5 text-white" title={viewerPc?.connectionState ?? 'new'}>
+						{#if viewerPc?.connectionState === 'connected'}
+							<SignalHigh size={12} />
+						{:else if viewerPc?.connectionState === 'disconnected'}
+							<SignalLow size={12} />
+						{:else}
+							<SignalMedium size={12} />
+						{/if}
+					</span>
+				{/if}
+			</div>
 
-		<div class="absolute right-3 top-3 flex items-center gap-2">
-			{#if mode === 'present'}
-				<div class="flex overflow-hidden rounded-md border border-white/20 bg-black/60 text-xs text-white">
-					<button
-						class="px-2.5 py-1 {presenterSession.qualityPreference === 'sharp'
-							? 'bg-white/20 font-medium'
-							: 'hover:bg-white/10'}"
-						onclick={() => void presenterSession.setQuality('sharp')}
+			<div class="flex shrink-0 items-center gap-2">
+				{#if mode === 'present'}
+					<select
+						class="h-8 w-32 rounded-md border border-white/20 bg-black/80 px-2 text-xs text-white focus-visible:outline-2 focus-visible:outline-white"
+						aria-label={m['shares.quality']()}
+						value={presenterSession.qualityPreference}
+						onchange={(event) => void presenterSession.setQuality(event.currentTarget.value as 'sharp' | 'smooth')}
 					>
-						{m['shares.quality_sharp']()}
-					</button>
-					<button
-						class="px-2.5 py-1 {presenterSession.qualityPreference === 'smooth'
-							? 'bg-white/20 font-medium'
-							: 'hover:bg-white/10'}"
-						onclick={() => void presenterSession.setQuality('smooth')}
+						<option value="sharp">{m['shares.quality_sharp']()}</option>
+						<option value="smooth">{m['shares.quality_smooth']()}</option>
+					</select>
+				{:else}
+					<Button
+						variant="secondary"
+						size="sm"
+						class="h-7 bg-black/60 text-white hover:bg-black/80"
+						onclick={toggleAudio}
+						title={audioMuted ? m['shares.unmute']() : m['shares.mute']()}
 					>
-						{m['shares.quality_smooth']()}
-					</button>
-				</div>
-			{:else}
+						{#if audioMuted}
+							<VolumeX size={13} />
+						{:else}
+							<Volume2 size={13} />
+						{/if}
+					</Button>
+				{/if}
 				<Button
 					variant="secondary"
 					size="sm"
 					class="h-7 bg-black/60 text-white hover:bg-black/80"
-					onclick={toggleAudio}
-					title={audioMuted ? m['shares.unmute']() : m['shares.mute']()}
+					onclick={toggleFullscreen}
+					title={m['shares.fullscreen']()}
+					aria-label={m['shares.fullscreen']()}
 				>
-					{#if audioMuted}
-						<VolumeX size={13} />
-					{:else}
-						<Volume2 size={13} />
-					{/if}
+					<Maximize2 size={13} />
 				</Button>
-			{/if}
-			<Button
-				variant="secondary"
-				size="sm"
-				class="h-7 bg-black/60 text-white hover:bg-black/80"
-				onclick={toggleFullscreen}
-			>
-				<Maximize2 size={13} />
-			</Button>
+			</div>
+
 		</div>
 
 		{#if mode === 'present'}

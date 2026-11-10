@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { chatState } from '$lib/features/chat/chat.state.svelte';
 	import CommunicationError from '$lib/features/communication/CommunicationError.svelte';
-	import ChatChannelList from '$lib/features/chat/ChatChannelList.svelte';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -25,9 +24,6 @@
 </script>
 
 <div class="flex h-full">
-	<div class="hidden w-60 shrink-0 2xl:block">
-		{#if ready}<ChatChannelList {slug} activeChannelId={null} />{:else}<LoadingState />{/if}
-	</div>
 	<div class="flex min-w-0 flex-1 items-center justify-center">
 		{#if chatState.loadError}
 			<CommunicationError onretry={() => void chatState.ensureWorkspace(slug)} />

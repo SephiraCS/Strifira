@@ -3,7 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { chatState } from '$lib/features/chat/chat.state.svelte';
 	import { voiceState } from '$lib/features/chat/voice/voice.state.svelte';
-	import ChatChannelList from '$lib/features/chat/ChatChannelList.svelte';
 	import ChatMessages from '$lib/features/chat/ChatMessages.svelte';
 	import ChatComposer from '$lib/features/chat/ChatComposer.svelte';
 	import CommunicationError from '$lib/features/communication/CommunicationError.svelte';
@@ -76,10 +75,6 @@
 </script>
 
 <div class="flex h-full min-h-0">
-	<div class="hidden w-60 shrink-0 2xl:block">
-		<ChatChannelList {slug} activeChannelId={channelId} />
-	</div>
-
 	<div class="flex min-w-0 flex-1 flex-col">
 		{#if chatState.loadError}
 			<CommunicationError onretry={() => void chatState.reload()} />
@@ -91,7 +86,7 @@
 			</div>
 		{:else}
 			<div
-				class="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--app-border)] px-3 py-2"
+				class="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-[var(--app-border)] px-4 py-2"
 			>
 				<span class="flex min-w-0 max-w-full items-center gap-1.5 break-all text-sm font-semibold text-[var(--color-text-primary)]">
 					{#if channel.type === 'private'}
@@ -126,7 +121,7 @@
 				{#if !inThisRoom}
 					<button
 						type="button"
-						class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] md:ml-2"
+						class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"
 						data-testid="voice-join"
 						onclick={handleVoiceButton}
 					>
@@ -139,7 +134,7 @@
 					</button>
 				{:else}
 					<span
-						class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--color-success)]/40 px-2 py-1 text-xs text-[var(--color-success)] md:ml-2"
+						class="ml-auto flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--color-success)]/40 px-2 py-1 text-xs text-[var(--color-success)]"
 						data-testid="voice-connected-badge"
 					>
 						<Headphones size={13} />
@@ -147,9 +142,9 @@
 					</span>
 				{/if}
 
-				<!-- Mobile-only channel switcher (the rail is md+) -->
+				<!-- Compact channel switcher while the channel rail is hidden. -->
 				<select
-					class="min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] 2xl:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
+					class="min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] lg:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
 					value={channelId}
 					onchange={handleMobileSwitch}
 					aria-label={m['chat.switch_channel']()}
