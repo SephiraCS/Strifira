@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.55",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.55",
+    "body": "Deployed to alpha as 52f55504b76050e77ed9bb68e24b3c8b5428dd10.\n\n- feat(voice): permitir mover o painel da chamada (STR-23) (#33)",
+    "published_at": "2026-11-10T18:49:02Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.55",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.54",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.54",
     "body": "Deployed to alpha as 6e2e0d91f63aacc7335f7ae36ee4d3dbda95d156.\n\n- docs: adaptar regras de PR ao Strifira (STR-26) (#32)",
