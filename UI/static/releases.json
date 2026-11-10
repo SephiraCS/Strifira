@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.52",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.52",
+    "body": "Deployed to alpha as 0c677504308f009d74fe034941f1e6cd8cdb40c4.\n\n- STR-15 - Criar um cliente de e-mail (#30)",
+    "published_at": "2026-11-10T11:54:03Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.52",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.51",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.51",
     "body": "Deployed to alpha as 7462645d61bac36d190571fc624d0062d1443b13.\n\n- STR-16 - Acelerar o load da documentação e melhorar a UX no padrão Notion (#29)",
