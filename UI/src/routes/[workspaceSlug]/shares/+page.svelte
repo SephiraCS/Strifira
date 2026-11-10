@@ -11,6 +11,8 @@
 	import ShareTile from '$lib/features/shares/ShareTile.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
+	import LoadingState from '$lib/components/shared/LoadingState.svelte';
+	import CommunicationError from '$lib/features/communication/CommunicationError.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
@@ -187,7 +189,7 @@
 <svelte:window onkeydown={keyHandler} />
 
 <div class="flex h-full flex-col">
-	<header class="flex items-center justify-between border-b border-[var(--color-border)] px-6 py-4">
+	<header class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-3 py-3 sm:px-6 sm:py-4">
 		<div class="flex items-center gap-2">
 			<MonitorPlay size={18} class="text-[var(--color-text-secondary)]" />
 			<h1 class="text-base font-semibold">{m['shares.title']()}</h1>
@@ -231,9 +233,14 @@
 	</header>
 
 	<div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-		{#if tiles.length === 0}
+		{#if sharesState.loadError}
+			<CommunicationError onretry={() => void sharesState.load(slug)} />
+		{/if}
+		{#if tiles.length === 0 && sharesState.loading}
+			<LoadingState />
+		{:else if tiles.length === 0 && !sharesState.loadError}
 			<EmptyState title={m['shares.empty_active_title']()} description={m['shares.empty_active_description']()} />
-		{:else}
+		{:else if tiles.length > 0}
 			<div
 				class="grid h-full min-h-0 gap-4"
 				style={gridStyle}

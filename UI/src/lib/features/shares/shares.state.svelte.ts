@@ -13,6 +13,8 @@ class SharesState {
 	recent = $state<ScreenShare[]>([]);
 	enabled = $state(false);
 	loaded = $state(false);
+	loading = $state(false);
+	loadError = $state(false);
 
 	private slug = '';
 	private loadSeq = 0;
@@ -35,12 +37,22 @@ class SharesState {
 			this.recent = [];
 			this.loaded = false;
 			this.slug = '';
+			this.loadSeq++;
+			this.loading = false;
+			this.loadError = false;
 		}
 	}
 
 	async load(slug: string) {
 		if (!slug) return;
+		if (this.slug !== slug) {
+			this.active = [];
+			this.recent = [];
+			this.loaded = false;
+		}
 		this.slug = slug;
+		this.loading = !this.loaded;
+		this.loadError = false;
 		const seq = ++this.loadSeq;
 		try {
 			const list = await listShares(slug);
@@ -49,7 +61,9 @@ class SharesState {
 			this.recent = list.recent;
 			this.loaded = true;
 		} catch {
-			// Keep whatever we had; the next WS event or navigation retries.
+			if (seq === this.loadSeq && slug === this.slug) this.loadError = true;
+		} finally {
+			if (seq === this.loadSeq) this.loading = false;
 		}
 	}
 

@@ -1446,3 +1446,23 @@ test('dragging in the spotlight rail reorders the rail and keeps the stage', asy
 	await page.keyboard.press('ArrowRight');
 	await expect(page.locator(`[data-share-id="${others[1].id}"]`)).toHaveAttribute('data-stage', 'true');
 });
+
+test('communication navigation keeps the same capture and returns to its channel', async ({ page }) => {
+	const requests = await stubOwnShare(page);
+	const channel = { id: '00000000-0000-0000-0000-000000000011', type: 'public', name: 'project', topic: '', created_by: presenter.id };
+	await page.route('**/api/workspaces/test/chat/channels', (route) => route.fulfill({ json: { channels: [channel] } }));
+	await page.route('**/api/workspaces/test/chat/channels/*/messages', (route) => route.fulfill({ json: { messages: [], has_more: false } }));
+	await page.goto(`/test/chat/${channel.id}`);
+	const nav = page.getByTestId('communication-nav');
+	await nav.getByRole('link', { name: 'Screen sharing' }).click();
+	await page.getByRole('button', { name: 'Share my screen', exact: true }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	await nav.getByRole('link', { name: /Chat & voice/ }).click();
+	await expect(page).toHaveURL(new RegExp(channel.id+'$'));
+	await nav.getByRole('link', { name: 'Screen sharing' }).click();
+	await expect(page.locator(`[data-share-id="${shareId}"]`)).toContainText('Sharing');
+	expect(requests.creates).toBe(1);
+	expect(requests.ends).toEqual([]);
+	expect(await page.evaluate(() => (window as any).__shareRig.streams[0].getVideoTracks()[0].readyState)).toBe('live');
+	expect(await page.evaluate(() => (window as any).__shareRig.stops[0])).toBe(0);
+});

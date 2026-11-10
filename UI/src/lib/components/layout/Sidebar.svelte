@@ -759,31 +759,6 @@
 					<span class="truncate">{m['sidebar.my_issues']()}</span>
 				</a>
 				<a
-					href="/{slug}/chat"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/chat`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
-					<MessageSquare size={16} class="shrink-0" />
-					<span class="truncate">{m['sidebar.chat']()}</span>
-					{#if chatUnreadCount > 0}
-						<span
-							class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--app-accent)] px-1 text-[10px] font-medium text-[var(--app-accent-foreground)]"
-						>
-							{chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-						</span>
-					{/if}
-				</a>
-				<a
-					href="/{slug}/mail"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/mail`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
-					<MailIcon size={16} class="shrink-0" />
-					<span class="truncate">{m['sidebar.mail']()}</span>
-				</a>
-				<a
 					href="/{slug}/archived-issues"
 					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/archived-issues`)
 						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
@@ -842,6 +817,36 @@
 						<span class="truncate">{m['sidebar.dev_machines']()}</span>
 					</a>
 				{/if}
+
+			</div>
+
+			<section class="mt-4 space-y-px" aria-label={m['communication.title']()} data-testid="communication-category">
+				<h2 class="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">{m['communication.title']()}</h2>
+				<a
+					href="/{slug}/chat"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/chat`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<MessageSquare size={16} class="shrink-0" />
+					<span class="truncate">{m['communication.chat_voice']()}</span>
+					{#if chatUnreadCount > 0}
+						<span
+							class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--app-accent)] px-1 text-[10px] font-medium text-[var(--app-accent-foreground)]"
+						>
+							{chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+						</span>
+					{/if}
+				</a>
+				<a
+					href="/{slug}/mail"
+					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/mail`)
+						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+				>
+					<MailIcon size={16} class="shrink-0" />
+					<span class="truncate">{m['sidebar.mail']()}</span>
+				</a>
 				{#if workspace.screen_sharing_enabled}
 					<div class="flex items-center gap-1">
 						<a
@@ -881,7 +886,7 @@
 						{/if}
 					</div>
 				{/if}
-			</div>
+			</section>
 
 			<!-- Favorites -->
 			{#if favorites.length > 0}
