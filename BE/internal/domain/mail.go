@@ -42,6 +42,7 @@ type MailAccount struct {
 	SMTPPort     int       `json:"smtp_port" db:"smtp_port"`
 	SMTPSecurity string    `json:"smtp_security" db:"smtp_security"`
 	Username     string    `json:"username" db:"username"`
+	SMTPUsername string    `json:"smtp_username" db:"smtp_username"`
 	// PasswordEncrypted is AES-256-GCM hex; never serialized to clients.
 	PasswordEncrypted string     `json:"-" db:"password_encrypted"`
 	Signature         string     `json:"signature" db:"signature"`

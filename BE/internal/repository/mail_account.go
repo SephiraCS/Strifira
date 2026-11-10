@@ -29,12 +29,12 @@ func (r *MailAccountRepository) Create(ctx context.Context, account *domain.Mail
 			id, workspace_id, created_by, email_address, display_name,
 			imap_host, imap_port, imap_security,
 			smtp_host, smtp_port, smtp_security,
-			username, password_encrypted, signature
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+			username, password_encrypted, signature, smtp_username
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		account.ID, account.WorkspaceID, account.CreatedBy, account.EmailAddress, account.DisplayName,
 		account.IMAPHost, account.IMAPPort, account.IMAPSecurity,
 		account.SMTPHost, account.SMTPPort, account.SMTPSecurity,
-		account.Username, account.PasswordEncrypted, account.Signature,
+		account.Username, account.PasswordEncrypted, account.Signature, account.SMTPUsername,
 	)
 	return err
 }
@@ -86,16 +86,16 @@ func (r *MailAccountRepository) Update(ctx context.Context, account *domain.Mail
 			email_address = $3, display_name = $4,
 			imap_host = $5, imap_port = $6, imap_security = $7,
 			smtp_host = $8, smtp_port = $9, smtp_security = $10,
-			username = $11, signature = $12, updated_at = NOW()`
+			username = $11, signature = $12, smtp_username = $13, updated_at = NOW()`
 	args := []any{
 		account.ID, account.WorkspaceID,
 		account.EmailAddress, account.DisplayName,
 		account.IMAPHost, account.IMAPPort, account.IMAPSecurity,
 		account.SMTPHost, account.SMTPPort, account.SMTPSecurity,
-		account.Username, account.Signature,
+		account.Username, account.Signature, account.SMTPUsername,
 	}
 	if account.PasswordEncrypted != "" {
-		query += `, password_encrypted = $13`
+		query += `, password_encrypted = $14`
 		args = append(args, account.PasswordEncrypted)
 	}
 	query += ` WHERE id = $1 AND workspace_id = $2`
@@ -123,6 +123,7 @@ func (r *MailAccountRepository) Delete(ctx context.Context, workspaceID, id uuid
 
 // mailAccountRow mirrors a mail_accounts row; sqlx maps `SELECT *` columns.
 type mailAccountRow struct {
+	SMTPUsername      string     `db:"smtp_username"`
 	ID                uuid.UUID  `db:"id"`
 	WorkspaceID       uuid.UUID  `db:"workspace_id"`
 	CreatedBy         uuid.UUID  `db:"created_by"`
@@ -159,6 +160,7 @@ func (row mailAccountRow) toDomain() domain.MailAccount {
 		SMTPPort:          row.SMTPPort,
 		SMTPSecurity:      row.SMTPSecurity,
 		Username:          row.Username,
+		SMTPUsername:      row.SMTPUsername,
 		PasswordEncrypted: row.PasswordEncrypted,
 		Signature:         row.Signature,
 		UIDValidity:       uint32(row.UIDValidity),

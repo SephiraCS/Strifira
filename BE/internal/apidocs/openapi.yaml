@@ -4953,9 +4953,14 @@ paths:
       tags: [Mail]
       summary: Add a mail account
       description: |
-        Stores the IMAP/SMTP connection data after successfully testing both
-        connections with the provided credentials. The first INBOX sync is
-        triggered asynchronously.
+        Discovers the connection settings from email_address on the server;
+        client-supplied host, port, TLS and username fields are not used.
+        Only stores the account after IMAP authentication and INBOX access,
+        and SMTP authentication succeed. The provider credential is encrypted
+        at rest. The first INBOX sync is triggered asynchronously.
+        OAuth-only providers return MAIL_OAUTH_REQUIRED until the Strifira
+        OAuth application is registered. App passwords remain subject to the
+        provider's policies and two-step verification requirements.
       requestBody:
         required: true
         content:
@@ -4965,7 +4970,39 @@ paths:
         "201":
           description: Account created.
         "422":
-          description: Connection test failed (MAIL_CONNECTION_FAILED).
+          description: MAIL_AUTHENTICATION_FAILED, MAIL_CONNECTION_FAILED, MAIL_DISCOVERY_NOT_FOUND or MAIL_OAUTH_REQUIRED.
+        "503": { description: MAIL_DISCOVERY_UNAVAILABLE. }
+  /api/workspaces/{slug}/mail/accounts/discover:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: discoverMailAccount
+      tags: [Mail]
+      summary: Discover secure mailbox settings from an e-mail address
+      description: |
+        Uses known providers, provider-owned MX suffixes, HTTPS autoconfig,
+        Thunderbird ISPDB and secure IMAP/submission DNS SRV records.
+        Requires workspace membership. Never accepts credentials or connects
+        to a mailbox. Returns provider, source, authentication, incoming and
+        outgoing servers. OAuth-only providers are identified but cannot be
+        connected until the Strifira application is registered with the provider.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email_address]
+              properties:
+                email_address: { type: string, format: email, maxLength: 254 }
+      responses:
+        "200":
+          description: Secure settings discovered. Connection has not been validated.
+          content:
+            application/json:
+              schema: { type: object }
+        "422": { description: MAIL_ADDRESS_INVALID or MAIL_DISCOVERY_NOT_FOUND. }
+        "503": { description: MAIL_DISCOVERY_UNAVAILABLE. }
   /api/workspaces/{slug}/mail/accounts/{accountId}:
     parameters:
       - $ref: "#/components/parameters/Slug"
@@ -4977,7 +5014,11 @@ paths:
       operationId: updateMailAccount
       tags: [Mail]
       summary: Update a mail account
-      description: A blank password keeps the stored one.
+      description: |
+        A blank password keeps the stored one when the address is unchanged.
+        Changing email_address requires a new mailbox credential and successful
+        rediscovery and connection tests. Existing credentials are never sent
+        to another domain. Failed updates leave the stored account untouched.
       requestBody:
         required: true
         content:

@@ -16,15 +16,24 @@ export function listMailAccounts(slug: string): Promise<MailAccountListResponse>
 export interface MailAccountInput {
 	email_address: string;
 	display_name?: string;
-	imap_host: string;
-	imap_port: number;
-	imap_security: 'none' | 'starttls' | 'tls';
-	smtp_host: string;
-	smtp_port: number;
-	smtp_security: 'none' | 'starttls' | 'tls';
-	username: string;
 	password?: string;
 	signature?: string;
+}
+
+export interface MailDiscovery {
+	email_address: string;
+	provider: string;
+	source: string;
+	authentication: 'password' | 'app_password' | 'oauth2';
+	help_url?: string;
+	authorization_url?: string;
+	token_url?: string;
+	incoming: { host: string; port: number; security: 'tls' | 'starttls'; username: string };
+	outgoing: { host: string; port: number; security: 'tls' | 'starttls'; username: string };
+}
+
+export function discoverMailAccount(slug: string, emailAddress: string): Promise<MailDiscovery> {
+	return api.post<MailDiscovery>(`/api/workspaces/${slug}/mail/accounts/discover`, { email_address: emailAddress });
 }
 
 export function createMailAccount(slug: string, body: MailAccountInput): Promise<MailAccount> {
@@ -75,9 +84,7 @@ function mailListQueryString(query: MailListQuery): string {
 }
 
 export function listMailMessages(slug: string, query: MailListQuery): Promise<MailMessageListResponse> {
-	return api.get<MailMessageListResponse>(
-		`/api/workspaces/${slug}/mail/messages${mailListQueryString(query)}`
-	);
+	return api.get<MailMessageListResponse>(`/api/workspaces/${slug}/mail/messages${mailListQueryString(query)}`);
 }
 
 export function getMailMessage(slug: string, messageId: string): Promise<MailMessageDetail> {
@@ -100,7 +107,10 @@ export function mailMessageAttachmentUrl(slug: string, attachmentId: string): st
 	return `/api/workspaces/${slug}/mail/attachments/${attachmentId}`;
 }
 
-export function downloadMailAttachment(slug: string, attachmentId: string): Promise<{ blob: Blob; filename: string | null }> {
+export function downloadMailAttachment(
+	slug: string,
+	attachmentId: string
+): Promise<{ blob: Blob; filename: string | null }> {
 	return api.blob(mailMessageAttachmentUrl(slug, attachmentId));
 }
 
@@ -123,11 +133,7 @@ export function createMailDraft(slug: string, body: MailDraftInput): Promise<Mai
 	return api.post<MailDraft>(`/api/workspaces/${slug}/mail/drafts`, body);
 }
 
-export function updateMailDraft(
-	slug: string,
-	draftId: string,
-	body: Partial<MailDraftInput>
-): Promise<MailDraft> {
+export function updateMailDraft(slug: string, draftId: string, body: Partial<MailDraftInput>): Promise<MailDraft> {
 	return api.patch<MailDraft>(`/api/workspaces/${slug}/mail/drafts/${draftId}`, body);
 }
 
@@ -163,7 +169,5 @@ export function deleteMailDraftAttachment(
 	draftId: string,
 	attachmentId: string
 ): Promise<{ deleted: boolean }> {
-	return api.delete<{ deleted: boolean }>(
-		`/api/workspaces/${slug}/mail/drafts/${draftId}/attachments/${attachmentId}`
-	);
+	return api.delete<{ deleted: boolean }>(`/api/workspaces/${slug}/mail/drafts/${draftId}/attachments/${attachmentId}`);
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/SephiraCS/strifira-backend/internal/middleware"
 	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/SephiraCS/strifira-backend/internal/service"
+	"github.com/SephiraCS/strifira-backend/pkg/mailconfig"
 	"github.com/SephiraCS/strifira-backend/pkg/response"
 	"github.com/SephiraCS/strifira-backend/pkg/validate"
 	"github.com/google/uuid"
@@ -41,6 +42,44 @@ func (h *MailHandler) ListAccounts(c echo.Context) error {
 	return response.Success(c, http.StatusOK, dto.MailAccountListResponse{Accounts: list})
 }
 
+func (h *MailHandler) DiscoverAccount(c echo.Context) error {
+	var req dto.DiscoverMailAccountRequest
+	if err := c.Bind(&req); err != nil {
+		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid request body")
+	}
+	if err := validate.Struct(&req); err != nil {
+		return response.ValidationError(c, validationDetails(err))
+	}
+	config, err := h.mailSvc.DiscoverAccount(c.Request().Context(), req.EmailAddress)
+	if err != nil {
+		return mailAccountError(c, err)
+	}
+	return response.Success(c, http.StatusOK, config)
+}
+
+func mailAccountError(c echo.Context, err error) error {
+	switch {
+	case errors.Is(err, mailconfig.ErrAddress):
+		return response.Error(c, 422, "MAIL_ADDRESS_INVALID", "Informe um endereço de e-mail válido.")
+	case errors.Is(err, mailconfig.ErrNotFound):
+		return response.Error(c, 422, "MAIL_DISCOVERY_NOT_FOUND", "Não encontramos uma configuração segura para este domínio. Confira o endereço ou tente novamente mais tarde.")
+	case errors.Is(err, mailconfig.ErrUnavailable):
+		return response.Error(c, 503, "MAIL_DISCOVERY_UNAVAILABLE", "A descoberta do provedor está indisponível. Tente novamente em instantes.")
+	case errors.Is(err, service.ErrMailCredentialRequired):
+		return response.Error(c, 422, "MAIL_CREDENTIAL_REQUIRED", service.ErrMailCredentialRequired.Error())
+	case errors.Is(err, service.ErrMailOAuthRequired):
+		return response.Error(c, 422, "MAIL_OAUTH_REQUIRED", service.ErrMailOAuthRequired.Error())
+	case errors.Is(err, service.ErrMailAuthentication):
+		return response.Error(c, 422, "MAIL_AUTHENTICATION_FAILED", service.ErrMailAuthentication.Error())
+	case errors.Is(err, service.ErrMailConnectionFailed):
+		return response.Error(c, 422, "MAIL_CONNECTION_FAILED", service.ErrMailConnectionFailed.Error())
+	case errors.Is(err, repository.ErrMailAccountNotFound):
+		return response.NotFound(c, "Account")
+	default:
+		return response.InternalErrorErr(c, err)
+	}
+}
+
 func (h *MailHandler) CreateAccount(c echo.Context) error {
 	var req dto.CreateMailAccountRequest
 	if err := c.Bind(&req); err != nil {
@@ -55,11 +94,9 @@ func (h *MailHandler) CreateAccount(c echo.Context) error {
 
 	account, err := h.mailSvc.CreateAccount(c.Request().Context(), ws.ID, userID, req)
 	if err != nil {
-		if errors.Is(err, service.ErrMailConnectionFailed) {
-			return response.Error(c, http.StatusUnprocessableEntity, "MAIL_CONNECTION_FAILED", err.Error())
-		}
-		return response.InternalErrorErr(c, err)
+		return mailAccountError(c, err)
 	}
+
 	return response.Success(c, http.StatusCreated, mailAccountResponse(*account))
 }
 
@@ -80,14 +117,9 @@ func (h *MailHandler) UpdateAccount(c echo.Context) error {
 
 	account, err := h.mailSvc.UpdateAccount(c.Request().Context(), ws.ID, id, req)
 	if err != nil {
-		if errors.Is(err, service.ErrMailConnectionFailed) {
-			return response.Error(c, http.StatusUnprocessableEntity, "MAIL_CONNECTION_FAILED", err.Error())
-		}
-		if errors.Is(err, repository.ErrMailAccountNotFound) {
-			return response.NotFound(c, "Account")
-		}
-		return response.InternalErrorErr(c, err)
+		return mailAccountError(c, err)
 	}
+
 	return response.Success(c, http.StatusOK, mailAccountResponse(*account))
 }
 
@@ -471,6 +503,9 @@ func (h *MailHandler) SendDraft(c echo.Context) error {
 // --- Mappers and helpers ---
 
 func mailAccountResponse(account domain.MailAccount) dto.MailAccountResponse {
+	if account.LastSyncError != "" && account.LastSyncError != service.ErrMailAuthentication.Error() {
+		account.LastSyncError = service.ErrMailConnectionFailed.Error()
+	}
 	return dto.MailAccountResponse{
 		ID:            account.ID.String(),
 		EmailAddress:  account.EmailAddress,

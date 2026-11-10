@@ -695,6 +695,7 @@ func main() {
 	// Mail: native e-mail client (accounts, inbox cache, drafts, send)
 	ws.GET("/mail/accounts", mailH.ListAccounts)
 	ws.POST("/mail/accounts", mailH.CreateAccount)
+	ws.POST("/mail/accounts/discover", mailH.DiscoverAccount)
 	ws.PATCH("/mail/accounts/:accountId", mailH.UpdateAccount)
 	ws.DELETE("/mail/accounts/:accountId", mailH.DeleteAccount)
 	ws.POST("/mail/accounts/:accountId/sync", mailH.SyncAccount)
