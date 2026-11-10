@@ -241,8 +241,9 @@ test('joining enters the room, shows the overlay and gates the mic', async ({ pa
 	await expect(bar).toContainText('Test User');
 
 	// Chromium's fake mic produces a real tone: the speaking ring lights up
-	// from the actual audio levels.
-	await expect(bar.locator('[data-testid="voice-speaking-dot"]').first()).toBeVisible({ timeout: 5000 });
+	// from the actual audio levels. The analyser loop runs at 120ms, but
+	// headless first-boot (audio graph, device warm-up) can take a while.
+	await expect(bar.locator('[data-testid="voice-speaking-dot"]').first()).toBeVisible({ timeout: 15000 });
 
 	// Mute flips the roster flag through voice.state.
 	await page.getByTestId('voice-mute').click();
