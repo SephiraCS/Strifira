@@ -384,6 +384,8 @@
 	"voice.connecting": "Conectando à voz…",
 	"voice.mic_failed": "Microfone indisponível — permissão negada ou sem dispositivo",
 	"voice.join_failed": "Não foi possível entrar na sala de voz",
+	"voice.move_panel": "Mover painel de voz",
+	"voice.move_hint": "Arraste para mover ou use as setas. Segure Shift para passos maiores. Home volta ao canto inferior esquerdo.",
 	"voice.settings": "Ajustes de voz",
 	"voice.leave": "Sair da voz",
 	"voice.input_mode": "Modo de entrada",

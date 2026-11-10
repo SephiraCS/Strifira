@@ -384,6 +384,8 @@
 	"voice.connecting": "正在连接语音…",
 	"voice.mic_failed": "麦克风不可用——权限被拒绝或没有设备",
 	"voice.join_failed": "无法加入语音房间",
+	"voice.move_panel": "移动语音面板",
+	"voice.move_hint": "拖动或使用方向键移动。按住 Shift 可加大移动步长。Home 返回左下角。",
 	"voice.settings": "语音设置",
 	"voice.leave": "退出语音",
 	"voice.input_mode": "输入模式",
