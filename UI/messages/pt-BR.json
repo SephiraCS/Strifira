@@ -346,7 +346,7 @@
 	"inbox.type.priority_changed": "Prioridade alterada",
 	"inbox.type.status_changed": "Status alterado",
 	"communication.title": "Comunicação",
-	"communication.chat_voice": "Chat e voz",
+	"communication.chat_voice": "Chat, voz e telas",
 	"communication.load_failed": "Não foi possível carregar este conteúdo. Verifique seu acesso ou tente novamente.",
 	"communication.channel_unavailable": "Este canal está indisponível. Ele pode ter sido removido ou seu acesso pode ter mudado.",
 	"sidebar.chat": "Chat",

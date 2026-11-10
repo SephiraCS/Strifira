@@ -487,40 +487,42 @@ async function communicationRoutes(page: Page) {
 	return channels;
 }
 
-test('communication navigation preserves the selected channel, draft and active call', async ({ page }) => {
+test('the integrated page preserves channel, draft and voice while screens stay visible', async ({ page }) => {
+	await page.setViewportSize({ width: 1280, height: 800 });
 	const channels = await communicationRoutes(page);
 	await page.goto(`/test/chat/${CHANNEL_ID}`);
-	const category = page.getByTestId('communication-category');
-	await expect(category).toContainText('Communication');
-	await expect(category.getByRole('link')).toHaveCount(3);
+	await expect(page.getByTestId('communication-category').getByRole('link')).toHaveCount(2);
 	await page.getByTestId('voice-join').click();
 	await expect(page.getByTestId('voice-mute')).toBeEnabled();
-	await page.locator(`a[href="/test/chat/${channels[1].id}"]`).click();
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('Keep this draft');
-	const nav = page.getByTestId('communication-nav');
-	await nav.getByRole('link', { name: 'Screen sharing' }).click();
-	await expect(page.getByText('No one is sharing right now')).toBeVisible();
+	await expect(page.getByTestId('communication-screens')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Share my screen', exact: true })).toBeVisible();
 	await expect(page.getByTestId('voice-room-bar')).toContainText('#general');
-	await nav.getByRole('link', { name: /Chat & voice/ }).click();
-	await expect(page).toHaveURL(new RegExp(`/chat/${channels[1].id}$`));
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(CHANNEL_ID);
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
 	await expect(page.getByRole('textbox', { name: 'Message #project' })).toHaveValue('Keep this draft');
+	await page.getByTestId('voice-mute').click();
+	await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
 	await expect(page.getByTestId('voice-participant')).toHaveCount(1);
 	expect(await page.evaluate(() => (window as any).__voiceFrames.filter((f: any) => f.type === 'voice.presence').map((f: any) => f.payload.action))).toEqual(['join']);
 });
 
-test('communication navigation fits a phone and the drawer closes after navigation', async ({ page }) => {
+test('the phone layout keeps screens and conversation on the same page', async ({ page }) => {
 	await page.setViewportSize({ width: 390, height: 844 });
 	const channels = await communicationRoutes(page);
 	await page.goto(`/test/chat/${channels[1].id}`);
 	await expect(page.getByRole('textbox', { name: 'Message #project' })).toBeVisible();
-	await page.getByTestId('communication-nav').getByRole('link', { name: 'Screen sharing' }).click();
-	await page.getByTestId('communication-nav').getByRole('link', { name: /Chat & voice/ }).click();
-	await expect(page).toHaveURL(new RegExp(channels[1].id+'$'));
+	await expect(page.getByTestId('communication-screens')).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Share my screen', exact: true })).toBeVisible();
 	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	const screens = (await page.getByTestId('communication-screens').boundingBox())!;
+	const conversation = (await page.getByTestId('communication-conversation').boundingBox())!;
+	expect(screens.y + screens.height).toBeLessThanOrEqual(conversation.y + 1);
 	await page.getByRole('button', { name: 'Open navigation' }).click();
-	await page.getByTestId('communication-category').getByRole('link', { name: 'Screen sharing' }).click();
+	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat, voice & screens' }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
-	await expect(page.getByTestId('communication-nav')).toBeVisible();
+	await expect(page).toHaveURL(new RegExp(channels[1].id+'$'));
 });
 
 test('chat access errors can be retried and an empty workspace is explicit', async ({ page }) => {
@@ -561,9 +563,9 @@ test('changing workspace clears remembered channels and drafts', async ({ page }
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('Private draft');
 	await page.getByRole('button', { name: /Test Workspace/ }).click();
 	await page.getByRole('button', { name: /Other Workspace/ }).click();
-	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat & voice' }).click();
+	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat, voice & screens' }).click();
 	await expect(page).toHaveURL(/\/other\/chat$/);
 	await expect(page.getByText('No channels yet')).toBeVisible();
-	await expect(page.getByTestId('communication-nav')).not.toContainText('#project');
+	await expect(page.getByTestId('communication-workspace')).not.toContainText('#project');
 	await expect(page.getByText('Private draft')).toHaveCount(0);
 });

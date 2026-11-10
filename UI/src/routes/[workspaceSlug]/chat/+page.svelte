@@ -25,7 +25,7 @@
 </script>
 
 <div class="flex h-full">
-	<div class="hidden w-60 shrink-0 md:block">
+	<div class="hidden w-60 shrink-0 2xl:block">
 		{#if ready}<ChatChannelList {slug} activeChannelId={null} />{:else}<LoadingState />{/if}
 	</div>
 	<div class="flex min-w-0 flex-1 items-center justify-center">

@@ -65,7 +65,6 @@
 	import BarChart3 from '@lucide/svelte/icons/chart-column';
 	import BookOpen from '@lucide/svelte/icons/book-open';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
-	import MonitorPlay from '@lucide/svelte/icons/monitor-play';
 	import MonitorUp from '@lucide/svelte/icons/monitor-up';
 	import Server from '@lucide/svelte/icons/server';
 	import MessageSquare from '@lucide/svelte/icons/message-square';
@@ -822,70 +821,22 @@
 
 			<section class="mt-4 space-y-px" aria-label={m['communication.title']()} data-testid="communication-category">
 				<h2 class="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">{m['communication.title']()}</h2>
-				<a
-					href="/{slug}/chat"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/chat`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
-					<MessageSquare size={16} class="shrink-0" />
-					<span class="truncate">{m['communication.chat_voice']()}</span>
-					{#if chatUnreadCount > 0}
-						<span
-							class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--app-accent)] px-1 text-[10px] font-medium text-[var(--app-accent-foreground)]"
-						>
-							{chatUnreadCount > 99 ? '99+' : chatUnreadCount}
-						</span>
+				<div class="flex items-center gap-1">
+					<a href="/{slug}/chat" aria-current={isActive(`/${slug}/chat`) ? 'page' : undefined} class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/chat`) ? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}">
+						<MessageSquare size={16} class="shrink-0" />
+						<span class="truncate" title={m['communication.chat_voice']()}>{m['communication.chat_voice']()}</span>
+						{#if chatUnreadCount > 0}<span class="ml-auto rounded-full bg-[var(--app-accent)] px-1 text-[10px] text-[var(--app-accent-foreground)]">{chatUnreadCount > 99 ? '99+' : chatUnreadCount}</span>{/if}
+						{#if presenterSession.active}<span class="ml-auto h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" title={m['shares.sharing_badge']()}></span>
+						{:else if workspace.screen_sharing_enabled && sharesState.loadedFor === slug && sharesState.active.length > 0}<span class="ml-auto rounded-full bg-red-500 px-1 text-[10px] text-white" title={m['shares.title']()}>{sharesState.active.length > 9 ? '9+' : sharesState.active.length}</span>{/if}
+					</a>
+					{#if presenterSession.active}
+						<button type="button" class="shrink-0 rounded-md px-1.5 py-1 text-red-500 hover:bg-[var(--color-bg-hover)]" onclick={() => void presenterSession.stop()} title={m['shares.stop']()} aria-label={m['shares.stop']()}><MonitorUp size={14} /></button>
 					{/if}
-				</a>
-				<a
-					href="/{slug}/mail"
-					class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/mail`)
-						? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-				>
+				</div>
+				<a href="/{slug}/mail" class="flex items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/mail`) ? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}">
 					<MailIcon size={16} class="shrink-0" />
 					<span class="truncate">{m['sidebar.mail']()}</span>
 				</a>
-				{#if workspace.screen_sharing_enabled}
-					<div class="flex items-center gap-1">
-						<a
-							href="/{slug}/shares"
-							class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm {isActive(`/${slug}/shares`)
-								? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-								: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-						>
-							<MonitorPlay size={16} class="shrink-0" />
-							<span class="truncate">{m['sidebar.screen_shares']()}</span>
-							{#if presenterSession.active}
-								<span
-									class="ml-auto flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500"
-									title={m['shares.sharing_badge']()}
-								></span>
-							{:else if sharesState.active.length > 0}
-								<span
-									class="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
-								>
-									{sharesState.active.length > 9 ? '9+' : sharesState.active.length}
-								</span>
-							{/if}
-						</a>
-						<!-- The share is persistent across navigation: keep a Stop
-					     control reachable from every page. -->
-						{#if presenterSession.active}
-							<button
-								class="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-red-500 hover:bg-[var(--color-bg-hover)]"
-								onclick={(e) => {
-									e.preventDefault();
-									void presenterSession.stop();
-								}}
-								title={m['shares.stop']()}
-							>
-								<MonitorUp size={14} />
-							</button>
-						{/if}
-					</div>
-				{/if}
 			</section>
 
 			<!-- Favorites -->

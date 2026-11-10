@@ -76,7 +76,7 @@
 </script>
 
 <div class="flex h-full min-h-0">
-	<div class="hidden w-60 shrink-0 md:block">
+	<div class="hidden w-60 shrink-0 2xl:block">
 		<ChatChannelList {slug} activeChannelId={channelId} />
 	</div>
 
@@ -149,7 +149,7 @@
 
 				<!-- Mobile-only channel switcher (the rail is md+) -->
 				<select
-					class="min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] md:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
+					class="min-w-0 max-w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg)] px-2 py-1 text-xs text-[var(--color-text-primary)] 2xl:hidden {voiceCount > 0 || inThisRoom ? '' : 'ml-auto'}"
 					value={channelId}
 					onchange={handleMobileSwitch}
 					aria-label={m['chat.switch_channel']()}
