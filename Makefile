@@ -103,6 +103,7 @@ test-migrate:
 		DATABASE_URL="$$TEST_DATABASE_URL" "$$dir/strifira-server" migrate up
 
 test-fast-backend: test-migrate
+	python3 -m unittest discover -s scripts -p 'test_reconcile_coolify_cluster.py'
 	$(DOTENV) cd BE && DATABASE_URL="$$TEST_DATABASE_URL" go test $(GO_TEST_FLAGS) -skip '$(GO_SLOW_TESTS)' ./...
 
 test-slow-backend: test-migrate
