@@ -14,7 +14,7 @@
 	import { m } from '$lib/paraglide/messages.js';
 
 	let { slug, screenSharing, children }: { slug: string; screenSharing: boolean; children: Snippet } = $props();
-	const ownShare = $derived(presenterSession.belongsToWorkspace(slug) ? presenterSession.share : null);
+	const ownShare = $derived(presenterSession.share && presenterSession.belongsToWorkspace(slug) ? presenterSession.share : null);
 	const screenCount = $derived(
 		(sharesState.loadedFor === slug ? sharesState.active.filter((share) => share.id !== ownShare?.id).length : 0) +
 			(ownShare ? 1 : 0)

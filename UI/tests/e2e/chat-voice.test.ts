@@ -756,7 +756,7 @@ test('communication layout gives the conversation room and preserves media acros
 	await page.screenshot({ path: testInfo.outputPath('sharing-mobile.png') });
 	await expectPanelInViewport(page);
 	await page.getByRole('button', { name: 'Channels', exact: true }).click();
-	await expect(page.getByRole('dialog').getByRole('link', { name: 'general', exact: true })).toHaveAttribute('aria-current', 'page');
+	await expect(page.getByRole('dialog').locator(`a[href="/test/chat/${CHANNEL_ID}"]`)).toHaveAttribute('aria-current', 'page');
 	await page.screenshot({ path: testInfo.outputPath('channels-mobile.png') });
 	await page.getByRole('dialog').getByRole('link', { name: 'project', exact: true }).click();
 	await expect(page.getByRole('dialog')).toHaveCount(0);
