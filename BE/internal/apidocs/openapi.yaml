@@ -100,6 +100,8 @@ tags:
     description: "Unauthenticated surfaces consumed by public share pages."
   - name: Screen Shares
     description: "P2P WebRTC screen-share sessions signaled over the workspace WebSocket."
+  - name: Chat
+    description: "Discord/Slack-style channels and direct messages with realtime fan-out over the workspace WebSocket (chat.* and presence.* events)."
   - name: Analytics
     description: "Workspace analytics: overview, distribution, insights, burnup."
   - name: Webhooks
@@ -2486,6 +2488,219 @@ paths:
           content:
             image/*:
               schema: { type: string, format: binary }
+
+  /api/workspaces/{slug}/chat/channels:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listChatChannels
+      tags: [Chat]
+      summary: List chat channels and DMs
+      description: |
+        Channels the caller can see: every public channel plus the private
+        channels and DMs they are a member of, most recently active first.
+        The workspace's #general channel is provisioned lazily on this call.
+      responses:
+        "200":
+          description: Visible channels.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  channels:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChatChannel" }
+    post:
+      operationId: createChatChannel
+      tags: [Chat]
+      summary: Create a public or private channel
+      description: >-
+        The creator joins the channel automatically. The name "general" is
+        reserved to the lazily provisioned default channel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+                type:
+                  type: string
+                  enum: [public, private]
+                  default: public
+      responses:
+        "201":
+          description: Created channel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatChannel" }
+        "409":
+          description: A channel with this name already exists.
+        "422":
+          description: The name is reserved or fails validation.
+
+  /api/workspaces/{slug}/chat/dm:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    post:
+      operationId: ensureChatDM
+      tags: [Chat]
+      summary: Open (or return) a direct message with a member
+      description: >-
+        Idempotent: returns the existing DM channel between the caller and
+        the target member, creating it on first use.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The DM channel.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatChannel" }
+        "404":
+          description: The target user is not a workspace member.
+        "422":
+          description: Direct messages to yourself are not supported.
+
+  /api/workspaces/{slug}/chat/channels/{channelId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: channelId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listChatMessages
+      tags: [Chat]
+      summary: List a channel's messages
+      description: Newest page of the timeline (oldest-last in the response),
+        excluding tombstones. Paginate backwards with the id of the oldest
+        message already loaded; has_more reports older pages.
+      parameters:
+        - name: before
+          in: query
+          description: Message id to paginate backwards from.
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Message page.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChatMessage" }
+                  has_more: { type: boolean }
+        "404":
+          description: The channel does not exist or is hidden from the caller.
+    post:
+      operationId: createChatMessage
+      tags: [Chat]
+      summary: Send a message
+      description: Fans the message out to the channel audience over the
+        workspace WebSocket and notifies the other members.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 8000 }
+      responses:
+        "201":
+          description: Created message.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatMessage" }
+        "404":
+          description: The channel does not exist or is hidden from the caller.
+        "422":
+          description: The body is empty or too long.
+
+  /api/workspaces/{slug}/chat/messages/{messageId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateChatMessage
+      tags: [Chat]
+      summary: Edit a message
+      description: Author-only. Broadcasts chat.message.updated to the
+        channel audience.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: { type: string, minLength: 1, maxLength: 8000 }
+      responses:
+        "200":
+          description: Updated message.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatMessage" }
+        "403":
+          description: Only the author can edit a message.
+        "404":
+          description: The message is deleted or hidden from the caller.
+        "422":
+          description: The body is empty or too long.
+    delete:
+      operationId: deleteChatMessage
+      tags: [Chat]
+      summary: Delete a message
+      description: Author-only; the row is tombstoned so other clients
+        reconcile via chat.message.deleted.
+      responses:
+        "204":
+          description: Deleted.
+        "403":
+          description: Only the author can delete a message.
+        "404":
+          description: The message is deleted or hidden from the caller.
+
+  /api/workspaces/{slug}/chat/presence:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: getChatPresence
+      tags: [Chat]
+      summary: List users currently connected to the workspace socket
+      description: Initial online snapshot; live transitions arrive as
+        presence.online / presence.offline WebSocket events.
+      responses:
+        "200":
+          description: Distinct user ids with a live socket.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  online:
+                    type: array
+                    items: { type: string, format: uuid }
 
   /api/workspaces/{slug}/shares:
     parameters:
@@ -5599,6 +5814,52 @@ components:
         viewer_count: { type: integer }
         created_at: { type: string, format: date-time }
         ended_at: { type: string, format: date-time, nullable: true }
+
+    ChatUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        display_name: { type: string }
+        email: { type: string }
+        avatar_url: { type: string, nullable: true }
+
+    ChatChannel:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        type:
+          type: string
+          enum: [public, private, dm]
+        name: { type: string }
+        topic: { type: string }
+        dm_peer:
+          type: object
+          nullable: true
+          description: The other participant of a DM, relative to the caller.
+          allOf:
+            - $ref: "#/components/schemas/ChatUser"
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_post_at: { type: string, format: date-time, nullable: true }
+
+    ChatMessage:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        channel_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        author:
+          type: object
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ChatUser"
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+        edited_at: { type: string, format: date-time, nullable: true }
+        deleted_at: { type: string, format: date-time, nullable: true }
 
     CreateWebhookRequest:
       type: object
