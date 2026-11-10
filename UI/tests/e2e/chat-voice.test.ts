@@ -532,11 +532,11 @@ test('chat access errors can be retried and an empty workspace is explicit', asy
 		? route.fulfill({ status: 403, json: { error: { code: 'FORBIDDEN' } } })
 		: route.fulfill({ json: { channels: [] } }));
 	await page.goto('/test/chat');
-	await expect(page.getByRole('alert')).toContainText('Check your access');
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toContainText('Check your access');
 	denied = false;
 	await page.getByRole('button', { name: 'Retry', exact: true }).click();
 	await expect(page.getByText('No channels yet')).toBeVisible();
-	await expect(page.getByRole('alert')).toHaveCount(0);
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toHaveCount(0);
 });
 
 test('a failed wall load is retryable and does not appear as an empty result', async ({ page }) => {
@@ -545,8 +545,9 @@ test('a failed wall load is retryable and does not appear as an empty result', a
 	await page.route('**/api/workspaces/test/shares', (route) => failed
 		? route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } })
 		: route.fulfill({ json: { active: [], recent: [] } }));
-	await page.goto('/test/shares');
-	await expect(page.getByRole('alert')).toContainText('Could not load');
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	await expect(page.getByRole('textbox', { name: 'Message #general' })).toBeVisible();
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toContainText('Could not load');
 	await expect(page.getByText('No one is sharing right now')).toHaveCount(0);
 	failed = false;
 	await page.getByRole('button', { name: 'Retry', exact: true }).click();
@@ -559,10 +560,13 @@ test('changing workspace clears remembered channels and drafts', async ({ page }
 	await page.route('**/api/workspaces', (route) => route.fulfill({ json: [other] }));
 	await page.route('**/api/workspaces/other', (route) => route.fulfill({ json: other }));
 	await page.route('**/api/workspaces/other/chat/channels', (route) => route.fulfill({ json: { channels: [] } }));
+	await page.route('**/api/workspaces/other/shares', (route) => route.fulfill({ json: { active: [], recent: [] } }));
+	await page.route('**/api/workspaces/other/issues?**', (route) => route.fulfill({ json: { data: [], total_count: 0, has_more: false, page: 1, per_page: 50 } }));
 	await page.goto(`/test/chat/${channels[1].id}`);
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('Private draft');
-	await page.getByRole('button', { name: /Test Workspace/ }).click();
+	await page.getByRole('button', { name: /Test Workspace/ }).first().click();
 	await page.getByRole('button', { name: /Other Workspace/ }).click();
+	await expect(page).toHaveURL(/\/other\/my-issues$/);
 	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat, voice & screens' }).click();
 	await expect(page).toHaveURL(/\/other\/chat$/);
 	await expect(page.getByText('No channels yet')).toBeVisible();
