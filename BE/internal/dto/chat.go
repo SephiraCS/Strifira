@@ -61,3 +61,25 @@ type ChatMessageListResponse struct {
 type ChatChannelListResponse struct {
 	Channels []ChatChannelResponse `json:"channels"`
 }
+
+// VoiceRoomResponse is one channel's live voice room. Participants are
+// per-connection (a user with two tabs appears once per joined tab); the
+// hub retires a user's earlier connections on rejoin.
+type VoiceRoomResponse struct {
+	ChannelID    string                     `json:"channel_id"`
+	ChannelName  string                     `json:"channel_name"`
+	ChannelType  string                     `json:"channel_type"`
+	Participants []VoiceParticipantResponse `json:"participants"`
+}
+
+type VoiceParticipantResponse struct {
+	PeerID   string    `json:"peer_id"`
+	UserID   string    `json:"user_id"`
+	User     *ChatUser `json:"user,omitempty"`
+	Muted    bool      `json:"muted"`
+	Deafened bool      `json:"deafened"`
+}
+
+type VoiceRoomListResponse struct {
+	Rooms []VoiceRoomResponse `json:"rooms"`
+}

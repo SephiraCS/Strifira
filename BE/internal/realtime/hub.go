@@ -75,11 +75,17 @@ type shareLifecycleLock struct {
 }
 
 type Hub struct {
-	mu         sync.RWMutex
-	clients    map[uuid.UUID]map[*Client]bool // workspaceID -> clients
-	shares     map[uuid.UUID]*shareState      // shareID -> live membership
-	shareLocks map[uuid.UUID]*shareLifecycleLock
-	shareEpoch map[uuid.UUID]uint64
+	mu             sync.RWMutex
+	clients        map[uuid.UUID]map[*Client]bool // workspaceID -> clients
+	shares         map[uuid.UUID]*shareState      // shareID -> live membership
+	shareLocks     map[uuid.UUID]*shareLifecycleLock
+	shareEpoch     map[uuid.UUID]uint64
+	voiceRooms     map[uuid.UUID]*voiceRoom         // channelID -> this node's local voice membership
+	voiceSnapshots map[uuid.UUID]*voiceRoomSnapshot // channelID -> last known roster (local + remote nodes)
+	// voiceDeparted remembers peers this node retired locally (leave,
+	// rejoin, disconnect) briefly, so a roster snapshot that still carries
+	// them cannot resurrect ghosts into the merged view.
+	voiceDeparted map[uuid.UUID]time.Time
 	// presenterSeen remembers, per share, when a presenter last announced
 	// here. It deliberately survives the share's last connection leaving
 	// (only ClearShare drops it): the no-source GC measures its grace from
@@ -105,6 +111,13 @@ type Hub struct {
 	// ChatTypingAudience resolves the recipients of a chat typing relay.
 	// An unwired hub refuses chat.typing messages.
 	ChatTypingAudience ChatTypingAudience
+	// AuthorizeVoicePresence must validate that the user may see the channel
+	// whose voice room they are joining. An unwired hub refuses joins.
+	AuthorizeVoicePresence func(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) bool
+	// VoiceAudience resolves who a voice room's roster events reach
+	// (workspace-wide for public channels, members-only otherwise). An
+	// unwired hub treats every room as public.
+	VoiceAudience func(ctx context.Context, workspaceID, channelID uuid.UUID) (recipients []uuid.UUID, workspaceWide bool)
 
 	// closing is set by Shutdown: new upgrades are refused, and connections
 	// whose upgrade was admitted earlier are closed as they register.
@@ -143,12 +156,15 @@ func NewHub() *Hub {
 // instant; production uses NewHub, tests simulate long-running processes.
 func NewHubStartedAt(startedAt time.Time) *Hub {
 	return &Hub{
-		clients:       make(map[uuid.UUID]map[*Client]bool),
-		shares:        make(map[uuid.UUID]*shareState),
-		shareLocks:    make(map[uuid.UUID]*shareLifecycleLock),
-		shareEpoch:    make(map[uuid.UUID]uint64),
-		presenterSeen: make(map[uuid.UUID]time.Time),
-		startedAt:     startedAt,
+		clients:        make(map[uuid.UUID]map[*Client]bool),
+		shares:         make(map[uuid.UUID]*shareState),
+		shareLocks:     make(map[uuid.UUID]*shareLifecycleLock),
+		shareEpoch:     make(map[uuid.UUID]uint64),
+		voiceRooms:     make(map[uuid.UUID]*voiceRoom),
+		voiceSnapshots: make(map[uuid.UUID]*voiceRoomSnapshot),
+		voiceDeparted:  make(map[uuid.UUID]time.Time),
+		presenterSeen:  make(map[uuid.UUID]time.Time),
+		startedAt:      startedAt,
 	}
 }
 
@@ -302,6 +318,10 @@ func (h *Hub) Unregister(client *Client) {
 	close(client.send)
 	h.mu.Unlock()
 
+	// Leaving the socket also leaves every voice room; rosters are announced
+	// after the lock is released alongside the share summaries.
+	voiceRooms := h.leaveAllVoiceRooms(client)
+
 	for _, shareID := range presenterDepartures {
 		if h.OnPresenterSeen != nil {
 			h.OnPresenterSeen(shareID)
@@ -309,6 +329,9 @@ func (h *Hub) Unregister(client *Client) {
 	}
 	for _, shareID := range affected {
 		h.broadcastSharePresence(client.workspaceID, shareID)
+	}
+	for _, channelID := range voiceRooms {
+		h.broadcastVoiceRoster(client.workspaceID, channelID)
 	}
 	if lastForUser {
 		h.broadcastUserPresence(client.workspaceID, client.userID, false)
@@ -383,6 +406,20 @@ func (h *Hub) BroadcastToUser(workspaceID, userID uuid.UUID, event Event) {
 // clients, honoring the origin's target/exclusion selectors.
 func (h *Hub) deliverEvent(env *wireEnvelope) {
 	if env.Event == nil {
+		return
+	}
+	// Voice rosters learned from other nodes keep this node able to describe
+	// and re-merge rooms whose members connect elsewhere (own-node
+	// announcements are skipped inside; local membership stays authoritative).
+	if env.Event.Type == "voice.presence" {
+		h.recordRemoteVoiceSnapshot(env.WorkspaceID, env.Event.Payload)
+	}
+	// Voice signaling is peer-addressed: deliver only when this node holds
+	// the targeted member, whatever node relayed the envelope.
+	if env.Event.Type == "voice.signal" {
+		if toPeer := voiceSignalTarget(env.Event.Payload); toPeer != uuid.Nil {
+			h.deliverVoiceSignal(env.WorkspaceID, toPeer, *env.Event)
+		}
 		return
 	}
 	data, err := json.Marshal(*env.Event)
@@ -487,6 +524,21 @@ func (h *Hub) ReadPump(ctx context.Context, client *Client) {
 			var p ChatTypingPayload
 			if json.Unmarshal(msg.Payload, &p) == nil && p.ChannelID != "" {
 				h.ChatTyping(ctx, client, p.ChannelID)
+			}
+		case "voice.presence":
+			var p VoicePresencePayload
+			if json.Unmarshal(msg.Payload, &p) == nil {
+				h.handleVoicePresence(ctx, client, p)
+			}
+		case "voice.state":
+			var p VoiceStatePayload
+			if json.Unmarshal(msg.Payload, &p) == nil {
+				h.handleVoiceState(client, p)
+			}
+		case "voice.signal":
+			var p VoiceSignalPayload
+			if json.Unmarshal(msg.Payload, &p) == nil {
+				h.handleVoiceSignal(client, p)
 			}
 		}
 	}

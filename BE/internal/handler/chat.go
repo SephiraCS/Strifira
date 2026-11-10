@@ -208,6 +208,20 @@ func (h *ChatHandler) DeleteMessage(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ListVoiceRooms returns the workspace's live voice rooms the caller can
+// see. Membership is hub state (ephemeral); a room the reader cannot see is
+// indistinguishable from an empty one.
+func (h *ChatHandler) ListVoiceRooms(c echo.Context) error {
+	ws := c.Get("workspace").(*domain.Workspace)
+	userID := middleware.GetUserID(c)
+
+	rooms, err := h.chatSvc.VoiceRooms(c.Request().Context(), ws.ID, userID)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	return response.Success(c, http.StatusOK, dto.VoiceRoomListResponse{Rooms: rooms})
+}
+
 func chatChannelResponse(channel domain.ChatChannel) dto.ChatChannelResponse {
 	var dmPeer *dto.ChatUser
 	if channel.DMPeer != nil {

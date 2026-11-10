@@ -47,6 +47,8 @@
 	import TerminalDock from '$lib/features/dev-machines/TerminalDock.svelte';
 	import { setTerminalDock } from '$lib/features/dev-machines/terminal-dock-context.svelte';
 	import { presenterSession } from '$lib/features/shares/presenter.session.svelte';
+	import { voiceState } from '$lib/features/chat/voice/voice.state.svelte';
+	import VoiceRoomBar from '$lib/features/chat/voice/VoiceRoomBar.svelte';
 	import { CaptureDialog } from '$lib/features/screenshot';
 
 	let { children } = $props();
@@ -95,6 +97,7 @@
 	$effect(() => {
 		if (slug) {
 			void chatState.ensureWorkspace(slug);
+			void voiceState.ensureWorkspace(slug);
 			chatState.setMembers(members);
 		}
 	});
@@ -561,6 +564,7 @@
 		workspaceLoadId++;
 		presenterSession.setWorkspace('');
 		wsDestroyed = true;
+		voiceState.handleWorkspaceChange('');
 		clearWebSocketReconnect();
 		if (issuesRefreshTimer) {
 			clearTimeout(issuesRefreshTimer);
@@ -641,6 +645,8 @@
 			if (resumed) window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug: workspaceSlug } }));
 			// Share lists drift while disconnected (starts/ends/GC); refetch.
 			if (sharesState.enabled) void sharesState.load(workspaceSlug);
+			// Voice rosters too (missed snapshots while the socket was down).
+			void voiceState.reloadRooms();
 		};
 
 		socket.onerror = () => {
@@ -742,6 +748,14 @@
 			// Mail: inbox sync / sent messages arrive from the backend syncer.
 			case 'mail.updated': {
 				window.dispatchEvent(new CustomEvent('ws:mail.updated', { detail: msg.payload }));
+				break;
+			}
+			// Voice rooms: roster snapshots, the joiner's targeted sync and the
+			// relayed WebRTC signaling (consumed by the voice session).
+			case 'voice.presence':
+			case 'voice.sync':
+			case 'voice.signal': {
+				window.dispatchEvent(new CustomEvent(`ws:${msg.type}`, { detail: msg.payload }));
 				break;
 			}
 			case 'presence.join':
@@ -958,6 +972,8 @@
 	</Dialog.Root>
 
 	<ShortcutHelp bind:open={showShortcutHelp} shortcuts={shortcutDefs} />
+	<!-- Voice room overlay: visible on every workspace page while connected. -->
+	<VoiceRoomBar />
 {:else if workspaceLoadFailed && !workspaceLoading}
 	<main class="flex h-dvh items-center justify-center bg-[var(--color-bg)]">
 		<ErrorState message={m['login.error_generic']()} onretry={retryWorkspaceData} />
