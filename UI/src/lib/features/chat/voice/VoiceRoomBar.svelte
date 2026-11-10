@@ -8,6 +8,7 @@
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import Waveform from '@lucide/svelte/icons/audio-waveform';
 	import GripVertical from '@lucide/svelte/icons/grip-vertical';
+	import MessageSquare from '@lucide/svelte/icons/message-square';
 	import * as Switch from '$lib/components/ui/switch';
 	import Avatar from '$lib/components/shared/Avatar.svelte';
 	import { m } from '$lib/paraglide/messages.js';
@@ -89,6 +90,15 @@
 				{/if}
 			</button>
 			<span id="voice-move-instructions" class="sr-only">{m['voice.move_hint']()}</span>
+			<a
+				href={`/${session.slug}/chat/${session.channelId}`}
+				data-testid="voice-open-chat"
+				class="rounded-md p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--app-accent)]"
+				title={m['voice.open_chat']()}
+				aria-label={m['voice.open_chat']()}
+			>
+				<MessageSquare size={15} />
+			</a>
 			<button
 				type="button"
 				class="rounded-md p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]"

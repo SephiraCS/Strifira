@@ -390,6 +390,7 @@
 	"voice.join_failed": "Could not join the voice room",
 	"voice.move_panel": "Move voice panel",
 	"voice.move_hint": "Drag to move, or use arrow keys. Hold Shift for larger steps. Home returns to the bottom left.",
+	"voice.open_chat": "Open conversation",
 	"voice.settings": "Voice settings",
 	"voice.leave": "Leave voice",
 	"voice.input_mode": "Input mode",
