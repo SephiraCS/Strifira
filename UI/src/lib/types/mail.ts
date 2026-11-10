@@ -4,6 +4,8 @@ export interface MailAddress {
 }
 
 export interface MailAccount {
+	auth_method?: 'password' | 'oauth2';
+	oauth_provider?: 'google' | 'microsoft';
 	id: string;
 	email_address: string;
 	display_name: string;

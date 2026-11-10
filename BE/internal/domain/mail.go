@@ -30,18 +30,22 @@ type MailAddress struct {
 
 // MailAccount is a workspace e-mail account (shared by workspace members).
 type MailAccount struct {
-	ID           uuid.UUID `json:"id" db:"id"`
-	WorkspaceID  uuid.UUID `json:"workspace_id" db:"workspace_id"`
-	CreatedBy    uuid.UUID `json:"created_by" db:"created_by"`
-	EmailAddress string    `json:"email_address" db:"email_address"`
-	DisplayName  string    `json:"display_name" db:"display_name"`
-	IMAPHost     string    `json:"imap_host" db:"imap_host"`
-	IMAPPort     int       `json:"imap_port" db:"imap_port"`
-	IMAPSecurity string    `json:"imap_security" db:"imap_security"`
-	SMTPHost     string    `json:"smtp_host" db:"smtp_host"`
-	SMTPPort     int       `json:"smtp_port" db:"smtp_port"`
-	SMTPSecurity string    `json:"smtp_security" db:"smtp_security"`
-	Username     string    `json:"username" db:"username"`
+	AuthMethod          string    `json:"auth_method" db:"auth_method"`
+	OAuthProvider       string    `json:"oauth_provider,omitempty" db:"oauth_provider"`
+	CredentialsRevision int64     `json:"-" db:"credentials_revision"`
+	ID                  uuid.UUID `json:"id" db:"id"`
+	WorkspaceID         uuid.UUID `json:"workspace_id" db:"workspace_id"`
+	CreatedBy           uuid.UUID `json:"created_by" db:"created_by"`
+	EmailAddress        string    `json:"email_address" db:"email_address"`
+	DisplayName         string    `json:"display_name" db:"display_name"`
+	IMAPHost            string    `json:"imap_host" db:"imap_host"`
+	IMAPPort            int       `json:"imap_port" db:"imap_port"`
+	IMAPSecurity        string    `json:"imap_security" db:"imap_security"`
+	SMTPHost            string    `json:"smtp_host" db:"smtp_host"`
+	SMTPPort            int       `json:"smtp_port" db:"smtp_port"`
+	SMTPSecurity        string    `json:"smtp_security" db:"smtp_security"`
+	Username            string    `json:"username" db:"username"`
+	SMTPUsername        string    `json:"smtp_username" db:"smtp_username"`
 	// PasswordEncrypted is AES-256-GCM hex; never serialized to clients.
 	PasswordEncrypted string     `json:"-" db:"password_encrypted"`
 	Signature         string     `json:"signature" db:"signature"`

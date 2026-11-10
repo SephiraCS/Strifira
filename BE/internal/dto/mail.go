@@ -9,34 +9,39 @@ type MailAddress struct {
 }
 
 type CreateMailAccountRequest struct {
-	EmailAddress string `json:"email_address" validate:"required,email"`
+	EmailAddress string `json:"email_address" validate:"required,email,max=254"`
 	DisplayName  string `json:"display_name" validate:"max=120"`
-	IMAPHost     string `json:"imap_host" validate:"required,max=255"`
-	IMAPPort     int    `json:"imap_port" validate:"required,min=1,max=65535"`
-	IMAPSecurity string `json:"imap_security" validate:"required,oneof=none starttls tls"`
-	SMTPHost     string `json:"smtp_host" validate:"required,max=255"`
-	SMTPPort     int    `json:"smtp_port" validate:"required,min=1,max=65535"`
-	SMTPSecurity string `json:"smtp_security" validate:"required,oneof=none starttls tls"`
-	Username     string `json:"username" validate:"required,max=255"`
 	Password     string `json:"password" validate:"required,max=1024"`
 	Signature    string `json:"signature" validate:"max=4000"`
 }
 
+type DiscoverMailAccountRequest struct {
+	EmailAddress string `json:"email_address" validate:"required,email,max=254"`
+}
+
+type StartMailOAuthRequest struct {
+	EmailAddress string `json:"email_address" validate:"required,email,max=254"`
+	AccountID    string `json:"account_id" validate:"omitempty,uuid4"`
+	DisplayName  string `json:"display_name" validate:"max=120"`
+	Signature    string `json:"signature" validate:"max=4000"`
+}
+
+type CompleteMailOAuthRequest struct {
+	State         string `json:"state" validate:"required,min=32,max=128"`
+	Code          string `json:"code" validate:"max=4096"`
+	ProviderError string `json:"provider_error" validate:"max=128"`
+}
+
 type UpdateMailAccountRequest struct {
-	EmailAddress string  `json:"email_address" validate:"omitempty,email"`
-	DisplayName  string  `json:"display_name" validate:"max=120"`
-	IMAPHost     string  `json:"imap_host" validate:"omitempty,max=255"`
-	IMAPPort     *int    `json:"imap_port" validate:"omitempty,min=1,max=65535"`
-	IMAPSecurity string  `json:"imap_security" validate:"omitempty,oneof=none starttls tls"`
-	SMTPHost     string  `json:"smtp_host" validate:"omitempty,max=255"`
-	SMTPPort     *int    `json:"smtp_port" validate:"omitempty,min=1,max=65535"`
-	SMTPSecurity string  `json:"smtp_security" validate:"omitempty,oneof=none starttls tls"`
-	Username     string  `json:"username" validate:"omitempty,max=255"`
+	EmailAddress string  `json:"email_address" validate:"omitempty,email,max=254"`
+	DisplayName  *string `json:"display_name" validate:"omitempty,max=120"`
 	Password     *string `json:"password" validate:"omitempty,max=1024"`
 	Signature    *string `json:"signature" validate:"omitempty,max=4000"`
 }
 
 type MailAccountResponse struct {
+	AuthMethod    string     `json:"auth_method"`
+	OAuthProvider string     `json:"oauth_provider,omitempty"`
 	ID            string     `json:"id"`
 	EmailAddress  string     `json:"email_address"`
 	DisplayName   string     `json:"display_name"`

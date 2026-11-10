@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { onMount } from 'svelte';
+	import { mailAccountMessage } from '$lib/features/mail/autoconfig.messages';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailState } from '$lib/features/mail/mail.state.svelte';
 	import ComposeDialog from '$lib/features/mail/ComposeDialog.svelte';
@@ -42,6 +44,9 @@
 	let editingAccount = $state<MailAccount | null>(null);
 	let deletingAccount = $state<MailAccount | null>(null);
 	let listQuery = $state('');
+	onMount(() => {
+		if (page.url.searchParams.get('connect') === '1') showAccountDialog = true;
+	});
 
 	const folders = $derived([
 		{ id: 'inbox' as const, label: m['mail.folder.inbox'](), icon: Inbox, count: mailState.unreadInboxCount },
@@ -166,9 +171,12 @@
 		const account = deletingAccount;
 		deletingAccount = null;
 		if (!account) return;
-		void mailState.removeAccount(account.id).then(() => {
-			appToast.success(m['mail.toast.account_deleted']());
-		});
+		void mailState
+			.removeAccount(account.id)
+			.then(() => {
+				appToast.success(m['mail.toast.account_deleted']());
+			})
+			.catch((err) => appToast.apiError(err, m['mail.toast.account_failed']()));
 	}
 </script>
 
@@ -198,7 +206,9 @@
 						<folder.icon size={16} class="shrink-0" />
 						<span class="truncate">{folder.label}</span>
 						{#if folder.count > 0}
-							<span class="ml-auto rounded-full bg-[var(--app-accent)] px-1.5 text-xs font-medium text-[var(--app-accent-foreground)]">
+							<span
+								class="ml-auto rounded-full bg-[var(--app-accent)] px-1.5 text-xs font-medium text-[var(--app-accent-foreground)]"
+							>
 								{folder.count > 99 ? '99+' : folder.count}
 							</span>
 						{/if}
@@ -225,7 +235,8 @@
 				<div class="min-h-0 flex-1 overflow-auto px-3 pb-3">
 					{#each mailState.accounts as account (account.id)}
 						<div
-							class="group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm {mailState.selectedAccountId === account.id
+							class="group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm {mailState.selectedAccountId ===
+							account.id
 								? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]'
 								: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]/60'}"
 						>
@@ -281,16 +292,15 @@
 					<div class="p-6">
 						<EmptyState
 							title={m['mail.empty.list_title']()}
-							description={mailState.search
-								? m['mail.empty.search_hint']()
-								: m['mail.empty.list_hint']()}
+							description={mailState.search ? m['mail.empty.search_hint']() : m['mail.empty.list_hint']()}
 						/>
 					</div>
 				{:else}
 					{#each mailState.threads as thread (thread.key)}
 						<button
 							type="button"
-							class="flex w-full flex-col gap-0.5 border-b border-[var(--app-border)]/60 px-3 py-2.5 text-left {mailState.selectedMessage?.thread_key === thread.key
+							class="flex w-full flex-col gap-0.5 border-b border-[var(--app-border)]/60 px-3 py-2.5 text-left {mailState
+								.selectedMessage?.thread_key === thread.key
 								? 'bg-[var(--color-bg-hover)]/60'
 								: 'hover:bg-[var(--color-bg-hover)]/40'}"
 							onclick={() => void mailState.selectMessage(thread.last.id)}
@@ -301,21 +311,34 @@
 								{:else}
 									<span class="h-2 w-2 shrink-0"></span>
 								{/if}
-								<span class="min-w-0 flex-1 truncate text-sm {thread.unreadCount > 0 ? 'font-semibold text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)]'}">
-									{mailState.folder === 'sent' ? addressName(thread.last.to[0]?.name ?? '', thread.last.to[0]?.address ?? '') : addressName(thread.last.from.name, thread.last.from.address)}
+								<span
+									class="min-w-0 flex-1 truncate text-sm {thread.unreadCount > 0
+										? 'font-semibold text-[var(--color-text-primary)]'
+										: 'text-[var(--color-text-secondary)]'}"
+								>
+									{mailState.folder === 'sent'
+										? addressName(thread.last.to[0]?.name ?? '', thread.last.to[0]?.address ?? '')
+										: addressName(thread.last.from.name, thread.last.from.address)}
 								</span>
 								{#if thread.messages.length > 1}
-									<span class="shrink-0 rounded bg-[var(--color-bg-hover)] px-1.5 text-xs text-[var(--color-text-tertiary)]">
+									<span
+										class="shrink-0 rounded bg-[var(--color-bg-hover)] px-1.5 text-xs text-[var(--color-text-tertiary)]"
+									>
 										{thread.messages.length}
 									</span>
 								{/if}
 								{#if thread.hasAttachments}
 									<Paperclip size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
 								{/if}
-								<span class="shrink-0 text-xs text-[var(--color-text-tertiary)]">{formatTime(thread.last.sent_at)}</span>
+								<span class="shrink-0 text-xs text-[var(--color-text-tertiary)]">{formatTime(thread.last.sent_at)}</span
+								>
 							</div>
 							<div class="flex items-center gap-2 pl-4">
-								<span class="min-w-0 flex-1 truncate text-sm {thread.unreadCount > 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)]'}">
+								<span
+									class="min-w-0 flex-1 truncate text-sm {thread.unreadCount > 0
+										? 'text-[var(--color-text-primary)]'
+										: 'text-[var(--color-text-secondary)]'}"
+								>
 									{thread.last.subject || m['mail.no_subject']()}
 								</span>
 								{#if thread.last.starred}
@@ -335,13 +358,16 @@
 				{@const detail = mailState.selectedMessage}
 				<div class="flex h-12 shrink-0 items-center gap-1 border-b border-[var(--app-border)] px-3">
 					<Button variant="ghost" size="xs" onclick={() => openReply(detail, false)} title={m['mail.reply']()}>
-						<Reply size={14} class="mr-1" /> {m['mail.reply']()}
+						<Reply size={14} class="mr-1" />
+						{m['mail.reply']()}
 					</Button>
 					<Button variant="ghost" size="xs" onclick={() => openReply(detail, true)} title={m['mail.reply_all']()}>
-						<ReplyAll size={14} class="mr-1" /> {m['mail.reply_all']()}
+						<ReplyAll size={14} class="mr-1" />
+						{m['mail.reply_all']()}
 					</Button>
 					<Button variant="ghost" size="xs" onclick={() => openForward(detail)} title={m['mail.forward']()}>
-						<Forward size={14} class="mr-1" /> {m['mail.forward']()}
+						<Forward size={14} class="mr-1" />
+						{m['mail.forward']()}
 					</Button>
 					<div class="flex-1"></div>
 					<Button
@@ -371,7 +397,10 @@
 								<MailOpen size={14} class="mr-2" />
 								{m['mail.mark_unread']()}
 							</DropdownMenu.Item>
-							<DropdownMenu.Item class="text-[var(--color-error)]" onclick={() => void mailState.deleteMessage(detail.id)}>
+							<DropdownMenu.Item
+								class="text-[var(--color-error)]"
+								onclick={() => void mailState.deleteMessage(detail.id)}
+							>
 								<Trash2 size={14} class="mr-2" />
 								{m['mail.delete']()}
 							</DropdownMenu.Item>
@@ -423,7 +452,8 @@
 								{@html detail.body_html}
 							</div>
 						{:else}
-							<pre class="max-w-none font-sans text-sm whitespace-pre-wrap text-[var(--color-text-primary)]">{detail.body_text}</pre>
+							<pre
+								class="max-w-none font-sans text-sm whitespace-pre-wrap text-[var(--color-text-primary)]">{detail.body_text}</pre>
 						{/if}
 					</div>
 				</div>
@@ -441,13 +471,17 @@
 					<Button variant="ghost" size="icon-sm" onclick={() => mailState.clearSelection()}>
 						<ChevronLeft size={16} />
 					</Button>
-					<span class="min-w-0 flex-1 truncate text-sm font-medium">{mailState.selectedMessage.subject || m['mail.no_subject']()}</span>
+					<span class="min-w-0 flex-1 truncate text-sm font-medium"
+						>{mailState.selectedMessage.subject || m['mail.no_subject']()}</span
+					>
 					<Button variant="ghost" size="icon-sm" onclick={() => openReply(mailState.selectedMessage!, false)}>
 						<Reply size={14} />
 					</Button>
 				</div>
 				<div class="min-h-0 flex-1 overflow-auto px-4 py-3">
-					<p class="text-sm font-medium">{addressName(mailState.selectedMessage.from.name, mailState.selectedMessage.from.address)}</p>
+					<p class="text-sm font-medium">
+						{addressName(mailState.selectedMessage.from.name, mailState.selectedMessage.from.address)}
+					</p>
 					{#if mailState.selectedMessage.body_html}
 						<div class="mt-3 text-sm">
 							{@html mailState.selectedMessage.body_html}
@@ -475,7 +509,8 @@
 {#if deletingAccount}
 	<ConfirmDialog
 		title={m['mail.account.delete_confirm_title']()}
-		message={m['mail.account.delete_confirm_body']({ address: deletingAccount.email_address })}
+		message={m['mail.account.delete_confirm_body']({ address: deletingAccount.email_address }) +
+			(deletingAccount.auth_method === 'oauth2' ? ` ${mailAccountMessage('disconnect')}` : '')}
 		confirmLabel={m['mail.account.delete']()}
 		variant="danger"
 		onconfirm={confirmDeleteAccount}
