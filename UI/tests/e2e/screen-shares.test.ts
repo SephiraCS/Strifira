@@ -797,6 +797,7 @@ test('workspace navigation invalidates a pending picker and allows capture befor
 			}
 			return route.fulfill({ json: { active: [], recent: [] } });
 		}
+		if (path === '/api/workspaces/other/chat/channels') return route.fulfill({ json: { channels: [] } });
 		if (path === '/api/workspaces/other/issues') {
 			return route.fulfill({ json: { data: [], total_count: 0, page: 1, per_page: 50, has_more: false } });
 		}
