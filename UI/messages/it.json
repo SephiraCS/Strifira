@@ -1996,6 +1996,8 @@
 	"docs.working": "Elaborazione…",
 	"docs.close": "Chiudi",
 	"docs.loading": "Caricamento…",
+	"docs.editor.load_failed": "Impossibile caricare l'editor",
+	"docs.load_failed": "Impossibile caricare le pagine",
 	"docs.not_found": "Pagina non trovata",
 	"docs.back_to_docs": "Torna ai documenti",
 	"docs.title_placeholder": "Senza titolo",

@@ -1996,6 +1996,8 @@
 	"docs.working": "處理中…",
 	"docs.close": "關閉",
 	"docs.loading": "載入中…",
+	"docs.editor.load_failed": "編輯器載入失敗",
+	"docs.load_failed": "頁面載入失敗",
 	"docs.not_found": "頁面不存在",
 	"docs.back_to_docs": "返回文件",
 	"docs.title_placeholder": "無標題",
