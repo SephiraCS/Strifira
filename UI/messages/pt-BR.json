@@ -390,6 +390,7 @@
 	"voice.join_failed": "Não foi possível entrar na sala de voz",
 	"voice.move_panel": "Mover painel de voz",
 	"voice.move_hint": "Arraste para mover ou use as setas. Segure Shift para passos maiores. Home volta ao canto inferior esquerdo.",
+	"voice.open_chat": "Abrir conversa",
 	"voice.settings": "Ajustes de voz",
 	"voice.leave": "Sair da voz",
 	"voice.input_mode": "Modo de entrada",

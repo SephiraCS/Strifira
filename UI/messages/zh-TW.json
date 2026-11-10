@@ -390,6 +390,7 @@
 	"voice.join_failed": "無法加入語音房間",
 	"voice.move_panel": "移動語音面板",
 	"voice.move_hint": "拖曳或使用方向鍵移動。按住 Shift 可加大移動步幅。Home 返回左下角。",
+	"voice.open_chat": "開啟對話",
 	"voice.settings": "語音設定",
 	"voice.leave": "離開語音",
 	"voice.input_mode": "輸入模式",

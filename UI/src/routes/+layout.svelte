@@ -7,13 +7,18 @@
 	import LazyReleaseNotice from '$lib/components/shared/LazyReleaseNotice.svelte';
 	import LazyImageLightbox from '$lib/components/shared/image-viewer/LazyImageLightbox.svelte';
 	import { preferencesState } from '$lib/features/preferences/preferences.state.svelte';
+	import { voiceState } from '$lib/features/chat/voice/voice.state.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { getLocale, setLocale } from '$lib/paraglide/runtime.js';
 
 	let { children } = $props();
 
 	beforeNavigate(({ to, cancel, willUnload }) => {
-		if (updated.current && to && !willUnload) {
+		// A deploy must not turn navigation within a call's workspace into a
+		// page reload: that destroys its microphone, peers and floating panel.
+		// Once the call ends, the next navigation can load the new build.
+		const keepsCall = voiceState.session && to?.params?.workspaceSlug === voiceState.session.slug;
+		if (updated.current && to && !willUnload && !keepsCall) {
 			cancel();
 			window.location.assign(to.url);
 		}

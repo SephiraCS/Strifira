@@ -301,8 +301,7 @@ test('a roster snapshot from another participant updates the overlay', async ({ 
 	await expect(bar.locator('[data-testid="voice-participant-muted-icon"]').first()).toBeVisible();
 });
 
-async function joinMovableCall(page: Page) {
-	const stub = await stubChat(page);
+async function trackMicrophone(page: Page) {
 	await page.addInitScript(() => {
 		const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
 		(window as any).__micTracks = [];
@@ -312,6 +311,11 @@ async function joinMovableCall(page: Page) {
 			return stream;
 		};
 	});
+}
+
+async function joinMovableCall(page: Page) {
+	const stub = await stubChat(page);
+	await trackMicrophone(page);
 	await page.goto(`/test/chat/${CHANNEL_ID}`);
 	await page.getByTestId('voice-join').click();
 	await expect(page.getByTestId('voice-mute')).toBeEnabled();
@@ -554,7 +558,7 @@ test('a failed wall load is retryable and does not appear as an empty result', a
 	await expect(page.getByText('No one is sharing right now')).toBeVisible();
 });
 
-test('changing workspace clears remembered channels and drafts', async ({ page }) => {
+test('changing workspace ends voice and clears remembered channels and drafts', async ({ page }) => {
 	const channels = await communicationRoutes(page);
 	const other = { id: '00000000-0000-0000-0000-000000000003', name: 'Other Workspace', slug: 'other', owner_id: SELF.id, current_user_role: 'guest', screen_sharing_enabled: true };
 	await page.route('**/api/workspaces', (route) => route.fulfill({ json: [other] }));
@@ -562,14 +566,135 @@ test('changing workspace clears remembered channels and drafts', async ({ page }
 	await page.route('**/api/workspaces/other/chat/channels', (route) => route.fulfill({ json: { channels: [] } }));
 	await page.route('**/api/workspaces/other/shares', (route) => route.fulfill({ json: { active: [], recent: [] } }));
 	await page.route('**/api/workspaces/other/issues?**', (route) => route.fulfill({ json: { data: [], total_count: 0, has_more: false, page: 1, per_page: 50 } }));
-	await page.goto(`/test/chat/${channels[1].id}`);
+	await trackMicrophone(page);
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	await page.getByTestId('voice-join').click();
+	await expect(page.getByTestId('voice-mute')).toBeEnabled();
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('Private draft');
 	await page.getByRole('button', { name: /Test Workspace/ }).first().click();
 	await page.getByRole('button', { name: /Other Workspace/ }).click();
 	await expect(page).toHaveURL(/\/other\/my-issues$/);
+	await expect(page.getByTestId('voice-room-bar')).toHaveCount(0);
+	await expect.poll(() => page.evaluate(() =>
+		(window as any).__micTracks.map((track: MediaStreamTrack) => track.readyState)
+	)).toEqual(['ended']);
 	await page.getByTestId('communication-category').getByRole('link', { name: 'Chat, voice & screens' }).click();
 	await expect(page).toHaveURL(/\/other\/chat$/);
 	await expect(page.getByText('No channels yet')).toBeVisible();
 	await expect(page.getByTestId('communication-workspace')).not.toContainText('#project');
 	await expect(page.getByText('Private draft')).toHaveCount(0);
+});
+
+test.describe('voice navigation after a deployment', () => {
+	async function publishNewVersion(page: Page) {
+		await page.route('**/_app/version.json', (route) =>
+			route.fulfill({ json: { version: 'next-deployment' } })
+		);
+		const checked = page.waitForResponse('**/_app/version.json');
+		await page.clock.fastForward(60_000);
+		await checked;
+		// Let the version poll update SvelteKit's store before navigation.
+		await page.clock.runFor(100);
+	}
+
+	test('keeps the same call through tickets and history, then updates after leaving', async ({ page }, testInfo) => {
+		await page.setViewportSize({ width: 1280, height: 720 });
+		await page.clock.install();
+		await joinMovableCall(page);
+		const issue = {
+			id: '00000000-0000-0000-0000-000000000028', identifier: 'TEST-28',
+			title: 'Keep voice while reviewing tickets', team_id: 'team-test',
+			status: 'todo', priority: 0, description: null, labels: [], assignees: [],
+			project_id: null, cycle_id: null, parent: null, sort_order: 0,
+			sub_issue_count: 0, is_subscribed: false,
+			created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
+		};
+		await page.route('**/api/workspaces/test/issues?**', (route) => route.fulfill({
+			json: { data: [issue], total_count: 1, has_more: false, page: 1, per_page: 50 }
+		}));
+		await page.route('**/api/workspaces/test/issues/TEST-28', (route) => route.fulfill({ json: issue }));
+		await page.getByTestId('voice-mute').click();
+		await page.getByTestId('voice-deafen').click();
+		await page.getByTestId('voice-move').focus();
+		await page.keyboard.press('Shift+ArrowRight');
+		const position = (await page.getByTestId('voice-room-bar').boundingBox())!;
+		await page.evaluate(() => { (window as any).__callDocument = 'original'; });
+		await publishNewVersion(page);
+
+		await page.locator('a[href="/test/my-issues"]').first().click();
+		await expect(page).toHaveURL(/\/test\/my-issues$/);
+		await expect(page.getByText(issue.title, { exact: true })).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath('voice-on-tickets.png') });
+		await expect(page.getByTestId('voice-room-bar')).toBeVisible();
+		await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
+		await expect(page.getByTestId('voice-deafen')).toContainText('Undeafen');
+		await expect(page.getByTestId('voice-participant')).toHaveCount(1);
+		await expect.poll(async () => (await page.getByTestId('voice-room-bar').boundingBox())!.x).toBe(position.x);
+		await expect.poll(async () => (await page.getByTestId('voice-room-bar').boundingBox())!.y).toBe(position.y);
+
+		await page.getByText(issue.title, { exact: true }).click();
+		await expect(page).toHaveURL(/\/test\/issue\/TEST-28$/);
+		await expect(page.getByText(issue.title, { exact: true })).toBeVisible();
+		await expect(page.getByTestId('voice-room-bar')).toBeVisible();
+		await page.screenshot({ path: testInfo.outputPath('voice-on-ticket-detail.png') });
+		await page.goBack();
+		await expect(page).toHaveURL(/\/test\/my-issues$/);
+		await page.goForward();
+		await expect(page).toHaveURL(/\/test\/issue\/TEST-28$/);
+		await page.getByTestId('voice-open-chat').click();
+		await expect(page).toHaveURL(new RegExp(`/test/chat/${CHANNEL_ID}$`));
+		await page.goBack();
+		await expect(page).toHaveURL(/\/test\/issue\/TEST-28$/);
+		await page.goForward();
+		await expect(page).toHaveURL(new RegExp(`/test/chat/${CHANNEL_ID}$`));
+		await expect(page.getByTestId('voice-room-bar')).toBeVisible();
+		await expect.poll(() => page.evaluate(() => (window as any).__callDocument)).toBe('original');
+		await expect.poll(() => page.evaluate(() =>
+			(window as any).__micTracks.map((track: MediaStreamTrack) => track.readyState)
+		)).toEqual(['live']);
+		await expect.poll(() => page.evaluate(() =>
+			(window as any).__voiceFrames.filter((frame: any) => frame.type === 'voice.presence' && frame.payload.action === 'leave').length
+		)).toBe(0);
+
+		// Repeat on a narrow screen; the panel remains reachable outside chat.
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+		await page.locator('a[href="/test/my-issues"]').filter({ visible: true }).click();
+		await expect(page).toHaveURL(/\/test\/my-issues$/);
+		await expectPanelInViewport(page);
+		await page.screenshot({ path: testInfo.outputPath('voice-on-tickets-mobile.png') });
+		await page.getByTestId('voice-mute').click();
+		await page.getByTestId('voice-deafen').click();
+		await expect(page.getByTestId('voice-deafen')).toContainText('Deafen');
+		await page.getByTestId('voice-open-chat').click();
+		await expect(page).toHaveURL(new RegExp(`/test/chat/${CHANNEL_ID}$`));
+
+		await page.getByTestId('voice-leave').click();
+		await expect(page.getByTestId('voice-room-bar')).toHaveCount(0);
+		await expect.poll(() => page.evaluate(() =>
+			(window as any).__micTracks.map((track: MediaStreamTrack) => track.readyState)
+		)).toEqual(['ended']);
+		const reload = page.waitForEvent('request', (request) => request.isNavigationRequest());
+		await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+		await page.locator('a[href="/test/my-issues"]').filter({ visible: true }).click();
+		await reload;
+		await page.waitForURL('**/test/my-issues', { waitUntil: 'load' });
+		await expect(page.getByText(issue.title, { exact: true })).toBeVisible();
+		expect(await page.evaluate(() => (window as any).__callDocument)).toBeUndefined();
+	});
+});
+
+test('logging out ends voice and releases the microphone', async ({ page }) => {
+	await joinMovableCall(page);
+	// Move the floating panel away from the profile menu before logging out.
+	await page.getByTestId('voice-move').focus();
+	for (let step = 0; step < 5; step++) await page.keyboard.press('Shift+ArrowRight');
+	await page.getByRole('button', { name: 'T', exact: true }).click();
+	await page.getByRole('button', { name: 'Log out', exact: true }).click();
+	await expect(page).toHaveURL(/\/login$/);
+	await expect(page.getByTestId('voice-room-bar')).toHaveCount(0);
+	await expect.poll(() => page.evaluate(() =>
+		(window as any).__micTracks.map((track: MediaStreamTrack) => track.readyState)
+	)).toEqual(['ended']);
 });
