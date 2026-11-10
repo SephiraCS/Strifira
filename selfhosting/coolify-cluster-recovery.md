@@ -41,6 +41,8 @@ O comando só lê a API. O plano lista os valores anteriores e os valores
 necessários para cada nó:
 
 - Alias DNS igual ao UUID, preservando aliases existentes.
+  A API devolve aliases separados por vírgulas, embora aceite JSON na escrita.
+  O reconciliador usa o formato retornado para verificar a aplicação idempotente.
 - Seeds para todos os outros nós. O bus atual usa `NoAdvertise`, portanto não
   basta uma topologia em estrela para obter as rotas entre todas as réplicas.
 - Healthcheck HTTP em `http://localhost:3000/ready`, incluindo a prontidão NATS.
@@ -84,6 +86,10 @@ cancele deployments de outra sessão nem implante a branch do PR em produção.
    Para obter uma cópia consistente dos arquivos em uso, pare o processo de cada
    nó durante a janela autorizada. Não remova os containers anteriores, seus
    volumes ou suas imagens antes de validar as cópias. Não publique os backups.
+   Use o TAR de `docker cp <container>:/app/uploads -` e extraia preservando os
+   proprietários numéricos. A cópia direta para um diretório do host pode mapear
+   os arquivos para root. Confira hashes, permissões, UID e GID contra a origem
+   antes de preparar os volumes; não basta verificar somente os bytes.
    Antes de parar cada processo antigo, leia seu `server_name` na linha inicial
    `INFO` da conexão NATS da porta 4222, usando o endereço interno do container.
    Registre esse nome na cópia correspondente como

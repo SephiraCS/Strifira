@@ -24,7 +24,7 @@ class CoolifyFixture:
                 "git_repository": cluster.REPOSITORY + (".git" if index else ""),
                 "git_branch": "main", "git_commit_sha": "old-revision", "environment_id": 1,
                 "destination": {"uuid": "destination1", "network": "coolify"},
-                "build_pack": "dockerfile", "custom_network_aliases": '["existing-alias"]' if index == 0 else None,
+                "build_pack": "dockerfile", "custom_network_aliases": "existing-alias" if index == 0 else None,
                 "settings": {"include_source_commit_in_build": False,
                              "is_consistent_container_name_enabled": False},
                 "health_check_path": "/health", "health_check_enabled": False,
@@ -63,6 +63,9 @@ class CoolifyFixture:
             for key in cluster.SETTING_FIELDS:
                 if key in data:
                     self.apps[uuid]["settings"][key] = data.pop(key)
+            if "custom_network_aliases" in data:
+                # Coolify's setter stores JSON; the API getter normalizes to CSV.
+                data["custom_network_aliases"] = ",".join(cluster.aliases(data))
             self.apps[uuid].update(data)
         return {}
 
@@ -76,7 +79,7 @@ class RecoveryPlanTests(unittest.TestCase):
         plan = cluster.plan(api)
         self.assertEqual(len(plan["nodes"]), 4)
         self.assertEqual(plan["nodes"][0]["seeds_after"], "nats://node1:6222,nats://node2:6222,nats://node3:6222")
-        self.assertEqual(json.loads(plan["nodes"][0]["after"]["custom_network_aliases"]), ["existing-alias", "node0"])
+        self.assertEqual(plan["nodes"][0]["after"]["custom_network_aliases"], "existing-alias,node0")
         self.assertNotIn("do-not-emit", json.dumps(plan))
         self.assertEqual(api.writes, [])
 
@@ -91,7 +94,7 @@ class RecoveryPlanTests(unittest.TestCase):
             self.assertTrue(app["health_check_enabled"])
             self.assertEqual(app["git_commit_sha"], "HEAD")
             self.assertTrue(app["settings"]["is_consistent_container_name_enabled"])
-            self.assertIn(uuid, json.loads(app["custom_network_aliases"]))
+            self.assertIn(uuid, cluster.aliases(app))
             self.assertEqual(api.envs[uuid][1:], before[uuid][1:])
             self.assertEqual(api.envs[uuid][0]["comment"], "keep this comment")
             self.assertTrue(api.envs[uuid][0]["is_buildtime"])
@@ -100,6 +103,13 @@ class RecoveryPlanTests(unittest.TestCase):
         count = len(api.writes)
         cluster.apply(api, cluster.plan(api))
         self.assertEqual(len(api.writes), count, "a second application must be a no-op")
+
+    def test_aliases_accept_coolify_csv_and_legacy_json_but_reject_invalid_names(self):
+        for raw in ["peer-a,peer-b", '["peer-a", "peer-b"]']:
+            self.assertEqual(cluster.aliases({"custom_network_aliases": raw}), ["peer-a", "peer-b"])
+        for raw in ["peer-a,,peer-b", "peer-a/peer-b", '["peer-a", false]', "[broken", []]:
+            with self.assertRaises(cluster.ClusterError):
+                cluster.aliases({"custom_network_aliases": raw})
 
     def test_active_deploy_or_changed_plan_cannot_mutate(self):
         api = CoolifyFixture()

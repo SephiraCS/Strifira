@@ -61,14 +61,18 @@ class Coolify:
 
 def aliases(application):
     raw = application.get("custom_network_aliases")
+    if raw is not None and not isinstance(raw, str):
+        raise ClusterError("Invalid existing network aliases; inspect before changing")
     try:
-        value = json.loads(raw) if raw else []
+        # Coolify accepts JSON on write, but its model getter returns CSV.
+        value = (json.loads(raw) if raw.lstrip().startswith("[")
+                 else [item.strip() for item in raw.split(",")]) if raw else []
     except (TypeError, ValueError):
         raise ClusterError("Invalid existing network aliases; inspect before changing") from None
     if not isinstance(value, list) or any(
         not isinstance(alias, str) or not re.fullmatch(r"[a-zA-Z0-9_.-]+", alias) for alias in value
     ):
-        raise ClusterError("Existing network aliases must be a JSON list of names")
+        raise ClusterError("Existing network aliases must contain valid names")
     return value
 
 
@@ -120,7 +124,7 @@ def plan(client):
         if (node_ids - {uuid}).intersection(existing):
             raise ClusterError("A node owns another node's alias")
         desired = {
-            "custom_network_aliases": json.dumps(list(dict.fromkeys([*existing, uuid]))),
+            "custom_network_aliases": ",".join(dict.fromkeys([*existing, uuid])),
             # Coolify field names, always set to the required state, never opt-in.
             "health_check_enabled": True,
             "health_check_type": "http",
