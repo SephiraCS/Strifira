@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.51",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.51",
+    "body": "Deployed to alpha as 7462645d61bac36d190571fc624d0062d1443b13.\n\n- STR-16 - Acelerar o load da documentação e melhorar a UX no padrão Notion (#29)",
+    "published_at": "2026-11-10T03:29:57Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.51",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.50",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.50",
     "body": "Deployed to alpha as 687f921e19ed19935aa21436e2f26aed43272036.\n\n- fix(migrations): resolve 000065/000066 collisions left by concurrent fixes (#28)\n- fix(migrations): renumber duplicate kanban migration 000064 to 000065 (#27)\n- STR-14 - Criar um chat no estilo Discord/Slack (#26)\n- feat(kanban): column rename, color, icon, WIP limit and archiving (#25)\n- feat(docs): folders, document-issue links and editor integration (#24)",
