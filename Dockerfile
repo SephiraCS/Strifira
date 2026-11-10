@@ -222,5 +222,5 @@ EXPOSE 3000
 # Docker-format images only (built with plain docker build); Coolify honors
 # the healthcheck when rolling the deployment.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-    CMD wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1
+    CMD wget -q -O /dev/null http://127.0.0.1:3000/ready || exit 1
 ENTRYPOINT ["/app/start.sh"]

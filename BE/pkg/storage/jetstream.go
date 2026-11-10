@@ -28,14 +28,14 @@ func NewJetStream(getStore func() jetstream.ObjectStore) *JetStreamBackend {
 	return &JetStreamBackend{getStore: getStore, urlBase: "/uploads"}
 }
 
-// errStorageNotReady marks the seconds between process start and the bus
-// having provisioned the files bucket cluster-wide.
-var errStorageNotReady = errors.New("file storage is not ready yet")
+// ErrStorageNotReady indicates that the cluster has not provisioned the files
+// bucket. A disconnected node can remain in this state until routes recover.
+var ErrStorageNotReady = errors.New("file storage is not ready yet")
 
 func (b *JetStreamBackend) Put(ctx context.Context, key string, r io.Reader, contentType string) (int64, error) {
 	store := b.getStore()
 	if store == nil {
-		return 0, errStorageNotReady
+		return 0, ErrStorageNotReady
 	}
 	meta := jetstream.ObjectMeta{Name: key}
 	if contentType != "" {
@@ -51,7 +51,7 @@ func (b *JetStreamBackend) Put(ctx context.Context, key string, r io.Reader, con
 func (b *JetStreamBackend) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	store := b.getStore()
 	if store == nil {
-		return nil, errStorageNotReady
+		return nil, ErrStorageNotReady
 	}
 	result, err := store.Get(ctx, key)
 	if err != nil {
@@ -66,7 +66,7 @@ func (b *JetStreamBackend) Get(ctx context.Context, key string) (io.ReadCloser, 
 func (b *JetStreamBackend) Delete(ctx context.Context, key string) error {
 	store := b.getStore()
 	if store == nil {
-		return errStorageNotReady
+		return ErrStorageNotReady
 	}
 	if err := store.Delete(ctx, key); err != nil {
 		if errors.Is(err, jetstream.ErrObjectNotFound) {

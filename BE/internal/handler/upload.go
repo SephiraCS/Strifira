@@ -124,6 +124,11 @@ func (h *UploadHandler) Upload(c echo.Context) error {
 	key := fmt.Sprintf("%s%s", uuid.New().String(), ext)
 
 	if _, err := h.store.Put(c.Request().Context(), key, src, contentType); err != nil {
+		if errors.Is(err, storage.ErrStorageNotReady) {
+			log.WithError(err).Warn("upload unavailable: file storage is not ready")
+			c.Response().Header().Set("Retry-After", "3")
+			return response.Error(c, http.StatusServiceUnavailable, "STORAGE_UNAVAILABLE", "File storage is temporarily unavailable. Please try again shortly.")
+		}
 		return response.InternalErrorErr(c, err)
 	}
 

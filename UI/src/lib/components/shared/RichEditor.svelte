@@ -1374,11 +1374,11 @@
 		</div>
 	{/if}
 
-	<!-- Minimal composers: one compact row of tools under the text instead of
-	     floating button rows above it. -->
-	{#if editable && minimal && ((uploadUrl && bubbleMenu && !hideUploadButtons) || (onreworkselection && showAIButton))}
+	<!-- Bubble-menu editors need persistent file controls: choosing a file
+	     must also work without selecting existing text. -->
+	{#if editable && ((uploadUrl && bubbleMenu && !hideUploadButtons) || (minimal && onreworkselection && showAIButton))}
 		<div class="flex items-center justify-end gap-0.5 pt-1">
-			{#if onreworkselection && showAIButton}
+			{#if minimal && onreworkselection && showAIButton}
 				<button
 					type="button"
 					onpointerdown={(event) => event.preventDefault()}
