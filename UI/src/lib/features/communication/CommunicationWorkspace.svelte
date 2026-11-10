@@ -36,6 +36,10 @@
 		if (!presenting) chatOpen = false;
 	});
 
+	$effect(() => {
+		if (chatOpen && selectedChannel?.id) void focusComposer();
+	});
+
 	async function focusComposer() {
 		await tick();
 		chatDialogEl?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
@@ -94,7 +98,7 @@
 								aria-label={m['communication.open_chat']()}
 								class="flex min-h-11 w-full items-center gap-3 rounded-lg border border-[var(--app-border)] bg-[var(--color-bg)] px-3 py-2 text-left text-sm text-[var(--color-text-tertiary)] hover:border-[var(--app-accent)] focus-visible:outline-2 focus-visible:outline-[var(--app-accent)]"
 							>
-								<span class="min-w-0 flex-1 truncate">{draft || m['chat.message_placeholder']({ name: channelLabel })}</span>
+								<span class="min-w-0 flex-1 truncate">{draft || (selectedChannel ? m['chat.message_placeholder']({ name: channelLabel }) : m['communication.open_chat']())}</span>
 								<MessagesSquare size={17} class="shrink-0" />
 							</Dialog.Trigger>
 						</div>

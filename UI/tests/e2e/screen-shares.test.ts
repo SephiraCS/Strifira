@@ -1494,13 +1494,15 @@ test('the integrated viewer keeps its peer while changing channels and composing
 	await stubCommon(page, true);
 	await installPeerRig(page);
 	const channels = await integratedChannels(page);
-	await page.goto(`/test/chat/${channels[0].id}`);
+	await page.goto('/test/chat');
 	await expect.poll(async () => (await sentSignals(page, 'offer')).length).toBe(1);
 	await page.evaluate(() => (window as any).__shareRig.peers[0].setConnectionState('connected'));
 	const tile = page.locator(`[data-share-id="${shareId}"]`);
 	await expect(tile.getByText('Live', { exact: true })).toBeVisible();
 	const videoNode = (await tile.locator('video').elementHandle())!;
 	await page.getByTestId('communication-chat-trigger').click();
+	await expect(page).toHaveURL(new RegExp(channels[0].id+'$'));
+	await expect(page.getByRole('textbox', { name: 'Message #project' })).toBeFocused();
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('A draft over the live screen');
 	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
 	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[0].id);
