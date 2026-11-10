@@ -6,9 +6,11 @@ import type {
 	DocBacklink,
 	DocComment,
 	DocGraph,
+	DocIssueLink,
 	DocRevision,
 	DocTag,
 	DocTreeNode,
+	IssueDocSummary,
 	UpdateDocRequest
 } from '$lib/types/docs';
 
@@ -74,6 +76,26 @@ export function restoreRevision(slug: string, id: string, revisionId: string): P
 
 export function listBacklinks(slug: string, id: string): Promise<DocBacklink[]> {
 	return api.get<DocBacklink[]>(`/api/workspaces/${slug}/docs/${id}/backlinks`);
+}
+
+// --- Issue links (STR-12) ---
+
+export function listDocIssues(slug: string, id: string): Promise<DocIssueLink[]> {
+	return api.get<DocIssueLink[]>(`/api/workspaces/${slug}/docs/${id}/issues`);
+}
+
+export function linkDocIssue(slug: string, id: string, identifier: string): Promise<DocIssueLink[]> {
+	return api.post<DocIssueLink[]>(`/api/workspaces/${slug}/docs/${id}/issues`, { identifier });
+}
+
+export function unlinkDocIssue(slug: string, id: string, identifier: string): Promise<DocIssueLink[]> {
+	return api.delete<DocIssueLink[]>(`/api/workspaces/${slug}/docs/${id}/issues/${encodeURIComponent(identifier)}`);
+}
+
+export function listIssueDocuments(slug: string, identifier: string): Promise<IssueDocSummary[]> {
+	return api.get<IssueDocSummary[]>(
+		`/api/workspaces/${slug}/docs/for-issue/${encodeURIComponent(identifier)}`
+	);
 }
 
 export function documentGraph(slug: string): Promise<DocGraph> {

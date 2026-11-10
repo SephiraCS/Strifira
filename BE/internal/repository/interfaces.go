@@ -133,6 +133,10 @@ type DocumentRepo interface {
 	ReplaceLinks(ctx context.Context, documentID uuid.UUID, targetIDs []uuid.UUID) error
 	ListBacklinks(ctx context.Context, documentID uuid.UUID) ([]domain.Document, error)
 	ListLinksByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.DocumentLink, error)
+	LinkIssue(ctx context.Context, documentID, issueID, userID uuid.UUID) error
+	UnlinkIssue(ctx context.Context, workspaceID, documentID, issueID uuid.UUID) error
+	ListIssuesForDocument(ctx context.Context, documentID uuid.UUID) ([]domain.Issue, error)
+	ListDocumentsForIssue(ctx context.Context, workspaceID, issueID uuid.UUID) ([]domain.Document, error)
 	ListTags(ctx context.Context, workspaceID uuid.UUID) ([]domain.DocumentTag, error)
 	CreateTag(ctx context.Context, tag *domain.DocumentTag) error
 	GetTagByName(ctx context.Context, workspaceID uuid.UUID, name string) (*domain.DocumentTag, error)

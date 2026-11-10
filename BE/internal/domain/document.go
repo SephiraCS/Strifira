@@ -16,12 +16,23 @@ type Document struct {
 	ContentText string     `json:"content_text" db:"content_text"`
 	Position    float64    `json:"position" db:"position"`
 	IsTemplate  bool       `json:"is_template" db:"is_template"`
+	IsFolder    bool       `json:"is_folder" db:"is_folder"`
 	CreatedBy   uuid.UUID  `json:"created_by" db:"created_by"`
 	UpdatedBy   *uuid.UUID `json:"updated_by" db:"updated_by"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at" db:"deleted_at"`
 	DeletedBy   *uuid.UUID `json:"deleted_by" db:"deleted_by"`
+}
+
+// DocumentIssueLink ties a document to an issue (card) so both surfaces can
+// show the connection: the card lists its documents, the document lists its
+// cards.
+type DocumentIssueLink struct {
+	DocumentID uuid.UUID `json:"document_id" db:"document_id"`
+	IssueID    uuid.UUID `json:"issue_id" db:"issue_id"`
+	CreatedBy  uuid.UUID `json:"created_by" db:"created_by"`
+	CreatedAt  time.Time `json:"created_at" db:"created_at"`
 }
 
 type DocumentRevision struct {

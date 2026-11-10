@@ -8,6 +8,7 @@ type CreateDocumentRequest struct {
 	ParentID   *string  `json:"parent_id" validate:"omitempty,uuid"`
 	ContentMD  string   `json:"content_md" validate:"max=1000000"`
 	IsTemplate bool     `json:"is_template"`
+	IsFolder   bool     `json:"is_folder"`
 	Tags       []string `json:"tags" validate:"max=50"`
 }
 
@@ -35,6 +36,7 @@ type DocumentResponse struct {
 	ContentText string     `json:"content_text"`
 	Position    float64    `json:"position"`
 	IsTemplate  bool       `json:"is_template"`
+	IsFolder    bool       `json:"is_folder"`
 	CreatedBy   string     `json:"created_by"`
 	UpdatedBy   *string    `json:"updated_by,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
@@ -53,8 +55,37 @@ type DocumentTreeResponse struct {
 	Icon       *string   `json:"icon,omitempty"`
 	Position   float64   `json:"position"`
 	IsTemplate bool      `json:"is_template"`
+	IsFolder   bool      `json:"is_folder"`
 	UpdatedAt  time.Time `json:"updated_at"`
 	Tags       []string  `json:"tags"`
+}
+
+// LinkIssueRequest links a document to a card by its workspace identifier
+// (e.g. ENG-42).
+type LinkIssueRequest struct {
+	Identifier string `json:"identifier" validate:"required,min=1,max=40"`
+}
+
+// DocumentIssueResponse is one issue linked from a document, as shown in the
+// document editor's linked-issues panel.
+type DocumentIssueResponse struct {
+	ID         string    `json:"id"`
+	Identifier string    `json:"identifier"`
+	Title      string    `json:"title"`
+	Status     string    `json:"status"`
+	Priority   int       `json:"priority"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// IssueDocumentResponse is one document linked from an issue, as shown on
+// the issue page.
+type IssueDocumentResponse struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Icon      *string   `json:"icon,omitempty"`
+	IsFolder  bool      `json:"is_folder"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type DocumentRevisionResponse struct {

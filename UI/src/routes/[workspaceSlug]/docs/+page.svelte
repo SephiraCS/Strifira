@@ -4,8 +4,9 @@
 	import { page } from '$app/state';
 	import { Button } from '$lib/components/ui/button';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
-	import { createDocument } from '$lib/api/docs';
+	import { createDocument, updateDocument } from '$lib/api/docs';
 	import { listFavorites, deleteFavorite } from '$lib/api/favorites';
 	import { docsState, type DocTreeEntry } from '$lib/features/docs/docs.state.svelte';
 	import { markdownTitle } from '$lib/features/docs/markdown';
@@ -15,10 +16,10 @@
 	import MoveDocDialog from '$lib/features/docs/MoveDocDialog.svelte';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog';
 	import { appToast } from '$lib/features/toast/toast';
-	import { authState } from '$lib/features/auth/auth.state.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import FilePlus from '@lucide/svelte/icons/file-plus';
 	import FileStack from '@lucide/svelte/icons/file-stack';
+	import FolderPlus from '@lucide/svelte/icons/folder-plus';
 	import Upload from '@lucide/svelte/icons/upload';
 	import CalendarDays from '@lucide/svelte/icons/calendar-days';
 	import Network from '@lucide/svelte/icons/network';
@@ -37,16 +38,45 @@
 	let importInput: HTMLInputElement | undefined = $state();
 	let favoriteDocs = $state<{ id: string; title: string; icon?: string; favId: string }[]>([]);
 
+	// Folder view: /docs?folder=<id> lists the folder's contents and scopes
+	// search to its subtree. Absent (or dangling) ids fall back to the root.
+	const folderId = $derived(page.url.searchParams.get('folder') ?? '');
+	const folderDoc = $derived(folderId ? docsState.byId(folderId) : undefined);
+	const inFolder = $derived(Boolean(folderId && folderDoc?.is_folder));
+
+	let renameOpen = $state(false);
+	let renameTarget = $state<DocTreeEntry | null>(null);
+	let renameValue = $state('');
+	let renaming = $state(false);
+
+	/** The open folder's children as tree entries, or the whole tree at the root. */
+	const scopedTree = $derived.by(() => {
+		const tree = docsState.tree;
+		if (!inFolder) return tree;
+		const find = (entries: DocTreeEntry[]): DocTreeEntry | null => {
+			for (const entry of entries) {
+				if (entry.id === folderId) return entry;
+				const inChild = find(entry.children);
+				if (inChild) return inChild;
+			}
+			return null;
+		};
+		const folder = find(tree);
+		return folder ? folder.children : [];
+	});
+
 	const filteredTree = $derived.by(() => {
 		const q = search.trim().toLowerCase();
-		if (!q) return docsState.tree;
+		if (!q) return scopedTree;
+		// Search keeps ancestors of matches so the tree stays navigable;
+		// inside a folder the candidates are exactly its subtree.
 		const matches = (entry: DocTreeEntry): DocTreeEntry | null => {
 			const self = entry.title.toLowerCase().includes(q) || entry.tags.some((t) => t.toLowerCase().includes(q));
 			const children = entry.children.map(matches).filter((c): c is DocTreeEntry => c !== null);
 			if (self || children.length > 0) return { ...entry, children };
 			return null;
 		};
-		return docsState.tree.map(matches).filter((e): e is DocTreeEntry => e !== null);
+		return scopedTree.map(matches).filter((e): e is DocTreeEntry => e !== null);
 	});
 
 	const recentDocs = $derived.by(() => {
@@ -57,6 +87,7 @@
 	});
 
 	const templates = $derived(docsState.docs.filter((d) => d.is_template));
+	const folderBreadcrumb = $derived(inFolder ? docsState.breadcrumb(folderId) : []);
 
 	onMount(() => {
 		void docsState.load(slug);
@@ -96,6 +127,54 @@
 		}
 	}
 
+	async function newFolder(parentId?: string) {
+		try {
+			const created = await createDocument(slug, {
+				title: '',
+				is_folder: true,
+				parent_id: parentId
+			});
+			await docsState.load(slug, true);
+			// A folder's name is its whole identity: open rename right away.
+			const entry = docsState.byId(created.id);
+			if (entry) {
+				renameTarget = { ...entry, children: [] };
+				renameValue = '';
+				renameOpen = true;
+			}
+		} catch (err) {
+			appToast.apiError(err, m['docs.folder.create_failed']());
+		}
+	}
+
+	function startRename(entry: DocTreeEntry) {
+		renameTarget = entry;
+		renameValue = entry.title;
+		renameOpen = true;
+	}
+
+	async function applyRename() {
+		if (!renameTarget || renaming) return;
+		const name = renameValue.trim();
+		if (!name) {
+			renameOpen = false;
+			renameTarget = null;
+			return;
+		}
+		renaming = true;
+		try {
+			await updateDocument(slug, renameTarget.id, { title: name });
+			await docsState.load(slug, true);
+			appToast.success(m['docs.folder.renamed']());
+			renameOpen = false;
+			renameTarget = null;
+		} catch (err) {
+			appToast.apiError(err, m['docs.folder.rename_failed']());
+		} finally {
+			renaming = false;
+		}
+	}
+
 	/** Copy a template's content into the freshly created doc via its update API. */
 	async function duplicateInto(template: DocTreeEntry, targetId: string) {
 		try {
@@ -113,7 +192,7 @@
 
 	async function newFromTemplate(templateId: string) {
 		const template = templates.find((t) => t.id === templateId);
-		if (template) await newDoc(undefined, template as DocTreeEntry);
+		if (template) await newDoc(inFolder ? folderId : undefined, template as DocTreeEntry);
 	}
 
 	async function importMarkdownFiles(files: FileList | null) {
@@ -133,6 +212,7 @@
 					icon: created.icon,
 					position: created.position,
 					is_template: false,
+					is_folder: false,
 					updated_at: created.updated_at,
 					tags: created.tags ?? []
 				}];
@@ -186,7 +266,12 @@
 
 <div class="mx-auto w-full max-w-4xl px-6 py-8">
 	<div class="mb-6 flex items-center gap-2">
-		<h1 class="text-xl font-semibold text-[var(--color-text-primary)]">{m['docs.title']()}</h1>
+		<h1 class="text-xl font-semibold text-[var(--color-text-primary)]">
+			{inFolder ? folderDoc?.title || m['docs.untitled']() : m['docs.title']()}
+		</h1>
+		{#if inFolder}
+			<span class="rounded-full bg-[var(--color-bg-tertiary)] px-2 py-0.5 text-xs text-[var(--color-text-tertiary)]">📁</span>
+		{/if}
 		<div class="ml-auto flex items-center gap-1.5">
 			<Button variant="ghost" size="sm" onclick={() => (showGraph = true)} title={m['docs.graph.title']()}>
 				<Network size={15} />
@@ -204,19 +289,25 @@
 					{m['docs.new']()}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" class="w-52">
-					<DropdownMenu.Item onclick={() => void newDoc()}>
+					<DropdownMenu.Item onclick={() => void newDoc(inFolder ? folderId : undefined)}>
 						<FilePlus size={14} class="mr-2" />
 						{m['docs.new_blank']()}
 					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => void createDailyNote()}>
-						<CalendarDays size={14} class="mr-2" />
-						{m['docs.daily_note']()}
+					<DropdownMenu.Item onclick={() => void newFolder(inFolder ? folderId : undefined)}>
+						<FolderPlus size={14} class="mr-2" />
+						{inFolder ? m['docs.folder.new_subfolder']() : m['docs.folder.new']()}
 					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => importInput?.click()}>
-						<Upload size={14} class="mr-2" />
-						{m['docs.import.markdown']()}
-					</DropdownMenu.Item>
-					{#if templates.length > 0}
+					{#if !inFolder}
+						<DropdownMenu.Item onclick={() => void createDailyNote()}>
+							<CalendarDays size={14} class="mr-2" />
+							{m['docs.daily_note']()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => importInput?.click()}>
+							<Upload size={14} class="mr-2" />
+							{m['docs.import.markdown']()}
+						</DropdownMenu.Item>
+					{/if}
+					{#if templates.length > 0 && !inFolder}
 						<DropdownMenu.Separator />
 						<DropdownMenu.Label class="text-xs text-[var(--color-text-tertiary)]">
 							{m['docs.templates.new_from']()}
@@ -245,7 +336,23 @@
 		}}
 	/>
 
-	<!-- Search -->
+	<!-- Folder breadcrumb -->
+	{#if inFolder}
+		<nav class="mb-4 flex items-center gap-1 text-xs text-[var(--color-text-tertiary)]" aria-label="Breadcrumb">
+			<a href="/{slug}/docs" class="hover:text-[var(--color-text-secondary)]">{m['docs.title']()}</a>
+			{#each folderBreadcrumb as crumb (crumb.id)}
+				<span>/</span>
+				<a
+					href="/{slug}/docs?folder={crumb.id}"
+					class="truncate {crumb.id === folderId ? 'text-[var(--color-text-secondary)]' : 'hover:text-[var(--color-text-secondary)]'}"
+				>
+					{crumb.icon ? crumb.icon + ' ' : ''}{crumb.title || m['docs.untitled']()}
+				</a>
+			{/each}
+		</nav>
+	{/if}
+
+	<!-- Search (scoped to the folder subtree when inside one) -->
 	<div class="relative mb-6">
 		<Search size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
 		<input
@@ -258,14 +365,20 @@
 
 	{#if docsState.loading && docsState.docs.length === 0}
 		<p class="py-12 text-center text-sm text-[var(--color-text-tertiary)]">{m['docs.loading']()}</p>
-	{:else if docsState.docs.length === 0}
+	{:else if !docsState.loading && !inFolder && docsState.docs.length === 0}
 		<EmptyState
 			title={m['docs.empty_title']()}
 			description={m['docs.empty_description']()}
 			action={{ label: m['docs.new_blank'](), onclick: () => void newDoc() }}
 		/>
+	{:else if inFolder && filteredTree.length === 0 && !search}
+		<EmptyState
+			title={m['docs.folder.empty']()}
+			description={m['docs.empty_description']()}
+			action={{ label: m['docs.new_blank'](), onclick: () => void newDoc(folderId) }}
+		/>
 	{:else}
-		{#if favoriteDocs.length > 0}
+		{#if !inFolder && favoriteDocs.length > 0}
 			<section class="mb-6">
 				<h2 class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
 					<Star size={12} /> {m['docs.favorites']()}
@@ -290,7 +403,7 @@
 			</section>
 		{/if}
 
-		{#if recentDocs.length > 0 && !search}
+		{#if !inFolder && recentDocs.length > 0 && !search}
 			<section class="mb-6">
 				<h2 class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-tertiary)]">
 					<Clock size={12} /> {m['docs.recents']()}
@@ -314,6 +427,8 @@
 				entries={filteredTree}
 				manage
 				onnewchild={(parent) => void newDoc(parent.id)}
+				onnewfolder={(parent) => void newFolder(parent.id)}
+				onrename={startRename}
 				onduplicate={async (entry) => {
 					const { duplicateDocument } = await import('$lib/api/docs');
 					try {
@@ -341,6 +456,32 @@
 		docsState.scheduleRefresh();
 	}}
 />
+
+<Dialog.Root bind:open={renameOpen}>
+	<Dialog.Content class="sm:max-w-[380px] border-[var(--app-border)] bg-[var(--color-bg-secondary)]">
+		<Dialog.Header>
+			<Dialog.Title>{m['docs.folder.rename_title']()}</Dialog.Title>
+		</Dialog.Header>
+		<input
+			type="text"
+			class="w-full rounded-md border border-[var(--app-border)] bg-[var(--color-bg-primary)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--app-accent)]"
+			placeholder={m['docs.folder.name_placeholder']()}
+			bind:value={renameValue}
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					void applyRename();
+				}
+			}}
+		/>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (renameOpen = false)} disabled={renaming}
+				>{m['docs.cancel']()}</Button
+			>
+			<Button onclick={() => void applyRename()} disabled={renaming}>{m['docs.done']()}</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <AlertDialog.Root open={deleteTarget !== null} onOpenChange={(o) => !o && (deleteTarget = null)}>
 	<AlertDialog.Content>

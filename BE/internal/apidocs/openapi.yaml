@@ -1936,6 +1936,95 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/DocumentBacklink" }
 
+  /api/workspaces/{slug}/docs/{docId}/issues:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listDocumentIssues
+      tags: [Docs]
+      summary: Cards linked from this document
+      responses:
+        "200":
+          description: Linked issues, newest link first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentIssue" }
+    post:
+      operationId: linkDocumentIssue
+      tags: [Docs]
+      summary: Link a card to this document (backlink shows on both sides)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier]
+              properties:
+                identifier: { type: string, description: Workspace issue identifier, e.g. ENG-42. }
+      responses:
+        "200":
+          description: The document's linked issues after the change.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentIssue" }
+        "404":
+          description: Document or issue not found.
+
+  /api/workspaces/{slug}/docs/{docId}/issues/{identifier}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: docId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: identifier
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      operationId: unlinkDocumentIssue
+      tags: [Docs]
+      summary: Unlink a card from this document
+      responses:
+        "200":
+          description: The document's linked issues after the change.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DocumentIssue" }
+
+  /api/workspaces/{slug}/docs/for-issue/{identifier}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: identifier
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: listIssueDocuments
+      tags: [Docs]
+      summary: Documents linked from a card
+      responses:
+        "200":
+          description: Live linked documents, newest update first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/IssueDocument" }
+        "404":
+          description: Issue not found.
+
   /api/workspaces/{slug}/docs/{docId}/tags:
     parameters:
       - $ref: "#/components/parameters/Slug"
@@ -6083,6 +6172,7 @@ components:
         content_text: { type: string }
         position: { type: number }
         is_template: { type: boolean }
+        is_folder: { type: boolean, description: Folders only group pages; they carry no content. }
         created_by: { type: string, format: uuid }
         updated_by: { type: string, format: uuid, nullable: true }
         created_at: { type: string, format: date-time }
@@ -6100,6 +6190,7 @@ components:
         icon: { type: string, nullable: true }
         position: { type: number }
         is_template: { type: boolean }
+        is_folder: { type: boolean }
         updated_at: { type: string, format: date-time }
         tags: { type: array, items: { type: string } }
     CreateDocumentRequest:
@@ -6110,6 +6201,7 @@ components:
         parent_id: { type: string, format: uuid, nullable: true }
         content_md: { type: string, description: Optional markdown body converted to editor HTML. }
         is_template: { type: boolean }
+        is_folder: { type: boolean, description: Create a folder (pure container) instead of a page. }
         tags: { type: array, items: { type: string } }
     UpdateDocumentRequest:
       type: object
@@ -6139,6 +6231,26 @@ components:
         id: { type: string, format: uuid }
         title: { type: string }
         icon: { type: string, nullable: true }
+        updated_at: { type: string, format: date-time }
+    DocumentIssue:
+      type: object
+      description: One issue (card) linked from a document.
+      properties:
+        id: { type: string, format: uuid }
+        identifier: { type: string }
+        title: { type: string }
+        status: { type: string }
+        priority: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    IssueDocument:
+      type: object
+      description: One document linked from an issue (card).
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        icon: { type: string, nullable: true }
+        is_folder: { type: boolean }
         updated_at: { type: string, format: date-time }
     DocumentGraph:
       type: object

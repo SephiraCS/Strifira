@@ -18,12 +18,12 @@ func NewDocumentRepository(db *sqlx.DB) *DocumentRepository {
 }
 
 func (r *DocumentRepository) Create(ctx context.Context, doc *domain.Document) error {
-	query := `INSERT INTO documents (id, workspace_id, parent_id, title, icon, content_html, content_text, position, is_template, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	query := `INSERT INTO documents (id, workspace_id, parent_id, title, icon, content_html, content_text, position, is_template, is_folder, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at, updated_at`
 	return r.db.QueryRowContext(ctx, query,
 		doc.ID, doc.WorkspaceID, doc.ParentID, doc.Title, doc.Icon, doc.ContentHTML, doc.ContentText,
-		doc.Position, doc.IsTemplate, doc.CreatedBy,
+		doc.Position, doc.IsTemplate, doc.IsFolder, doc.CreatedBy,
 	).Scan(&doc.CreatedAt, &doc.UpdatedAt)
 }
 
@@ -57,12 +57,12 @@ func (r *DocumentRepository) ListDeleted(ctx context.Context, workspaceID uuid.U
 func (r *DocumentRepository) Update(ctx context.Context, doc *domain.Document) error {
 	query := `UPDATE documents SET
 		parent_id = $2, title = $3, icon = $4, content_html = $5, content_text = $6,
-		position = $7, is_template = $8, updated_by = $9, updated_at = NOW()
+		position = $7, is_template = $8, is_folder = $9, updated_by = $10, updated_at = NOW()
 		WHERE id = $1
 		RETURNING updated_at`
 	return r.db.QueryRowContext(ctx, query,
 		doc.ID, doc.ParentID, doc.Title, doc.Icon, doc.ContentHTML, doc.ContentText,
-		doc.Position, doc.IsTemplate, doc.UpdatedBy,
+		doc.Position, doc.IsTemplate, doc.IsFolder, doc.UpdatedBy,
 	).Scan(&doc.UpdatedAt)
 }
 
@@ -114,7 +114,7 @@ func (r *DocumentRepository) Search(ctx context.Context, workspaceID uuid.UUID, 
 	var docs []domain.Document
 	err := r.db.SelectContext(ctx, &docs, `
 		SELECT * FROM documents
-		WHERE workspace_id = $1 AND deleted_at IS NULL AND is_template = FALSE
+		WHERE workspace_id = $1 AND deleted_at IS NULL AND is_template = FALSE AND is_folder = FALSE
 		  AND (title ILIKE $2 OR content_text ILIKE $2)
 		ORDER BY updated_at DESC
 		LIMIT $3`, workspaceID, pattern, limit)
@@ -142,12 +142,12 @@ func (r *DocumentRepository) Duplicate(ctx context.Context, src *domain.Document
 	}
 	defer tx.Rollback()
 
-	query := `INSERT INTO documents (id, workspace_id, parent_id, title, icon, content_html, content_text, position, is_template, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+	query := `INSERT INTO documents (id, workspace_id, parent_id, title, icon, content_html, content_text, position, is_template, is_folder, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING created_at, updated_at`
 	if err := tx.QueryRowContext(ctx, query,
 		dst.ID, dst.WorkspaceID, dst.ParentID, dst.Title, dst.Icon, dst.ContentHTML, dst.ContentText,
-		dst.Position, dst.IsTemplate, dst.CreatedBy,
+		dst.Position, dst.IsTemplate, dst.IsFolder, dst.CreatedBy,
 	).Scan(&dst.CreatedAt, &dst.UpdatedAt); err != nil {
 		return err
 	}
@@ -230,6 +230,48 @@ func (r *DocumentRepository) ListBacklinks(ctx context.Context, documentID uuid.
 		JOIN documents d ON d.id = l.source_id
 		WHERE l.target_id = $1 AND d.deleted_at IS NULL
 		ORDER BY d.updated_at DESC`, documentID)
+	return docs, err
+}
+
+// LinkIssue ties a document to an issue; both ids are already
+// workspace-validated by the service layer.
+func (r *DocumentRepository) LinkIssue(ctx context.Context, documentID, issueID, userID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO document_issue_links (document_id, issue_id, created_by)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (document_id, issue_id) DO NOTHING`, documentID, issueID, userID)
+	return err
+}
+
+// UnlinkIssue removes a document ↔ issue tie. The workspace scope comes in
+// through the documents table so an issue from another workspace cannot be
+// unlinked by id guessing.
+func (r *DocumentRepository) UnlinkIssue(ctx context.Context, workspaceID, documentID, issueID uuid.UUID) error {
+	_, err := r.db.ExecContext(ctx, `
+		DELETE FROM document_issue_links l
+		USING documents d
+		WHERE l.document_id = d.id AND d.workspace_id = $1
+		  AND l.document_id = $2 AND l.issue_id = $3`, workspaceID, documentID, issueID)
+	return err
+}
+
+func (r *DocumentRepository) ListIssuesForDocument(ctx context.Context, documentID uuid.UUID) ([]domain.Issue, error) {
+	var issues []domain.Issue
+	err := r.db.SelectContext(ctx, &issues, `
+		SELECT i.* FROM document_issue_links l
+		JOIN issues i ON i.id = l.issue_id
+		WHERE l.document_id = $1
+		ORDER BY l.created_at DESC`, documentID)
+	return issues, err
+}
+
+func (r *DocumentRepository) ListDocumentsForIssue(ctx context.Context, workspaceID, issueID uuid.UUID) ([]domain.Document, error) {
+	var docs []domain.Document
+	err := r.db.SelectContext(ctx, &docs, `
+		SELECT d.* FROM document_issue_links l
+		JOIN documents d ON d.id = l.document_id
+		WHERE l.issue_id = $2 AND d.workspace_id = $1 AND d.deleted_at IS NULL
+		ORDER BY d.updated_at DESC`, workspaceID, issueID)
 	return docs, err
 }
 

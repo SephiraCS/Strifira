@@ -21,6 +21,8 @@ type fakeDocumentRepo struct {
 	docs       map[uuid.UUID]*domain.Document
 	deleted    map[uuid.UUID]bool
 	links      map[uuid.UUID][]uuid.UUID
+	issueLinks map[uuid.UUID][]uuid.UUID
+	issues     map[uuid.UUID]*domain.Issue
 	revisions  []domain.DocumentRevision
 	lastRevAt  sql.NullTime
 	duplicated *domain.Document
@@ -30,9 +32,11 @@ type fakeDocumentRepo struct {
 
 func newFakeDocumentRepo() *fakeDocumentRepo {
 	return &fakeDocumentRepo{
-		docs:    make(map[uuid.UUID]*domain.Document),
-		deleted: make(map[uuid.UUID]bool),
-		links:   make(map[uuid.UUID][]uuid.UUID),
+		docs:       make(map[uuid.UUID]*domain.Document),
+		deleted:    make(map[uuid.UUID]bool),
+		links:      make(map[uuid.UUID][]uuid.UUID),
+		issueLinks: make(map[uuid.UUID][]uuid.UUID),
+		issues:     make(map[uuid.UUID]*domain.Issue),
 	}
 }
 
@@ -220,13 +224,140 @@ func (f *fakeDocumentRepo) GetCommentByID(ctx context.Context, id uuid.UUID) (*d
 func (f *fakeDocumentRepo) ResolveComment(ctx context.Context, id uuid.UUID) error { return nil }
 func (f *fakeDocumentRepo) ReopenComment(ctx context.Context, id uuid.UUID) error  { return nil }
 
+func (f *fakeDocumentRepo) LinkIssue(ctx context.Context, documentID, issueID, userID uuid.UUID) error {
+	if f.issueLinks == nil {
+		f.issueLinks = map[uuid.UUID][]uuid.UUID{}
+	}
+	for _, id := range f.issueLinks[documentID] {
+		if id == issueID {
+			return nil
+		}
+	}
+	f.issueLinks[documentID] = append(f.issueLinks[documentID], issueID)
+	return nil
+}
+
+func (f *fakeDocumentRepo) UnlinkIssue(ctx context.Context, workspaceID, documentID, issueID uuid.UUID) error {
+	rest := f.issueLinks[documentID][:0]
+	for _, id := range f.issueLinks[documentID] {
+		if id != issueID {
+			rest = append(rest, id)
+		}
+	}
+	f.issueLinks[documentID] = rest
+	return nil
+}
+
+func (f *fakeDocumentRepo) ListIssuesForDocument(ctx context.Context, documentID uuid.UUID) ([]domain.Issue, error) {
+	ids := f.issueLinks[documentID]
+	issues := make([]domain.Issue, 0, len(ids))
+	for _, id := range ids {
+		if issue, ok := f.issues[id]; ok {
+			issues = append(issues, *issue)
+		}
+	}
+	return issues, nil
+}
+
+func (f *fakeDocumentRepo) ListDocumentsForIssue(ctx context.Context, workspaceID, issueID uuid.UUID) ([]domain.Document, error) {
+	var docs []domain.Document
+	for id, linked := range f.issueLinks {
+		linkedToIssue := false
+		for _, iid := range linked {
+			if iid == issueID {
+				linkedToIssue = true
+				break
+			}
+		}
+		if !linkedToIssue {
+			continue
+		}
+		if doc, ok := f.docs[id]; ok && doc.WorkspaceID == workspaceID && doc.DeletedAt == nil {
+			docs = append(docs, *doc)
+		}
+	}
+	return docs, nil
+}
+
+// fakeIssueLookup resolves card identifiers for link tests.
+type fakeIssueLookup struct {
+	issues map[uuid.UUID]*domain.Issue
+}
+
+func (f *fakeIssueLookup) GetByIdentifier(ctx context.Context, workspaceID uuid.UUID, identifier string) (*domain.Issue, error) {
+	for _, issue := range f.issues {
+		if issue.Identifier == identifier && issue.WorkspaceID == workspaceID {
+			return issue, nil
+		}
+	}
+	return nil, sql.ErrNoRows
+}
+
 var _ repository.DocumentRepo = (*fakeDocumentRepo)(nil)
 
 func newDocumentTestService(t *testing.T) (*fakeDocumentRepo, *DocumentService) {
 	t.Helper()
 	repo := newFakeDocumentRepo()
-	svc := NewDocumentService(repo, realtime.NewHub(), nil, nil)
+	svc := NewDocumentService(repo, nil, realtime.NewHub(), nil, nil)
 	return repo, svc
+}
+
+func TestDocumentService_LinkIssueResolvesIdentifierBothWays(t *testing.T) {
+	repo, svc := newDocumentTestService(t)
+	wsID, userID := uuid.New(), uuid.New()
+	doc := &domain.Document{ID: uuid.New(), WorkspaceID: wsID, Title: "Spec", Position: 1024}
+	require.NoError(t, repo.Create(context.Background(), doc))
+
+	lookup := &fakeIssueLookup{issues: map[uuid.UUID]*domain.Issue{}}
+	issue := &domain.Issue{ID: uuid.New(), WorkspaceID: wsID, Identifier: "ENG-42", Title: "Card"}
+	lookup.issues[issue.ID] = issue
+	repo.issues[issue.ID] = issue
+	svc.issueRepo = lookup
+
+	linked, err := svc.LinkIssue(context.Background(), wsID, doc.ID, userID, " eng-42 ")
+	require.NoError(t, err)
+	require.Len(t, linked, 1)
+	assert.Equal(t, "ENG-42", linked[0].Identifier)
+
+	fromIssue, err := svc.DocumentsForIssue(context.Background(), wsID, "ENG-42")
+	require.NoError(t, err)
+	require.Len(t, fromIssue, 1)
+	assert.Equal(t, doc.ID, fromIssue[0].ID)
+
+	after, err := svc.UnlinkIssue(context.Background(), wsID, doc.ID, "ENG-42")
+	require.NoError(t, err)
+	assert.Empty(t, after)
+
+	_, err = svc.LinkIssue(context.Background(), wsID, doc.ID, userID, "ENG-999")
+	assert.ErrorIs(t, err, ErrLinkedIssueNotFound)
+}
+
+func TestDocumentService_CreateFolderIsAContentlessContainer(t *testing.T) {
+	_, svc := newDocumentTestService(t)
+	wsID, userID := uuid.New(), uuid.New()
+
+	folder, err := svc.Create(context.Background(), wsID, userID, dto.CreateDocumentRequest{
+		Title:     "Archive",
+		IsFolder:  true,
+		ContentMD: "# should be dropped",
+	})
+	require.NoError(t, err)
+	assert.True(t, folder.IsFolder)
+	assert.Empty(t, folder.ContentHTML)
+
+	page, err := svc.Create(context.Background(), wsID, userID, dto.CreateDocumentRequest{
+		Title:    "Page",
+		ParentID: folderParent(folder.ID),
+	})
+	require.NoError(t, err)
+	assert.False(t, page.IsFolder)
+	require.NotNil(t, page.ParentID)
+	assert.Equal(t, folder.ID, *page.ParentID)
+}
+
+func folderParent(id uuid.UUID) *string {
+	s := id.String()
+	return &s
 }
 
 func TestDocumentService_CreateAppendsPositionAndConvertsMarkdown(t *testing.T) {

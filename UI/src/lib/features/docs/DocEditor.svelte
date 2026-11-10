@@ -33,6 +33,7 @@
 	import { ROLE_HIERARCHY } from '$lib/security/roles';
 	import { m } from '$lib/paraglide/messages.js';
 	import BacklinksPanel from './BacklinksPanel.svelte';
+	import DocIssuesPanel from './DocIssuesPanel.svelte';
 	import DocComments from './DocComments.svelte';
 	import MoveDocDialog from './MoveDocDialog.svelte';
 	import DocShareDialog from './DocShareDialog.svelte';
@@ -128,7 +129,7 @@
 	const wikiItems = $derived.by(() => {
 		const q = wikiQuery.toLowerCase();
 		return docsState.docs
-			.filter((d) => d.id !== doc.id && !d.is_template)
+			.filter((d) => d.id !== doc.id && !d.is_template && !d.is_folder)
 			.filter((d) => !q || d.title.toLowerCase().includes(q))
 			.slice(0, 8);
 	});
@@ -904,6 +905,7 @@
 	{/if}
 
 	{#if editor}
+		<DocIssuesPanel {slug} docId={doc.id} readonly={!canWrite} />
 		<BacklinksPanel {slug} docId={doc.id} outgoingTitles={outgoingTitles} />
 		<DocComments {slug} docId={doc.id} {members} readonly={!canWrite} />
 	{/if}
