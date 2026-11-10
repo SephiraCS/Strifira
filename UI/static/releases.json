@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.57",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.57",
+    "body": "Deployed to alpha as fd41ea1b01df2bd7fc91f33e82377b90415071f8.\n\n- STR-22 - Email - Adicionar autoconfig baseado no login/dominio da conta (#35)\n- STR-27 - Investigar falha ao anexar imagens às tasks (#34)",
+    "published_at": "2026-11-10T21:44:12Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.57",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.56",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.56",
     "body": "Deployed to alpha as cea013da6c1b6ce20e32c58559bc29a5e66f8215.\n\n- STR-24 - Unificar todos os sociais como chat e compartilhamento de tela em uma categoria e talvez na mesma pagina (#36)",
