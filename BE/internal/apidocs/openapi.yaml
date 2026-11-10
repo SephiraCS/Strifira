@@ -4903,6 +4903,294 @@ paths:
         '413': {$ref: '#/components/responses/DevBoxBodyTooLarge'}
 
 
+  /api/workspaces/{slug}/mail/accounts:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMailAccounts
+      tags: [Mail]
+      summary: List workspace mail accounts
+      description: |
+        Every mail account configured for the workspace. Passwords are
+        encrypted at rest and never returned.
+      responses:
+        "200":
+          description: Configured accounts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items: { type: object }
+    post:
+      operationId: createMailAccount
+      tags: [Mail]
+      summary: Add a mail account
+      description: |
+        Stores the IMAP/SMTP connection data after successfully testing both
+        connections with the provided credentials. The first INBOX sync is
+        triggered asynchronously.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "201":
+          description: Account created.
+        "422":
+          description: Connection test failed (MAIL_CONNECTION_FAILED).
+  /api/workspaces/{slug}/mail/accounts/{accountId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: accountId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      operationId: updateMailAccount
+      tags: [Mail]
+      summary: Update a mail account
+      description: A blank password keeps the stored one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Account updated. }
+        "404": { description: Account not found. }
+    delete:
+      operationId: deleteMailAccount
+      tags: [Mail]
+      summary: Remove a mail account
+      description: Deletes the account and its cached messages and drafts.
+      responses:
+        "200": { description: Account removed. }
+        "404": { description: Account not found. }
+  /api/workspaces/{slug}/mail/accounts/{accountId}/sync:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: accountId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: syncMailAccount
+      tags: [Mail]
+      summary: Sync the account INBOX now
+      description: |
+        Pulls new INBOX messages into the local cache outside the periodic
+        syncer and broadcasts mail.updated when something arrives.
+      responses:
+        "200": { description: Sync finished. }
+        "404": { description: Account not found. }
+  /api/workspaces/{slug}/mail/messages:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMailMessages
+      tags: [Mail]
+      summary: List cached messages of a folder
+      description: |
+        Query parameters: accountId (optional filter), folder (inbox or
+        sent), q (search on subject/from/body), unread, starred, archived,
+        spam, limit, offset. Rows are message summaries without bodies.
+      responses:
+        "200":
+          description: Message summaries, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { type: object }
+  /api/workspaces/{slug}/mail/messages/{messageId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getMailMessage
+      tags: [Mail]
+      summary: Read one message
+      description: Full bodies (HTML already sanitized server-side) plus attachment metadata.
+      responses:
+        "200": { description: Message detail. }
+        "404": { description: Message not found. }
+    patch:
+      operationId: updateMailMessage
+      tags: [Mail]
+      summary: Update message flags
+      description: Toggles unread, starred, archived or spam; null fields keep their value.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Updated summary. }
+        "404": { description: Message not found. }
+    delete:
+      operationId: deleteMailMessage
+      tags: [Mail]
+      summary: Delete the cached copy
+      responses:
+        "200": { description: Message deleted. }
+        "404": { description: Message not found. }
+  /api/workspaces/{slug}/mail/attachments/{attachmentId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: attachmentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: downloadMailMessageAttachment
+      tags: [Mail]
+      summary: Download a message attachment
+      responses:
+        "200":
+          description: Attachment bytes with a download disposition.
+        "404": { description: Attachment not found. }
+  /api/workspaces/{slug}/mail/drafts:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+    get:
+      operationId: listMailDrafts
+      tags: [Mail]
+      summary: List the caller's drafts
+      responses:
+        "200":
+          description: Drafts owned by the caller, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drafts:
+                    type: array
+                    items: { type: object }
+    post:
+      operationId: createMailDraft
+      tags: [Mail]
+      summary: Create a draft
+      description: |
+        Creates the caller's draft. Pass in_reply_to_message_id (or
+        forward_from_message_id) to prefill subject and thread context.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "201": { description: Draft created. }
+        "404": { description: Referenced account or message not found. }
+  /api/workspaces/{slug}/mail/drafts/{draftId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: draftId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getMailDraft
+      tags: [Mail]
+      summary: Read a draft with its staged attachments
+      responses:
+        "200": { description: Draft detail. }
+        "404": { description: Draft not found. }
+    patch:
+      operationId: updateMailDraft
+      tags: [Mail]
+      summary: Update a draft (autosave)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200": { description: Updated draft. }
+        "404": { description: Draft not found. }
+    delete:
+      operationId: deleteMailDraft
+      tags: [Mail]
+      summary: Discard a draft
+      responses:
+        "200": { description: Draft discarded. }
+        "404": { description: Draft not found. }
+  /api/workspaces/{slug}/mail/drafts/{draftId}/send:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: draftId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: sendMailDraft
+      tags: [Mail]
+      summary: Send a draft through its account's SMTP
+      description: |
+        Delivers the message (replies carry In-Reply-To/References; forwards
+        re-attach the original files), archives it in the sent folder,
+        re-points staged attachments and deletes the draft.
+      responses:
+        "200": { description: Sent; returns the archived message id. }
+        "400": { description: Invalid draft id. }
+        "422": { description: No account chosen, no recipients or attachments too large. }
+        "502": { description: The SMTP server refused the message (MAIL_SEND_FAILED). }
+  /api/workspaces/{slug}/mail/drafts/{draftId}/attachments:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: draftId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: uploadMailDraftAttachments
+      tags: [Mail]
+      summary: Stage files on a draft
+      description: Multipart form; repeatable "attachments" file parts, 10 MiB per file.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: { type: object }
+      responses:
+        "201": { description: Files staged. }
+        "422": { description: Attachment exceeds the size limit. }
+  /api/workspaces/{slug}/mail/drafts/{draftId}/attachments/{attachmentId}:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: draftId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: attachmentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: downloadMailDraftAttachment
+      tags: [Mail]
+      summary: Download a staged attachment
+      responses:
+        "200": { description: Attachment bytes. }
+        "404": { description: Attachment not found. }
+    delete:
+      operationId: deleteMailDraftAttachment
+      tags: [Mail]
+      summary: Remove a staged attachment
+      responses:
+        "200": { description: Attachment removed. }
+        "404": { description: Attachment not found. }
+
 components:
   securitySchemes:
     jwtAuth:

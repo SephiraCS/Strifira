@@ -9,8 +9,8 @@ import (
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/internal/dto"
-	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/SephiraCS/strifira-backend/pkg/crypto"
 	"github.com/SephiraCS/strifira-backend/pkg/mailclient"
 	"github.com/SephiraCS/strifira-backend/pkg/safego"
@@ -22,11 +22,11 @@ import (
 
 // Errors surfaced as 4xx responses by the handler.
 var (
-	ErrMailNoRecipients      = errors.New("a message needs at least one recipient")
-	ErrMailDraftNoAccount    = errors.New("choose an account before sending")
-	ErrMailAttachmentTooBig  = errors.New("attachment is too large")
-	ErrMailConnectionFailed  = errors.New("could not connect with the given settings")
-	ErrMailSendFailed        = errors.New("the server refused the message")
+	ErrMailNoRecipients     = errors.New("a message needs at least one recipient")
+	ErrMailDraftNoAccount   = errors.New("choose an account before sending")
+	ErrMailAttachmentTooBig = errors.New("attachment is too large")
+	ErrMailConnectionFailed = errors.New("could not connect with the given settings")
+	ErrMailSendFailed       = errors.New("the server refused the message")
 )
 
 // Mail limits. Fixed in code: attachments are user data, not configuration.

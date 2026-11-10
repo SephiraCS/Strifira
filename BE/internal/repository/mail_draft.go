@@ -24,38 +24,38 @@ func NewMailDraftRepository(db *sqlx.DB) *MailDraftRepository {
 var _ MailDraftRepo = (*MailDraftRepository)(nil)
 
 type mailDraftRow struct {
-	ID          uuid.UUID `db:"id"`
-	WorkspaceID uuid.UUID `db:"workspace_id"`
-	AccountID   *uuid.UUID `db:"account_id"`
-	UserID      uuid.UUID `db:"user_id"`
-	ThreadKey   string    `db:"thread_key"`
+	ID                   uuid.UUID  `db:"id"`
+	WorkspaceID          uuid.UUID  `db:"workspace_id"`
+	AccountID            *uuid.UUID `db:"account_id"`
+	UserID               uuid.UUID  `db:"user_id"`
+	ThreadKey            string     `db:"thread_key"`
 	InReplyToMessageID   *uuid.UUID `db:"in_reply_to_message_id"`
 	ForwardFromMessageID *uuid.UUID `db:"forward_from_message_id"`
-	ToJSON      []byte    `db:"to_addresses"`
-	CCJSON      []byte    `db:"cc_addresses"`
-	BCCJSON     []byte    `db:"bcc_addresses"`
-	Subject     string    `db:"subject"`
-	Body        string    `db:"body"`
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
+	ToJSON               []byte     `db:"to_addresses"`
+	CCJSON               []byte     `db:"cc_addresses"`
+	BCCJSON              []byte     `db:"bcc_addresses"`
+	Subject              string     `db:"subject"`
+	Body                 string     `db:"body"`
+	CreatedAt            time.Time  `db:"created_at"`
+	UpdatedAt            time.Time  `db:"updated_at"`
 }
 
 func (row mailDraftRow) toDomain() domain.MailDraft {
 	return domain.MailDraft{
-		ID:          row.ID,
-		WorkspaceID: row.WorkspaceID,
-		AccountID:   row.AccountID,
-		UserID:      row.UserID,
-		ThreadKey:   row.ThreadKey,
+		ID:                   row.ID,
+		WorkspaceID:          row.WorkspaceID,
+		AccountID:            row.AccountID,
+		UserID:               row.UserID,
+		ThreadKey:            row.ThreadKey,
 		InReplyToMessageID:   row.InReplyToMessageID,
 		ForwardFromMessageID: row.ForwardFromMessageID,
-		To:          decodeAddresses(row.ToJSON),
-		CC:          decodeAddresses(row.CCJSON),
-		BCC:         decodeAddresses(row.BCCJSON),
-		Subject:     row.Subject,
-		Body:        row.Body,
-		CreatedAt:   row.CreatedAt,
-		UpdatedAt:   row.UpdatedAt,
+		To:                   decodeAddresses(row.ToJSON),
+		CC:                   decodeAddresses(row.CCJSON),
+		BCC:                  decodeAddresses(row.BCCJSON),
+		Subject:              row.Subject,
+		Body:                 row.Body,
+		CreatedAt:            row.CreatedAt,
+		UpdatedAt:            row.UpdatedAt,
 	}
 }
 

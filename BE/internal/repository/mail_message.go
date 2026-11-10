@@ -30,58 +30,58 @@ var _ MailMessageRepo = (*MailMessageRepository)(nil)
 // and are decoded manually — sqlx scans aliased joins reliably without
 // nested-struct mapping.
 type mailMessageRow struct {
-	ID          uuid.UUID `db:"id"`
-	WorkspaceID uuid.UUID `db:"workspace_id"`
-	AccountID   uuid.UUID `db:"account_id"`
-	Folder      string    `db:"folder"`
-	MessageID   string    `db:"message_id"`
-	InReplyTo   string    `db:"in_reply_to"`
-	ThreadKey   string    `db:"thread_key"`
-	Subject     string    `db:"subject"`
-	FromName    string    `db:"from_name"`
-	FromAddress string    `db:"from_address"`
-	ReplyTo     string    `db:"reply_to"`
-	ToJSON      []byte    `db:"to_addresses"`
-	CCJSON      []byte    `db:"cc_addresses"`
-	BCCJSON     []byte    `db:"bcc_addresses"`
-	BodyText    string    `db:"body_text"`
-	BodyHTML    string    `db:"body_html"`
-	Snippet     string    `db:"snippet"`
-	Unread      bool      `db:"unread"`
-	Starred     bool      `db:"starred"`
-	Archived    bool      `db:"archived"`
-	Spam        bool      `db:"spam"`
-	UID         int64     `db:"uid"`
-	SentAt      time.Time `db:"sent_at"`
-	CreatedAt   time.Time `db:"created_at"`
-	HasAttachments bool   `db:"has_attachments"`
+	ID             uuid.UUID `db:"id"`
+	WorkspaceID    uuid.UUID `db:"workspace_id"`
+	AccountID      uuid.UUID `db:"account_id"`
+	Folder         string    `db:"folder"`
+	MessageID      string    `db:"message_id"`
+	InReplyTo      string    `db:"in_reply_to"`
+	ThreadKey      string    `db:"thread_key"`
+	Subject        string    `db:"subject"`
+	FromName       string    `db:"from_name"`
+	FromAddress    string    `db:"from_address"`
+	ReplyTo        string    `db:"reply_to"`
+	ToJSON         []byte    `db:"to_addresses"`
+	CCJSON         []byte    `db:"cc_addresses"`
+	BCCJSON        []byte    `db:"bcc_addresses"`
+	BodyText       string    `db:"body_text"`
+	BodyHTML       string    `db:"body_html"`
+	Snippet        string    `db:"snippet"`
+	Unread         bool      `db:"unread"`
+	Starred        bool      `db:"starred"`
+	Archived       bool      `db:"archived"`
+	Spam           bool      `db:"spam"`
+	UID            int64     `db:"uid"`
+	SentAt         time.Time `db:"sent_at"`
+	CreatedAt      time.Time `db:"created_at"`
+	HasAttachments bool      `db:"has_attachments"`
 }
 
 func (row mailMessageRow) toDomain() domain.MailMessage {
 	return domain.MailMessage{
-		ID:          row.ID,
-		WorkspaceID: row.WorkspaceID,
-		AccountID:   row.AccountID,
-		Folder:      row.Folder,
-		MessageID:   row.MessageID,
-		InReplyTo:   row.InReplyTo,
-		ThreadKey:   row.ThreadKey,
-		Subject:     row.Subject,
-		From:        domain.MailAddress{Name: row.FromName, Address: row.FromAddress},
-		ReplyTo:     row.ReplyTo,
-		To:          decodeAddresses(row.ToJSON),
-		CC:          decodeAddresses(row.CCJSON),
-		BCC:         decodeAddresses(row.BCCJSON),
-		BodyText:    row.BodyText,
-		BodyHTML:    row.BodyHTML,
-		Snippet:     row.Snippet,
-		Unread:      row.Unread,
-		Starred:     row.Starred,
-		Archived:    row.Archived,
-		Spam:        row.Spam,
-		UID:         row.UID,
-		SentAt:      row.SentAt,
-		CreatedAt:   row.CreatedAt,
+		ID:             row.ID,
+		WorkspaceID:    row.WorkspaceID,
+		AccountID:      row.AccountID,
+		Folder:         row.Folder,
+		MessageID:      row.MessageID,
+		InReplyTo:      row.InReplyTo,
+		ThreadKey:      row.ThreadKey,
+		Subject:        row.Subject,
+		From:           domain.MailAddress{Name: row.FromName, Address: row.FromAddress},
+		ReplyTo:        row.ReplyTo,
+		To:             decodeAddresses(row.ToJSON),
+		CC:             decodeAddresses(row.CCJSON),
+		BCC:            decodeAddresses(row.BCCJSON),
+		BodyText:       row.BodyText,
+		BodyHTML:       row.BodyHTML,
+		Snippet:        row.Snippet,
+		Unread:         row.Unread,
+		Starred:        row.Starred,
+		Archived:       row.Archived,
+		Spam:           row.Spam,
+		UID:            row.UID,
+		SentAt:         row.SentAt,
+		CreatedAt:      row.CreatedAt,
 		HasAttachments: row.HasAttachments,
 	}
 }
@@ -388,14 +388,14 @@ func (r *MailMessageRepository) GetAttachment(ctx context.Context, workspaceID, 
 }
 
 type mailAttachmentRow struct {
-	ID          uuid.UUID `db:"id"`
+	ID          uuid.UUID  `db:"id"`
 	MessageID   *uuid.UUID `db:"message_id"`
 	DraftID     *uuid.UUID `db:"draft_id"`
-	Filename    string    `db:"filename"`
-	ContentType string    `db:"content_type"`
-	SizeBytes   int64     `db:"size_bytes"`
-	Content     []byte    `db:"content"`
-	CreatedAt   time.Time `db:"created_at"`
+	Filename    string     `db:"filename"`
+	ContentType string     `db:"content_type"`
+	SizeBytes   int64      `db:"size_bytes"`
+	Content     []byte     `db:"content"`
+	CreatedAt   time.Time  `db:"created_at"`
 }
 
 func (row mailAttachmentRow) toDomain() *domain.MailAttachment {

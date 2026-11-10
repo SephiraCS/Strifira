@@ -8,8 +8,8 @@ import (
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/internal/dto"
-	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/SephiraCS/strifira-backend/internal/realtime"
+	"github.com/SephiraCS/strifira-backend/internal/repository"
 	"github.com/SephiraCS/strifira-backend/pkg/mailclient"
 	mailaddress "github.com/emersion/go-message/mail"
 	"github.com/google/uuid"
@@ -461,4 +461,3 @@ func toClientAddresses(in []domain.MailAddress) []mailaddress.Address {
 	}
 	return out
 }
-

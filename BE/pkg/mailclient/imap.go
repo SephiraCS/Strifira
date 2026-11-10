@@ -22,11 +22,11 @@ type FetchOptions struct {
 
 // FetchedMessage is one new INBOX message ready for storage.
 type FetchedMessage struct {
-	UID         uint32
-	Seen        bool
+	UID          uint32
+	Seen         bool
 	InternalDate time.Time
-	Raw         []byte
-	Parsed      *ParsedMessage
+	Raw          []byte
+	Parsed       *ParsedMessage
 }
 
 // FetchResult carries the mailbox UIDVALIDITY and every new message.

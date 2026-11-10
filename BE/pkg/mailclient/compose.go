@@ -237,7 +237,6 @@ func RenderMessage(msg *OutgoingMessage) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-
 func wrapMessageID(id string) string {
 	if strings.HasPrefix(id, "<") {
 		return id

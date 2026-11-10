@@ -59,21 +59,21 @@ type MailAccountListResponse struct {
 
 // MailMessageSummary is the list-row shape: no body, no attachments.
 type MailMessageSummary struct {
-	ID        string       `json:"id"`
-	AccountID string       `json:"account_id"`
-	Folder    string       `json:"folder"`
-	ThreadKey string       `json:"thread_key"`
-	Subject   string       `json:"subject"`
-	From      MailAddress  `json:"from"`
-	To        []MailAddress `json:"to"`
-	CC        []MailAddress `json:"cc,omitempty"`
-	Snippet   string       `json:"snippet"`
-	Unread    bool         `json:"unread"`
-	Starred   bool         `json:"starred"`
-	Archived  bool         `json:"archived"`
-	Spam      bool         `json:"spam"`
-	HasAttachments bool    `json:"has_attachments"`
-	SentAt    time.Time    `json:"sent_at"`
+	ID             string        `json:"id"`
+	AccountID      string        `json:"account_id"`
+	Folder         string        `json:"folder"`
+	ThreadKey      string        `json:"thread_key"`
+	Subject        string        `json:"subject"`
+	From           MailAddress   `json:"from"`
+	To             []MailAddress `json:"to"`
+	CC             []MailAddress `json:"cc,omitempty"`
+	Snippet        string        `json:"snippet"`
+	Unread         bool          `json:"unread"`
+	Starred        bool          `json:"starred"`
+	Archived       bool          `json:"archived"`
+	Spam           bool          `json:"spam"`
+	HasAttachments bool          `json:"has_attachments"`
+	SentAt         time.Time     `json:"sent_at"`
 }
 
 type MailMessageListResponse struct {
@@ -83,11 +83,11 @@ type MailMessageListResponse struct {
 // MailMessageDetail is the reading-pane shape.
 type MailMessageDetail struct {
 	MailMessageSummary
-	ReplyTo     string                `json:"reply_to"`
-	BodyText    string                `json:"body_text"`
-	BodyHTML    string                `json:"body_html"`
-	InReplyTo   string                `json:"in_reply_to"`
-	Attachments []MailAttachmentMeta  `json:"attachments"`
+	ReplyTo     string               `json:"reply_to"`
+	BodyText    string               `json:"body_text"`
+	BodyHTML    string               `json:"body_html"`
+	InReplyTo   string               `json:"in_reply_to"`
+	Attachments []MailAttachmentMeta `json:"attachments"`
 }
 
 type MailAttachmentMeta struct {
@@ -127,17 +127,17 @@ type UpdateMailDraftRequest struct {
 }
 
 type MailDraftResponse struct {
-	ID                   string        `json:"id"`
-	AccountID            string        `json:"account_id,omitempty"`
-	To                   []MailAddress `json:"to"`
-	CC                   []MailAddress `json:"cc,omitempty"`
-	BCC                  []MailAddress `json:"bcc,omitempty"`
-	Subject              string        `json:"subject"`
-	Body                 string        `json:"body"`
-	InReplyToMessageID   string        `json:"in_reply_to_message_id,omitempty"`
-	ForwardFromMessageID string        `json:"forward_from_message_id,omitempty"`
+	ID                   string               `json:"id"`
+	AccountID            string               `json:"account_id,omitempty"`
+	To                   []MailAddress        `json:"to"`
+	CC                   []MailAddress        `json:"cc,omitempty"`
+	BCC                  []MailAddress        `json:"bcc,omitempty"`
+	Subject              string               `json:"subject"`
+	Body                 string               `json:"body"`
+	InReplyToMessageID   string               `json:"in_reply_to_message_id,omitempty"`
+	ForwardFromMessageID string               `json:"forward_from_message_id,omitempty"`
 	Attachments          []MailAttachmentMeta `json:"attachments"`
-	UpdatedAt            time.Time     `json:"updated_at"`
+	UpdatedAt            time.Time            `json:"updated_at"`
 }
 
 type MailDraftListResponse struct {
