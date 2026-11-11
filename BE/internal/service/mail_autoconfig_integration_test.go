@@ -126,9 +126,23 @@ func TestMailAutoconfigValidatesPersistsReceivesAndSends(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, account.EmailAddress, stored.EmailAddress)
 	require.Equal(t, account.PasswordEncrypted, stored.PasswordEncrypted)
-	svc.discovery = testMailDiscovery{err: mailconfig.ErrNotFound}
-	_, err = svc.CreateAccount(ctx, wsID, userID, req)
-	require.ErrorIs(t, err, mailconfig.ErrNotFound)
+	// Discovery outages and unsupported domains cannot modify a linked account.
+	for _, discoveryErr := range []error{mailconfig.ErrUnavailable, mailconfig.ErrNotFound} {
+		svc.discovery = testMailDiscovery{err: discoveryErr}
+		_, err = svc.CreateAccount(ctx, wsID, userID, req)
+		require.ErrorIs(t, err, discoveryErr)
+		_, err = svc.UpdateAccount(ctx, wsID, account.ID, dto.UpdateMailAccountRequest{EmailAddress: "new@example.test", Password: &req.Password})
+		require.ErrorIs(t, err, discoveryErr)
+		stored, err = accounts.GetByID(ctx, wsID, account.ID)
+		require.NoError(t, err)
+		require.Equal(t, account.EmailAddress, stored.EmailAddress)
+		require.Equal(t, account.PasswordEncrypted, stored.PasswordEncrypted)
+		list, err = accounts.ListByWorkspace(ctx, wsID)
+		require.NoError(t, err)
+		require.Len(t, list, 1)
+	}
+	_, err = svc.UpdateAccount(ctx, uuid.New(), account.ID, dto.UpdateMailAccountRequest{Password: &req.Password})
+	require.ErrorIs(t, err, repository.ErrMailAccountNotFound)
 	svc.discovery = testMailDiscovery{config: &mailconfig.Config{Authentication: "oauth2"}}
 	_, err = svc.CreateAccount(ctx, wsID, userID, req)
 	require.ErrorIs(t, err, ErrMailOAuthRequired)

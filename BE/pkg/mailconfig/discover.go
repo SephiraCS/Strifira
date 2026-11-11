@@ -127,6 +127,8 @@ func (d *Discoverer) Discover(ctx context.Context, raw string) (*Config, error) 
 				providerDomain = "outlook.com"
 			case suffix(host, "messagingengine.com"):
 				providerDomain = "fastmail.com"
+			case host == "mailserver.purelymail.com":
+				providerDomain = "purelymail.com"
 			}
 			if c := knownDomain(providerDomain, address); c != nil {
 				c.Source = "mx"
@@ -215,6 +217,14 @@ func knownDomain(domain, address string) *Config {
 		imapHost = "imap.aol.com"
 		smtpHost = "smtp.aol.com"
 		c.HelpURL = "https://help.aol.com/articles/Create-and-manage-app-password"
+	// https://purelymail.com/docs/setup/technical
+	// Custom domains use the same TLS endpoints and full-address login.
+	case "purelymail.com":
+		c.Provider = "Purelymail"
+		imapHost = "imap.purelymail.com"
+		smtpHost = "smtp.purelymail.com"
+		c.Authentication = "password"
+		c.HelpURL = "https://purelymail.com/docs/setup/technical"
 	case "fastmail.com", "fastmail.fm":
 		c.Provider = "Fastmail"
 		imapHost = "imap.fastmail.com"

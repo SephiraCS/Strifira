@@ -74,6 +74,29 @@ test('discovers from the login address and retries failed discovery without losi
 	await expect(dialog.getByLabel('Password', { exact: true })).toHaveValue('');
 });
 
+test('unsupported domains keep the address and never attempt account creation', async ({ page }) => {
+	const dialog = await mailPage(page);
+	let created = false;
+	await page.route('**/mail/accounts/discover', (route) =>
+		route.fulfill({
+			status: 422,
+			json: { error: { code: 'MAIL_DISCOVERY_NOT_FOUND', message: 'No secure provider configuration found.' } }
+		})
+	);
+	await page.route('**/mail/accounts', (route) => {
+		if (route.request().method() === 'POST') created = true;
+		return route.fulfill({ json: { accounts: [] } });
+	});
+	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+	await expect(dialog.getByRole('alert')).toHaveText('No secure provider configuration found.');
+	await expect(dialog.getByLabel('E-mail address')).toHaveValue(self.email);
+	await expect(dialog.getByLabel('Password', { exact: true })).toHaveCount(0);
+	await page.route('**/mail/accounts/discover', (route) => route.fulfill({ json: discovered }));
+	await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+	await expect(dialog.getByLabel('Password', { exact: true })).toBeVisible();
+	expect(created).toBe(false);
+});
+
 test('retries authentication and only sends identification and mailbox credentials', async ({ page }) => {
 	const dialog = await mailPage(page);
 	await page.route('**/mail/accounts/discover', (route) => route.fulfill({ json: discovered }));
