@@ -42,6 +42,7 @@ func TestDiscoveryProviderAndHostedDomains(t *testing.T) {
 		{"person@outlook.com", "Microsoft", "oauth2"},
 		{"person@icloud.com", "iCloud", "app_password"},
 		{"person@fastmail.com", "Fastmail", "app_password"},
+		{"person@purelymail.com", "Purelymail", "password"},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
 			c, err := NewDiscoverer().Discover(context.Background(), tc.address)
@@ -60,6 +61,39 @@ func TestDiscoveryProviderAndHostedDomains(t *testing.T) {
 	require.Equal(t, "mx", c.Source)
 	// A provider-looking substring is not a provider-owned DNS suffix.
 	require.False(t, suffix("google.com.attacker.example", "google.com"))
+}
+
+// Purelymail custom domains may have no domain autoconfig or ISPDB entry.
+// Recognize only its published MX, never an arbitrary MX or lookalike host.
+func TestDiscoveryPurelymailMX(t *testing.T) {
+	for _, host := range []string{"mailserver.purelymail.com.", "MAILSERVER.PURELYMAIL.COM."} {
+		t.Run(host, func(t *testing.T) {
+			d := NewDiscoverer()
+			d.dns = discoveryDNS{mx: []*net.MX{{Host: host}}}
+			d.client = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+				t.Fatal("known MX must not depend on unavailable domain autoconfig")
+				return nil, ErrUnavailable
+			})}
+			c, err := d.Discover(context.Background(), "person@custom.example")
+			require.NoError(t, err)
+			require.Equal(t, "Purelymail", c.Provider)
+			require.Equal(t, "mx", c.Source)
+			require.Equal(t, "password", c.Authentication)
+			require.Equal(t, Server{Host: "imap.purelymail.com", Port: 993, Security: "tls", Username: "person@custom.example"}, c.Incoming)
+			require.Equal(t, Server{Host: "smtp.purelymail.com", Port: 465, Security: "tls", Username: "person@custom.example"}, c.Outgoing)
+		})
+	}
+	for _, host := range []string{"mailserver.purelymail.com.attacker.example.", "attackerpurelymail.com.", "purelymail.com.", "mail.custom.example."} {
+		t.Run(host, func(t *testing.T) {
+			d := NewDiscoverer()
+			d.dns = discoveryDNS{mx: []*net.MX{{Host: host}}}
+			d.client = &http.Client{Transport: roundTrip(func(r *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 404, Body: http.NoBody, Header: make(http.Header)}, nil
+			})}
+			_, err := d.Discover(context.Background(), "person@custom.example")
+			require.ErrorIs(t, err, ErrNotFound)
+		})
+	}
 }
 
 func TestDiscoveryHTTPSDocumentAndFailures(t *testing.T) {
