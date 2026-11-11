@@ -498,13 +498,13 @@ test('the integrated page preserves channel, draft and voice while screens stay 
 	await expect(page.getByTestId('communication-category').getByRole('link')).toHaveCount(2);
 	await page.getByTestId('voice-join').click();
 	await expect(page.getByTestId('voice-mute')).toBeEnabled();
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${channels[1].id}"]`).click();
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('Keep this draft');
 	await expect(page.getByTestId('communication-screens')).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Share my screen', exact: true })).toBeVisible();
 	await expect(page.getByTestId('voice-room-bar')).toContainText('#general');
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(CHANNEL_ID);
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${CHANNEL_ID}"]`).click();
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${channels[1].id}"]`).click();
 	await expect(page.getByRole('textbox', { name: 'Message #project' })).toHaveValue('Keep this draft');
 	await page.getByTestId('voice-mute').click();
 	await expect(page.getByTestId('voice-mute')).toContainText('Unmute');
@@ -570,7 +570,7 @@ test('changing workspace ends voice and clears remembered channels and drafts', 
 	await page.goto(`/test/chat/${CHANNEL_ID}`);
 	await page.getByTestId('voice-join').click();
 	await expect(page.getByTestId('voice-mute')).toBeEnabled();
-	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(channels[1].id);
+	await page.getByTestId('communication-channels').locator(`a[href="/test/chat/${channels[1].id}"]`).click();
 	await page.getByRole('textbox', { name: 'Message #project' }).fill('Private draft');
 	await page.getByRole('button', { name: /Test Workspace/ }).first().click();
 	await page.getByRole('button', { name: /Other Workspace/ }).click();
@@ -697,4 +697,154 @@ test('logging out ends voice and releases the microphone', async ({ page }) => {
 	await expect.poll(() => page.evaluate(() =>
 		(window as any).__micTracks.map((track: MediaStreamTrack) => track.readyState)
 	)).toEqual(['ended']);
+});
+
+test('communication layout expands active screens and opens chat in a dismissible modal', async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await communicationRoutes(page);
+	await trackMicrophone(page);
+	await page.addInitScript(() => {
+		// Chromium's test video device supplies native moving video tracks.
+		// API/signaling are mocked; this is not a remote person's desktop.
+		const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+		(window as any).__screenTracks = [];
+		navigator.mediaDevices.getDisplayMedia = async () => {
+			const stream = await capture({ video: true });
+			(window as any).__screenTracks.push(...stream.getVideoTracks());
+			return stream;
+		};
+	});
+	const shareId = '00000000-0000-0000-0000-000000000029';
+	let sharing = false;
+	const share = { id: shareId, started_by: SELF.id, started_by_user: SELF, status: 'active', viewer_count: 0, created_at: '2026-01-01T00:00:00Z' };
+	await page.route('**/api/workspaces/test/shares', (route) => {
+		if (route.request().method() === 'POST') {
+			sharing = true;
+			return route.fulfill({ json: { share, presenter_token: 'test-presenter-token' } });
+		}
+		return route.fulfill({ json: { active: sharing ? [share] : [], recent: [] } });
+	});
+	await page.route(`**/api/workspaces/test/shares/${shareId}/end`, (route) => {
+		sharing = false;
+		return route.fulfill({ json: {} });
+	});
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	const composer = page.getByRole('textbox', { name: 'Message #general' });
+	await expect(composer).toBeVisible();
+	await expect(page.getByText('No one is sharing right now')).toBeVisible();
+	await composer.fill('Keep this draft while presenting');
+	const emptyDesktop = (await page.getByTestId('communication-conversation').boundingBox())!;
+	const emptyScreens = (await page.getByTestId('communication-screens').boundingBox())!;
+	await page.screenshot({ path: testInfo.outputPath('empty-desktop.png') });
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.screenshot({ path: testInfo.outputPath('empty-mobile.png') });
+	const mobileEmptyScreens = (await page.getByTestId('communication-screens').boundingBox())!;
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await page.getByTestId('voice-join').click();
+	await expect(page.getByTestId('voice-mute')).toBeEnabled();
+	await page.getByRole('button', { name: 'Share my screen', exact: true }).click();
+	const tile = page.locator(`[data-share-id="${shareId}"]`);
+	const video = tile.locator('video');
+	await expect.poll(() => video.evaluate((el: HTMLVideoElement) => el.videoWidth)).toBeGreaterThan(0);
+	const videoNode = (await video.elementHandle())!;
+	await expect(composer).toHaveCount(0);
+	await expect(page.getByTestId('communication-channels')).toBeHidden();
+	const activeScreens = (await page.getByTestId('communication-screens').boundingBox())!;
+	await page.screenshot({ path: testInfo.outputPath('sharing-desktop.png') });
+	const trigger = page.getByTestId('communication-chat-trigger');
+	await trigger.focus();
+	await page.keyboard.press('Enter');
+	const dialog = page.getByTestId('communication-chat-dialog');
+	await expect(dialog).toBeVisible();
+	await expect(composer).toBeFocused();
+	await expect(composer).toHaveValue('Keep this draft while presenting');
+	await composer.fill('Draft kept after closing the chat');
+	await page.screenshot({ path: testInfo.outputPath('chat-modal-desktop.png'), animations: 'disabled' });
+	await page.keyboard.press('Escape');
+	await expect(dialog).toHaveCount(0);
+	await expect(trigger).toBeFocused();
+	await expect(trigger).toContainText('Draft kept after closing the chat');
+	await page.setViewportSize({ width: 390, height: 844 });
+	await page.screenshot({ path: testInfo.outputPath('sharing-mobile.png') });
+	await expectPanelInViewport(page);
+	await page.getByRole('button', { name: 'Channels', exact: true }).click();
+	await expect(page.getByRole('dialog').locator(`a[href="/test/chat/${CHANNEL_ID}"]`)).toHaveAttribute('aria-current', 'page');
+	await expect(page.getByRole('dialog')).toHaveCSS('opacity', '1');
+	await page.screenshot({ path: testInfo.outputPath('channels-mobile.png'), animations: 'disabled' });
+	await page.getByRole('dialog').getByRole('link', { name: 'project', exact: true }).click();
+	await expect(page.getByRole('dialog')).toHaveCount(0);
+	await expect(page).toHaveURL(/00000000-0000-0000-0000-000000000012$/);
+	await trigger.click();
+	await page.getByRole('textbox', { name: 'Message #project' }).fill('Project draft');
+	await page.getByRole('combobox', { name: 'Switch channel' }).selectOption(CHANNEL_ID);
+	await expect(composer).toHaveValue('Draft kept after closing the chat');
+	await expect(composer).toBeVisible();
+	await page.screenshot({ path: testInfo.outputPath('chat-modal-mobile.png'), animations: 'disabled' });
+	await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+	await expect(dialog).toHaveCount(0);
+	await expect(trigger).toBeFocused();
+	await tile.getByRole('combobox', { name: 'Presentation quality' }).selectOption('smooth');
+	await tile.getByRole('combobox', { name: 'Presentation quality' }).selectOption('sharp');
+	const fullscreen = tile.getByRole('button', { name: 'Toggle full screen' });
+	await fullscreen.focus();
+	await page.keyboard.press('Enter');
+	await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(true);
+	await fullscreen.press('Enter');
+	await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
+	await page.setViewportSize({ width: 320, height: 740 });
+	await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+	await page.screenshot({ path: testInfo.outputPath('sharing-small-phone.png') });
+	const qualityBox = (await tile.getByRole('combobox', { name: 'Presentation quality' }).boundingBox())!;
+	const badgeBox = (await tile.getByText('Sharing', { exact: true }).boundingBox())!;
+	expect(badgeBox.x + badgeBox.width <= qualityBox.x || badgeBox.y + badgeBox.height <= qualityBox.y).toBe(true);
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await expect.poll(() => videoNode.evaluate((el) => el.isConnected)).toBe(true);
+	await expect.poll(() => page.evaluate(() => (window as any).__screenTracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['live']);
+	await expect.poll(() => page.evaluate(() => (window as any).__micTracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['live']);
+	await tile.getByRole('button', { name: 'Stop sharing', exact: true }).click();
+	await expect(page.getByText('No one is sharing right now')).toBeVisible();
+	await expect(composer).toHaveValue('Draft kept after closing the chat');
+	await expect(page.getByTestId('communication-chat-trigger')).toHaveCount(0);
+	await expect(page.getByTestId('voice-room-bar')).toContainText('#general');
+	await expect.poll(() => page.evaluate(() => (window as any).__screenTracks.map((t: MediaStreamTrack) => t.readyState))).toEqual(['ended']);
+	await page.getByTestId('voice-leave').click();
+
+	// Empty screens stay compact; an active presentation fills the workspace.
+	expect(emptyScreens.height).toBeLessThan(128);
+	expect(mobileEmptyScreens.height).toBeLessThan(144);
+	expect(emptyDesktop.width).toBeGreaterThan(750);
+	expect(activeScreens.width).toBeGreaterThan(1150);
+});
+
+test('communication loading and errors keep the conversation usable', async ({ page }, testInfo) => {
+	await page.setViewportSize({ width: 1440, height: 900 });
+	await communicationRoutes(page);
+	let releaseLoad!: () => void;
+	const pendingLoad = new Promise<void>((resolve) => { releaseLoad = resolve; });
+	let failed = true;
+	await page.route('**/api/workspaces/test/shares', async (route) => {
+		await pendingLoad;
+		return failed
+			? route.fulfill({ status: 503, json: { error: { code: 'UNAVAILABLE' } } })
+			: route.fulfill({ json: { active: [], recent: [] } });
+	});
+	await page.goto(`/test/chat/${CHANNEL_ID}`);
+	const composer = page.getByRole('textbox', { name: 'Message #general' });
+	await expect(composer).toBeVisible();
+	await composer.fill('Keep writing while screens load');
+	await page.screenshot({ path: testInfo.outputPath('loading-desktop.png') });
+	const loadingHeight = (await page.getByTestId('communication-screens').boundingBox())!.height;
+	releaseLoad();
+	await expect(page.getByRole('alert').filter({ hasText: 'Could not load this content' })).toBeVisible();
+	await page.screenshot({ path: testInfo.outputPath('error-desktop.png') });
+	await page.setViewportSize({ width: 390, height: 844 });
+	await expect(composer).toBeVisible();
+	await page.screenshot({ path: testInfo.outputPath('error-mobile.png') });
+	await expect(page.getByText('No one is sharing right now')).toHaveCount(0);
+	await expect(composer).toHaveValue('Keep writing while screens load');
+	failed = false;
+	await page.getByRole('button', { name: 'Retry', exact: true }).click();
+	await expect(page.getByText('No one is sharing right now')).toBeVisible();
+	await expect(composer).toHaveValue('Keep writing while screens load');
+	expect(loadingHeight).toBeLessThan(144);
 });

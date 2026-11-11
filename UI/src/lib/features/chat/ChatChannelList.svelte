@@ -15,10 +15,12 @@
 
 	let {
 		slug,
-		activeChannelId
+		activeChannelId,
+		onselect
 	}: {
 		slug: string;
 		activeChannelId: string | null;
+		onselect?: () => void;
 	} = $props();
 
 	let showCreateChannel = $state(false);
@@ -76,6 +78,8 @@
 			{#each channels as channel (channel.id)}
 				<a
 					href={channelHref(channel)}
+					aria-current={channel.id === activeChannelId ? 'page' : undefined}
+					onclick={() => onselect?.()}
 					class="group flex items-center gap-1.5 rounded-md px-1.5 py-1 text-sm {channel.id === activeChannelId
 						? 'bg-[var(--color-bg-hover)]/60 text-[var(--color-text-primary)]'
 						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
@@ -130,6 +134,8 @@
 				{@const peer = channel.dm_peer}
 				<a
 					href={channelHref(channel)}
+					aria-current={channel.id === activeChannelId ? 'page' : undefined}
+					onclick={() => onselect?.()}
 					class="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm {channel.id === activeChannelId
 						? 'bg-[var(--color-bg-hover)]/60 text-[var(--color-text-primary)]'
 						: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
@@ -167,6 +173,7 @@
 	<CreateChannelDialog
 		bind:open={showCreateChannel}
 		oncreated={(channelId) => {
+			onselect?.();
 			void chatState.openChannel(channelId);
 			void goto(`/${slug}/chat/${channelId}`);
 		}}
@@ -174,6 +181,7 @@
 	<NewDMDialog
 		bind:open={showNewDM}
 		onselected={(channelId) => {
+			onselect?.();
 			void chatState.openChannel(channelId);
 			void goto(`/${slug}/chat/${channelId}`);
 		}}
