@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
@@ -48,6 +49,8 @@ type mailDiscoverer interface {
 
 // MailService owns mailbox accounts, the INBOX cache and compose/send flows.
 type MailService struct {
+	accountOpsMu         sync.Mutex
+	accountOps           map[uuid.UUID]*mailAccountOperations
 	accountRepo          repository.MailAccountRepo
 	messageRepo          repository.MailMessageRepo
 	draftRepo            repository.MailDraftRepo
@@ -191,17 +194,6 @@ func (s *MailService) UpdateAccount(ctx context.Context, workspaceID, id uuid.UU
 	return &account, nil
 }
 
-func (s *MailService) DeleteAccount(ctx context.Context, workspaceID, id uuid.UUID) error {
-	account, err := s.accountRepo.GetByID(ctx, workspaceID, id)
-	if err != nil {
-		return err
-	}
-	if account.AuthMethod == "oauth2" {
-		return s.disconnectOAuth(ctx, account)
-	}
-	return s.accountRepo.Delete(ctx, workspaceID, id)
-}
-
 // SyncNow forces an immediate INBOX sync for one account.
 func (s *MailService) SyncNow(ctx context.Context, workspaceID, id uuid.UUID) error {
 	account, err := s.accountRepo.GetByID(ctx, workspaceID, id)
@@ -290,7 +282,7 @@ func (s *MailService) SyncDueAccounts(ctx context.Context) {
 
 // syncAccount pulls new INBOX messages into the local cache and broadcasts
 // mail.updated so open clients refresh. Errors persist on the account.
-func (s *MailService) syncAccount(ctx context.Context, account domain.MailAccount) error {
+func (s *MailService) syncLinkedAccount(ctx context.Context, account domain.MailAccount) error {
 	uidValidity, lastUID, err := s.messageRepo.SyncState(ctx, account.ID)
 	if err != nil {
 		return err
@@ -304,8 +296,11 @@ func (s *MailService) syncAccount(ctx context.Context, account domain.MailAccoun
 		_ = s.messageRepo.UpdateSyncState(ctx, account.ID, uidValidity, lastUID, msg, time.Now())
 		return err
 	}
-	result, err := mailclient.FetchNewMessages(s.fetchOptions(&account, password), uint64(lastUID), uidValidity)
+	result, err := mailclient.FetchNewMessagesContext(ctx, s.fetchOptions(&account, password), uint64(lastUID), uidValidity)
 	now := time.Now()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if err != nil {
 		msg := accountConnectionError(&account, err).Error()
 		_ = s.messageRepo.UpdateSyncState(ctx, account.ID, uidValidity, lastUID, msg, now)

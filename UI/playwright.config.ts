@@ -10,6 +10,7 @@ import { defineConfig } from '@playwright/test';
 // A new spec is slow unless it is added here; promote it only when a
 // regression in it must stop a deploy, and keep this list short.
 const FAST_SPECS = [
+	'mail-account-removal.test.ts',
 	'login.test.ts',
 	'issues.test.ts',
 	'issue-escape.test.ts',

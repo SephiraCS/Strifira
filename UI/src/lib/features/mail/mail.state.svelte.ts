@@ -13,12 +13,21 @@ import {
 	uploadMailDraftAttachments
 } from '$lib/api/mail';
 import { createMailDraft } from '$lib/api/mail';
-import type { MailAccount, MailAttachmentMeta, MailDraft, MailFolder, MailMessageDetail, MailMessageSummary, MailThread } from '$lib/types/mail';
+import type {
+	MailAccount,
+	MailAttachmentMeta,
+	MailDraft,
+	MailFolder,
+	MailMessageDetail,
+	MailMessageSummary,
+	MailThread
+} from '$lib/types/mail';
 
 interface MailUpdatedPayload {
 	account_id: string;
 	folder?: string;
 	new_count?: number;
+	deleted?: boolean;
 }
 
 export type MailListFilter = 'inbox' | 'sent' | 'starred' | 'archived' | 'spam';
@@ -42,15 +51,15 @@ class MailState {
 
 	private slug = '';
 	private loadSeq = 0;
+	private selectionSeq = 0;
+	private removedAccounts = new Set<string>();
 	private reloadTimer: ReturnType<typeof setTimeout> | null = null;
 	private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor() {
 		if (!browser) return;
-		window.addEventListener(
-			'ws:mail.updated',
-			((e: CustomEvent<MailUpdatedPayload>) => this.handleMailUpdated(e.detail)) as EventListener
-		);
+		window.addEventListener('ws:mail.updated', ((e: CustomEvent<MailUpdatedPayload>) =>
+			this.handleMailUpdated(e.detail)) as EventListener);
 		window.addEventListener('ws:reconnected', (() => {
 			if (this.loadedFor) void this.reload();
 		}) as EventListener);
@@ -87,13 +96,17 @@ class MailState {
 		return list;
 	});
 
-	unreadInboxCount = $derived(
-		this.folder === 'inbox' ? this.threads.reduce((sum, t) => sum + t.unreadCount, 0) : 0
-	);
+	unreadInboxCount = $derived(this.folder === 'inbox' ? this.threads.reduce((sum, t) => sum + t.unreadCount, 0) : 0);
 
 	async ensureWorkspace(slug: string): Promise<void> {
 		if (this.loadedFor === slug && this.accounts.length >= 0 && this.messages.length >= 0) return;
 		if (this.loadedFor !== slug) {
+			this.loadSeq++;
+			this.selectionSeq++;
+			this.selecting = false;
+			this.removedAccounts.clear();
+			this.accounts = [];
+			this.messages = [];
 			this.selectedAccountId = null;
 			this.folder = 'inbox';
 			this.search = '';
@@ -112,7 +125,7 @@ class MailState {
 		try {
 			const [accounts] = await Promise.all([listMailAccounts(slug)]);
 			if (seq !== this.loadSeq) return;
-			this.accounts = accounts.accounts;
+			this.accounts = accounts.accounts.filter((a) => !this.removedAccounts.has(a.id));
 			if (this.selectedAccountId && !this.accounts.some((a) => a.id === this.selectedAccountId)) {
 				this.selectedAccountId = null;
 			}
@@ -134,7 +147,7 @@ class MailState {
 		};
 		const response = await listMailMessages(this.slug, query);
 		if (seq !== this.loadSeq) return;
-		this.messages = response.messages;
+		this.messages = response.messages.filter((m) => !this.removedAccounts.has(m.account_id));
 		// A deleted/filtered selection clears itself quietly.
 		if (this.selectedMessage && !this.messages.some((m) => m.id === this.selectedMessage?.id)) {
 			this.selectedMessage = null;
@@ -144,6 +157,8 @@ class MailState {
 	setFolder(folder: MailListFilter): void {
 		if (this.folder === folder) return;
 		this.folder = folder;
+		this.selectionSeq++;
+		this.selecting = false;
 		this.selectedMessage = null;
 		void this.loadWithSeq();
 	}
@@ -151,6 +166,8 @@ class MailState {
 	setAccount(accountId: string | null): void {
 		if (this.selectedAccountId === accountId) return;
 		this.selectedAccountId = accountId;
+		this.selectionSeq++;
+		this.selecting = false;
 		this.selectedMessage = null;
 		void this.loadWithSeq();
 	}
@@ -175,19 +192,24 @@ class MailState {
 	async selectMessage(messageId: string): Promise<void> {
 		if (!this.slug || this.selecting) return;
 		this.selecting = true;
+		const slug = this.slug;
+		const seq = ++this.selectionSeq;
 		try {
-			const detail = await getMailMessage(this.slug, messageId);
+			const detail = await getMailMessage(slug, messageId);
+			if (seq !== this.selectionSeq || slug !== this.slug || this.removedAccounts.has(detail.account_id)) return;
 			this.selectedMessage = detail;
 			if (detail.unread) {
 				this.applyListPatch(messageId, { unread: false });
 				void updateMailMessage(this.slug, messageId, { unread: false }).catch(() => {});
 			}
 		} finally {
-			this.selecting = false;
+			if (seq === this.selectionSeq) this.selecting = false;
 		}
 	}
 
 	clearSelection(): void {
+		this.selectionSeq++;
+		this.selecting = false;
 		this.selectedMessage = null;
 	}
 
@@ -259,9 +281,24 @@ class MailState {
 
 	async removeAccount(accountId: string): Promise<void> {
 		if (!this.slug) return;
-		await deleteMailAccount(this.slug, accountId);
-		if (this.selectedAccountId === accountId) this.selectedAccountId = null;
+		const slug = this.slug;
+		await deleteMailAccount(slug, accountId);
+		if (slug !== this.slug) return;
+		this.forgetAccount(accountId);
 		await this.reload();
+	}
+
+	private forgetAccount(accountId: string): void {
+		this.removedAccounts.add(accountId);
+		// Invalidate list/detail responses issued before the DELETE succeeded.
+		this.loadSeq++;
+		this.selectionSeq++;
+		this.selecting = false;
+		this.loading = false;
+		this.accounts = this.accounts.filter((a) => a.id !== accountId);
+		this.messages = this.messages.filter((m) => m.account_id !== accountId);
+		if (this.selectedAccountId === accountId) this.selectedAccountId = null;
+		if (this.selectedMessage?.account_id === accountId) this.selectedMessage = null;
 	}
 
 	private applyListPatch(messageId: string, patch: Partial<MailMessageSummary>): void {
@@ -320,6 +357,9 @@ class MailState {
 	}
 
 	private handleMailUpdated(payload: MailUpdatedPayload): void {
+		if (payload.deleted && this.accounts.some((a) => a.id === payload.account_id)) {
+			this.forgetAccount(payload.account_id);
+		}
 		// Coalesce bursts (a sync can insert dozens) into one reload.
 		if (this.reloadTimer) clearTimeout(this.reloadTimer);
 		this.reloadTimer = setTimeout(() => {

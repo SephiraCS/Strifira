@@ -2232,7 +2232,7 @@
 	"mail.account.testing": "Testing connection…",
 	"mail.account.delete": "Remove",
 	"mail.account.delete_confirm_title": "Remove account",
-	"mail.account.delete_confirm_body": "Remove {address}? Messages synced from it are deleted too.",
+	"mail.account.delete_confirm_body": "Remove {address} from Strifira? Its saved credentials, synced messages, drafts and attachments will be removed from this app. The mailbox and messages at your email provider will stay intact.",
 	"mail.sync": "Sync now",
 	"mail.folder.inbox": "Inbox",
 	"mail.folder.sent": "Sent",

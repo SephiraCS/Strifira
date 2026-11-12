@@ -52,11 +52,18 @@ const (
 // mailbox was recreated), only the newest firstSyncMessage messages are
 // fetched. UIDVALIDITY is returned so callers can persist it.
 func FetchNewMessages(opts FetchOptions, afterUID uint64, uidValidity uint32) (*FetchResult, error) {
+	return FetchNewMessagesContext(context.Background(), opts, afterUID, uidValidity)
+}
+
+// FetchNewMessagesContext closes the IMAP connection when the account operation ends.
+func FetchNewMessagesContext(ctx context.Context, opts FetchOptions, afterUID uint64, uidValidity uint32) (*FetchResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
 	if !isLoopbackHost(opts.Host) && strings.EqualFold(opts.Security, SecurityNone) {
 		return nil, fmt.Errorf("plaintext IMAP is only allowed to localhost; use STARTTLS or TLS")
 	}
 
-	conn, err := dialIMAP(opts)
+	conn, err := dialIMAPContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +201,11 @@ func readLiteral(msg *imap.Message, section *imap.BodySectionName) ([]byte, erro
 }
 
 func dialIMAP(opts FetchOptions) (*client.Client, error) {
-	conn, err := dialMail(context.Background(), opts.Host, opts.Port, opts.Security)
+	return dialIMAPContext(context.Background(), opts)
+}
+
+func dialIMAPContext(ctx context.Context, opts FetchOptions) (*client.Client, error) {
+	conn, err := dialMail(ctx, opts.Host, opts.Port, opts.Security)
 	if err != nil {
 		return nil, err
 	}

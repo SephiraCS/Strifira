@@ -16,11 +16,18 @@ var ErrMailAccountNotFound = errors.New("mail account not found")
 var ErrMailAccountConflict = errors.New("Esta conta foi alterada durante a operação. Reabra a conta e tente novamente.")
 
 type MailAccountRepository struct {
-	db *sqlx.DB
+	db             *sqlx.DB
+	operationSlots chan struct{}
 }
 
 func NewMailAccountRepository(db *sqlx.DB) *MailAccountRepository {
-	return &MailAccountRepository{db: db}
+	r := &MailAccountRepository{db: db}
+	// A lock holds a connection while provider access uses the repositories.
+	// Leave pool capacity for those queries even under concurrent sync requests.
+	if limit := db.Stats().MaxOpenConnections; limit > 1 {
+		r.operationSlots = make(chan struct{}, limit/2)
+	}
+	return r
 }
 
 var _ MailAccountRepo = (*MailAccountRepository)(nil)

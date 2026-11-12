@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { mailAccountMessage } from '$lib/features/mail/autoconfig.messages';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailState } from '$lib/features/mail/mail.state.svelte';
 	import ComposeDialog from '$lib/features/mail/ComposeDialog.svelte';
 	import AccountDialog from '$lib/features/mail/AccountDialog.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import LoadingState from '$lib/components/shared/LoadingState.svelte';
-	import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
@@ -42,7 +40,6 @@
 	let showCompose = $state(false);
 	let showAccountDialog = $state(false);
 	let editingAccount = $state<MailAccount | null>(null);
-	let deletingAccount = $state<MailAccount | null>(null);
 	let listQuery = $state('');
 	onMount(() => {
 		if (page.url.searchParams.get('connect') === '1') showAccountDialog = true;
@@ -166,18 +163,6 @@
 			appToast.apiError(error, m['mail.toast.download_failed']());
 		}
 	}
-
-	function confirmDeleteAccount(): void {
-		const account = deletingAccount;
-		deletingAccount = null;
-		if (!account) return;
-		void mailState
-			.removeAccount(account.id)
-			.then(() => {
-				appToast.success(m['mail.toast.account_deleted']());
-			})
-			.catch((err) => appToast.apiError(err, m['mail.toast.account_failed']()));
-	}
 </script>
 
 <div class="flex h-full min-h-0">
@@ -259,7 +244,7 @@
 							</button>
 							<button
 								type="button"
-								class="hidden rounded p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] group-hover:block"
+								class="rounded p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
 								title={m['mail.account.settings']()}
 								onclick={() => {
 									editingAccount = account;
@@ -277,6 +262,31 @@
 		<!-- Thread list -->
 		<div class="flex w-full min-w-0 flex-col border-r border-[var(--app-border)] md:w-[380px] md:shrink-0">
 			<div class="flex h-12 shrink-0 items-center gap-2 border-b border-[var(--app-border)] px-3">
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger class="rounded p-1.5 md:hidden" aria-label={m['mail.account.settings']()}>
+						<Settings2 size={16} />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content>
+						{#each mailState.accounts as account (account.id)}
+							<DropdownMenu.Item
+								onclick={() => {
+									editingAccount = account;
+									showAccountDialog = true;
+								}}
+							>
+								{account.email_address}
+							</DropdownMenu.Item>
+						{/each}
+						<DropdownMenu.Item
+							onclick={() => {
+								editingAccount = null;
+								showAccountDialog = true;
+							}}
+						>
+							{m['mail.account.add']()}
+						</DropdownMenu.Item>
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
 				<div class="relative min-w-0 flex-1">
 					<Search size={14} class="absolute top-1/2 left-2.5 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
 					<Input
@@ -505,15 +515,3 @@
 		editingAccount = null;
 	}}
 />
-
-{#if deletingAccount}
-	<ConfirmDialog
-		title={m['mail.account.delete_confirm_title']()}
-		message={m['mail.account.delete_confirm_body']({ address: deletingAccount.email_address }) +
-			(deletingAccount.auth_method === 'oauth2' ? ` ${mailAccountMessage('disconnect')}` : '')}
-		confirmLabel={m['mail.account.delete']()}
-		variant="danger"
-		onconfirm={confirmDeleteAccount}
-		oncancel={() => (deletingAccount = null)}
-	/>
-{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack, onDestroy } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailState } from '$lib/features/mail/mail.state.svelte';
 	import { sendMailDraft, deleteMailDraft } from '$lib/api/mail';
@@ -64,14 +65,12 @@
 	}
 
 	function formatAddressList(list: { name: string; address: string }[] | undefined): string {
-		return (list ?? [])
-			.map((a) => (a.name ? `"${a.name}" <${a.address}>` : a.address))
-			.join(', ');
+		return (list ?? []).map((a) => (a.name ? `"${a.name}" <${a.address}>` : a.address)).join(', ');
 	}
 
 	$effect(() => {
 		if (open) {
-			accountId = mailState.accounts[0]?.id ?? '';
+			accountId = untrack(() => mailState.accounts[0]?.id ?? '');
 			to = formatAddressList(context?.to);
 			cc = formatAddressList(context?.cc);
 			bcc = formatAddressList(context?.bcc);
@@ -83,6 +82,19 @@
 			draftNotice = '';
 			sending = false;
 		}
+	});
+
+	$effect(() => {
+		if (open && accountId && !mailState.accounts.some((a) => a.id === accountId)) {
+			if (saveTimer) clearTimeout(saveTimer);
+			draft = null;
+			attachments = [];
+			body = '';
+			onclosed();
+		}
+	});
+	onDestroy(() => {
+		if (saveTimer) clearTimeout(saveTimer);
 	});
 
 	function resetTimer(): void {
@@ -107,6 +119,7 @@
 				in_reply_to_message_id: context?.in_reply_to_message_id,
 				forward_from_message_id: context?.forward_from_message_id
 			});
+			if (!mailState.accounts.some((a) => a.id === saved.account_id)) return;
 			draft = saved;
 			draftNotice = m['mail.compose.draft_saved']();
 		} catch (error) {
@@ -185,7 +198,9 @@
 </script>
 
 <Dialog.Root {open} onOpenChange={(v) => (v ? undefined : void discard())}>
-	<Dialog.Content class="flex max-h-[85vh] flex-col gap-3 overflow-hidden border-[var(--app-border)] bg-[var(--color-bg-secondary)] sm:max-w-[640px]">
+	<Dialog.Content
+		class="flex max-h-[85vh] flex-col gap-3 overflow-hidden border-[var(--app-border)] bg-[var(--color-bg-secondary)] sm:max-w-[640px]"
+	>
 		<Dialog.Header class="pb-0">
 			<Dialog.Title>{m['mail.compose']()}</Dialog.Title>
 			<Dialog.Description class="text-xs">
@@ -193,7 +208,13 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<form class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden px-4" onsubmit={(e) => { e.preventDefault(); void send(); }}>
+		<form
+			class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-hidden px-4"
+			onsubmit={(e) => {
+				e.preventDefault();
+				void send();
+			}}
+		>
 			<div class="flex flex-col gap-1.5">
 				<Label for="mail-account">{m['mail.account.from']()}</Label>
 				<Select.Root type="single" value={accountId} onValueChange={(value) => value && (accountId = value)}>
@@ -239,7 +260,13 @@
 
 			<div class="flex min-h-32 flex-1 flex-col gap-1.5">
 				<Label for="mail-body">{m['mail.compose.body']()}</Label>
-				<Textarea id="mail-body" class="min-h-32 flex-1 resize-none font-mono text-sm" bind:value={body} oninput={resetTimer} onkeydown={onkeydown} />
+				<Textarea
+					id="mail-body"
+					class="min-h-32 flex-1 resize-none font-mono text-sm"
+					bind:value={body}
+					oninput={resetTimer}
+					{onkeydown}
+				/>
 			</div>
 
 			{#if attachments.length > 0}
@@ -248,7 +275,11 @@
 						<span class="flex items-center gap-1.5 rounded-md border border-[var(--app-border)] px-2 py-1 text-xs">
 							<Paperclip size={12} />
 							<span class="max-w-40 truncate">{attachment.filename}</span>
-							<button type="button" class="text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]" onclick={() => void removeAttachment(attachment.id)}>
+							<button
+								type="button"
+								class="text-[var(--color-text-tertiary)] hover:text-[var(--color-error)]"
+								onclick={() => void removeAttachment(attachment.id)}
+							>
 								<X size={12} />
 							</button>
 						</span>

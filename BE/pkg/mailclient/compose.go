@@ -41,6 +41,13 @@ type SendOptions struct {
 // Plaintext auth is only allowed to loopback hosts: credentials never leave
 // the machine unencrypted by TLS.
 func SendMessage(opts SendOptions, msg *OutgoingMessage) ([]byte, error) {
+	return SendMessageContext(context.Background(), opts, msg)
+}
+
+// SendMessageContext closes SMTP when its account operation is cancelled.
+func SendMessageContext(ctx context.Context, opts SendOptions, msg *OutgoingMessage) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
 	if msg.MessageID == "" {
 		msg.MessageID = FallbackMessageID()
 	}
@@ -49,7 +56,7 @@ func SendMessage(opts SendOptions, msg *OutgoingMessage) ([]byte, error) {
 		return nil, fmt.Errorf("render message: %w", err)
 	}
 
-	client, err := dialSMTP(opts)
+	client, err := dialSMTPContext(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +120,11 @@ func addressPointers(in []messageMail.Address) []*messageMail.Address {
 }
 
 func dialSMTP(opts SendOptions) (*smtp.Client, error) {
-	conn, err := dialMail(context.Background(), opts.Host, opts.Port, opts.Security)
+	return dialSMTPContext(context.Background(), opts)
+}
+
+func dialSMTPContext(ctx context.Context, opts SendOptions) (*smtp.Client, error) {
+	conn, err := dialMail(ctx, opts.Host, opts.Port, opts.Security)
 	if err != nil {
 		return nil, err
 	}

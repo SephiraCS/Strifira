@@ -2232,7 +2232,7 @@
 	"mail.account.testing": "正在测试连接…",
 	"mail.account.delete": "移除",
 	"mail.account.delete_confirm_title": "移除账户",
-	"mail.account.delete_confirm_body": "移除 {address}？同步的邮件也会被删除。",
+	"mail.account.delete_confirm_body": "从 Strifira 移除 {address}？此账户在本应用中保存的凭据、同步邮件、草稿和附件将被移除。邮件服务商处的邮箱和邮件将保持不变。",
 	"mail.sync": "立即同步",
 	"mail.folder.inbox": "收件箱",
 	"mail.folder.sent": "已发送",
