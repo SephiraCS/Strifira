@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.65",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.65",
+    "body": "Deployed to alpha as dbe933fd91797fe99dd8f55a1a05b7fd9674c2cc.\n\n- STR-35 - Projetos - Permitir renomear projetos já criados (#44)",
+    "published_at": "2026-11-12T11:55:18Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.65",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.64",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.64",
     "body": "Deployed to alpha as 9253678de858ea28eef538c0afe7c3e07cb71a42.\n\n- STR-34 - Navegação - Permitir recolher e expandir a lista de projetos por equipe (#43)",
