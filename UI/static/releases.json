@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.63",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.63",
+    "body": "Deployed to alpha as efa22f8ac594f181840deb382dd09be8524b47cb.\n\n- STR-33 - Email - Body nao carrega as imagens (#42)",
+    "published_at": "2026-11-12T02:44:56Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.63",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.62",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.62",
     "body": "Deployed to alpha as 0a9cce03223d35b12564a44c2cff8088f0df48c0.\n\n- fix(mail): reconcile incoming messages without interrupting reading (#41)",
