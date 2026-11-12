@@ -256,10 +256,16 @@ func (s *MailService) SendDraft(ctx context.Context, workspaceID, userID, draftI
 		return nil, ErrMailNoRecipients
 	}
 
-	account, err := s.accountRepo.GetByID(ctx, workspaceID, *draft.AccountID)
-	if err != nil {
-		return nil, err
-	}
+	var sent *domain.MailMessage
+	err = s.withAccountOperation(ctx, workspaceID, *draft.AccountID, func(ctx context.Context, account *domain.MailAccount) error {
+		var sendErr error
+		sent, sendErr = s.sendLinkedDraft(ctx, workspaceID, draft, account)
+		return sendErr
+	})
+	return sent, err
+}
+
+func (s *MailService) sendLinkedDraft(ctx context.Context, workspaceID uuid.UUID, draft *domain.MailDraft, account *domain.MailAccount) (*domain.MailMessage, error) {
 	password, err := s.credential(ctx, account)
 	if err != nil {
 		return nil, err
@@ -337,7 +343,7 @@ func (s *MailService) SendDraft(ctx context.Context, workspaceID, userID, draftI
 
 	messageID := mailclient.FallbackMessageID()
 	outgoing.MessageID = messageID
-	raw, err := mailclient.SendMessage(s.sendOptions(account, password), outgoing)
+	raw, err := mailclient.SendMessageContext(ctx, s.sendOptions(account, password), outgoing)
 	if err != nil {
 		log.WithField("account_id", account.ID).Warn("mail send failed")
 		if errors.Is(err, mailclient.ErrAuthentication) {

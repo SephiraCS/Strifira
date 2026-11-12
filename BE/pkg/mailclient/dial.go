@@ -27,6 +27,14 @@ func dialMail(ctx context.Context, host string, port int, security string) (net.
 	if err != nil {
 		return nil, err
 	}
+	// Cancellation must also interrupt protocol reads after dialing, including
+	// a server that accepted the connection but never sent its greeting.
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	if ctx.Err() != nil {
+		stop()
+		_ = conn.Close()
+		return nil, ctx.Err()
+	}
 	// Includes greeting, TLS handshake, authentication and protocol commands.
 	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
 	if security == SecurityTLS {

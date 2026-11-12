@@ -139,6 +139,9 @@ type ChatMessageRepo interface {
 }
 
 type MailAccountRepo interface {
+	// WithAccountLock coordinates provider access and unlinking across processes.
+	// exclusive is true only for unlinking. The callback must not reacquire it.
+	WithAccountLock(ctx context.Context, workspaceID, id uuid.UUID, exclusive bool, fn func(*domain.MailAccount) error) error
 	Create(ctx context.Context, account *domain.MailAccount) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*domain.MailAccount, error)
 	ListByWorkspace(ctx context.Context, workspaceID uuid.UUID) ([]domain.MailAccount, error)
