@@ -48,6 +48,7 @@ export interface MailMessageSummary {
 
 export interface MailMessageListResponse {
 	messages: MailMessageSummary[];
+	unread_inbox_count: number;
 }
 
 export interface MailAttachmentMeta {

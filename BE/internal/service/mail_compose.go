@@ -30,6 +30,10 @@ type MailListQuery struct {
 	Offset    int
 }
 
+func (s *MailService) CountUnreadInbox(ctx context.Context, workspaceID uuid.UUID, accountID *uuid.UUID) (int, error) {
+	return s.messageRepo.CountUnreadInbox(ctx, workspaceID, accountID)
+}
+
 func (s *MailService) ListMessages(ctx context.Context, workspaceID uuid.UUID, q MailListQuery) ([]domain.MailMessage, error) {
 	if q.Folder == "" {
 		q.Folder = domain.MailFolderInbox

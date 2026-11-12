@@ -192,7 +192,11 @@ func (h *MailHandler) ListMessages(c echo.Context) error {
 	for _, message := range messages {
 		list = append(list, mailMessageSummary(message))
 	}
-	return response.Success(c, http.StatusOK, dto.MailMessageListResponse{Messages: list})
+	unread, err := h.mailSvc.CountUnreadInbox(c.Request().Context(), ws.ID, query.AccountID)
+	if err != nil {
+		return response.InternalErrorErr(c, err)
+	}
+	return response.Success(c, http.StatusOK, dto.MailMessageListResponse{Messages: list, UnreadInboxCount: unread})
 }
 
 func (h *MailHandler) GetMessage(c echo.Context) error {
