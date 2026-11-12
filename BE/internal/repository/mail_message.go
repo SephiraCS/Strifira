@@ -439,3 +439,10 @@ func listAttachments(ctx context.Context, db sqlx.QueryerContext, where string, 
 	}
 	return out, nil
 }
+
+// UpdateImageHTML compares the cached body so concurrent readers cannot replace
+// a newer repair. The account operation lock serializes this with unlinking.
+func (r *MailMessageRepository) UpdateImageHTML(ctx context.Context, workspaceID, id uuid.UUID, previous, repaired string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE mail_messages SET body_html=$1 WHERE workspace_id=$2 AND id=$3 AND body_html=$4`, repaired, workspaceID, id, previous)
+	return err
+}

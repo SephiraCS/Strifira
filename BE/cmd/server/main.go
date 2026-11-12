@@ -706,6 +706,7 @@ func main() {
 	ws.POST("/mail/accounts/:accountId/sync", mailH.SyncAccount)
 	ws.GET("/mail/messages", mailH.ListMessages)
 	ws.GET("/mail/messages/:messageId", mailH.GetMessage)
+	ws.POST("/mail/messages/:messageId/images", mailH.GetMessageImage)
 	ws.PATCH("/mail/messages/:messageId", mailH.UpdateMessage)
 	ws.DELETE("/mail/messages/:messageId", mailH.DeleteMessage)
 	ws.GET("/mail/attachments/:attachmentId", mailH.GetMessageAttachment)

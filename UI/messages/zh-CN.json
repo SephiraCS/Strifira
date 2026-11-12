@@ -2285,5 +2285,13 @@
 	"mail.toast.account_created": "账户已连接",
 	"mail.toast.account_updated": "账户已更新",
 	"mail.toast.account_failed": "无法保存账户",
-	"mail.toast.account_deleted": "账户已移除"
+	"mail.toast.account_deleted": "账户已移除",
+	"mail.images.image": "图片",
+	"mail.images.loading": "正在加载图片…",
+	"mail.images.blocked": "安全策略已阻止此图片",
+	"mail.images.invalid": "图片引用无效或缺失",
+	"mail.images.unavailable": "图片不可用",
+	"mail.images.remote_blocked": "远程图片正在等待授权",
+	"mail.images.privacy": "远程图片可能会告知发件人你已打开此邮件。请仅在信任发件人时加载。",
+	"mail.images.load_remote": "加载远程图片"
 }

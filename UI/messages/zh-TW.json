@@ -2285,5 +2285,13 @@
 	"mail.toast.account_created": "帳戶已連線",
 	"mail.toast.account_updated": "帳戶已更新",
 	"mail.toast.account_failed": "無法儲存帳戶",
-	"mail.toast.account_deleted": "帳戶已移除"
+	"mail.toast.account_deleted": "帳戶已移除",
+	"mail.images.image": "圖片",
+	"mail.images.loading": "正在載入圖片…",
+	"mail.images.blocked": "安全政策已封鎖此圖片",
+	"mail.images.invalid": "圖片參照無效或遺失",
+	"mail.images.unavailable": "圖片無法使用",
+	"mail.images.remote_blocked": "遠端圖片正在等待授權",
+	"mail.images.privacy": "遠端圖片可能會告知寄件者你已開啟此郵件。請僅在信任寄件者時載入。",
+	"mail.images.load_remote": "載入遠端圖片"
 }

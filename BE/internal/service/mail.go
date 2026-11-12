@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,7 @@ type mailDiscoverer interface {
 
 // MailService owns mailbox accounts, the INBOX cache and compose/send flows.
 type MailService struct {
+	imageHTTP            *http.Client
 	accountOpsMu         sync.Mutex
 	accountOps           map[uuid.UUID]*mailAccountOperations
 	accountRepo          repository.MailAccountRepo
@@ -76,6 +78,7 @@ func NewMailService(
 		hub:         hub,
 		encryptKey:  encryptKey,
 		discovery:   mailconfig.NewDiscoverer(),
+		imageHTTP:   mailImageHTTP,
 	}
 	s.validateOAuthMailbox = s.testOAuthConnections
 	return s
@@ -321,14 +324,15 @@ func (s *MailService) syncLinkedAccount(ctx context.Context, account domain.Mail
 		var to, cc []domain.MailAddress
 		var replyTo string
 		from := domain.MailAddress{Address: account.EmailAddress}
-		attachments := make([]domain.MailAttachment, 0, len(parsed.Attachments))
+		attachments := make([]domain.MailAttachment, 0)
+		cidImages := make(map[string]string)
 		if parsed != nil {
 			messageID = parsed.MessageID
 			inReplyTo = parsed.InReplyTo
 			references = parsed.References
 			subject = parsed.Subject
 			bodyText = parsed.BodyText
-			bodyHTML = sanitize.SanitizeHTML(parsed.BodyHTML)
+
 			to = toDomainAddresses(parsed.To)
 			cc = toDomainAddresses(parsed.CC)
 			from = domain.MailAddress{Name: parsed.From.Name, Address: parsed.From.Address}
@@ -339,14 +343,22 @@ func (s *MailService) syncLinkedAccount(ctx context.Context, account domain.Mail
 						Warnf("mail sync: dropping oversize attachment %q (%d bytes)", att.Filename, len(att.Content))
 					continue
 				}
+				attachmentID := uuid.New()
+				if att.ContentID != "" {
+					// The first matching MIME part owns this reference within this message.
+					if _, exists := cidImages[att.ContentID]; !exists {
+						cidImages[att.ContentID] = attachmentID.String()
+					}
+				}
 				attachments = append(attachments, domain.MailAttachment{
-					ID:          uuid.New(),
+					ID:          attachmentID,
 					Filename:    att.Filename,
 					ContentType: att.ContentType,
 					SizeBytes:   int64(len(att.Content)),
 					Content:     att.Content,
 				})
 			}
+			bodyHTML = sanitize.PrepareMailHTML(parsed.BodyHTML, cidImages)
 		}
 		if messageID == "" {
 			messageID = mailclient.FallbackMessageID()

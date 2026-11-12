@@ -3,6 +3,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailState } from '$lib/features/mail/mail.state.svelte';
+	import MessageBody from '$lib/features/mail/MessageBody.svelte';
 	import ComposeDialog from '$lib/features/mail/ComposeDialog.svelte';
 	import AccountDialog from '$lib/features/mail/AccountDialog.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
@@ -457,15 +458,7 @@
 						</div>
 					{/if}
 					<div class="mt-5">
-						{#if detail.body_html}
-							<div class="prose-mail max-w-none text-sm text-[var(--color-text-primary)]">
-								<!-- Server-side sanitized (bluemonday) before storage. -->
-								{@html detail.body_html}
-							</div>
-						{:else}
-							<pre
-								class="max-w-none font-sans text-sm whitespace-pre-wrap text-[var(--color-text-primary)]">{detail.body_text}</pre>
-						{/if}
+						<MessageBody {slug} message={detail} />
 					</div>
 				</div>
 			{:else}
@@ -493,13 +486,7 @@
 					<p class="text-sm font-medium">
 						{addressName(mailState.selectedMessage.from.name, mailState.selectedMessage.from.address)}
 					</p>
-					{#if mailState.selectedMessage.body_html}
-						<div class="mt-3 text-sm">
-							{@html mailState.selectedMessage.body_html}
-						</div>
-					{:else}
-						<pre class="mt-3 font-sans text-sm whitespace-pre-wrap">{mailState.selectedMessage.body_text}</pre>
-					{/if}
+					<div class="mt-3"><MessageBody {slug} message={mailState.selectedMessage} /></div>
 				</div>
 			</div>
 		{/if}

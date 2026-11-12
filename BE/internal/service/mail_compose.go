@@ -56,6 +56,7 @@ func (s *MailService) GetMessage(ctx context.Context, workspaceID, id uuid.UUID)
 	if err != nil {
 		return nil, nil, err
 	}
+	s.repairMailImages(ctx, message, attachments)
 	return message, attachments, nil
 }
 
