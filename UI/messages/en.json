@@ -1501,6 +1501,8 @@
 	"sidebar.open_view": "Open view",
 	"sidebar.project_deleted": "Project deleted",
 	"sidebar.projects": "Projects",
+	"sidebar.collapse_team_projects": "Collapse projects for {team}",
+	"sidebar.expand_team_projects": "Expand projects for {team}",
 	"sidebar.search": "Search",
 	"sidebar.search_matches": "Search matches",
 	"sidebar.settings": "Settings",

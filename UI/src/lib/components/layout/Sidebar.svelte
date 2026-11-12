@@ -727,7 +727,8 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			onclick={(e) => {
-				if ((e.target as HTMLElement).closest('a')) onnavigate?.();
+				// Let SvelteKit process the link before the mobile drawer unmounts its anchor.
+				if (onnavigate && (e.target as HTMLElement).closest('a')) setTimeout(onnavigate, 0);
 			}}
 			onkeydown={() => {}}
 		>
@@ -928,6 +929,11 @@
 						{#each orderedTeams as team (team.id)}
 							{@const teamExpanded = !collapsedTeams.has(team.id)}
 							{@const teamProjects = orderedProjects.filter((p) => p.team_id === team.id)}
+							{@const projectsExpanded = !sidebarState.areTeamProjectsCollapsed(workspace.id, team.id)}
+							{@const projectsListId = `team-projects-${mobile ? 'mobile' : 'desktop'}-${workspace.id}-${team.id}`}
+							{@const projectsToggleLabel = projectsExpanded
+								? m['sidebar.collapse_team_projects']({ team: team.name })
+								: m['sidebar.expand_team_projects']({ team: team.name })}
 							{@const teamViews = orderedViews.filter((view) => isTeamView(view, team.id))}
 							<div
 								animate:flip={{ duration: sidebarDndFlipMs }}
@@ -1034,19 +1040,34 @@
 											<RefreshCcwDot size={13} />
 											{m['sidebar.cycles']()}
 										</a>
-										<a
-											href="/{slug}/teams/{team.id}/projects"
-											class="ml-4 flex items-center gap-2 rounded-md px-2 py-1 text-xs {isActive(
-												`/${slug}/teams/${team.id}/projects`
-											)
-												? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
-												: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
-										>
-											<Box size={13} />
-											{m['sidebar.projects']()}
-										</a>
+										<div class="ml-4 flex items-center">
+											<a
+												href="/{slug}/teams/{team.id}/projects"
+												class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-xs {isActive(
+													`/${slug}/teams/${team.id}/projects`
+												)
+													? 'bg-[var(--color-bg-hover)]/50 text-[var(--color-text-primary)]'
+													: 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)]'}"
+											>
+												<Box size={13} />
+												<span class="truncate">{m['sidebar.projects']()}</span>
+											</a>
+											{#if teamProjects.length > 0}
+												<button
+													type="button"
+													class="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-accent)] max-md:size-9"
+													aria-label={projectsToggleLabel}
+													title={projectsToggleLabel}
+													aria-expanded={projectsExpanded}
+													aria-controls={projectsListId}
+													onclick={() => sidebarState.toggleTeamProjects(workspace.id, team.id)}
+												>
+													<ChevronDown size={13} aria-hidden="true" class={projectsExpanded ? '' : '-rotate-90'} />
+												</button>
+											{/if}
+										</div>
 										{#if teamProjects.length > 0}
-											<div class="relative ml-[31px]">
+											<div id={projectsListId} hidden={!projectsExpanded} class="relative ml-[31px]">
 												<div class="absolute left-0 top-0 bottom-2 w-px bg-[var(--app-border-hover)]"></div>
 												<div
 													use:dndzone={{ items: teamProjects, type: `sidebar-project-${team.id}`, ...dragOptions }}

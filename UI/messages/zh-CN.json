@@ -1501,6 +1501,8 @@
 	"sidebar.open_view": "打开视图",
 	"sidebar.project_deleted": "项目已删除",
 	"sidebar.projects": "项目",
+	"sidebar.collapse_team_projects": "收起 {team} 团队的项目",
+	"sidebar.expand_team_projects": "展开 {team} 团队的项目",
 	"sidebar.search": "搜索",
 	"sidebar.search_matches": "搜索匹配",
 	"sidebar.settings": "设置",
