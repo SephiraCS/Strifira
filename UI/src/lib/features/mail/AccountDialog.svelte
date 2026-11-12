@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ConfirmDialog from '$lib/components/shared/ConfirmDialog.svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailAccountMessage } from './autoconfig.messages';
 	import { authorizeMailbox, mailOAuthStorageKey } from './oauth';
@@ -21,6 +22,8 @@
 	let signature = $state('');
 	let submitting = $state(false);
 	let error = $state('');
+	let confirmingRemoval = $state(false);
+	let removing = $state(false);
 	let discovery = $state<MailDiscovery | null>(null);
 	let useAppPassword = $state(false);
 	let requestSerial = 0;
@@ -45,6 +48,7 @@
 			displayName = account?.display_name ?? '';
 			signature = account?.signature ?? '';
 			password = '';
+			confirmingRemoval = false;
 			submitting = false;
 			discovery = null;
 			useAppPassword = false;
@@ -60,10 +64,28 @@
 	}
 
 	function close(): void {
+		if (removing) return;
 		// Discard credentials when dismissing the dialog, including Escape.
 		requestSerial++;
 		password = '';
 		onclosed();
+	}
+
+	async function removeAccount(): Promise<void> {
+		if (!account || removing) return;
+		removing = true;
+		error = '';
+		try {
+			await mailState.removeAccount(account.id);
+			appToast.success(m['mail.toast.account_deleted']());
+			confirmingRemoval = false;
+			removing = false;
+			close();
+		} catch (err) {
+			appToast.apiError(err, m['mail.toast.account_failed']());
+		} finally {
+			removing = false;
+		}
 	}
 
 	async function submit(event: SubmitEvent): Promise<void> {
@@ -247,6 +269,17 @@
 			{/if}
 			{#if error}<p class="text-sm text-[var(--color-error)]" role="alert">{error}</p>{/if}
 			<Dialog.Footer class="gap-2 px-0">
+				{#if account}
+					<Button
+						type="button"
+						variant="destructive"
+						class="sm:mr-auto"
+						disabled={submitting || removing}
+						onclick={() => (confirmingRemoval = true)}
+					>
+						{m['mail.account.delete_confirm_title']()}
+					</Button>
+				{/if}
 				<Button type="button" variant="outline" onclick={close} disabled={submitting}
 					>{m['sharedComponents.confirm_dialog.cancel']()}</Button
 				>
@@ -267,3 +300,14 @@
 		</form>
 	</Dialog.Content>
 </Dialog.Root>
+
+{#if confirmingRemoval && account}
+	<ConfirmDialog
+		title={m['mail.account.delete_confirm_title']()}
+		message={m['mail.account.delete_confirm_body']({ address: account.email_address }) +
+			(account.auth_method === 'oauth2' ? ` ${mailAccountMessage('disconnect')}` : '')}
+		confirmLabel={m['mail.account.delete']()}
+		onconfirm={removeAccount}
+		oncancel={() => (confirmingRemoval = false)}
+	/>
+{/if}

@@ -2232,7 +2232,7 @@
 	"mail.account.testing": "Testando conexão…",
 	"mail.account.delete": "Remover",
 	"mail.account.delete_confirm_title": "Remover conta",
-	"mail.account.delete_confirm_body": "Remover {address}? As mensagens sincronizadas dela também serão apagadas.",
+	"mail.account.delete_confirm_body": "Remover {address} do Strifira? As credenciais salvas, mensagens sincronizadas, rascunhos e anexos desta conta serão removidos do aplicativo. A caixa postal e as mensagens no provedor de e-mail serão preservadas.",
 	"mail.sync": "Sincronizar agora",
 	"mail.folder.inbox": "Caixa de entrada",
 	"mail.folder.sent": "Enviados",
