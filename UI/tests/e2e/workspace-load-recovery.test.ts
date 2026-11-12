@@ -151,6 +151,8 @@ test('keeps the loaded view and independently refreshes healthy collections afte
 	await expect(sidebar.getByRole('button', { name: 'Engineering', exact: true })).toBeVisible();
 	const sidebarProject = sidebar.locator(`a[href="/test/projects/${projectId}"]`);
 	await expect(sidebarProject).toHaveText('Current project');
+	const listedProject = page.getByRole('main').locator(`a[href="/test/projects/${projectId}"]`);
+	await expect(listedProject).toContainText('Current project');
 	state.failure = 503;
 	state.workspaceName = 'Updated Workspace';
 	state.teamName = 'Updated Engineering';
@@ -163,7 +165,8 @@ test('keeps the loaded view and independently refreshes healthy collections afte
 	await expect(sidebar).toContainText('Updated Workspace');
 	await expect(sidebar.getByRole('button', { name: 'Updated Engineering', exact: true })).toBeVisible();
 	await expect(sidebarProject).toHaveText('Updated project');
-	await expect(page.getByRole('main').getByRole('link', { name: 'Current project' })).toBeVisible();
+	await expect(listedProject).toBeVisible();
+	await expect(listedProject).toContainText('Updated project');
 	expect(await currentHeading!.evaluate((node) => node.isConnected)).toBe(true);
 	expect(calls).toMatchObject({ auth: 1, members: 2, refresh: 0, authenticatedMembers: 2 });
 	const healthyReads = { shell: calls.shell, projects: calls.projects, notifications: calls.notifications };
@@ -173,7 +176,8 @@ test('keeps the loaded view and independently refreshes healthy collections afte
 	await expect(sidebar).toContainText('Updated Workspace');
 	await expect(sidebar.getByRole('button', { name: 'Updated Engineering', exact: true })).toBeVisible();
 	await expect(sidebarProject).toHaveText('Updated project');
-	await expect(page.getByRole('main').getByRole('link', { name: 'Current project' })).toBeVisible();
+	await expect(listedProject).toBeVisible();
+	await expect(listedProject).toContainText('Updated project');
 	expect(await currentHeading!.evaluate((node) => node.isConnected)).toBe(true);
 	expect(calls).toMatchObject({ auth: 1, members: 3, refresh: 0, authenticatedMembers: 3 });
 	expect({ shell: calls.shell, projects: calls.projects, notifications: calls.notifications }).toEqual(healthyReads);

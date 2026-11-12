@@ -94,7 +94,7 @@
 					>
 						<div class="flex-1 min-w-0">
 							<div class="flex items-center gap-2">
-								<span class="text-sm font-medium text-[var(--color-text-primary)]">{project.name}</span>
+								<span class="text-sm font-medium text-[var(--color-text-primary)]">{sidebarState.projects.find((item) => item.id === project.id)?.name ?? project.name}</span>
 								<Badge variant={statusVariant(project.status)} class="text-[10px]">
 									{statusLabel(project.status)}
 								</Badge>

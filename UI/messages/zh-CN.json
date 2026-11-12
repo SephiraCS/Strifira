@@ -2295,5 +2295,13 @@
 	"mail.images.unavailable": "图片不可用",
 	"mail.images.remote_blocked": "远程图片正在等待授权",
 	"mail.images.privacy": "远程图片可能会告知发件人你已打开此邮件。请仅在信任发件人时加载。",
-	"mail.images.load_remote": "加载远程图片"
+	"mail.images.load_remote": "加载远程图片",
+	"projects.rename.title": "重命名项目",
+	"projects.rename.description": "更改名称，保留项目链接和关联资源。",
+	"projects.rename.name": "名称",
+	"projects.rename.hint": "请输入 1 至 200 个字符。",
+	"projects.rename.invalid_name": "请输入长度为 1 至 200 个字符的名称。",
+	"projects.rename.success": "项目已重命名",
+	"projects.rename.failed": "无法保存名称。已保留您的修改，请重试。",
+	"projects.rename.forbidden": "您已无权重命名此项目。已保留您的修改。"
 }

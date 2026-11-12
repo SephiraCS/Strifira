@@ -2295,5 +2295,13 @@
 	"mail.images.unavailable": "Imagem indisponível",
 	"mail.images.remote_blocked": "Imagem remota aguardando permissão",
 	"mail.images.privacy": "Imagens remotas podem informar ao remetente que você abriu esta mensagem. Carregue somente se confiar no remetente.",
-	"mail.images.load_remote": "Carregar imagens remotas"
+	"mail.images.load_remote": "Carregar imagens remotas",
+	"projects.rename.title": "Renomear projeto",
+	"projects.rename.description": "Altere o nome mantendo os links e os recursos vinculados ao projeto.",
+	"projects.rename.name": "Nome",
+	"projects.rename.hint": "Use de 1 a 200 caracteres.",
+	"projects.rename.invalid_name": "Informe um nome com 1 a 200 caracteres.",
+	"projects.rename.success": "Projeto renomeado",
+	"projects.rename.failed": "Não foi possível salvar o nome. Sua edição foi mantida. Tente novamente.",
+	"projects.rename.forbidden": "Você não tem mais permissão para renomear este projeto. Sua edição foi mantida."
 }

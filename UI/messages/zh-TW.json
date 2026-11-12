@@ -2295,5 +2295,13 @@
 	"mail.images.unavailable": "圖片無法使用",
 	"mail.images.remote_blocked": "遠端圖片正在等待授權",
 	"mail.images.privacy": "遠端圖片可能會告知寄件者你已開啟此郵件。請僅在信任寄件者時載入。",
-	"mail.images.load_remote": "載入遠端圖片"
+	"mail.images.load_remote": "載入遠端圖片",
+	"projects.rename.title": "重新命名專案",
+	"projects.rename.description": "變更名稱，保留專案連結及關聯資源。",
+	"projects.rename.name": "名稱",
+	"projects.rename.hint": "請輸入 1 至 200 個字元。",
+	"projects.rename.invalid_name": "請輸入長度為 1 至 200 個字元的名稱。",
+	"projects.rename.success": "專案已重新命名",
+	"projects.rename.failed": "無法儲存名稱。已保留您的修改，請重試。",
+	"projects.rename.forbidden": "您已無權重新命名此專案。已保留您的修改。"
 }

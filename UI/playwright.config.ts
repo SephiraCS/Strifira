@@ -10,6 +10,7 @@ import { defineConfig } from '@playwright/test';
 // A new spec is slow unless it is added here; promote it only when a
 // regression in it must stop a deploy, and keep this list short.
 const FAST_SPECS = [
+	'project-rename.test.ts',
 	'sidebar-team-projects.test.ts',
 	'mail-images.test.ts',
 	'mail-auto-refresh.test.ts',

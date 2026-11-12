@@ -721,6 +721,10 @@
 				window.dispatchEvent(new CustomEvent('ws:team-status', { detail: msg.payload }));
 				break;
 			}
+			case 'project.updated': {
+				window.dispatchEvent(new CustomEvent('app:refresh', { detail: { slug, resources: ['projects'] } }));
+				break;
+			}
 			case 'app.refresh': {
 				window.dispatchEvent(new CustomEvent('app:refresh', { detail: msg.payload ?? {} }));
 				break;

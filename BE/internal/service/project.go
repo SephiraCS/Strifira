@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
-	"fmt"
+	"database/sql"
+	"errors"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
 	"github.com/SephiraCS/strifira-backend/internal/dto"
@@ -17,6 +20,16 @@ type ProjectService struct {
 	hub         *realtime.Hub
 }
 
+var ErrInvalidProjectName = errors.New("project name must contain between 1 and 200 characters")
+
+func normalizeProjectName(name string) (string, error) {
+	name = strings.TrimSpace(sanitize.StripHTML(name))
+	if length := utf8.RuneCountInString(name); length == 0 || length > 200 {
+		return "", ErrInvalidProjectName
+	}
+	return name, nil
+}
+
 // NewProjectService builds the project service. hub may be nil; when set,
 // successful updates are broadcast workspace-wide as project.updated (which
 // also feeds outgoing webhooks subscribed to that event).
@@ -25,7 +38,11 @@ func NewProjectService(projectRepo repository.ProjectRepo, hub *realtime.Hub) *P
 }
 
 func (s *ProjectService) Create(ctx context.Context, workspaceID uuid.UUID, req dto.CreateProjectRequest) (*domain.Project, error) {
-	req.Name = sanitize.StripHTML(req.Name)
+	name, err := normalizeProjectName(req.Name)
+	if err != nil {
+		return nil, err
+	}
+	req.Name = name
 	if req.Description != nil {
 		clean := sanitize.SanitizeHTML(*req.Description)
 		req.Description = &clean
@@ -66,16 +83,18 @@ func (s *ProjectService) ListByTeam(ctx context.Context, teamID uuid.UUID) ([]do
 
 func (s *ProjectService) Update(ctx context.Context, workspaceID, id uuid.UUID, req dto.UpdateProjectRequest) (*domain.Project, error) {
 	project, err := s.projectRepo.GetByID(ctx, id)
-	if err != nil || project == nil {
-		return nil, fmt.Errorf("project not found")
+	if err != nil {
+		return nil, err
 	}
-	if project.WorkspaceID != workspaceID {
-		return nil, fmt.Errorf("project not found")
+	if project == nil || project.WorkspaceID != workspaceID {
+		return nil, sql.ErrNoRows
 	}
 
 	if req.Name != nil {
-		clean := sanitize.StripHTML(*req.Name)
-		req.Name = &clean
+		clean, err := normalizeProjectName(*req.Name)
+		if err != nil {
+			return nil, err
+		}
 		project.Name = clean
 	}
 	if req.Description != nil {
@@ -111,10 +130,10 @@ func (s *ProjectService) Update(ctx context.Context, workspaceID, id uuid.UUID, 
 func (s *ProjectService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
 	project, err := s.projectRepo.GetByID(ctx, id)
 	if err != nil || project == nil {
-		return fmt.Errorf("project not found")
+		return sql.ErrNoRows
 	}
 	if project.WorkspaceID != workspaceID {
-		return fmt.Errorf("project not found")
+		return sql.ErrNoRows
 	}
 	return s.projectRepo.Delete(ctx, id)
 }
