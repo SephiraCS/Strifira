@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/SephiraCS/strifira-backend/internal/domain"
@@ -54,7 +55,7 @@ func (h *ProjectHandler) Create(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	project, err := h.projectSvc.Create(c.Request().Context(), ws.ID, req)
 	if err != nil {
-		return response.InternalErrorErr(c, err)
+		return projectMutationError(c, err)
 	}
 	return response.Success(c, http.StatusCreated, toProjectResponse(*project))
 }
@@ -65,7 +66,8 @@ func (h *ProjectHandler) Get(c echo.Context) error {
 		return response.Error(c, http.StatusBadRequest, "BAD_REQUEST", "Invalid project ID")
 	}
 	project, err := h.projectSvc.GetByID(c.Request().Context(), id)
-	if err != nil || project == nil {
+	ws := c.Get("workspace").(*domain.Workspace)
+	if err != nil || project == nil || project.WorkspaceID != ws.ID {
 		return response.NotFound(c, "Project")
 	}
 	r := toProjectResponse(*project)
@@ -88,9 +90,16 @@ func (h *ProjectHandler) Update(c echo.Context) error {
 	ws := c.Get("workspace").(*domain.Workspace)
 	project, err := h.projectSvc.Update(c.Request().Context(), ws.ID, id, req)
 	if err != nil {
-		return response.InternalErrorErr(c, err)
+		return projectMutationError(c, err)
 	}
 	return response.Success(c, http.StatusOK, toProjectResponse(*project))
+}
+
+func projectMutationError(c echo.Context, err error) error {
+	if errors.Is(err, service.ErrInvalidProjectName) {
+		return response.ValidationError(c, []dto.ErrorDetail{{Field: "name", Message: err.Error()}})
+	}
+	return response.ServiceError(c, err)
 }
 
 func (h *ProjectHandler) Delete(c echo.Context) error {

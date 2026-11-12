@@ -13,6 +13,10 @@
 	import IssueRow from '$lib/features/issues/IssueRow.svelte';
 	import IssueListLoadMore from '$lib/features/issues/IssueListLoadMore.svelte';
 	import IssueDetail from '$lib/features/issues/IssueDetail.svelte';
+	import ProjectRenameDialog from '$lib/features/projects/ProjectRenameDialog.svelte';
+	import { hasPermission } from '$lib/security/permissions';
+	import type { Role } from '$lib/security/roles';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import GanttChart from '$lib/features/projects/GanttChart.svelte';
 	import EmptyState from '$lib/components/shared/EmptyState.svelte';
 	import CycleProgress from '$lib/features/cycles/CycleProgress.svelte';
@@ -52,6 +56,10 @@
 	const projectId = $derived(page.params.projectId ?? '');
 
 	let project = $state<Project | null>(null);
+	let renameOpen = $state(false);
+	$effect(() => { slug; projectId; renameOpen = false; });
+	const canRename = $derived(hasPermission(sidebarState.workspaceRole as Role, 'project:manage'));
+	const projectName = $derived(sidebarState.projects.find((item) => item.id === projectId)?.name ?? project?.name ?? '');
 	let teams = $state<Team[]>([]);
 	let cycles = $state<Cycle[]>([]);
 	let loading = $state(true);
@@ -250,23 +258,26 @@
 <div class="flex h-full flex-col">
 	{#if !loading && project}
 		<!-- Header -->
-		<div class="flex h-[49px] items-center justify-between border-b border-[var(--app-border)] px-6">
-			<div class="flex items-center gap-3">
+		<div class="flex h-[49px] shrink-0 items-center justify-between gap-2 border-b border-[var(--app-border)] px-3 sm:px-6">
+			<div class="flex min-w-0 items-center gap-2 sm:gap-3">
 				<SidebarToggle />
-				<nav class="flex items-center gap-1.5 text-sm">
+				<nav aria-label={m['projects.title']()} class="flex min-w-0 items-center gap-1.5 text-sm">
 					{#if projectTeam}
-						<a href="/{slug}/teams/{projectTeam.id}" class="flex items-center gap-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
-							<SquareUser size={14} class="shrink-0" style="color: {sidebarState.getTeamColor(projectTeam.id)}" />
-							{projectTeam.name}
-						</a>
-						<ChevronRight size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
-						<a href="/{slug}/teams/{projectTeam.id}/projects" class="flex items-center gap-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
-							<Box size={14} class="shrink-0" />
-							{m['projects.title']()}
-						</a>
-						<ChevronRight size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
+						<div class="hidden shrink-0 items-center gap-1.5 lg:flex">
+							<a href="/{slug}/teams/{projectTeam.id}" class="flex items-center gap-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+								<SquareUser size={14} class="shrink-0" style="color: {sidebarState.getTeamColor(projectTeam.id)}" />
+								{projectTeam.name}
+							</a>
+							<ChevronRight size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
+							<a href="/{slug}/teams/{projectTeam.id}/projects" class="flex items-center gap-1.5 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+								<Box size={14} class="shrink-0" />
+								{m['projects.title']()}
+							</a>
+							<ChevronRight size={12} class="shrink-0 text-[var(--color-text-tertiary)]" />
+
+						</div>
 					{/if}
-					<span class="font-medium text-[var(--color-text-primary)]">{project.name}</span>
+					<span class="truncate font-medium text-[var(--color-text-primary)]" title={projectName}>{projectName}</span>
 				</nav>
 				<Popover.Root bind:open={statusOpen}>
 					<Popover.Trigger>
@@ -288,7 +299,10 @@
 					</Popover.Content>
 				</Popover.Root>
 			</div>
-			<div class="flex items-center gap-2">
+			<div class="flex shrink-0 items-center gap-1 sm:gap-2">
+				{#if canRename}
+					<Button variant="ghost" size="icon-sm" onclick={() => (renameOpen = true)} title={m['projects.rename.title']()} aria-label={m['projects.rename.title']()}><Pencil size={15} /></Button>
+				{/if}
 				<Button variant="ghost" size="icon-sm" disabled={developmentLoading || !developmentReady} onclick={() => (developmentOpen = true)} title={developmentSettingsLabel} aria-label={developmentSettingsLabel}><Settings2 size={15} /></Button>
 				<!-- View switcher -->
 				<div class="flex rounded-md border border-[var(--app-border)]">
@@ -409,3 +423,10 @@
 		onclose={() => issuesState.select(null)}
 	/>
 {/if}
+
+{#key `${slug}/${projectId}`}
+	{#if project && project.id === projectId}
+		<ProjectRenameDialog bind:open={renameOpen} {slug} project={{ ...project, name: projectName }}
+			onupdated={(updated) => { if (project?.id === updated.id) project = { ...project, ...updated }; }} />
+	{/if}
+{/key}

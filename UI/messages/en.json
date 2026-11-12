@@ -2295,5 +2295,13 @@
 	"mail.images.unavailable": "Image unavailable",
 	"mail.images.remote_blocked": "Remote image awaiting permission",
 	"mail.images.privacy": "Remote images can tell the sender that you opened this message. Load them only if you trust the sender.",
-	"mail.images.load_remote": "Load remote images"
+	"mail.images.load_remote": "Load remote images",
+	"projects.rename.title": "Rename project",
+	"projects.rename.description": "Change the name without changing project links or linked resources.",
+	"projects.rename.name": "Name",
+	"projects.rename.hint": "Use 1 to 200 characters.",
+	"projects.rename.invalid_name": "Enter a name between 1 and 200 characters.",
+	"projects.rename.success": "Project renamed",
+	"projects.rename.failed": "Could not save the name. Your changes are still here. Try again.",
+	"projects.rename.forbidden": "You no longer have permission to rename this project. Your changes are still here."
 }
