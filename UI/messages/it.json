@@ -2285,5 +2285,13 @@
 	"mail.toast.account_created": "Account collegato",
 	"mail.toast.account_updated": "Account aggiornato",
 	"mail.toast.account_failed": "Impossibile salvare l'account",
-	"mail.toast.account_deleted": "Account rimosso"
+	"mail.toast.account_deleted": "Account rimosso",
+	"mail.images.image": "Immagine",
+	"mail.images.loading": "Caricamento immagine…",
+	"mail.images.blocked": "Immagine bloccata dalla politica di sicurezza",
+	"mail.images.invalid": "Riferimento immagine non valido o mancante",
+	"mail.images.unavailable": "Immagine non disponibile",
+	"mail.images.remote_blocked": "Immagine remota in attesa di autorizzazione",
+	"mail.images.privacy": "Le immagini remote possono informare il mittente che hai aperto il messaggio. Caricale solo se ti fidi del mittente.",
+	"mail.images.load_remote": "Carica immagini remote"
 }
