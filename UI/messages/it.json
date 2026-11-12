@@ -1501,6 +1501,8 @@
 	"sidebar.open_view": "Apri vista",
 	"sidebar.project_deleted": "Progetto eliminato",
 	"sidebar.projects": "Progetti",
+	"sidebar.collapse_team_projects": "Comprimi i progetti del team {team}",
+	"sidebar.expand_team_projects": "Espandi i progetti del team {team}",
 	"sidebar.search": "Cerca",
 	"sidebar.search_matches": "Corrispondenze ricerca",
 	"sidebar.settings": "Impostazioni",

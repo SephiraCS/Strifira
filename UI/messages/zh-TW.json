@@ -1501,6 +1501,8 @@
 	"sidebar.open_view": "開啟檢視",
 	"sidebar.project_deleted": "專案已刪除",
 	"sidebar.projects": "專案",
+	"sidebar.collapse_team_projects": "收合 {team} 團隊的專案",
+	"sidebar.expand_team_projects": "展開 {team} 團隊的專案",
 	"sidebar.search": "搜尋",
 	"sidebar.search_matches": "搜尋匹配",
 	"sidebar.settings": "設定",

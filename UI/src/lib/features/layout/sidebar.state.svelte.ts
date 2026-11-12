@@ -40,6 +40,34 @@ class SidebarState {
 			: false
 	);
 
+	// Shared by the desktop sidebar and the mobile drawer.
+	private collapsedTeamProjects = $state<Record<string, boolean>>({});
+
+	private teamProjectsKey(workspaceId: string, teamId: string): string {
+		return `sidebar_team_projects_${JSON.stringify([workspaceId, teamId])}`;
+	}
+
+	areTeamProjectsCollapsed(workspaceId: string, teamId: string): boolean {
+		const key = this.teamProjectsKey(workspaceId, teamId);
+		if (this.collapsedTeamProjects[key] !== undefined) return this.collapsedTeamProjects[key];
+		try {
+			return typeof localStorage !== 'undefined' && localStorage.getItem(key) === 'collapsed';
+		} catch {
+			return false;
+		}
+	}
+
+	toggleTeamProjects(workspaceId: string, teamId: string) {
+		const key = this.teamProjectsKey(workspaceId, teamId);
+		const collapsed = !this.areTeamProjectsCollapsed(workspaceId, teamId);
+		this.collapsedTeamProjects = { ...this.collapsedTeamProjects, [key]: collapsed };
+		try {
+			localStorage.setItem(key, collapsed ? 'collapsed' : 'expanded');
+		} catch {
+			// The control still works for this session when browser storage is unavailable.
+		}
+	}
+
 	projects = $state<Project[]>([]);
 	teams = $state<Team[]>([]);
 	/** Current user's role in the active workspace (set by the workspace layout). */
