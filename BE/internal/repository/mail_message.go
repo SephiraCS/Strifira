@@ -202,6 +202,19 @@ func (r *MailMessageRepository) InsertInboxMessages(ctx context.Context, message
 	return inserted, nil
 }
 
+// CountUnreadInbox is independent of the visible folder, search and page size.
+func (r *MailMessageRepository) CountUnreadInbox(ctx context.Context, workspaceID uuid.UUID, accountID *uuid.UUID) (int, error) {
+	query := `SELECT COUNT(*) FROM mail_messages WHERE workspace_id = $1 AND folder = 'inbox' AND unread AND NOT archived AND NOT spam`
+	args := []any{workspaceID}
+	if accountID != nil {
+		query += ` AND account_id = $2`
+		args = append(args, *accountID)
+	}
+	var count int
+	err := r.db.GetContext(ctx, &count, query, args...)
+	return count, err
+}
+
 func (r *MailMessageRepository) ListByFolder(ctx context.Context, workspaceID uuid.UUID, accountID *uuid.UUID, folder string, q string, filters MailFilters, limit, offset int) ([]domain.MailMessage, error) {
 	query := `
 		SELECT m.*, EXISTS (SELECT 1 FROM mail_attachments a WHERE a.message_id = m.id) AS has_attachments

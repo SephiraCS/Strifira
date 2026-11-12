@@ -151,6 +151,7 @@ type MailAccountRepo interface {
 }
 
 type MailMessageRepo interface {
+	CountUnreadInbox(ctx context.Context, workspaceID uuid.UUID, accountID *uuid.UUID) (int, error)
 	// SyncState returns the persisted INBOX cursor (UIDVALIDITY + highest
 	// UID) so the syncer resumes incrementally.
 	SyncState(ctx context.Context, accountID uuid.UUID) (uint32, int64, error)

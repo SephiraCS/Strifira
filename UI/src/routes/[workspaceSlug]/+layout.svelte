@@ -748,7 +748,7 @@
 			}
 			// Mail: inbox sync / sent messages arrive from the backend syncer.
 			case 'mail.updated': {
-				window.dispatchEvent(new CustomEvent('ws:mail.updated', { detail: msg.payload }));
+				window.dispatchEvent(new CustomEvent('ws:mail.updated', { detail: { ...msg.payload, workspaceSlug: wsSlug } }));
 				break;
 			}
 			// Voice rooms: roster snapshots, the joiner's targeted sync and the

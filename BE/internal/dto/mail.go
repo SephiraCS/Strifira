@@ -82,7 +82,8 @@ type MailMessageSummary struct {
 }
 
 type MailMessageListResponse struct {
-	Messages []MailMessageSummary `json:"messages"`
+	UnreadInboxCount int                  `json:"unread_inbox_count"`
+	Messages         []MailMessageSummary `json:"messages"`
 }
 
 // MailMessageDetail is the reading-pane shape.

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { m } from '$lib/paraglide/messages.js';
 	import { mailState } from '$lib/features/mail/mail.state.svelte';
 	import ComposeDialog from '$lib/features/mail/ComposeDialog.svelte';
@@ -137,7 +137,8 @@
 	// Load accounts + cached messages for this workspace (re-runs on route
 	// change; ensureWorkspace resets state when the workspace differs).
 	$effect(() => {
-		if (slug) void mailState.ensureWorkspace(slug);
+		const workspaceSlug = slug;
+		if (workspaceSlug) return untrack(() => mailState.activate(workspaceSlug));
 	});
 
 	function newCompose(): void {

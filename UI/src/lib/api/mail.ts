@@ -9,8 +9,8 @@ import type {
 	MailMessageListResponse
 } from '$lib/types/mail';
 
-export function listMailAccounts(slug: string): Promise<MailAccountListResponse> {
-	return api.get<MailAccountListResponse>(`/api/workspaces/${slug}/mail/accounts`);
+export function listMailAccounts(slug: string, signal?: AbortSignal): Promise<MailAccountListResponse> {
+	return api.fetch<MailAccountListResponse>(`/api/workspaces/${slug}/mail/accounts`, { signal });
 }
 
 export interface MailAccountInput {
@@ -98,8 +98,14 @@ function mailListQueryString(query: MailListQuery): string {
 	return encoded ? `?${encoded}` : '';
 }
 
-export function listMailMessages(slug: string, query: MailListQuery): Promise<MailMessageListResponse> {
-	return api.get<MailMessageListResponse>(`/api/workspaces/${slug}/mail/messages${mailListQueryString(query)}`);
+export function listMailMessages(
+	slug: string,
+	query: MailListQuery,
+	signal?: AbortSignal
+): Promise<MailMessageListResponse> {
+	return api.fetch<MailMessageListResponse>(`/api/workspaces/${slug}/mail/messages${mailListQueryString(query)}`, {
+		signal
+	});
 }
 
 export function getMailMessage(slug: string, messageId: string): Promise<MailMessageDetail> {
