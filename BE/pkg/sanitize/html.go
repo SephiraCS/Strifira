@@ -10,7 +10,7 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 )
 
-var policy *bluemonday.Policy
+var policy, mailPolicy *bluemonday.Policy
 
 var (
 	allowedHTMLTagPattern = regexp.MustCompile(`(?i)</?(?:p|br|strong|b|em|i|s|del|code|pre|a|h[1-6]|ul|ol|li|blockquote|hr|span|div|label|img|input)(?:\s[^>]*)?/?>`)
@@ -22,7 +22,13 @@ var (
 )
 
 func init() {
-	policy = bluemonday.NewPolicy()
+	policy = newHTMLPolicy()
+	mailPolicy = newHTMLPolicy()
+	mailPolicy.AllowAttrs("data-mail-image").OnElements("img")
+}
+
+func newHTMLPolicy() *bluemonday.Policy {
+	policy := bluemonday.NewPolicy()
 
 	policy.AllowElements(
 		"p", "br", "strong", "b", "em", "i", "s", "del", "code", "pre",
@@ -59,6 +65,7 @@ func init() {
 	// Allow images with safe src
 	policy.AllowImages()
 	policy.AllowAttrs("alt", "width", "height").OnElements("img")
+	return policy
 }
 
 // SanitizeHTML sanitizes HTML input, stripping dangerous tags and attributes.

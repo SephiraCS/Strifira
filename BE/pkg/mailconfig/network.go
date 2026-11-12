@@ -10,6 +10,9 @@ import (
 
 var errUnsafeDestination = errors.New("mail destination is not public")
 
+// IsUnsafeDestination identifies a destination rejected before dialing.
+func IsUnsafeDestination(err error) bool { return errors.Is(err, errUnsafeDestination) }
+
 // PublicDialContext resolves once, checks every answer, and dials only those
 // literals. Discovery documents cannot turn mail connections into an internal
 // network proxy, including through DNS rebinding.

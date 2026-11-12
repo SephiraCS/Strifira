@@ -41,6 +41,7 @@ type ParsedMessage struct {
 
 // ParsedAttachment is one MIME attachment decoded into memory.
 type ParsedAttachment struct {
+	ContentID   string
 	Filename    string
 	ContentType string
 	Content     []byte
@@ -117,6 +118,7 @@ func walkLeaf(entity *message.Entity, parsed *ParsedMessage) {
 	switch {
 	case isFile:
 		parsed.Attachments = append(parsed.Attachments, ParsedAttachment{
+			ContentID:   normalizeMessageID(entity.Header.Get("Content-ID")),
 			Filename:    filenameFrom(entity, params, dparams),
 			ContentType: contentType,
 			Content:     body,
@@ -128,6 +130,7 @@ func walkLeaf(entity *message.Entity, parsed *ParsedMessage) {
 	default:
 		// Binary leaf without a filename: keep it rather than dropping it.
 		parsed.Attachments = append(parsed.Attachments, ParsedAttachment{
+			ContentID:   normalizeMessageID(entity.Header.Get("Content-ID")),
 			Filename:    filenameFrom(entity, params, dparams),
 			ContentType: contentType,
 			Content:     body,
