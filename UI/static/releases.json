@@ -1,5 +1,16 @@
 [
   {
+    "tag_name": "v0.3.64",
+    "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.64",
+    "body": "Deployed to alpha as 9253678de858ea28eef538c0afe7c3e07cb71a42.\n\n- STR-34 - Navegação - Permitir recolher e expandir a lista de projetos por equipe (#43)",
+    "published_at": "2026-11-12T04:49:12Z",
+    "prerelease": false,
+    "force_upgrade": false,
+    "minimum_supported_version": null,
+    "upgrade_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.64",
+    "upgrade_message": null
+  },
+  {
     "tag_name": "v0.3.63",
     "html_url": "https://github.com/SephiraCS/Strifira/releases/tag/v0.3.63",
     "body": "Deployed to alpha as efa22f8ac594f181840deb382dd09be8524b47cb.\n\n- STR-33 - Email - Body nao carrega as imagens (#42)",
