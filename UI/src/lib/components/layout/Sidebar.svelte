@@ -726,9 +726,15 @@
 	<nav class="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			onclick={(e) => {
-				// Let SvelteKit process the link before the mobile drawer unmounts its anchor.
-				if (onnavigate && (e.target as HTMLElement).closest('a')) setTimeout(onnavigate, 0);
+			onclick={async (e) => {
+				if (!onnavigate || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+				const link = (e.target as Element).closest<HTMLAnchorElement>('a[href]');
+				if (!link || link.origin !== page.url.origin || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
+				// Touch sorting dispatches a synthetic click that SvelteKit cannot route.
+				// Navigate explicitly before closing the mobile drawer.
+				e.preventDefault();
+				await goto(link.href);
+				onnavigate();
 			}}
 			onkeydown={() => {}}
 		>
