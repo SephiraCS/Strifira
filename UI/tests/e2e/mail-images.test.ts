@@ -49,6 +49,7 @@ async function fixture(page: Page) {
 	};
 	await page.route('**/api/**', async (route) => {
 		const path = new URL(route.request().url()).pathname;
+		if (!path.startsWith('/api/')) return route.fallback();
 		const self = {
 			id: 'test-user',
 			email: 'test@example.test',

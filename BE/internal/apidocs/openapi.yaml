@@ -5180,6 +5180,44 @@ paths:
       responses:
         "200": { description: Message deleted. }
         "404": { description: Message not found. }
+  /api/workspaces/{slug}/mail/messages/{messageId}/images:
+    parameters:
+      - $ref: "#/components/parameters/Slug"
+      - name: messageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      operationId: getMailMessageImage
+      tags: [Mail]
+      summary: Load an image referenced by this message
+      description: |
+        Requires workspace membership. The source must occur in the stored message.
+        Embedded references resolve only to that message's attachments. Remote images
+        require reader consent and use credential-free HTTPS to public destinations.
+        Only PNG, JPEG, GIF and WebP bytes up to 5 MiB are returned. Responses are private
+        and not cached. Source URLs stay in the request body instead of access-log queries.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source: { type: string, maxLength: 8192 }
+      responses:
+        "200":
+          description: A verified raster image as a data URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data_url: { type: string }
+        "404": { description: Message or image not found in this workspace/message. }
+        "422": { description: Invalid reference or image blocked by security policy. }
+        "502": { description: Image unavailable or exceeds the size limit. }
   /api/workspaces/{slug}/mail/attachments/{attachmentId}:
     parameters:
       - $ref: "#/components/parameters/Slug"

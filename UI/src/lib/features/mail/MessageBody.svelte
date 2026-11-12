@@ -69,7 +69,9 @@
 				],
 				ALLOWED_ATTR: ['href', 'alt', 'width', 'height', 'colspan', 'rowspan', 'data-mail-image'],
 				ALLOW_DATA_ATTR: false,
-				ADD_ATTR: ['data-mail-image']
+				ADD_ATTR: ['data-mail-image'],
+				// This inert attribute carries CID descriptors, never a live URL attribute.
+				ADD_URI_SAFE_ATTR: ['data-mail-image']
 			});
 			const style = document.createElement('style');
 			style.textContent = `
